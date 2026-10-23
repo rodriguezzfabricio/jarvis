@@ -91,8 +91,9 @@ describe("session output capture (Codex review 2, medium)", () => {
       writeFileSync(leader, `#!/bin/sh\nsh -c '${trap}echo $$ > ${pidFile}; while :; do sleep 1; done' &\nsleep 0.3\necho leader-done\nexit 0\n`);
       chmodSync(leader, 0o755);
       const t0 = Date.now();
-      const out = await runSession({ ...base, bin: leader, timeoutMs: 60_000, killGraceMs: 300 });
-      expect(Date.now() - t0).toBeLessThan(10_000);
+      // The session timeout is well inside the test's own, so a regression fails an assertion, not the test runner.
+      const out = await runSession({ ...base, bin: leader, timeoutMs: 8_000, killGraceMs: 300 });
+      expect(Date.now() - t0).toBeLessThan(5_000);
       expect(out.timedOut).toBe(false);
       expect(out.code).toBe(0);
       expect(out.stdout).toContain("leader-done");

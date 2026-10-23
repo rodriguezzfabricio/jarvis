@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { GENESIS, Ledger, LedgerTamperError, entryHash, verifyLedger, writeAll } from "../../packages/cli/src/ledger/ledger.ts";
@@ -12,6 +13,11 @@ function fresh(count = 3): { dir: string; ledger: Ledger } {
   const ledger = Ledger.open(dir);
   for (let i = 0; i < count; i++) ledger.append({ kind: "steer", actor: "runner", data: { note: `n${i}` } });
   return { dir, ledger };
+}
+/** The pid of a process that has exited (so it is certainly not alive, unlike a made-up number). */
+function deadPid(): number {
+  const r = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
+  return Number.parseInt(r.stdout, 10);
 }
 const lines = (dir: string) => readFileSync(join(dir, "ledger.jsonl"), "utf8").trimEnd().split("\n");
 
@@ -151,16 +157,50 @@ describe("ledger (decisions 41, 49)", () => {
   });
 
   // Codex review 5, high / medium: lock reclamation.
-  it("never reclaims a stale lock another reclaimer is already handling, and never loops forever", () => {
+  it("never reclaims a stale lock another live reclaimer is already handling, and never loops forever", () => {
     const { dir } = fresh(1);
     writeFileSync(join(dir, "ledger.lock"), "999999 deadbeef");
-    writeFileSync(join(dir, "ledger.lock.reclaim.deadbeef"), "");
+    writeFileSync(join(dir, "ledger.lock.reclaim.deadbeef"), `${process.pid} 0123abcd`); // a live reclaimer
     const quick = Ledger.open(dir, { lockTimeoutMs: 300 });
     expect(() => quick.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
     expect(readFileSync(join(dir, "ledger.lock"), "utf8")).toBe("999999 deadbeef");
     rmSync(join(dir, "ledger.lock.reclaim.deadbeef"));
     expect(quick.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(2);
     expect(existsSync(join(dir, "ledger.lock"))).toBe(false);
+  });
+
+  // Codex review 6, medium: a reclaimer that died holding its marker must not block later writers.
+  it("recovers when a reclaimer died holding its marker, at any depth", () => {
+    const dead = deadPid();
+    for (const depth of [1, 2, 3]) {
+      const { dir } = fresh(2);
+      writeFileSync(join(dir, "ledger.lock"), `${dead} aa00`);
+      let path = join(dir, "ledger.lock");
+      let owner = "aa00";
+      for (let d = 1; d <= depth; d++) {
+        path = `${path}.reclaim.${owner}`;
+        owner = `bb0${d}`;
+        writeFileSync(path, `${dead} ${owner}`);
+      }
+      const l = Ledger.open(dir, { lockTimeoutMs: 3000 });
+      expect(l.append({ kind: "steer", actor: "runner", data: { depth } }).seq).toBe(3);
+      expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+      expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+    }
+  });
+
+  it("keeps one writer at a time: transact's read and append are atomic", () => {
+    const { dir, ledger } = fresh(1);
+    const other = Ledger.open(dir);
+    const seen = ledger.transact((es, add) => {
+      const before = es.length;
+      // Another writer can't get in while we hold the lock.
+      expect(() => Ledger.open(dir, { lockTimeoutMs: 200 }).append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+      const e = add({ kind: "steer", actor: "runner", data: { after: es.length } });
+      return { before, seq: e.seq, after: es.length };
+    });
+    expect(seen).toEqual({ before: 1, seq: 2, after: 2 });
+    expect(other.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
   });
 
   it("times out instead of spinning on a malformed lock", () => {

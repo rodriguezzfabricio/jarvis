@@ -30,11 +30,15 @@ function project() {
   const revision = git(repo, "rev-parse", "HEAD");
   return { id, jarvisHome, projectDir, ledger, store, repo, revision, workRoot: join(root, `work${n}`) };
 }
-const check = (name: string, script: string, p: ReturnType<typeof project>) => {
+/** The completion line a verify phase prints last (decision 76). */
+const COMPLETE = 'echo "JARVIS-CHECK-COMPLETE $(cat "$JARVIS_COMPLETION_FILE")"\n';
+const check = (name: string, script: string, p: ReturnType<typeof project>, verify = COMPLETE) => {
   writeFileSync(join(p.projectDir, "checks", `${name}.sh`), script);
-  return { name, command: `sh "$JARVIS_CHECKS/${name}.sh"`, timeoutMs: 30_000 };
+  writeFileSync(join(p.projectDir, "checks", `${name}.verify.sh`), verify);
+  return { name, command: `sh "$JARVIS_CHECKS/${name}.sh"`, verify: `sh "$JARVIS_CHECKS/${name}.verify.sh"`, timeoutMs: 30_000 };
 };
-const gate = (p: ReturnType<typeof project>, c: { name: string; command: string; timeoutMs: number }, extra = {}) =>
+type Check = ReturnType<typeof check>;
+const gate = (p: ReturnType<typeof project>, c: Check, extra = {}) =>
   runGate({ ledger: p.ledger, store: p.store, projectDir: p.projectDir, jarvisHome: p.jarvisHome, workRoot: p.workRoot, repoPath: p.repo, revision: p.revision, check: c, taskId: "t1", attemptId: "a1", ...extra });
 
 describe("protected checks (decisions 15, 49)", () => {
@@ -125,6 +129,91 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     const c2 = check("killed-int", 'kill -INT $$\nsleep 1\nexit 1\n', p);
     p.store.approve(p.ledger, "v2");
     expect((await gate(p, c2)).status).toBe("fail");
+  });
+
+  // Codex review 6, high: candidate code that exits 0 before the assertions run must never yield a pass.
+  it("fails when candidate code exits 0 before the assertions run", async () => {
+    const drive = '. ./candidate.sh\necho "value=$(answer)" > "$JARVIS_OUT/result"\n';
+    const assert = `grep -qx 'value=42' "$JARVIS_OUT/result" || exit 1\n${COMPLETE}`;
+    for (const [candidate, want] of [
+      ["answer() { echo 42; }\n", "pass"],
+      ["answer() { echo 41; }\n", "fail"],
+      ["exit 0\nanswer() { echo 41; }\n", "fail"], // exits during "import", before anything is observed
+    ] as const) {
+      const p = project();
+      writeFileSync(join(p.repo, "candidate.sh"), candidate);
+      git(p.repo, "add", "-A");
+      git(p.repo, "commit", "-qm", "candidate");
+      const revision = git(p.repo, "rev-parse", "HEAD");
+      const c = check("early-exit", drive, p, assert);
+      p.store.approve(p.ledger, "v1");
+      const r = await gate({ ...p, revision }, c);
+      expect(r.status, candidate).toBe(want);
+    }
+  });
+
+  it("passes only when the assertions run to the end and print this run's completion line", async () => {
+    for (const [verify, want] of [
+      [COMPLETE, "pass"],
+      ["exit 0\n" + COMPLETE, "fail"], // stopped early with status 0
+      ['echo "JARVIS-CHECK-COMPLETE not-the-nonce"\n', "fail"],
+      [COMPLETE + "echo trailing output\n", "fail"],
+      [COMPLETE + "exit 1\n", "fail"],
+    ] as const) {
+      const p = project();
+      const c = check("complete", "exit 0\n", p, verify);
+      p.store.approve(p.ledger, "v1");
+      const r = await gate(p, c);
+      expect(r.status, verify).toBe(want);
+      expect((r.entry.data as { completed: boolean }).completed).toBe(want === "pass" || verify.startsWith(COMPLETE + "exit"));
+    }
+  });
+
+  it("doesn't let candidate output forge the completion line", async () => {
+    const p = project();
+    // The candidate guesses the line and plants it where a naive verify phase echoes it last.
+    const c = check("forge", 'echo "JARVIS-CHECK-COMPLETE $(cat ../../verify/completion 2>/dev/null || echo guess)" > "$JARVIS_OUT/result"\n', p, 'cat "$JARVIS_OUT/result"\n');
+    p.store.approve(p.ledger, "v1");
+    expect((await gate(p, c)).status).toBe("fail");
+  });
+
+  it("refuses a check without a verify phase", async () => {
+    const p = project();
+    const c = { ...check("noverify", "exit 0\n", p), verify: "" };
+    p.store.approve(p.ledger, "v1");
+    expect((await gate(p, c)).status).toBe("error");
+  });
+
+  it("hashes the observations into the evidence", async () => {
+    const p = project();
+    const c = check("obs", 'echo "value=42" > "$JARVIS_OUT/result"\n', p, `grep -qx value=42 result || exit 1\n${COMPLETE}`);
+    p.store.approve(p.ledger, "v1");
+    const r = await gate(p, c);
+    expect(r.status).toBe("pass");
+    const e = p.ledger.entries().at(-1)!;
+    expect(Object.keys((e.data as { evidence: { files: Record<string, string> } }).evidence.files)).toContain("out/result");
+    expect(verifyEvidence(e).ok).toBe(true);
+    writeFileSync(join(r.evidenceDir, "out", "result"), "value=41\n");
+    expect(verifyEvidence(e).ok).toBe(false);
+  });
+
+  it.skipIf(process.platform !== "darwin")("keeps the phases apart: assertions can't read the checkout, the candidate can't read the verify folder", async () => {
+    const p = project();
+    const c = check(
+      "apart",
+      ['pwd > "$JARVIS_OUT/where"', "ls ../../verify > /dev/null 2>&1 && echo SAW-VERIFY", "cat value.txt > /dev/null && echo READ-OWN-CHECKOUT"].join("\n"),
+      p,
+      ['cat "$(cat "$JARVIS_OUT/where")/value.txt" > /dev/null 2>&1 && echo READ-CHECKOUT', 'ls "$(cat "$JARVIS_OUT/where")/../../out" > /dev/null 2>&1 && echo READ-LIVE-OUT', COMPLETE].join("\n"),
+    );
+    p.store.approve(p.ledger, "v1");
+    const r = await gate(p, c);
+    expect(r.status).toBe("pass");
+    const run = readFileSync(join(r.evidenceDir, "stdout.log"), "utf8");
+    const ver = readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8");
+    expect(run).toContain("READ-OWN-CHECKOUT");
+    expect(run).not.toContain("SAW-VERIFY");
+    expect(ver).not.toContain("READ-CHECKOUT");
+    expect(ver).not.toContain("READ-LIVE-OUT");
   });
 
   it("detects edited evidence", async () => {

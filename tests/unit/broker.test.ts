@@ -1,4 +1,6 @@
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Broker, type Adapter, type AdapterResult } from "../../packages/cli/src/broker/broker.ts";
@@ -11,7 +13,7 @@ const root = shortTmp("jtbk-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
 
-function setup(behavior: (payload: unknown) => AdapterResult = () => ({ outcome: "succeeded", detail: { id: "msg-1" } })) {
+function setup(behavior: (payload: unknown) => AdapterResult = () => ({ outcome: "succeeded", detail: { id: "msg-1" } }), before: () => Promise<void> = async () => {}) {
   const dir = join(root, `b${++n}`);
   const ledger = Ledger.open(dir);
   const calls: { op: string; payload: unknown; secret: string | undefined }[] = [];
@@ -19,6 +21,7 @@ function setup(behavior: (payload: unknown) => AdapterResult = () => ({ outcome:
     op,
     async execute(payload, secrets) {
       calls.push({ op, payload, secret: secrets.get("SMTP_PASSWORD") });
+      await before();
       return behavior(payload);
     },
   });
@@ -26,6 +29,20 @@ function setup(behavior: (payload: unknown) => AdapterResult = () => ({ outcome:
   const broker = new Broker({ ledger, project: "freehire", adapters: [adapter("email.send"), adapter("deploy.preview"), adapter("deploy.promote")], secrets: { get: (k) => secrets.get(k) } });
   return { dir, ledger, broker, calls };
 }
+/** Blocks adapters at `wait` until `release`; `reached` resolves when the first one arrives. */
+function barrier() {
+  let release = () => {};
+  let arrived = () => {};
+  const open = new Promise<void>((r) => (release = r));
+  const reached = new Promise<void>((r) => (arrived = r));
+  return { wait: async () => { arrived(); await open; }, reached, release: () => release() };
+}
+function deadPid(): number {
+  const r = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
+  return Number.parseInt(r.stdout, 10);
+}
+const brokerTs = fileURLToPath(new URL("../../packages/cli/src/broker/broker.ts", import.meta.url));
+const ledgerTs = fileURLToPath(new URL("../../packages/cli/src/ledger/ledger.ts", import.meta.url));
 const mail = (body = "Hi Jane, …") => ({ to: "jane@example.com", subject: "Hello", body });
 
 describe("broker: the only path to outside actions (decisions 12, 41)", () => {
@@ -131,12 +148,83 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
     const { dir, broker, calls } = setup();
     const p = await broker.handle({ op: "email.send", payload: mail() });
     broker.decide(p.approvalId!, "approve", "fabricio");
-    // Simulate a crash: an executing intent with no receipt.
-    broker.recordExecuting(p.payloadHash, p.approvalId!, "email.send");
+    // Simulate a crash: an executing intent with no receipt, from a broker process that is gone.
+    broker.recordExecuting(p.payloadHash, p.approvalId!, "email.send", deadPid());
     const again = new Broker({ ledger: Ledger.open(dir), project: "freehire", adapters: [{ op: "email.send", execute: async () => ({ outcome: "succeeded", detail: {} }) }], secrets: { get: () => undefined } });
     expect(again.reconcile()).toBe(1);
     expect((await again.handle({ op: "email.send", payload: mail() })).status).toBe("duplicate");
     expect(calls).toHaveLength(0);
+  });
+
+  // Codex review 6, high: concurrent identical requests must execute an approved payload once.
+  it("executes once when identical requests arrive concurrently on one broker", async () => {
+    const gate = barrier();
+    const { broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    const both = Promise.all([broker.handle({ op: "email.send", payload: mail() }), broker.handle({ op: "email.send", payload: mail() })]);
+    await gate.reached;
+    gate.release();
+    const statuses = (await both).map((r) => r.status).sort();
+    expect(statuses).toEqual(["in_progress", "succeeded"]);
+    expect(calls).toHaveLength(1);
+    expect((await broker.handle({ op: "email.send", payload: mail() })).status).toBe("duplicate");
+  });
+
+  it("executes once across two brokers sharing the ledger, and reconcile leaves a live execution alone", async () => {
+    const gate = barrier();
+    const { dir, broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    const other = new Broker({ ledger: Ledger.open(dir), project: "freehire", adapters: [{ op: "email.send", execute: async () => (calls.push({ op: "email.send", payload: null, secret: undefined }), { outcome: "succeeded", detail: {} }) }], secrets: { get: () => undefined } });
+    const first = broker.handle({ op: "email.send", payload: mail() });
+    await gate.reached;
+    expect((await other.handle({ op: "email.send", payload: mail() })).status).toBe("in_progress");
+    expect(other.reconcile()).toBe(0); // the first broker is alive and executing
+    gate.release();
+    expect((await first).status).toBe("succeeded");
+    expect(calls).toHaveLength(1);
+    const receipts = Ledger.open(dir).entries().filter((e) => e.kind === "broker_receipt");
+    expect(receipts.map((e) => (e.data as { status: string }).status)).toEqual(["succeeded"]);
+  });
+
+  it("executes once when broker processes race on the same approved payload", async () => {
+    const { dir, broker } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    const log = join(dir, "sent.log");
+    const code = `import { appendFileSync } from "node:fs";
+import { Broker } from ${JSON.stringify(brokerTs)};
+import { Ledger } from ${JSON.stringify(ledgerTs)};
+const b = new Broker({ ledger: Ledger.open(${JSON.stringify(dir)}), project: "freehire", secrets: { get: () => undefined },
+  adapters: [{ op: "email.send", execute: async () => { appendFileSync(${JSON.stringify(log)}, process.pid + "\\n"); await new Promise((r) => setTimeout(r, 300)); return { outcome: "succeeded", detail: {} }; } }] });
+const r = await b.handle({ op: "email.send", payload: ${JSON.stringify(mail())} });
+process.stdout.write(r.status);`;
+    const kids = [0, 1, 2, 3].map(() => spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "inherit"] }));
+    const outs = await Promise.all(kids.map((k) => new Promise<string>((r) => { let o = ""; k.stdout.on("data", (d: Buffer) => (o += d)); k.on("close", () => r(o)); })));
+    expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(1);
+    expect(outs.filter((o) => o === "succeeded")).toHaveLength(1);
+    expect(outs.every((o) => ["succeeded", "in_progress", "duplicate"].includes(o))).toBe(true);
+  }, 30_000);
+
+  it("executes once when identical requests arrive concurrently over the socket", async () => {
+    const gate = barrier();
+    const { broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    const sock = join(root, `c${n}.sock`);
+    const server = await startBrokerServer(broker, sock);
+    try {
+      const all = Promise.all([0, 1, 2].map(() => requestBroker(sock, { op: "email.send", payload: mail() })));
+      await gate.reached;
+      await new Promise((r) => setTimeout(r, 200)); // let the other requests reach the broker
+      gate.release();
+      const statuses = (await all).map((r) => r.status).sort();
+      expect(statuses).toEqual(["in_progress", "in_progress", "succeeded"]);
+      expect(calls).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
   });
 
   it("allows preview deploys without asking, but production only with a grant", async () => {

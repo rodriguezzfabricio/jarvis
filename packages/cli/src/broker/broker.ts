@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { canonical, LedgerTamperError, type Ledger, type LedgerEntry } from "../ledger/ledger.ts";
+import { canonical, LedgerTamperError, type AppendInput, type Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 
 /**
  * The broker (decisions 12, 41; architecture §3.6): the only way Jarvis acts outside the computer.
@@ -34,7 +34,7 @@ export interface BrokerRequest {
   payload: unknown;
 }
 
-export type BrokerStatus = "pending" | "succeeded" | "failed" | "unknown" | "rejected" | "duplicate" | "invalid" | "error";
+export type BrokerStatus = "pending" | "in_progress" | "succeeded" | "failed" | "unknown" | "rejected" | "duplicate" | "invalid" | "error";
 
 export interface BrokerResponse {
   status: BrokerStatus;
@@ -82,8 +82,26 @@ function summarize(op: Op, payload: unknown): string {
 
 type D = Record<string, unknown>;
 
+type Notify = { approvalId: string; op: Op; summary: string };
+type Claim = { kind: "answer"; response: BrokerResponse; notify?: Notify } | { kind: "execute"; executionSeq: number; approvalId: string | null };
+
+function executingIntent(hash: string, approvalId: string | null, op: string, pid: number, instance: string) {
+  return { phase: "executing", payloadHash: hash, approvalId, op, pid, instance };
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 export class Broker {
   private readonly o: BrokerOptions;
+  /** Identifies this broker's intents in the ledger. */
+  readonly instance = randomUUID();
   constructor(o: BrokerOptions) {
     this.o = o;
   }
@@ -106,24 +124,28 @@ export class Broker {
     this.o.ledger.append({ kind: "grant", actor: "runner", data: { op, scope, by } });
   }
 
-  /** Test seam for crash simulation; production code calls it only from handle(). */
-  recordExecuting(hash: string, approvalId: string | null, op: string): LedgerEntry {
-    return this.o.ledger.append({ kind: "broker_request", actor: "broker", data: { phase: "executing", payloadHash: hash, approvalId, op } });
+  /** Test seam for crash simulation; production code writes intents only from handle(). */
+  recordExecuting(hash: string, approvalId: string | null, op: string, pid = process.pid): LedgerEntry {
+    return this.o.ledger.append({ kind: "broker_request", actor: "broker", data: executingIntent(hash, approvalId, op, pid, this.instance) });
   }
 
-  /** On start: requests that were executing when the runner died get an "unknown" receipt. */
+  /**
+   * On start: requests that were executing when their broker died get an "unknown" receipt. An intent
+   * whose broker process is still alive is in flight, not orphaned, and is left alone.
+   */
   reconcile(): number {
-    const es = this.entries();
-    const done = new Set(es.filter((e) => e.kind === "broker_receipt").map((e) => (e.data as D).executionSeq));
-    let n = 0;
-    for (const e of es) {
-      const d = e.data as D;
-      if (e.kind === "broker_request" && d.phase === "executing" && !done.has(e.seq)) {
-        this.o.ledger.append({ kind: "broker_receipt", actor: "broker", data: { executionSeq: e.seq, payloadHash: d.payloadHash, op: d.op, status: "unknown", detail: { reason: "the runner stopped while this was executing" } } });
+    return this.o.ledger.transact((es, add) => {
+      const done = new Set(es.filter((e) => e.kind === "broker_receipt").map((e) => (e.data as D).executionSeq));
+      let n = 0;
+      for (const e of es) {
+        const d = e.data as D;
+        if (e.kind !== "broker_request" || d.phase !== "executing" || done.has(e.seq)) continue;
+        if (typeof d.pid === "number" && pidAlive(d.pid)) continue;
+        add({ kind: "broker_receipt", actor: "broker", data: { executionSeq: e.seq, payloadHash: d.payloadHash, op: d.op, status: "unknown", detail: { reason: "the broker stopped while this was executing" } } });
         n++;
       }
-    }
-    return n;
+      return n;
+    });
   }
 
   async handle(req: BrokerRequest): Promise<BrokerResponse> {
@@ -136,48 +158,66 @@ export class Broker {
     const hash = payloadHash(op, payload);
     const adapter = this.o.adapters.find((a) => a.op === op);
     try {
-      const es = this.entries(); // throws on tampering: fail closed
-      // Never execute a payload twice: succeeded or unknown stays final.
-      const receipts = es.filter((e) => e.kind === "broker_receipt" && (e.data as D).payloadHash === hash);
-      const final = receipts.find((e) => ["succeeded", "unknown"].includes((e.data as D).status as string));
-      if (final) return { status: "duplicate", payloadHash: hash, message: `already ${(final.data as D).status} (seq ${final.seq})`, receipt: final.data };
-
-      let approvalId: string | null = null;
-      if (!spec.autoAllow) {
-        const granted = spec.grantable && es.some((e) => e.kind === "grant" && (e.data as D).op === op && ((e.data as D).scope as D)?.project === this.o.project);
-        if (!granted) {
-          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);
-          const last = answers.at(-1);
-          if (last && (last.data as D).decision === "reject") return { status: "rejected", payloadHash: hash, approvalId: (last.data as D).approvalId as string, message: "rejected by a person" };
-          if (!last) {
-            const open = es.find((e) => e.kind === "approval_request" && (e.data as D).payloadHash === hash);
-            if (open) return { status: "pending", payloadHash: hash, approvalId: (open.data as D).approvalId as string, message: "waiting for approval" };
-            const id = randomUUID();
-            const summary = summarize(op, payload);
-            this.o.ledger.append({ kind: "approval_request", actor: "broker", data: { approvalId: id, op, payloadHash: hash, summary, payload } });
-            this.o.onApprovalRequest?.({ approvalId: id, op, summary });
-            return { status: "pending", payloadHash: hash, approvalId: id, message: "approval requested" };
-          }
-          approvalId = (last.data as D).approvalId as string;
-        }
+      // Check and claim in one step under the ledger's writer lock (Codex stage 0 review 6): two
+      // identical requests, from this broker or another, can't both see "approved, not yet done".
+      const step = this.o.ledger.transact((es, add) => this.claim(es, add, op, spec, payload, hash, adapter !== undefined));
+      if (step.kind === "answer") {
+        if (step.notify) this.o.onApprovalRequest?.(step.notify);
+        return step.response;
       }
-      if (!adapter) return { status: "error", payloadHash: hash, message: `no adapter for ${op}` };
-
-      // Intent first: if we die after this line, reconcile() marks it unknown and it is never retried.
-      // Its own entry's seq, not the ledger's last: another writer may append in between.
-      const executionSeq = this.recordExecuting(hash, approvalId, op).seq;
+      const { executionSeq, approvalId } = step;
       let result: AdapterResult;
       try {
-        result = await adapter.execute(payload, this.o.secrets);
+        result = await adapter!.execute(payload, this.o.secrets);
       } catch (err) {
         result = { outcome: "unknown", detail: { reason: `adapter error during execution: ${String(err).slice(0, 300)}` } };
       }
       const receipt = { executionSeq, payloadHash: hash, op, approvalId, status: result.outcome, detail: result.detail };
-      this.o.ledger.append({ kind: "broker_receipt", actor: "broker", data: receipt });
-      return { status: result.outcome, payloadHash: hash, ...(approvalId ? { approvalId } : {}), message: result.outcome, receipt };
+      const written = this.o.ledger.transact((es, add) => {
+        // One receipt per execution: if something already settled it, that receipt stands.
+        const prior = es.find((e) => e.kind === "broker_receipt" && (e.data as D).executionSeq === executionSeq);
+        return prior ? (prior.data as typeof receipt) : (add({ kind: "broker_receipt", actor: "broker", data: receipt }), receipt);
+      });
+      return { status: written.status, payloadHash: hash, ...(approvalId ? { approvalId } : {}), message: written.status, receipt: written };
     } catch (err) {
       if (err instanceof LedgerTamperError) return { status: "error", payloadHash: hash, message: "ledger failed verification: refusing all actions" };
       throw err;
     }
+  }
+
+  /** The decision for one request, taken and recorded under the ledger lock. Synchronous by design. */
+  private claim(es: readonly LedgerEntry[], add: (i: AppendInput) => LedgerEntry, op: Op, spec: (typeof CATALOG)[Op], payload: unknown, hash: string, hasAdapter: boolean): Claim {
+    const answer = (response: BrokerResponse, notify?: Notify): Claim => ({ kind: "answer", response, ...(notify ? { notify } : {}) });
+    // Never execute a payload twice: succeeded or unknown stays final.
+    const receipts = es.filter((e) => e.kind === "broker_receipt" && (e.data as D).payloadHash === hash);
+    const final = receipts.find((e) => ["succeeded", "unknown"].includes((e.data as D).status as string));
+    if (final) return answer({ status: "duplicate", payloadHash: hash, message: `already ${(final.data as D).status} (seq ${final.seq})`, receipt: final.data });
+    // An execution without a receipt is still running (or awaits reconciliation): never start another.
+    const settled = new Set(receipts.map((e) => (e.data as D).executionSeq));
+    const running = es.find((e) => e.kind === "broker_request" && (e.data as D).phase === "executing" && (e.data as D).payloadHash === hash && !settled.has(e.seq));
+    if (running) return answer({ status: "in_progress", payloadHash: hash, message: `already executing (seq ${running.seq}); it runs once` });
+
+    let approvalId: string | null = null;
+    if (!spec.autoAllow) {
+      const granted = spec.grantable && es.some((e) => e.kind === "grant" && (e.data as D).op === op && ((e.data as D).scope as D)?.project === this.o.project);
+      if (!granted) {
+        const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);
+        const last = answers.at(-1);
+        if (last && (last.data as D).decision === "reject") return answer({ status: "rejected", payloadHash: hash, approvalId: (last.data as D).approvalId as string, message: "rejected by a person" });
+        if (!last) {
+          const open = es.find((e) => e.kind === "approval_request" && (e.data as D).payloadHash === hash);
+          if (open) return answer({ status: "pending", payloadHash: hash, approvalId: (open.data as D).approvalId as string, message: "waiting for approval" });
+          const id = randomUUID();
+          const summary = summarize(op, payload);
+          add({ kind: "approval_request", actor: "broker", data: { approvalId: id, op, payloadHash: hash, summary, payload } });
+          return answer({ status: "pending", payloadHash: hash, approvalId: id, message: "approval requested" }, { approvalId: id, op, summary });
+        }
+        approvalId = (last.data as D).approvalId as string;
+      }
+    }
+    if (!hasAdapter) return answer({ status: "error", payloadHash: hash, message: `no adapter for ${op}` });
+    // Intent first: if the broker dies after this, reconcile() marks it unknown and it is never retried.
+    const intent = add({ kind: "broker_request", actor: "broker", data: executingIntent(hash, approvalId, op, process.pid, this.instance) });
+    return { kind: "execute", executionSeq: intent.seq, approvalId };
   }
 }

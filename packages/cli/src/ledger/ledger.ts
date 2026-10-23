@@ -12,7 +12,6 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -183,8 +182,15 @@ export class Ledger {
   }
 
   append(input: AppendInput): LedgerEntry {
-    if (!(KINDS as readonly string[]).includes(input.kind)) throw new Error(`unknown ledger kind: ${String(input.kind)}`);
-    if (!(ACTORS as readonly string[]).includes(input.actor)) throw new Error(`unknown ledger actor: ${String(input.actor)}`);
+    return this.transact((_entries, add) => add(input));
+  }
+
+  /**
+   * Reads the verified entries and appends under the writer lock, in one step, so a decision taken
+   * from what the ledger holds can't race another writer, in this process or another (Codex stage 0
+   * review 6: the broker's check-and-claim). `fn` must be synchronous; `entries` includes what it appends.
+   */
+  transact<T>(fn: (entries: readonly LedgerEntry[], append: (input: AppendInput) => LedgerEntry) => T): T {
     return this.withLock(() => {
       const path = join(this.dir, FILE);
       // Repair a torn final line: it was never fsynced-and-acknowledged.
@@ -199,29 +205,37 @@ export class Ledger {
       }
       const v = verifyLedger(this.dir);
       if (!v.ok) throw new LedgerTamperError(`refusing to append: ${v.problems.join("; ")}`);
-      const last = v.entries.at(-1);
+      const list = [...v.entries];
       // Repair a lagging head durably before extending the chain, so a second crash can't leave it two behind.
-      if (last && v.repairable.includes("head lags by one entry")) this.writeHead(last.hash);
-      const base: Omit<LedgerEntry, "hash"> = {
-        seq: (last?.seq ?? 0) + 1,
-        ts: new Date().toISOString(),
-        kind: input.kind,
-        actor: input.actor,
-        task_id: input.task_id ?? null,
-        attempt_id: input.attempt_id ?? null,
-        data: input.data,
-        prev_hash: last?.hash ?? GENESIS,
+      const lastNow = list.at(-1);
+      if (lastNow && v.repairable.includes("head lags by one entry")) this.writeHead(lastNow.hash);
+      const add = (input: AppendInput): LedgerEntry => {
+        if (!(KINDS as readonly string[]).includes(input.kind)) throw new Error(`unknown ledger kind: ${String(input.kind)}`);
+        if (!(ACTORS as readonly string[]).includes(input.actor)) throw new Error(`unknown ledger actor: ${String(input.actor)}`);
+        const last = list.at(-1);
+        const base: Omit<LedgerEntry, "hash"> = {
+          seq: (last?.seq ?? 0) + 1,
+          ts: new Date().toISOString(),
+          kind: input.kind,
+          actor: input.actor,
+          task_id: input.task_id ?? null,
+          attempt_id: input.attempt_id ?? null,
+          data: input.data,
+          prev_hash: last?.hash ?? GENESIS,
+        };
+        const entry: LedgerEntry = { ...base, hash: entryHash(base) };
+        const fd = openSync(path, "a", 0o600);
+        try {
+          writeAll(fd, `${JSON.stringify(entry)}\n`, this.opts.write);
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+        this.writeHead(entry.hash);
+        list.push(entry);
+        return entry;
       };
-      const entry: LedgerEntry = { ...base, hash: entryHash(base) };
-      const fd = openSync(path, "a", 0o600);
-      try {
-        writeAll(fd, `${JSON.stringify(entry)}\n`, this.opts.write);
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      this.writeHead(entry.hash);
-      return entry;
+      return fn(list, add);
     });
   }
 
@@ -244,85 +258,112 @@ export class Ledger {
   }
 
   /**
-   * Writer lock (Codex stage 0 review 5). The lock file is created fully initialized in one atomic step
-   * (a temp file holding "pid nonce", hard-linked into place), so it is never empty or half-written.
-   * A lock whose pid is dead is reclaimed only by whoever wins an exclusive per-instance marker
-   * (ledger.lock.reclaim.<nonce>). Its owner is dead, and every other reclaimer is shut out by the
-   * marker, so the instance can only be removed once, and never a replacement lock. The deadline is
-   * checked on every path.
+   * Writer lock (Codex stage 0 reviews 5 and 6). Every lock file, and every reclaim marker, is created
+   * fully initialized in one atomic step (a temp file holding "pid nonce", hard-linked into place), so
+   * none is ever empty or half-written, and each names its owner.
+   *
+   * A lock whose owner is dead is removed only by whoever wins its exclusive marker
+   * (ledger.lock.reclaim.<nonce>), and only while it is still that same instance, so a replacement lock
+   * is never removed. A reclaimer that dies holding a marker is a dead owner too, and its marker is
+   * recovered the same way one level down (ledger.lock.reclaim.<nonce>.reclaim.<nonce2>), so a crash at
+   * any step leaves nothing that blocks later writers. The deadline is checked on every path.
    */
   private withLock<T>(fn: () => T): T {
     const lock = join(this.dir, LOCK);
     const nonce = randomBytes(12).toString("hex");
-    const deadline = Date.now() + (this.opts.lockTimeoutMs ?? 30_000);
-    const tryCreate = (): boolean => {
-      const tmp = join(this.dir, `${LOCK}.tmp-${nonce}`);
-      const fd = openSync(tmp, "w", 0o600);
-      try {
-        writeAll(fd, `${process.pid} ${nonce}`);
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      try {
-        linkSync(tmp, lock);
-        return true;
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
-        throw e;
-      } finally {
-        rmSync(tmp, { force: true });
-      }
-    };
-    const holder = (): { pid: number; nonce: string } | undefined => {
-      try {
-        const [pid, n] = readFileSync(lock, "utf8").trim().split(" ");
-        return { pid: Number.parseInt(pid ?? "", 10), nonce: n ?? "" };
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-        throw e;
-      }
-    };
+    const timeout = this.opts.lockTimeoutMs ?? 30_000;
+    const deadline = Date.now() + timeout;
     for (;;) {
-      if (Date.now() > deadline) throw new Error(`ledger lock not acquired within ${this.opts.lockTimeoutMs ?? 30_000} ms`);
-      if (tryCreate()) break;
-      const h = holder();
-      if (h && Number.isFinite(h.pid) && h.nonce && !pidAlive(h.pid)) {
-        const marker = join(this.dir, `${LOCK}.reclaim.${h.nonce}`);
-        let claimed = false;
-        try {
-          const fd = openSync(marker, "wx", 0o600);
-          closeSync(fd);
-          claimed = true;
-        } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-        }
-        if (claimed) {
-          this.opts.onLockStep?.("reclaim-claimed");
-          const again = holder();
-          this.opts.onLockStep?.("before-unlink");
-          if (again && again.nonce === h.nonce) rmSync(lock, { force: true });
-          continue;
-        }
-      }
-      sleepMs(2 + Math.floor(Math.random() * 5));
+      if (Date.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
+      if (this.createOwned(lock, nonce)) break;
+      const h = readOwner(lock);
+      if (h && !pidAlive(h.pid)) this.reclaim(lock, h, 0);
+      else sleepMs(2 + Math.floor(Math.random() * 5));
     }
     try {
       return fn();
     } finally {
-      // Release only our own lock.
-      if (holder()?.nonce === nonce) rmSync(lock, { force: true });
-      for (const f of readdirSync(this.dir)) {
-        if (f.startsWith(`${LOCK}.reclaim.`)) {
-          try {
-            if (Date.now() - statSync(join(this.dir, f)).mtimeMs > 600_000) rmSync(join(this.dir, f), { force: true });
-          } catch {
-            // already gone
-          }
-        }
+      if (readOwner(lock)?.nonce === nonce) {
+        this.sweepMarkers(nonce);
+        rmSync(lock, { force: true }); // release only our own lock
       }
     }
   }
+
+  /** Creates `path` holding "pid nonce" in one atomic step; false if it already exists. */
+  private createOwned(path: string, nonce: string): boolean {
+    const tmp = join(this.dir, `${LOCK}.tmp-${randomBytes(8).toString("hex")}`);
+    const fd = openSync(tmp, "wx", 0o600);
+    try {
+      writeAll(fd, `${process.pid} ${nonce}`);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    try {
+      linkSync(tmp, path);
+      return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw e;
+    } finally {
+      rmSync(tmp, { force: true });
+    }
+  }
+
+  /** Removes the instance of `path` that the dead owner `h` holds, at most once (see withLock). */
+  private reclaim(path: string, h: Owner, depth: number): void {
+    if (depth > 16) return;
+    const marker = `${path}.reclaim.${h.nonce}`;
+    const mine = randomBytes(12).toString("hex");
+    if (this.createOwned(marker, mine)) {
+      try {
+        if (depth === 0) this.opts.onLockStep?.("reclaim-claimed");
+        const again = readOwner(path);
+        if (depth === 0) this.opts.onLockStep?.("before-unlink");
+        if (again && again.nonce === h.nonce) rmSync(path, { force: true });
+      } finally {
+        if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
+      }
+      return;
+    }
+    const m = readOwner(marker);
+    if (m && !pidAlive(m.pid)) this.reclaim(marker, m, depth + 1);
+    else sleepMs(2 + Math.floor(Math.random() * 5));
+  }
+
+  /**
+   * Markers left by reclaimers that died after removing their lock refer to lock instances that no
+   * longer exist. While we hold the lock, any marker for another instance is inert, so remove it.
+   */
+  private sweepMarkers(ours: string): void {
+    const prefix = `${LOCK}.reclaim.`;
+    for (const f of readdirSync(this.dir)) {
+      if (!f.startsWith(prefix) || f.includes(".tmp-")) continue;
+      if (f.slice(prefix.length).split(".")[0] === ours) continue;
+      rmSync(join(this.dir, f), { force: true });
+    }
+  }
+}
+
+interface Owner {
+  pid: number;
+  nonce: string;
+}
+
+/** The "pid nonce" owner record of a lock or marker; undefined if it's gone or unreadable. */
+function readOwner(path: string): Owner | undefined {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw e;
+  }
+  const m = /^(\d+) ([0-9a-f]+)$/.exec(text.trim());
+  if (!m) return undefined;
+  const pid = Number.parseInt(m[1]!, 10);
+  return pid > 0 ? { pid, nonce: m[2]! } : undefined;
 }
 
 /** Writes a value to a file the way the ledger does: temp file, fsync, rename. */

@@ -59,6 +59,29 @@ describe("ledger under faults", () => {
     }
   }, 120_000);
 
+  // Codex review 6, medium: a reclaimer SIGKILLed while holding its marker, then a normal writer.
+  it("recovers from a reclaimer killed at reclaim-claimed, keeping every acknowledged entry", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const dir = join(root, "reclaim-kill");
+    const l = Ledger.open(dir);
+    const acked = [l.append({ kind: "steer", actor: "runner", data: { i: 0 } }).hash, l.append({ kind: "steer", actor: "runner", data: { i: 1 } }).hash];
+    writeFileSync(join(dir, "ledger.lock"), `999999 dead77`);
+    const code = `import { Ledger } from ${JSON.stringify(ledgerTs)};
+const l = Ledger.open(${JSON.stringify(dir)}, { onLockStep: (s) => { if (s === "reclaim-claimed") process.kill(process.pid, "SIGKILL"); } });
+l.append({ kind: "steer", actor: "runner", data: { never: true } });`;
+    const victim = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "inherit", "inherit"] });
+    const sig = await new Promise((r) => victim.on("close", (_c, s) => r(s)));
+    expect(sig).toBe("SIGKILL");
+    const { readdirSync } = await import("node:fs");
+    expect(readdirSync(dir)).toContain("ledger.lock.reclaim.dead77"); // the stranded marker
+    const next = Ledger.open(dir, { lockTimeoutMs: 5000 }).append({ kind: "steer", actor: "runner", data: { i: 2 } });
+    expect(next.seq).toBe(3);
+    const v = verifyLedger(dir);
+    expect(v).toMatchObject({ ok: true, repairable: [] });
+    for (const h of acked) expect(v.entries.map((e) => e.hash)).toContain(h);
+    expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+  }, 30_000);
+
   it("serializes concurrent writers into one valid chain", async () => {
     const dir = join(root, "concurrent");
     Ledger.open(dir);

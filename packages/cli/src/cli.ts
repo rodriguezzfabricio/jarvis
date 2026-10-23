@@ -69,7 +69,7 @@ evalCmd
 
 program
   .command("act")
-  .description("Ask the broker to perform an outside action (decision 12). Exit: 0 done, 2 pending approval, 3 rejected, 4 failed, 5 unknown, 6 duplicate, 7 invalid, 8 error")
+  .description("Ask the broker to perform an outside action (decision 12). Exit: 0 done, 2 pending approval or already executing, 3 rejected, 4 failed, 5 unknown, 6 duplicate, 7 invalid, 8 error")
   .argument("<operation>", "e.g. email.send, deploy.preview, deploy.promote")
   .option("--json <payload>", "the payload as JSON")
   .option("--payload-file <path>", "read the payload from a JSON file")

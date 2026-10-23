@@ -30,5 +30,5 @@ export function requestBroker(socketPath: string, req: BrokerRequest, timeoutMs 
 
 /** Exit codes for `jarvis act`, so scripts and agents can branch without parsing text. */
 export const ACT_EXIT: Record<BrokerResponse["status"], number> = {
-  succeeded: 0, pending: 2, rejected: 3, failed: 4, unknown: 5, duplicate: 6, invalid: 7, error: 8,
+  succeeded: 0, pending: 2, in_progress: 2, rejected: 3, failed: 4, unknown: 5, duplicate: 6, invalid: 7, error: 8,
 };

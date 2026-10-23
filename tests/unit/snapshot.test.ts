@@ -215,6 +215,54 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     }
   });
 
+  // Codex review 6, high: credentials encoded by their containing format, and credential-named fields.
+  it("refuses credentials hidden by JSON, YAML or percent encoding, and literal credential fields", async () => {
+    const cases: Record<string, string> = {
+      "slash-escaped.json": '{"db": "postgres:\\/\\/svc:Synthetic9qvM2@db.prod.acme.net\\/app"}\n',
+      "unicode-escaped.json": '{"db": "postgres:\\u002F\\u002Fsvc:Synthetic9qvM2\\u0040db.prod.acme.net/app"}\n',
+      "escaped.yaml": 'db: "postgres:\\x2F\\x2Fsvc:Synthetic9qvM2@db.prod.acme.net/app"\n',
+      "escaped-token.json": '{"k": "\\u0067hp_abcdefghijklmnopqrstuvwxyz0123456789"}\n',
+      "percent.yaml": "db: postgres%3A%2F%2Fsvc%3ASynthetic9qvM2%40db.prod.acme.net/app\n",
+      "password-field.json": '{"database": {"host": "db.prod.acme.net", "password": "Synthetic9qvM2"}}\n',
+      "camel-secret.json": '{"oauth": {"clientSecret": "q8Zr2vLm0Tx"}}\n',
+      "token-field.yaml": "slack:\n  bot_token: 9f8e7d6c5b4a\n",
+      "api-key.toml": '[service]\napi_key = "Synthetic9qvM2"\n',
+      "jsonc-password.json": '// comments make this JSONC\n{\n  "password": "Synthetic9qvM2",\n}\n',
+      "settings.ini": "[db]\npassword=Synthetic9qvM2\n",
+      ".npmrc": "//registry.npmjs.org/:_authToken=Synthetic9qvM2abc\n",
+      ".netrc": "machine api.acme.net login svc password Synthetic9qvM2\n",
+      "compose-default.yml": "services:\n  app:\n    environment:\n      JWT_SECRET: \"${JWT_SECRET:-Synthetic9qvM2}\"\n",
+      "master-key.yml": "search:\n  MEILI_MASTER_KEY: q8Zr2vLm0Tx\n",
+    };
+    for (const [name, content] of Object.entries(cases)) {
+      const repo = join(root, `srcE-${name}`);
+      mkdirSync(repo, { recursive: true });
+      git(repo, "init", "-q", "-b", "main");
+      git(repo, "config", "user.email", "t@t");
+      git(repo, "config", "user.name", "t");
+      writeFileSync(join(repo, name), content);
+      git(repo, "add", "-A");
+      git(repo, "commit", "-qm", "c");
+      const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapE-${name}`) }).then(() => "", (e: Error) => e.message);
+      expect(err, name).toContain(name);
+    }
+  });
+
+  it("keeps configuration whose credential fields are empty, references or placeholders", async () => {
+    const repo = join(root, "srcInert");
+    mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+    git(repo, "init", "-q", "-b", "main");
+    git(repo, "config", "user.email", "t@t");
+    git(repo, "config", "user.name", "t");
+    writeFileSync(join(repo, "package.json"), '{"name": "app", "author": "Fabricio", "scripts": {"test": "vitest"}, "max_tokens": 400}\n');
+    writeFileSync(join(repo, "config.json"), '{"auth": true, "password": "", "token": null, "apiKey": "${API_KEY}", "clientSecret": "${CLIENT_SECRET:-}", "secret": "<secret>", "passwordMinLength": 8, "url": "https:\\/\\/example.com\\/x"}\n');
+    writeFileSync(join(repo, ".github", "workflows", "ci.yml"), "jobs:\n  t:\n    env:\n      token: ${{ secrets.GITHUB_TOKEN }}\n      password: changeme\n");
+    writeFileSync(join(repo, "app.toml"), 'password = ""\ntoken = "{{ vault_token }}"\n');
+    git(repo, "add", "-A");
+    git(repo, "commit", "-qm", "c");
+    await expect(createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapInert") })).resolves.toMatchObject({ redactions: [] });
+  });
+
   it("redacts URLs whose password contains an apostrophe, in .env files", () => {
     const r = redactEnvText("CONNECTION_URL=rediss://:Syn'thetic9qvM2@cache.prod.acme.net:6380/0\nDB=postgres://svc:N7q'4QmV8@db.prod.acme.net/app\n");
     expect(r.text).not.toContain("thetic9qvM2");

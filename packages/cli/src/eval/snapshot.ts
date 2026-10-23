@@ -170,6 +170,95 @@ export function scanViews(buf: Buffer): string[] {
   return views;
 }
 
+/** Decodes one quoted literal's escapes (JSON, YAML double-quoted, TOML basic, JS): \/ \uXXXX \u{…} \UXXXXXXXX \xXX \n … */
+export function decodeEscapes(body: string): string {
+  return body.replace(/\\(u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([\s\S]))/g, (_m, _all, cp: string, u4: string, u8: string, x2: string, ch: string) => {
+    const hex = cp ?? u4 ?? u8 ?? x2;
+    if (hex !== undefined) {
+      const n = Number.parseInt(hex, 16);
+      return n <= 0x10ffff ? String.fromCodePoint(n) : "";
+    }
+    return ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "0": "\0" } as Record<string, string>)[ch] ?? ch;
+  });
+}
+
+/**
+ * Text views with the containing format's encoding undone (Codex stage 0 review 6): every quoted
+ * literal that has escapes, decoded (so "postgres:\/\/u:p@host" or / reads as a URL), and the
+ * whole text percent-decoded when it holds percent-encoded URL syntax.
+ */
+export function decodedViews(text: string): string[] {
+  const views: string[] = [];
+  const lits: string[] = [];
+  for (const m of text.matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'/g)) {
+    const body = m[1] ?? m[2] ?? "";
+    if (body.includes("\\")) lits.push(decodeEscapes(body));
+  }
+  if (lits.length) views.push(lits.join("\n"));
+  if (/%(3a|2f|40)/i.test(text)) views.push(text.replace(/%([0-9a-fA-F]{2})/g, (_m, h: string) => String.fromCharCode(Number.parseInt(h, 16))));
+  return views;
+}
+
+/** Configuration files whose fields are inspected by name, not only by pattern. */
+const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfvars|plist|xml|npmrc|pypirc|netrc)|^\.?(npmrc|pypirc|netrc|pgpass))$/i;
+/**
+ * Field names that hold a credential, after camelCase is split (clientSecret → client_secret). Narrower
+ * than the dotenv rule: "author" or "auth: true" are not credentials, but any *_token, *_secret,
+ * password or api key holding a literal value is.
+ */
+const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|credentials?|connection_string|dsn)$/;
+
+function fieldName(raw: string): string {
+  const last = raw.split(/[/:.[\]]/).filter((x) => x !== "").at(-1) ?? raw;
+  return last.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_").replace(/^_+/, "").toLowerCase();
+}
+
+/** A field value that is clearly not a literal credential: empty, a template or reference, a placeholder word, or a non-string scalar. */
+export function isInertValue(raw: string): boolean {
+  const v = raw.trim();
+  if (v === "" || /^(null|nil|none|~|true|false|yes|no|on|off)$/i.test(v) || /^-?\d+(\.\d+)?$/.test(v)) return true;
+  // A reference with a default (${DB_PASSWORD:-hunter2}) is only as inert as its default.
+  const ref = /^\$\{[A-Za-z_]\w*(?::?[-=](.*))?\}$/.exec(v);
+  if (ref) return ref[1] === undefined || isInertValue(ref[1]);
+  if (/^\$\{\{.*\}\}$/.test(v) || /^\{\{.*\}\}$/.test(v) || /^%\([A-Za-z_]\w*\)s$/.test(v)) return true;
+  if (/^(env|ENV)\(|^process\.env\.|^os\.environ|^!(env|Ref|Sub|GetAtt|ImportValue)\b|^(secretref|vault|op|aws-sm|gcp-sm):/.test(v)) return true;
+  if (/^(password|passwd|pass|secret|token|api[ _-]?key|changeme|example|test|testing|dummy|placeholder|redacted|your[_-][\w-]*|x{3,})$/i.test(v)) return true;
+  return isPlaceholderPassword(v);
+}
+
+/** Credential-named fields with literal values in a configuration file (JSON parsed; other formats line by line). */
+export function findSecretFields(name: string, text: string): string[] {
+  if (!CONFIG_FILE.test(name)) return [];
+  const hits = new Set<string>();
+  const consider = (key: string, value: unknown) => {
+    if (typeof value === "string" && SECRET_FIELD.test(fieldName(key)) && !isInertValue(value)) hits.add(key);
+  };
+  if (/\.json$/i.test(name)) {
+    try {
+      const walk = (v: unknown, key = "") => {
+        if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+        else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k);
+        else consider(key, v);
+      };
+      walk(JSON.parse(text));
+      return [...hits].map((k) => `credential field "${k}"`);
+    } catch {
+      // not strict JSON (comments, trailing commas): read it line by line like the other formats
+    }
+  }
+  for (const line of text.split("\n")) {
+    const m = /^\s*(?:-\s+)?["']?([^"'=:#;\s][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*,?\s*$/.exec(line);
+    if (!m) continue;
+    let value = m[2] ?? "";
+    if (/^\s*[#;]/.test(value) || value === "|" || value === ">" || value === "{" || value === "[") continue;
+    const q = value[0];
+    if ((q === '"' || q === "'") && value.lastIndexOf(q) > 0) value = q === '"' ? decodeEscapes(value.slice(1, value.lastIndexOf(q))) : value.slice(1, value.lastIndexOf(q));
+    else value = value.replace(/\s+[#;].*$/, "");
+    consider(m[1] ?? "", value);
+  }
+  return [...hits].map((k) => `credential field "${k}"`);
+}
+
 /** Files larger than this are refused unless a person allowlisted them. */
 export const MAX_SCAN_BYTES = 64 * 1024 * 1024;
 
@@ -251,6 +340,10 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
       found.push(`${rel} (binary private key)`);
       continue;
     }
+    if (/^(\.|_)?(netrc|pgpass)$/.test(name)) {
+      found.push(`${rel} (credential file; needs review)`);
+      continue;
+    }
     if (CREDENTIAL_CONTAINERS.test(name) && (buf.includes(0) || !/^-----BEGIN /.test(buf.toString("latin1", 0, 11)))) {
       found.push(`${rel} (credential container; needs review)`);
       continue;
@@ -274,7 +367,9 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
         throw e;
       }
     }
-    const hits = new Set(scanViews(readFileSync(p)).flatMap(findCredentials));
+    const views = scanViews(readFileSync(p));
+    const hits = new Set([...views, ...views.flatMap(decodedViews)].flatMap(findCredentials));
+    if (!/^\.env(\..+)?$/.test(name)) for (const h of findSecretFields(name, views[0] ?? "")) hits.add(h);
     if (hits.size) found.push(`${rel} (${[...hits].join(", ")})`);
   }
   if (found.length) {

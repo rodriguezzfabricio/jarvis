@@ -686,6 +686,18 @@ The fix for Codex review 5 finding 3 had two layers: a `--no-local` clone with `
 *Why:* every safeguard needs a test that fails without it (AGENTS.md). The mutation check reported "gate clones without hash verification" and "gate skips fsck" as surviving.
 *From:* stage 1 mutation check, Oct 23.
 
+### 76. A check's assertions never run in a process that runs candidate code (new; Oct 23, after Codex review 6)
+Codex review 6 showed that a gate trusting exit 0 can be passed by candidate code that exits 0 while it's being imported, before any assertion runs. A check that imports the candidate and asserts in the same process can't be made safe: the candidate controls that process. So every protected check has two phases, each in its own sandbox:
+- **`command` runs the candidate** (imports it, starts it, drives it) on the verified checkout, and writes what it observed to `$JARVIS_OUT`. It must exit 0 on its own.
+- **`verify` holds the assertions** and runs no candidate code. It reads only the protected checks and a copy of the observations (regular files, size-capped), made after the first phase ended in a folder the first phase can't write. It can't read the checkout.
+- **It proves it ran to the end.** Its last line must be `JARVIS-CHECK-COMPLETE <nonce>`, with a nonce written only after the first phase ended, in a folder the first phase's sandbox can't read. Candidate output that plants a guessed completion line, or a verify script that stops early with status 0, fails.
+- **A pass needs all of it:** the first phase exits 0 without a timeout or signal, every observation was copied, and the verify phase exits 0 with the completion line. The observations are hashed into the evidence with both phases' output.
+- **Writing checks this way:** acceptance checks drive the candidate as a black box (its CLI, HTTP API or UI) and record results; in-process unit tests are the agent's own tests, not protected checks. A protected suite that must import code serializes per-case results to `$JARVIS_OUT` and lists the expected cases in its verify phase, which rejects a missing or extra case.
+- **Known limit:** a daemon that escapes the first phase's process group keeps that phase's sandbox. It can't read the nonce or write the observations copy, so it can't forge a pass, but it can waste resources until the runner's next cleanup (backlog #13).
+
+*Why:* only the runner makes evidence (decision 49), and evidence the candidate can forge isn't evidence.
+*From:* Codex stage 0 review 6, high finding 3.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

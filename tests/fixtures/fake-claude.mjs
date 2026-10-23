@@ -37,6 +37,15 @@ if (mode === "lazy") {
   process.exit(0);
 }
 
+if (mode === "baseline") {
+  writeFileSync("app.txt", `built for: ${prompt}\n`);
+  out({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_b1", name: "Write", input: { file_path: "app.txt" } }] } });
+  out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_b1", is_error: false, content: "ok" }] } });
+  out({ type: "rate_limit_event", rate_limit_info: { status: "allowed", resetsAt: 1792790000, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: 0.42, resetsAt: 1792790000 } } } });
+  out({ type: "result", subtype: "success", is_error: false, num_turns: 3, result: "Built it." });
+  process.exit(0);
+}
+
 const steps = JSON.parse(prompt.split("```json")[1].split("```")[0]);
 const denied = (tool) => `Permission to use ${tool} has been denied because Claude Code is running in don't ask mode.`;
 const socketSend = (path, msg) => new Promise((res) => {

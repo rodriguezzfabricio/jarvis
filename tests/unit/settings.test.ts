@@ -5,7 +5,7 @@ import { absRule, assertSafeTaskSettings, buildTaskSettings, writeTaskSettings }
 import { shortTmp } from "../helpers.ts";
 
 const input = {
-  worktree: "/Users/f/.jarvis/worktrees/p/t1",
+  worktree: "/Users/f/.jarvis-work/worktrees/p/t1",
   jarvisHome: "/Users/f/.jarvis",
   brokerSocket: "/Users/f/.jarvis/run/broker.sock",
   allowedDomains: ["registry.npmjs.org"],
@@ -56,6 +56,25 @@ describe("task settings: permanent requirements (decisions 59, 60)", () => {
   it("allows exactly one Unix socket, and only a real path", () => {
     expect(buildTaskSettings(input).sandbox.network.allowUnixSockets).toEqual(["/Users/f/.jarvis/run/broker.sock"]);
     expect(() => buildTaskSettings({ ...input, brokerSocket: "/tmp/x/broker.sock" })).toThrow(/real path/);
+  });
+
+  it("refuses a worktree inside the runner-owned folder (decision 67)", () => {
+    expect(() => buildTaskSettings({ ...input, worktree: "/Users/f/.jarvis/worktrees/p/t1" })).toThrow(/outside/);
+  });
+
+  it("allows no socket when no broker runs", () => {
+    const { brokerSocket: _, ...noBroker } = input;
+    expect(buildTaskSettings(noBroker).sandbox.network.allowUnixSockets).toEqual([]);
+  });
+
+  it("keeps web research off unless asked, without loosening anything else", () => {
+    const off = buildTaskSettings(input);
+    expect(off.permissions.deny).toContain("WebSearch");
+    const on = buildTaskSettings({ ...input, webResearch: true });
+    expect(on.permissions.allow).toEqual(expect.arrayContaining(["WebSearch", "WebFetch"]));
+    expect(on.permissions.deny).not.toContain("WebSearch");
+    expect(on.sandbox).toEqual(off.sandbox);
+    expect(on.autoMemoryEnabled).toBe(false);
   });
 
   it("writes absolute permission paths with a leading //", () => {

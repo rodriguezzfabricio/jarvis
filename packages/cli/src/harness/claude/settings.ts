@@ -15,8 +15,10 @@ export interface TaskSettingsInput {
   worktree: string;
   /** Real path of the runner-owned Jarvis home (~/.jarvis or a probe stand-in). */
   jarvisHome: string;
-  /** Real path of the broker's Unix socket. Must be a real path: /tmp symlinks don't match. */
-  brokerSocket: string;
+  /** Real path of the broker's Unix socket; omit when no broker runs (baselines). /tmp symlinks don't match. */
+  brokerSocket?: string;
+  /** Allow WebSearch and WebFetch (both run outside the shell sandbox and only read). Off for build tasks. */
+  webResearch?: boolean;
   /** Hosts sandboxed commands and WebFetch may reach. */
   allowedDomains: readonly string[];
 }
@@ -68,11 +70,14 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
   for (const [name, p] of Object.entries({
     worktree: input.worktree,
     jarvisHome: input.jarvisHome,
-    brokerSocket: input.brokerSocket,
+    brokerSocket: input.brokerSocket ?? "/",
   })) {
     if (!isAbsolute(p)) throw new Error(`${name} must be an absolute real path, got ${p}`);
   }
-  if (input.brokerSocket.startsWith("/tmp/") || input.brokerSocket.startsWith("/var/")) {
+  if (input.worktree === input.jarvisHome || input.worktree.startsWith(`${input.jarvisHome}/`)) {
+    throw new Error("the worktree must be outside the runner-owned folder (decision 67)");
+  }
+  if (input.brokerSocket && (input.brokerSocket.startsWith("/tmp/") || input.brokerSocket.startsWith("/var/"))) {
     // On macOS these are symlinks into /private; the sandbox matches real paths only.
     throw new Error(`brokerSocket must be a real path (resolve /tmp and /var to /private/...): ${input.brokerSocket}`);
   }
@@ -85,7 +90,7 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
       autoAllowBashIfSandboxed: true,
       network: {
         allowedDomains: [...input.allowedDomains],
-        allowUnixSockets: [input.brokerSocket],
+        allowUnixSockets: input.brokerSocket ? [input.brokerSocket] : [],
       },
       filesystem: {
         denyRead: [input.jarvisHome],
@@ -95,12 +100,12 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
     permissions: {
       allow: [
         `Edit(${absRule(input.worktree)}/**)`,
-        ...input.allowedDomains.map((d) => `WebFetch(domain:${d})`),
+        ...(input.webResearch ? ["WebSearch", "WebFetch"] : input.allowedDomains.map((d) => `WebFetch(domain:${d})`)),
       ],
       deny: [
         `Read(${absRule(input.jarvisHome)}/**)`,
         `Edit(${absRule(input.jarvisHome)}/**)`,
-        "WebSearch",
+        ...(input.webResearch ? [] : ["WebSearch"]),
       ],
     },
   };

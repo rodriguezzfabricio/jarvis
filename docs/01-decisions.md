@@ -605,7 +605,11 @@ Supersedes the aliases in architecture §3.9.
 
 ### 66. How the Codex reviewer runs (new; stage 0)
 - **By absolute path:** `~/.npm-global/bin/codex`, pinned at codex-cli 0.163.0. Never through `PATH`, because a wrapper owns `codex` there (decision 58).
-- **Isolated:** a Jarvis-owned `CODEX_HOME` that contains only a symlink to the login file `~/.codex/auth.json`, so the credential isn't copied. With that, none of Fabricio's Codex skills (gstack), config, rules, memories or plugins load. A trivial review used about 26k input tokens instead of about 53k. The flags `--ignore-user-config` and `--ignore-rules` alone still loaded the skills.
+- **Isolated in two places:**
+  - A Jarvis-owned `CODEX_HOME` (`~/.jarvis/codex-home`) that contains only a symlink to the login file `~/.codex/auth.json`, so the credential isn't copied.
+  - An empty `HOME` (`~/.jarvis/codex-home/home`). Codex also reads the cross-tool skills folder `~/.agents/skills` (4,193 skills on this Mac, including gstack) from the real home, whatever `CODEX_HOME` says.
+  - With both, none of Fabricio's skills, config, rules, memories or plugins load. A trivial call used about 15.8k input tokens, against about 25.5k with only `CODEX_HOME` isolated and about 53k with neither. `--ignore-user-config` and `--ignore-rules` alone still loaded the skills.
+  - Stdin is `/dev/null`, because `codex exec` otherwise waits for more input.
 - **Read-only:** `codex exec --sandbox read-only --ephemeral --json --output-schema <verdict schema> -o <file>`.
 - **It reads evidence, not narrative:** the repo at the candidate revision, the docs, and the runner's evidence files. It never gets the builder's summary (decision 49).
 - **Its verdict is kept:** each review is saved to `docs/reviews/` with the revision it reviewed.

@@ -91,4 +91,18 @@ Still open: one interactive check, with Fabricio present, that the Jarvis plugin
 
 - `codex exec --sandbox read-only --json --ephemeral --output-schema` returned a schema-valid verdict.
 - The event types are `thread.started`, `turn.started`, `item.*` and `turn.completed`.
-- User skills load unless `CODEX_HOME` is isolated (decision 66).
+- Isolation needs both an empty `CODEX_HOME` (login symlinked) and an empty `HOME`. Codex reads `~/.agents/skills` (4,193 skills here) from the real home.
+- A trivial call's input dropped from about 53k tokens with no isolation, to about 25.5k with `CODEX_HOME` only, to about 15.8k with both (decision 66).
+- Stdin must be `/dev/null`.
+
+## 9. Baselines (in progress)
+
+Plain Claude Code 2.1.309 on `claude-opus-5-5`, on sanitized snapshots, in the same safety envelope as task sessions. Results are in `~/.jarvis/evals/<task>/<run>/`.
+
+| Task | Run 1 | Run 2 |
+|---|---|---|
+| 01 intake | 1 min, 6 turns, no file changes. It read the repo (existing follow-up drafter, read-only Google scopes), then asked 3 decisions with recommendations: the contact source, what "reaches out" means, and who the feature is for. It did no outside research, and it couldn't see the backlog's "no follow-ups" rule, which isn't in the repo. | Overnight |
+| 11 habit tracker | Overnight (from 00:30) | Overnight |
+| 02 build | Overnight | Overnight |
+
+The hidden checks and rubric grading are applied to the recorded revisions once they're written (stage 2 for task 01's rubric).

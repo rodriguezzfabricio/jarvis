@@ -45,6 +45,20 @@ describe("ledger under faults", () => {
     expect(acked.size).toBeGreaterThanOrEqual(12); // at least one acknowledged write per round
   }, 60_000);
 
+  it("lets exactly one of many racing writers reclaim a dead writer's lock, repeatedly", async () => {
+    for (let round = 0; round < 6; round++) {
+      const dir = join(root, `stale-${round}`);
+      Ledger.open(dir).append({ kind: "steer", actor: "runner", data: { seed: round } });
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(join(dir, "ledger.lock"), `999999 dead${round}`);
+      const kids = [0, 1, 2, 3, 4, 5].map((k) => writer(dir, 15, `s${round}-${k}`));
+      await Promise.all(kids.map((c) => new Promise((r) => c.on("close", r))));
+      const v = verifyLedger(dir);
+      expect(v).toMatchObject({ ok: true, repairable: [] });
+      expect(v.entries).toHaveLength(1 + 6 * 15);
+    }
+  }, 120_000);
+
   it("serializes concurrent writers into one valid chain", async () => {
     const dir = join(root, "concurrent");
     Ledger.open(dir);

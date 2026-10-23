@@ -37,7 +37,8 @@ const SECRET_KEY = /(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE|CREDENT
 /** Hosts whose credentials are local dev defaults or documentation placeholders, not real secrets. */
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|postgres|redis|minio|mailhog|host\.docker\.internal|([a-z0-9-]+\.)*(example|test|invalid|localhost)|example\.(com|org|net))$/i;
 // userinfo may have an empty username (redis://:password@host) (Codex review 4).
-const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@'"]*):([^\s/@'"]+)@([^\s/:'"?#]+)/gi;
+// Apostrophes are valid in userinfo (Codex review 5); only the host part ends at quotes.
+const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@"<>`]*):([^\s/@"<>`]+)@([^\s/:'"?#<>`]+)/gi;
 
 /** Credential URLs pointing anywhere but local dev services keep their host and lose user:password. */
 function redactCredUrls(v: string): string {

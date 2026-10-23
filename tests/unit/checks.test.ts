@@ -60,6 +60,15 @@ describe("protected checks (decisions 15, 49)", () => {
     }
   });
 
+  it("protects a check file named __proto__ like any other", () => {
+    const p = project();
+    writeFileSync(join(p.projectDir, "checks", "__proto__"), "exit 1\n");
+    p.store.approve(p.ledger, "v1");
+    expect(Object.keys(p.store.hashAll())).toContain("__proto__");
+    writeFileSync(join(p.projectDir, "checks", "__proto__"), "exit 0\n");
+    expect(p.store.verify(p.ledger).problems).toContain("check changed: __proto__");
+  });
+
   it("detects a check file and its lock edited together (the ledger holds the approved lock hash)", () => {
     const p = project();
     check("unit", "exit 1\n", p);
@@ -107,6 +116,17 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     expect(p.ledger.entries().at(-1)?.data).toMatchObject({ status: "tampered" });
   });
 
+  // Codex review 5, high: candidate code that kills the check's own shell must never yield a pass.
+  it("fails a check whose shell is killed before its assertions run", async () => {
+    const p = project();
+    const c = check("killed", 'kill -TERM $$\nsleep 1\nexit 1\n', p);
+    p.store.approve(p.ledger, "v1");
+    expect((await gate(p, c)).status).toBe("fail");
+    const c2 = check("killed-int", 'kill -INT $$\nsleep 1\nexit 1\n', p);
+    p.store.approve(p.ledger, "v2");
+    expect((await gate(p, c2)).status).toBe("fail");
+  });
+
   it("detects edited evidence", async () => {
     const p = project();
     const c = check("value", "echo fine\n", p);
@@ -115,6 +135,25 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     expect(r.status).toBe("pass");
     writeFileSync(join(r.evidenceDir, "stdout.log"), "all tests passed (typed by an agent)\n");
     expect(verifyEvidence(p.ledger.entries().at(-1)!).ok).toBe(false);
+  });
+
+  // Codex review 5, high: an object swapped under its old name must not turn a failure into a pass.
+  it("does not pass a candidate whose object store was tampered with", async () => {
+    const { deflateSync } = await import("node:zlib");
+    const p = project();
+    writeFileSync(join(p.repo, "value.txt"), "41\n");
+    git(p.repo, "commit", "-qam", "candidate fails the check");
+    const revision = git(p.repo, "rev-parse", "HEAD");
+    const blob = git(p.repo, "rev-parse", "HEAD:value.txt");
+    // Replace the failing blob's stored contents with passing contents, keeping its file name.
+    const objPath = join(p.repo, ".git", "objects", blob.slice(0, 2), blob.slice(2));
+    const { chmodSync } = await import("node:fs");
+    chmodSync(objPath, 0o644);
+    writeFileSync(objPath, deflateSync(Buffer.from("blob 3\u000042\n", "latin1")));
+    const c = check("value", 'test "$(cat value.txt)" = 42\n', p);
+    p.store.approve(p.ledger, "v1");
+    const r = await gate({ ...p, revision }, c);
+    expect(r.status).not.toBe("pass");
   });
 
   it("never runs git hooks the agent planted in its repo", async () => {

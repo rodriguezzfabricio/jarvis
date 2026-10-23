@@ -13,3 +13,5 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | 7 | Decision 68 | — | Loopback is all-or-nothing; dev-server tests run in the runner's checks, not in sessions | Stages 3–4 |
 | 8 | Decision 69 | — | A read-only, runner-managed package mirror, to speed up per-run caches | Later |
 | 9 | Stage 0 findings | — | Disk: 29 GB free, so one writing task at a time | Fabricio |
+| 10 | Codex stage 0 review 5 #9 | medium | `runSession` starts group cleanup only after the child's pipes close; a descendant holding inherited stdout or stderr delays cleanup until the timeout. Fix: react to the leader's exit, and clean up while waiting for the pipes | Open |
+| 11 | Codex stage 0 review 5 #10 | medium | Vitest's JSON report omits standalone unhandled errors, so the mutation classifier can't see them alongside a failed assertion. Fix: a custom reporter that records them | Open |

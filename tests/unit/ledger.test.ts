@@ -1,7 +1,7 @@
-import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { GENESIS, Ledger, LedgerTamperError, entryHash, verifyLedger } from "../../packages/cli/src/ledger/ledger.ts";
+import { GENESIS, Ledger, LedgerTamperError, entryHash, verifyLedger, writeAll } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jtl-");
@@ -107,6 +107,60 @@ describe("ledger (decisions 41, 49)", () => {
     expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: ["head lags by one entry"] });
     expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(4);
     expect(verifyLedger(dir).repairable).toEqual([]);
+  });
+
+  // Codex review 5, high: short writes.
+  it("writes every byte, across short writes, and refuses a write that makes no progress", () => {
+    const { dir } = fresh(1);
+    const short = Ledger.open(dir, { write: (fd, buf, off, len) => writeSync(fd, buf, off, Math.min(len, 7)) });
+    const e = short.append({ kind: "steer", actor: "runner", data: { note: "written seven bytes at a time" } });
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(Ledger.open(dir).entries().at(-1)?.hash).toBe(e.hash);
+    expect(() => writeAll(0, "abc", () => 0)).toThrow(/no progress/);
+    const stuck = Ledger.open(dir, { write: () => 0 });
+    expect(() => stuck.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/no progress/);
+    expect(verifyLedger(dir).ok).toBe(true);
+    expect(Ledger.open(dir).entries()).toHaveLength(2);
+  });
+
+  // Codex review 5, medium: a crash during recovery itself.
+  it("repairs a lagging head before appending, so a second crash can't strand the ledger", () => {
+    const { dir, ledger } = fresh(3);
+    const es = lines(dir).map((l) => JSON.parse(l));
+    writeFileSync(join(dir, "head.hash"), `${es[1].hash}\n`); // crash 1: head one behind
+    // crash 2 at the same point: the entry is written, then the head write fails
+    let calls = 0;
+    const crashing = Ledger.open(dir, {
+      write: (fd, buf, off, len) => {
+        calls++;
+        if (calls === 3) throw new Error("simulated crash before the head update");
+        return writeSync(fd, buf, off, len);
+      },
+    });
+    expect(() => crashing.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/simulated crash/);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: ["head lags by one entry"] });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(5);
+  });
+
+  // Codex review 5, high / medium: lock reclamation.
+  it("never reclaims a stale lock another reclaimer is already handling, and never loops forever", () => {
+    const { dir } = fresh(1);
+    writeFileSync(join(dir, "ledger.lock"), "999999 deadbeef");
+    writeFileSync(join(dir, "ledger.lock.reclaim.deadbeef"), "");
+    const quick = Ledger.open(dir, { lockTimeoutMs: 300 });
+    expect(() => quick.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(readFileSync(join(dir, "ledger.lock"), "utf8")).toBe("999999 deadbeef");
+    rmSync(join(dir, "ledger.lock.reclaim.deadbeef"));
+    expect(quick.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(2);
+    expect(existsSync(join(dir, "ledger.lock"))).toBe(false);
+  });
+
+  it("times out instead of spinning on a malformed lock", () => {
+    const { dir } = fresh(1);
+    writeFileSync(join(dir, "ledger.lock"), "");
+    const t0 = Date.now();
+    expect(() => Ledger.open(dir, { lockTimeoutMs: 300 }).append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(Date.now() - t0).toBeLessThan(3000);
   });
 
   it("reads back verified entries", () => {

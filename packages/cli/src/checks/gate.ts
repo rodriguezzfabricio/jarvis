@@ -4,8 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
-import { runSession } from "../proc/session.ts";
-import { srtCommand, writeSrtSettings } from "../sandbox/srt.ts";
+import { runSandboxed } from "../sandbox/srt.ts";
 import type { ChecksStore } from "./store.ts";
 
 /**
@@ -66,20 +65,21 @@ export async function runGate(g: GateInput): Promise<GateResult> {
   mkdirSync(cache, { recursive: true, mode: 0o700 });
   try {
     // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
-    safeGit(runDir, ["-c", "protocol.file.allow=always", "clone", "--quiet", "--no-hardlinks", "--no-checkout", g.repoPath, checkout], { home: homedir() });
+    // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
+    // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
+    safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
+    safeGit(checkout, ["fsck", "--full", "--strict", "--no-dangling", "--no-progress"], { home: homedir() });
     safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
     const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
     if (head !== g.revision) return { status: "error", entry: record("error", { problems: [`checkout is at ${head}`] }), evidenceDir };
 
     const real = (p: string) => realpathSync(p);
-    const settings = join(runDir, "srt.json");
-    writeSrtSettings(settings, {
+    const policy = {
       denyRead: [real(g.jarvisHome), real(homedir())],
       allowRead: [real(runDir), real(g.store.checksDir)],
       allowWrite: [real(checkout), real(home), real(cache)],
       allowLocalBinding: g.check.allowLocalBinding === true,
-    });
-    const [bin, ...args] = srtCommand(settings, g.check.command);
+    };
     const env: Record<string, string> = {
       PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
       HOME: real(home),
@@ -96,8 +96,9 @@ export async function runGate(g: GateInput): Promise<GateResult> {
     };
     const stdoutPath = join(evidenceDir, "stdout.log");
     const stderrPath = join(evidenceDir, "stderr.log");
-    const out = await runSession({ bin, args, cwd: real(checkout), env, timeoutMs: g.check.timeoutMs, stdoutPath, stderrPath, killGraceMs: 5_000 });
-    const status: GateStatus = out.timedOut ? "fail" : out.code === 0 ? "pass" : "fail";
+    const out = await runSandboxed({ policy, command: g.check.command, cwd: real(checkout), env, timeoutMs: g.check.timeoutMs, stdoutPath, stderrPath, killGraceMs: 5_000 });
+    // Pass only on the sandboxed command's own exit 0: a signal (code null) or a timeout is a failure.
+    const status: GateStatus = !out.timedOut && out.code === 0 ? "pass" : "fail";
     const entry = record(status, {
       exitCode: out.code,
       timedOut: out.timedOut,

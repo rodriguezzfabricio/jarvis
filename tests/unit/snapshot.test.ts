@@ -197,6 +197,9 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "short.yaml": "db: postgres://svc:8k2Z@prod.acme.net/app\n",
       "punct.yaml": "db: postgres://svc:Pa$$w0rd!x9@prod.acme.net/app\n",
       "redis.json": '{"cache": "redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0"}\n',
+      "apostrophe.json": '{"db": "postgres://svc:N7q\'4QmV8@db.prod.acme.net/app"}\n',
+      "apostrophe-user.yaml": "db: postgres://o'brien:Zq8vT2mWx91@db.prod.acme.net/app\n",
+      "apostrophe-redis.json": '{"cache": "rediss://:Syn\'thetic9qvM2@cache.prod.acme.net:6380/0"}\n',
     };
     for (const [name, content] of Object.entries(cases)) {
       const repo = join(root, `srcX-${name}`);
@@ -210,6 +213,13 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapX-${name}`) }).then(() => "", (e: Error) => e.message);
       expect(err, name).toContain(name);
     }
+  });
+
+  it("redacts URLs whose password contains an apostrophe, in .env files", () => {
+    const r = redactEnvText("CONNECTION_URL=rediss://:Syn'thetic9qvM2@cache.prod.acme.net:6380/0\nDB=postgres://svc:N7q'4QmV8@db.prod.acme.net/app\n");
+    expect(r.text).not.toContain("thetic9qvM2");
+    expect(r.text).not.toContain("N7q'4QmV8");
+    expect(r.keys).toEqual(["CONNECTION_URL", "DB"]);
   });
 
   it("redacts a password-only Redis URL in a tracked .env file", async () => {

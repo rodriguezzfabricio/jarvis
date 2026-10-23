@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  linkSync,
   fsyncSync,
   ftruncateSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -76,6 +79,18 @@ export interface VerifyResult {
   repairable: string[];
 }
 
+/** Writes every byte or throws: a short write is never acknowledged (Codex stage 0 review 5). */
+export type WriteFn = (fd: number, buf: Buffer, offset: number, length: number) => number;
+export function writeAll(fd: number, data: string, write: WriteFn = (f, b, o, l) => writeSync(f, b, o, l)): void {
+  const buf = Buffer.from(data);
+  let off = 0;
+  while (off < buf.length) {
+    const n = write(fd, buf, off, buf.length - off);
+    if (!Number.isInteger(n) || n <= 0) throw new Error(`write made no progress at byte ${off} of ${buf.length}`);
+    off += n;
+  }
+}
+
 const FILE = "ledger.jsonl";
 const HEAD = "head.hash";
 const LOCK = "ledger.lock";
@@ -138,15 +153,26 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+export interface LedgerOptions {
+  /** Test seam: the low-level write used for the ledger and head files. */
+  write?: WriteFn;
+  /** Test seam: called between lock-protocol steps, to interleave competing writers deterministically. */
+  onLockStep?: (step: "reclaim-claimed" | "before-unlink") => void;
+  /** How long to wait for the writer lock (default 30 s). */
+  lockTimeoutMs?: number;
+}
+
 export class Ledger {
   readonly dir: string;
-  private constructor(dir: string) {
+  private readonly opts: LedgerOptions;
+  private constructor(dir: string, opts: LedgerOptions) {
     this.dir = dir;
+    this.opts = opts;
   }
 
-  static open(dir: string): Ledger {
+  static open(dir: string, opts: LedgerOptions = {}): Ledger {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    return new Ledger(dir);
+    return new Ledger(dir, opts);
   }
 
   /** Verified entries; throws on tampering. */
@@ -174,6 +200,8 @@ export class Ledger {
       const v = verifyLedger(this.dir);
       if (!v.ok) throw new LedgerTamperError(`refusing to append: ${v.problems.join("; ")}`);
       const last = v.entries.at(-1);
+      // Repair a lagging head durably before extending the chain, so a second crash can't leave it two behind.
+      if (last && v.repairable.includes("head lags by one entry")) this.writeHead(last.hash);
       const base: Omit<LedgerEntry, "hash"> = {
         seq: (last?.seq ?? 0) + 1,
         ts: new Date().toISOString(),
@@ -187,7 +215,7 @@ export class Ledger {
       const entry: LedgerEntry = { ...base, hash: entryHash(base) };
       const fd = openSync(path, "a", 0o600);
       try {
-        writeSync(fd, `${JSON.stringify(entry)}\n`);
+        writeAll(fd, `${JSON.stringify(entry)}\n`, this.opts.write);
         fsyncSync(fd);
       } finally {
         closeSync(fd);
@@ -201,7 +229,7 @@ export class Ledger {
     const tmp = join(this.dir, `${HEAD}.tmp`);
     const fd = openSync(tmp, "w", 0o600);
     try {
-      writeSync(fd, `${hash}\n`);
+      writeAll(fd, `${hash}\n`, this.opts.write);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -216,57 +244,83 @@ export class Ledger {
   }
 
   /**
-   * An exclusive lock file holding the writer's pid. A lock left by a dead writer is taken over only
-   * under a second exclusive "takeover" lock, after re-reading the holder, so a waiter can never remove
-   * a lock that a live writer has just created.
+   * Writer lock (Codex stage 0 review 5). The lock file is created fully initialized in one atomic step
+   * (a temp file holding "pid nonce", hard-linked into place), so it is never empty or half-written.
+   * A lock whose pid is dead is reclaimed only by whoever wins an exclusive per-instance marker
+   * (ledger.lock.reclaim.<nonce>). Its owner is dead, and every other reclaimer is shut out by the
+   * marker, so the instance can only be removed once, and never a replacement lock. The deadline is
+   * checked on every path.
    */
   private withLock<T>(fn: () => T): T {
     const lock = join(this.dir, LOCK);
-    const takeover = join(this.dir, `${LOCK}.takeover`);
-    const deadline = Date.now() + 30_000;
-    const tryCreate = (path: string): boolean => {
+    const nonce = randomBytes(12).toString("hex");
+    const deadline = Date.now() + (this.opts.lockTimeoutMs ?? 30_000);
+    const tryCreate = (): boolean => {
+      const tmp = join(this.dir, `${LOCK}.tmp-${nonce}`);
+      const fd = openSync(tmp, "w", 0o600);
       try {
-        const fd = openSync(path, "wx", 0o600);
-        writeSync(fd, String(process.pid));
+        writeAll(fd, `${process.pid} ${nonce}`);
+        fsyncSync(fd);
+      } finally {
         closeSync(fd);
+      }
+      try {
+        linkSync(tmp, lock);
         return true;
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
         throw e;
+      } finally {
+        rmSync(tmp, { force: true });
       }
     };
-    const holderOf = (path: string): { pid: number; ageMs: number } | undefined => {
+    const holder = (): { pid: number; nonce: string } | undefined => {
       try {
-        return { pid: Number.parseInt(readFileSync(path, "utf8"), 10), ageMs: Date.now() - statSync(path).mtimeMs };
+        const [pid, n] = readFileSync(lock, "utf8").trim().split(" ");
+        return { pid: Number.parseInt(pid ?? "", 10), nonce: n ?? "" };
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined; // released meanwhile
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
         throw e;
       }
     };
-    const stale = (h: { pid: number; ageMs: number }) => (Number.isFinite(h.pid) ? !pidAlive(h.pid) : h.ageMs > 1000);
     for (;;) {
-      if (tryCreate(lock)) break;
-      const h = holderOf(lock);
-      if (h && stale(h)) {
-        if (tryCreate(takeover)) {
-          try {
-            const again = holderOf(lock);
-            if (again && again.pid === h.pid && stale(again)) rmSync(lock, { force: true });
-          } finally {
-            rmSync(takeover, { force: true });
-          }
+      if (Date.now() > deadline) throw new Error(`ledger lock not acquired within ${this.opts.lockTimeoutMs ?? 30_000} ms`);
+      if (tryCreate()) break;
+      const h = holder();
+      if (h && Number.isFinite(h.pid) && h.nonce && !pidAlive(h.pid)) {
+        const marker = join(this.dir, `${LOCK}.reclaim.${h.nonce}`);
+        let claimed = false;
+        try {
+          const fd = openSync(marker, "wx", 0o600);
+          closeSync(fd);
+          claimed = true;
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        }
+        if (claimed) {
+          this.opts.onLockStep?.("reclaim-claimed");
+          const again = holder();
+          this.opts.onLockStep?.("before-unlink");
+          if (again && again.nonce === h.nonce) rmSync(lock, { force: true });
           continue;
         }
-        const t = holderOf(takeover);
-        if (t && stale(t) && t.ageMs > 5000) rmSync(takeover, { force: true });
       }
-      if (Date.now() > deadline) throw new Error(`ledger lock held by pid ${h?.pid} for over 30 s`);
       sleepMs(2 + Math.floor(Math.random() * 5));
     }
     try {
       return fn();
     } finally {
-      rmSync(lock, { force: true });
+      // Release only our own lock.
+      if (holder()?.nonce === nonce) rmSync(lock, { force: true });
+      for (const f of readdirSync(this.dir)) {
+        if (f.startsWith(`${LOCK}.reclaim.`)) {
+          try {
+            if (Date.now() - statSync(join(this.dir, f)).mtimeMs > 600_000) rmSync(join(this.dir, f), { force: true });
+          } catch {
+            // already gone
+          }
+        }
+      }
     }
   }
 }

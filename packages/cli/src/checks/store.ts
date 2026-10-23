@@ -17,7 +17,8 @@ export class ChecksStore {
   }
 
   hashAll(): Record<string, string> {
-    const out: Record<string, string> = {};
+    // No prototype: a check file named __proto__ must be an ordinary key (Codex stage 0 review 5).
+    const out: Record<string, string> = Object.create(null) as Record<string, string>;
     const walk = (dir: string) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
         const p = join(dir, e.name);
@@ -48,18 +49,19 @@ export class ChecksStore {
     const lockHash = createHash("sha256").update(content).digest("hex");
     const approved = ledger.entries().filter((e) => e.kind === "checks_approved").at(-1);
     if (!approved || (approved.data as { lockHash?: string }).lockHash !== lockHash) problems.push("checks.lock is not the approved lock recorded in the ledger");
-    let locked: Record<string, string> = {};
+    let locked: Record<string, string> = Object.create(null) as Record<string, string>;
     try {
-      locked = (JSON.parse(content) as { files: Record<string, string> }).files ?? {};
+      const parsed = (JSON.parse(content) as { files?: Record<string, string> }).files ?? {};
+      for (const k of Object.keys(parsed)) locked[k] = parsed[k] as string;
     } catch {
       problems.push("checks.lock is not valid JSON");
     }
     const now = this.hashAll();
     for (const [f, h] of Object.entries(locked)) {
-      if (!(f in now)) problems.push(`check removed: ${f}`);
+      if (!Object.hasOwn(now, f)) problems.push(`check removed: ${f}`);
       else if (now[f] !== h) problems.push(`check changed: ${f}`);
     }
-    for (const f of Object.keys(now)) if (!(f in locked)) problems.push(`check added: ${f}`);
+    for (const f of Object.keys(now)) if (!Object.hasOwn(locked, f)) problems.push(`check added: ${f}`);
     return { ok: problems.length === 0, problems, lockHash };
   }
 }

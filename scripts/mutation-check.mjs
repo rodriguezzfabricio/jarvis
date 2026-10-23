@@ -4,10 +4,11 @@
 // the same number of tests, and at least one assertion failed. Crashes and collection errors are
 // errors, never "caught". Every file is restored, even on failure.
 // Usage: node scripts/mutation-check.mjs
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { classify, testIds } from "./mutation-classify.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
@@ -53,7 +54,8 @@ const mutations = [
   ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],
   ["scheduler counts unstarted runs", C, "        if (!r.started) {", "        if (false) {"],
   ["scheduler waits right after each run (old bug)", C, "        if (r.usageWaitUntil !== undefined && dispatched < total) pendingWait = { until: r.usageWaitUntil, after: id };", "        if (r.usageWaitUntil !== undefined) { const stop = await wait(id, r.usageWaitUntil, \"usage is high\"); if (stop) return { completed, stopped: { task: id, reason: stop } }; }"],
-  ["password-only URLs ignored", N, "const CRED_URL = /([a-z][a-z0-9+.-]*:\\/\\/)([^\\s/:@'\"]*):", "const CRED_URL = /([a-z][a-z0-9+.-]*:\\/\\/)([^\\s/:@'\"]+):"],
+  ["password-only URLs ignored", N, ':\\/\\/)([^\\s/:@"<>`]*):', ':\\/\\/)([^\\s/:@"<>`]+):'],
+  ["apostrophes end the password", N, ':([^\\s/@"<>`]+)@([^\\s/:', ":([^\\s/@'\"<>`]+)@([^\\s/:"],
   ["PEM rule needs a long body", N, '  ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],', '  ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----\\s*[A-Za-z0-9+/=\\s]{100,}-----END/],'],
   ["session skips group cleanup", X, "  await cleanupGroup();\n", ""],
   ["ledger ignores the chain", L, '    if (e.prev_hash !== prev) problems.push', '    if (false) problems.push'],
@@ -63,6 +65,11 @@ const mutations = [
   ["gate skips check verification", GT, "  if (!v.ok) return { status: \"tampered\"", "  if (false) return { status: \"tampered\""],
   ["gate runs checks unsandboxed", GT, "    const [bin, ...args] = srtCommand(settings, g.check.command);", "    const [bin, ...args] = [\"/bin/sh\", \"-c\", g.check.command] as [string, ...string[]];"],
   ["gate runs the worktree, not the revision", GT, "    const head = safeGit(checkout, [\"rev-parse\", \"HEAD\"], { home: homedir() }).toString().trim();", "    const head = g.revision; rmSync(checkout, { recursive: true, force: true }); safeGit(runDir, [\"-c\", \"protocol.file.allow=always\", \"clone\", \"--quiet\", \"--no-hardlinks\", g.repoPath, checkout], { home: homedir() }); safeGit(g.repoPath, [\"diff\", \"--output=\" + join(runDir, \"wt.patch\")], { home: homedir() }); safeGit(checkout, [\"apply\", join(runDir, \"wt.patch\")], { home: homedir() });"],
+  ["gate clones without hash verification", GT, '"-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout"', '"clone", "--quiet", "--no-hardlinks", "--no-checkout"'],
+  ["gate skips fsck", GT, '    safeGit(checkout, ["fsck", "--full", "--strict", "--no-dangling", "--no-progress"], { home: homedir() });\n', ""],
+  ["gate trusts a signal as success", GT, "    const status: GateStatus = !out.timedOut && out.code === 0 ? \"pass\" : \"fail\";", "    const status: GateStatus = !out.timedOut && (out.code === 0 || out.code === null) ? \"pass\" : \"fail\";"],
+  ["ledger ignores short writes", L, "    if (!Number.isInteger(n) || n <= 0) throw new Error", "    if (false) throw new Error"],
+  ["lock reclaimed without a marker", L, "        if (claimed) {", "        if (true) {"],
   ["evidence not re-hashed", GT, "    else if (sha(p) !== h) problems.push", "    else if (false) problems.push"],
   ["broker approves by operation, not payload", BR, '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);', '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).op === op);'],
   ["broker retries unknown outcomes", BR, '["succeeded", "unknown"].includes', '["succeeded"].includes'],
@@ -75,7 +82,15 @@ const mutations = [
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],
 ];
 
+// Mutations run in a disposable clone of the committed revision, never in the working tree, so an
+// interruption can't leave a safeguard disabled in the code under review (Codex stage 0 review 5).
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const work = mkdtempSync(join(tmpdir(), "jarvis-mut-"));
+const sandboxRepo = join(work, "repo");
+execFileSync("git", ["clone", "--quiet", "--no-hardlinks", repo, sandboxRepo], { env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } });
+for (const nm of ["node_modules", "packages/cli/node_modules"]) symlinkSync(join(repo, nm), join(sandboxRepo, nm));
+process.chdir(sandboxRepo);
+console.log(`mutating a clone of ${execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: sandboxRepo, encoding: "utf8" }).trim()} (uncommitted changes are not included)`);
 // If the check is interrupted, put back whatever file is currently mutated before exiting.
 let current; // [file, original]
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {

@@ -670,6 +670,14 @@ This relaxes the "previous stage's proof first" rule in architecture §10 for th
 
 *From:* stage 1 build, Oct 23.
 
+### 74. Codex reviews gate each stage on critical and high findings only (new; Oct 23)
+Each stage still ends with an independent Codex review, run strictly stage by stage. Fabricio, Oct 23: "keep the strict per-stage reviews."
+- **Critical and high findings block the stage.** They're fixed, regression-tested, mutation-checked and re-reviewed.
+- **Medium and low findings go to `docs/backlog.md`**, with the review that found them. They're fixed later and never silently dropped.
+
+*Why:* stage 0 took five review rounds. The later rounds found progressively narrower cases, mostly in the snapshot credential scanner.
+*From:* Fabricio, Oct 23.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

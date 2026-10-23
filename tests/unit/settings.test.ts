@@ -14,6 +14,10 @@ const ctx = {
 const clone = () => structuredClone(buildTaskSettings(ctx)) as Record<string, any>;
 
 describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () => {
+  it("builds policy-valid settings without throwing", () => {
+    expect(() => buildTaskSettings(ctx)).not.toThrow();
+  });
+
   it("sets sandbox.failIfUnavailable and refuses settings without it", () => {
     expect(buildTaskSettings(ctx).sandbox.failIfUnavailable).toBe(true);
     const s = clone();

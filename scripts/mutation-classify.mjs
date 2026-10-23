@@ -16,6 +16,11 @@ export function isAssertionFailure(message) {
   return /instead of (rejecting|resolving)$/.test(first) && /\bat _Assertion\.__VITEST_(REJECTS|RESOLVES)__/.test(message);
 }
 
+/** An error thrown by Jarvis's own code under test (its stack runs through the source tree). */
+export function isSourceError(message) {
+  return /\/(packages\/cli\/src|plugin\/hooks)\//.test(message) && !TIMEOUT.test(message);
+}
+
 export function testIds(report) {
   return report.testResults.flatMap((f) => f.assertionResults.map((a) => `${f.name.split("/").slice(-2).join("/")} > ${a.fullName}`)).sort();
 }
@@ -42,8 +47,13 @@ export function classify(proc, report, controlIds) {
   if (proc.status !== 1) return { kind: "error", detail: `tests failed but the suite exited ${proc.status}` };
   const timeouts = failed.filter((a) => a.failureMessages.some((m) => TIMEOUT.test(m)));
   if (timeouts.length) return { kind: "error", detail: `${timeouts.length} test(s) timed out` };
-  // Every failure must be a completed assertion; a mix with runtime errors is not a clean catch.
-  const nonAssertion = failed.filter((a) => a.failureMessages.length === 0 || !a.failureMessages.every(isAssertionFailure));
-  if (nonAssertion.length) return { kind: "error", detail: `${nonAssertion.length} failure(s) not assertions: ${(nonAssertion[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
-  return { kind: "caught", detail: `${failed.length} failing assertion(s): ${failed.slice(0, 2).map((a) => a.title).join("; ")}` };
+  // At least one completed assertion must fail. Other failures are allowed only if they were thrown
+  // by Jarvis's own code under test (a safety guard refusing the mutated code); errors from tests,
+  // the runner or infrastructure make the run an error (decision 74; Codex review 4).
+  const assertions = failed.filter((a) => a.failureMessages.length > 0 && a.failureMessages.every(isAssertionFailure));
+  const others = failed.filter((a) => !assertions.includes(a));
+  const unattributed = others.filter((a) => a.failureMessages.length === 0 || !a.failureMessages.every((m) => isAssertionFailure(m) || isSourceError(m)));
+  if (assertions.length === 0) return { kind: "error", detail: `${failed.length} failure(s), none an assertion: ${(failed[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
+  if (unattributed.length) return { kind: "error", detail: `${unattributed.length} failure(s) neither assertions nor thrown by Jarvis code: ${(unattributed[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
+  return { kind: "caught", detail: `${assertions.length} failing assertion(s)${others.length ? ` + ${others.length} refused by Jarvis guards` : ""}: ${assertions.slice(0, 2).map((a) => a.title).join("; ")}` };
 }

@@ -55,9 +55,15 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(classify(fail, report([t("a", "failed", ["TypeError: expect(...).toBe is not a function"]), t("b", "passed")]), control).kind).toBe("error");
   });
 
-  it("does not accept a run that mixes an assertion with a runtime error", () => {
-    const r = report([t("a", "failed", ["AssertionError: expected 1 to be 2"]), t("b", "failed", ["ReferenceError: x is not defined"])]);
+  it("does not accept a run that mixes an assertion with an unattributed runtime error", () => {
+    const r = report([t("a", "failed", ["AssertionError: expected 1 to be 2"]), t("b", "failed", ["ReferenceError: x is not defined\n    at tests/unit/x.test.ts:3:1"])]);
     expect(classify(fail, r, control).kind).toBe("error");
+  });
+
+  it("accepts an assertion plus errors thrown by Jarvis's own guards, but not guard errors alone", () => {
+    const guard = "ZodError: [ invalid literal ]\n    at buildTaskSettings (/r/packages/cli/src/harness/claude/settings.ts:99:5)";
+    expect(classify(fail, report([t("a", "failed", ["AssertionError: expected [Function] to not throw"]), t("b", "failed", [guard])]), control).kind).toBe("caught");
+    expect(classify(fail, report([t("a", "failed", [guard]), t("b", "failed", [guard])]), control).kind).toBe("error");
   });
 
   it("does not accept unfinished tests or a mismatched exit status", () => {

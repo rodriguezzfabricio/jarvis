@@ -8,6 +8,10 @@ const without = (a: string[], flag: string, n = 1) => {
 };
 
 describe("task args: permanent requirements (decisions 59, 60, 61, 68)", () => {
+  it("builds safe args without throwing", () => {
+    expect(() => buildTaskArgs(base)).not.toThrow();
+  });
+
   it("passes --restricted exactly once with an explicit build tool list", () => {
     const a = buildTaskArgs(base);
     expect(a.filter((x) => x === "--restricted")).toHaveLength(1);

@@ -79,6 +79,7 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c);
     expect(r.status).toBe("pass");
+    if (r.status !== "pass") return;
     const e = p.ledger.entries().at(-1)!;
     expect(e.kind).toBe("gate_result");
     expect(e.data).toMatchObject({ check: "value", revision: p.revision, status: "pass", exitCode: 0 });
@@ -111,6 +112,7 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     const c = check("value", "echo fine\n", p);
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c);
+    expect(r.status).toBe("pass");
     writeFileSync(join(r.evidenceDir, "stdout.log"), "all tests passed (typed by an agent)\n");
     expect(verifyEvidence(p.ledger.entries().at(-1)!).ok).toBe(false);
   });

@@ -55,20 +55,20 @@ describe("baseline scheduling (decisions 3, 62; Codex review 2)", () => {
     const out = await runSchedule(["a", "b"], 1, "", d);
     expect(d.calls).toEqual(["a"]);
     expect(out.stopped?.task).toBe("a");
-    expect(out.stopped?.reason).toMatch(/preflight failed/);
+    expect(out.stopped?.reason ?? "").toMatch(/preflight failed/);
   });
 
   it("stops, recorded, instead of waiting longer than the cap", async () => {
     const d = deps(() => result({ usageLimited: true, usageWaitUntil: soon() + 3 * 86400 }));
     const out = await runSchedule(["a"], 1, "", d);
-    expect(out.stopped?.reason).toMatch(/resets in/);
+    expect(out.stopped?.reason ?? "").toMatch(/resets in/);
     expect(out.completed).toEqual([]);
   });
 
   it("stops, recorded, after too many consecutive usage waits", async () => {
     const d = deps(() => result({ usageLimited: true, usageWaitUntil: soon() }));
     const out = await runSchedule(["a"], 1, "", { ...d, maxUsageRetries: 3 });
-    expect(out.stopped?.reason).toMatch(/still usage-limited/);
+    expect(out.stopped?.reason ?? "").toMatch(/still usage-limited/);
   });
 
   // Codex review 3, medium: nothing waits or "stops" after the last run.
@@ -87,13 +87,13 @@ describe("baseline scheduling (decisions 3, 62; Codex review 2)", () => {
     const d = deps(() => result({ started: false }));
     const out = await runSchedule(["a", "b"], 1, "", d);
     expect(out.completed).toEqual([]);
-    expect(out.stopped?.reason).toMatch(/did not start/);
+    expect(out.stopped?.reason ?? "").toMatch(/did not start/);
   });
 
   it("stops, recorded, when the run itself throws (e.g. the binary vanished)", async () => {
     const d = deps(() => new Error("SessionStartError: could not start claude"));
     const out = await runSchedule(["a"], 1, "", d);
-    expect(out.stopped?.reason).toMatch(/run error/);
+    expect(out.stopped?.reason ?? "").toMatch(/run error/);
   });
 
   it("finishes a run that only left usage high, then waits before the next task", async () => {

@@ -4,7 +4,7 @@ Oct 23, 2026 · Fabricio + Claude
 
 How Jarvis itself is built. It turns `docs/01-decisions.md` (the what and why) into components, files, formats and a build order. v1 runs on Claude Code (CLI and desktop app) on macOS. The design keeps the Codex and DSH phases cheap: every component that touches the harness sits behind one adapter.
 
-Wherever a piece depends on a Claude Code feature, this doc names the feature, and stage 0 verifies the exact flag or setting name against the pinned version. Flags marked *(verify)* haven't been checked yet.
+Wherever a piece depends on a Claude Code feature, this doc names the feature, and stage 0 verifies the exact flag or setting name against the pinned version. All *(verify)* items were resolved in stage 0 on Claude Code 2.1.309 (`docs/stage0-findings.md`, decisions 57–66).
 
 ---
 
@@ -140,7 +140,7 @@ Ledger entry kinds:
 Inside the repo, `.jarvis/` (gitignored) holds human-readable views rebuilt from the ledger: `plan.md`, `progress.md`, `REPORT.md`, `inbox.md` and `mockups/`. Editing a view changes nothing; only `inbox.md` is read, and only as steer notes.
 
 ### 3.6 The broker
-The broker is how Jarvis does anything outside the computer without the agent ever holding a credential. It runs inside the runner process: outside the sandbox, only while a run is active. It listens on a Unix socket in `~/.jarvis/run/broker.sock`, and the sandbox is configured to allow that one socket *(verify)*. `jarvis act` is a thin client that sends a request over the socket.
+The broker is how Jarvis does anything outside the computer without the agent ever holding a credential. It runs inside the runner process: outside the sandbox, only while a run is active. It listens on a Unix socket in `~/.jarvis/run/broker.sock`, and the sandbox allows exactly that one socket through `sandbox.network.allowUnixSockets`, listed by its real path (verified in stage 0; decision 59). `jarvis act` is a thin client that sends a request over the socket.
 
 **Operation catalog** (each one a typed adapter):
 
@@ -163,7 +163,7 @@ The broker is how Jarvis does anything outside the computer without the agent ev
 3. Executes the operation with the credential from the secrets backend.
 4. Writes a receipt. When the outcome can't be known (a timeout after sending), the receipt is "unknown" and is never retried automatically (decision 41).
 
-**Secrets backend:** an env file at `~/.jarvis/secrets/<project>.env` (permissions 0600) by default, or the macOS Keychain. The path is on the sandbox's deny-read list and in permission deny rules *(verify)*. Stage 1's safety tests prove an agent can't read it.
+**Secrets backend:** an env file at `~/.jarvis/secrets/<project>.env` (permissions 0600) by default, or the macOS Keychain. The path is in `sandbox.filesystem.denyRead` (blocks shell reads) and in a `Read(//…/**)` permission deny rule (blocks the file tools). Both were verified in stage 0 (decision 59). Stage 1's safety tests prove an agent can't read it.
 
 ### 3.7 Notifier
 An adapter with `send(message, actions)` and `poll()`. ntfy is the default, with send-only email as an option (decision 50).
@@ -174,7 +174,7 @@ An adapter with `send(message, actions)` and `poll()`. ntfy is the default, with
   - blocked,
   - finished (state + one line),
   - usage-wait (only if longer than 2 hours).
-- **Replies** are parsed into ledger entries (`approval`, `steer`, `defaults`).
+- **Replies** come from buttons (`http` actions that post a fixed answer to the reply topic) or from text typed into the app's publish box (read as a steer note). They're parsed into ledger entries (`approval`, `steer`, `defaults`).
 - **Limits:** messages stay under about 4 KB; mockup screenshots go as attachments (they expire after 3 hours) or as a path on your Mac.
 
 ### 3.8 Memory, decisions and design files
@@ -195,9 +195,9 @@ The `SessionStart` hook injects only the index lines and the decisions relevant 
 
 ```yaml
 tiers:
-  strong: { model: opus,   effort: high }
-  fast:   { model: sonnet, effort: medium }
-  cheap:  { model: haiku,  effort: low }
+  strong: { model: claude-opus-5-5,   effort: high }
+  fast:   { model: claude-sonnet-5-5, effort: medium }
+  cheap:  { model: claude-haiku-5-5,  effort: low }
 roles:
   intake:   { tier2: strong, default: fast }
   spec:     { tier2: strong, default: fast }
@@ -208,7 +208,7 @@ roles:
   explore:  { start: cheap }
 escalate_on: [gate_fail, review_fail]
 ```
-The model names are aliases resolved in stage 0. Codex review runs `codex exec` read-only on your ChatGPT plan; when it hits its limit or isn't installed, the strong Claude reviewer takes over (decision 24).
+Full model IDs, never aliases (decision 61). Codex review runs `codex exec` read-only on your ChatGPT plan, isolated as in decision 66; when it hits its limit or isn't installed, the strong Claude reviewer takes over (decision 24).
 
 ### 3.10 Evals
 `jarvis eval` builds a sanitized snapshot: the files exported into a new single-commit repo with no remotes and empty memory. It applies any planted change, runs the task with Jarvis and then with plain `claude -p` on the same budget, and runs the hidden checks from the private eval repo (`jarvis-evals`). Results land in `~/.jarvis/evals/<task>/<run>/` with your rating prompt (decisions 35, 47).
@@ -226,18 +226,19 @@ The model names are aliases resolved in stage 0. Codex review runs `codex exec` 
 
 ## 5. How `claude -p` is called
 
-Every flag is explicit, so neither your global config nor a friend's changes behavior (decision 3).
+Every flag is explicit, so neither your global config nor a friend's changes behavior (decisions 3, 58, 60). The binary is the pinned one, called by absolute path (decision 57), with a clean environment (decision 58).
 
 ```
-claude -p "<task prompt from the runner>" \
+~/.local/share/claude/versions/2.1.309 -p "<task prompt from the runner>" \
   --output-format stream-json \
   --settings ~/.jarvis/projects/<id>/claude-settings.json \   # sandbox, network allowlist, permission deny rules, hooks
   --plugin-dir ~/.jarvis/plugin \                             # the Jarvis plugin (skills, agents, hooks)
   --mcp-config ~/.jarvis/projects/<id>/mcp.json --strict-mcp-config \
-  --append-system-prompt-file <run header> \                  # (verify) task, spec version, constraints
-  --permission-mode <explicit mode> \                         # (verify) name of the non-interactive mode
+  --setting-sources project --no-session-persistence \       # no user hooks, plugins, skills or history (decision 60)
+  --append-system-prompt-file <run header> \                  # task, spec version, constraints
+  --permission-mode dontAsk --permission-prompts none \      # fails closed if the settings file is dropped (decision 59)
   --model <from routing table> \
-  --max-turns <cap>                                           # (verify)
+  --max-turns <cap>
 ```
 The task prompt is short and structured:
 - the goal and its exit condition,
@@ -310,7 +311,7 @@ The golden tasks and snapshots live in a separate private repo, `jarvis-evals` (
 3. **Sandbox configuration:** a deny-read path for `~/.jarvis/secrets`, allowing one Unix socket, and the network allowlist format. Also which tools sit outside the shell sandbox (file, web, MCP) and the permission rules that cover them.
 4. **The desktop app** loads the plugin, settings and hooks the same way the CLI does.
 5. **Subscription headless use:** non-bare `claude -p` on Max 20x, and how it shares usage limits.
-6. **ntfy on your phone:** action buttons and typed replies both reach the reply topic.
+6. **ntfy on your phone:** action buttons and publish-box replies both reach the reply topic. ntfy has no typed-reply action (decision 50).
 7. **The Impeccable detector** on a Next.js app and on FreeHire's SvelteKit UI; Maestro with an Expo development build on the iOS simulator.
 8. **Codex as a reviewer:** `codex exec` read-only on your plan, and its JSON output.
 

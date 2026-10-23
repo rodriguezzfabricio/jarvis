@@ -6,6 +6,7 @@ Each decision says what Jarvis does, why, and where the evidence comes from.
 - **Evidence:** raw research notes are in `docs/research/`. "Oct 22 brief" means `Your Agent Workflow Research Brief.md` on your Desktop.
 - **Reviews:** v1 of this doc was reviewed by two models that didn't write it. Claude Fable 5.1's review is in `docs/reviews/review-fable.md` and Codex (Astra)'s in `docs/review-codex.md`. Citations like "Fable F1" and "Codex H3" point into those reviews.
 - **Numbering:** decisions 1–36 keep their v1 numbers, so the reviews still line up. New decisions are numbered 37 and up, placed in the section where they belong.
+- **Stage 0 findings (Oct 23):** decisions 57–66 record what the stage 0 checks found on Fabricio's Mac. Each says which earlier decision or doc line it supersedes or tightens. The raw check results are in `docs/stage0-findings.md`.
 
 ## What changed in v2
 
@@ -269,6 +270,21 @@ Overnight runs use Claude Code's sandbox plus the network allowlist, so Jarvis r
 *Why:* in Anthropic's data, 93% of approval prompts were approved, a sandbox cut prompts by 84%, and a planted-prompt credential theft worked 24 times out of 25 until file and network limits stopped it.
 *From:* research/01 (A5, A6g); Fable F16.
 
+### 59. The safety config is checked live and fails closed (new; stage 0)
+Checked on Claude Code 2.1.309 on macOS:
+- **A bad settings file is dropped silently.** One wrong-typed value made `claude -p` ignore the whole `--settings` file, sandbox and deny rules included, with nothing on stderr. So a file that parses is not proof the protections are on.
+- **Permanent requirements for every task session.** Each has a test:
+  1. `sandbox.failIfUnavailable: true` and `sandbox.allowUnsandboxedCommands: false`. Without the first, a sandbox that can't start means commands run unsandboxed.
+  2. `--permission-mode dontAsk --permission-prompts none`. With these, a dropped settings file fails closed: nothing is pre-approved, so every tool is refused. Any other mode would fail open.
+  3. `--setting-sources project` (decision 60).
+  4. `autoMemoryEnabled: false` (decision 60).
+  5. **`jarvis doctor` runs a live canary probe before every unattended run.** A real `claude -p` with the generated settings must fail to read a planted canary file via Bash and via the Read tool, must fail to reach a non-allowlisted host, and must fail to write outside its worktree. It must also succeed in reaching the broker socket. If any result differs, the run doesn't start.
+- **What was verified:** `sandbox.filesystem.denyRead` blocks shell reads, and a `Read(//abs/path/**)` deny rule blocks the Read tool. These are separate layers, because the file tools sit outside the shell sandbox. `sandbox.network.allowedDomains` blocks other hosts. `sandbox.network.allowUnixSockets` allows exactly the listed socket, but only by its **real path**: `/tmp/x.sock` failed and `/private/tmp/x.sock` worked. The broker socket path is always resolved with `realpath` before it's written into settings.
+- **Permission-rule paths** use `//` for absolute paths. `/Users/...` is read as relative to the settings file.
+
+Tightens decisions 12 and 13. Resolves the *(verify)* items in architecture §3.6 and §5.
+*From:* stage 0 probes, Oct 23 (`docs/stage0-findings.md` §3); Claude Code sandboxing and permissions docs.
+
 ### 43. Account setup, once (new)
 `jarvis setup` is run once, with you present. It walks through creating and connecting the house-stack accounts: GitHub, Vercel or Netlify, Neon, Cloudflare, Expo, and an OAuth app for sign-in. It stores the tokens through the secrets backend (decision 13). Tokens are scoped to previews wherever the provider allows it. Production tokens go only to the broker.
 
@@ -292,6 +308,25 @@ Claude Code's headless runs (`claude -p`) draw from the same usage windows as yo
 
 Overnight runs are realistic on Max 20x but not unlimited.
 *From:* Fable F1 (sources: Claude Code headless docs and usage-limit reporting, checked Oct 23).
+
+### 62. Usage limits are read from `rate_limit_event`, not from the exit code (new; stage 0)
+Every `claude -p` run with stream-json emits a `rate_limit_event`: `rate_limit_info.status` (`allowed`, `allowed_warning`, `rejected`), `resetsAt` (Unix **seconds**), `rateLimitType` (`five_hour`, `seven_day`, …) and `unifiedWindows` with each window's `utilization` and reset.
+- The runner logs both windows' utilization before and after each task. That is the usage measure for decisions 26 and 42.
+- A limit is detected from `status: rejected`, or from an assistant `error` of `rate_limit`. It is never inferred from the `result` message or the exit code: the docs show a limited run can end with `subtype: success`, an empty result and exit 0.
+- The sleep lasts until `resetsAt` plus a margin, then the runner re-probes before resuming.
+- Not yet observed live: the exact stream a session emits at the moment it is rejected. The fake-`claude` fixture covers it; a real capture is added when one occurs naturally.
+
+Tightens decisions 3 and 42. Resolves architecture §9 item 2.
+*From:* stage 0 probe (a live `rate_limit_event` captured); Claude Code headless and errors docs.
+
+### 65. Jarvis runs only Fabricio's own work on his own plan (new; stage 0)
+Anthropic's terms say Pro and Max limits "assume ordinary, individual usage of Claude Code and the Agent SDK". They neither ban nor clearly allow long unattended runs. So:
+- Jarvis runs only Fabricio's own projects, logged in with his own subscription, with modest concurrency (decision 46, decision 63).
+- It never routes anyone else's runs through his login, and it never offers its login to other tools.
+- When Jarvis is packaged for friends (stage 7), each person signs in with their own account. There is no shared login, token or relay.
+
+Tightens decision 42.
+*From:* Claude Code legal and compliance docs, and the Pro/Max plan support article (checked Oct 23); Fabricio, Oct 23.
 
 ### 15. Guard against the agent gaming its own checks
 - **Protected checks.** The acceptance tests, test configuration and gate scripts live outside the repo, in `~/.jarvis/projects/<project>/checks/`, owned by the runner. They run against a fixed candidate revision (a commit hash). Jarvis can't pass by changing test discovery, scripts, fixtures or the gate itself. Once a task is accepted, the runner commits its tests into the repo so the project keeps them (decision 49 has the full rules).
@@ -382,8 +417,10 @@ Notifications come from the runner, a plain script, not from the model or the ha
 - **Default: [ntfy](https://docs.ntfy.sh/)** (free, open source).
   - There's no account or password. Jarvis sends a plain web request to a long, random topic name generated by `jarvis setup`, and you subscribe to that topic in the ntfy phone app.
   - Jarvis notifies you when it needs an answer, when a run finishes or gets blocked, and when a hard stop is waiting.
-  - You answer with a button such as "Use defaults" or "Pause", or by typing a reply. Replies go to a second topic that the runner checks between tasks (ntfy supports simple polling).
-  - Setup checks that buttons and typed replies work on your phone before away mode relies on them.
+  - You answer with a button such as "Use defaults", "Approve" or "Pause". Each button is an ntfy `http` action that POSTs a fixed answer to a second, reply topic. The runner polls that topic between tasks (`/json?poll=1&since=<last id>`).
+  - **There are no typed replies.** ntfy has no text-input action (corrected in stage 0). For a free-text answer, such as a steer note, you open the reply topic in the ntfy app and type into its publish box. The runner reads that as a steer note. Anything longer waits for `jarvis steer` at the computer.
+  - Setup checks that buttons and publish-box replies both reach the reply topic on your phone before away mode relies on them.
+  - Limits on the public server: at most 3 buttons per message, 250 messages a day, and 2 MB per attachment. The docs call the iOS app "a little buggy", so a missed notification must never block a run: the 15-minute default still applies (decision 10).
 - **Optional: email, send-only,** through your mail provider's SMTP with an app password. Jarvis can send, but it never reads your inbox; you answer through ntfy or at the computer. Email isn't the default because it needs credentials, and two-way email would mean giving Jarvis access to read your inbox.
 - **Privacy:** messages pass through ntfy's public server, and the topic name acts as the password. Messages stay short (questions and status, never code or secrets), and the full details stay in `REPORT.md` on your Mac. Self-hosting ntfy, or using its access tokens, is an option later.
 - **Limits:** ntfy messages are capped at about 4 KB of text, and attachments such as mockup screenshots expire after 3 hours.
@@ -464,6 +501,51 @@ It also checks your machine:
 If anything fails, the run doesn't start unattended. Your Claude Code is 2.1.270 (Codex checked it locally), and Jarvis needs 2.1.302 or newer, so updating is part of setup. The pin is one exact tested version, not "or newer".
 *From:* Codex H7.
 
+### 57. Pin Claude Code 2.1.309, called by absolute path (new; stage 0)
+- **The pin is 2.1.309:** `~/.local/share/claude/versions/2.1.309`. It includes a macOS fix (in 2.1.309) for sandboxed Bash running shell startup files *outside* the sandbox, so earlier versions don't qualify.
+- **Absolute path, never `PATH`.** Fabricio's `claude` on `PATH` is a wrapper (decision 58) and stays as it is. Jarvis never changes it or his everyday version.
+- **The desktop app is separate.** It bundles its own Claude Code (2.1.308 on Oct 23) and updates on its own, so it can't be pinned. Desktop is used only for interactive intake. Every task session runs the pinned CLI. `dontAsk` mode is CLI-only anyway.
+- **Codex** is pinned the same way (decision 66).
+
+Supersedes "Jarvis needs 2.1.302 or newer" in decision 46.
+*From:* stage 0 checks, Oct 23 (`docs/stage0-findings.md` §1); Claude Code changelog 2.1.302–2.1.309.
+
+### 58. Every child process gets a clean environment built from an allowlist (new; stage 0)
+Two things on Fabricio's Mac showed why inherited environments can't be trusted:
+- **A wrapper owns `claude` and `codex`.** `~/.local/bin/claude` and `codex` are "ai-harness" wrappers. They silently remove every `ANTHROPIC_*`, `CLAUDE_CODE_*`, `CODEX_*`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` variable, so settings passed through the environment would vanish.
+- **Shell variables reroute Claude Code.** `~/.zshrc` exported `CLAUDE_CODE_USE_OPENAI=1`, a third-party `OPENAI_BASE_URL` and key, and `CLAUDE_CONFIG_DIR`. A Claude Code started from an interactive terminal without the wrapper would have sent work to another provider, with another config folder.
+
+So:
+- The runner never inherits its environment. It builds each child's environment from an allowlist: `PATH` (fixed), `HOME`, `USER`, `LANG`, `TMPDIR` and `SHELL`, plus the variables Jarvis sets on purpose.
+- `jarvis doctor` refuses an unattended run if any of these would reach the session: `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` (they would bill the API instead of the plan), `CLAUDE_CODE_USE_*`, `*_BASE_URL`, or `CLAUDE_CONFIG_DIR`.
+- `doctor` reports any wrapper in front of a binary Jarvis uses, for information only.
+
+Tightens decision 3 ("explicit config").
+*From:* stage 0 checks, Oct 23 (`docs/stage0-findings.md` §1, §5).
+
+### 60. Fabricio's global Claude Code config never reaches a task session (new; stage 0)
+`--settings` *adds* to the user config; it doesn't replace it. On this Mac the user config has hooks (PostToolUse, SessionStart, Stop), two plugins and about 100 skills. So every task session runs with:
+- `--setting-sources project`, which keeps out user hooks, plugins and skills (verified: the `init` message lists only built-in agents and skills),
+- `--strict-mcp-config` with Jarvis's own MCP file,
+- `autoMemoryEnabled: false` in the generated settings, because otherwise each session writes auto-memory under `~/.claude/projects/` (verified: `memory_paths` disappears from `init`). Memory comes only through decisions 27–28,
+- `--no-session-persistence`, so task transcripts aren't added to the interactive history.
+
+Each of these is a permanent requirement with a test (decision 59). Tightens decisions 3 and 27.
+*From:* stage 0 probes, Oct 23.
+
+### 63. A disk floor (new; stage 0)
+The Mac had 29 GB free (94% used) on Oct 23. Worktrees, `node_modules`, Docker and the iOS simulator use space fast.
+- **Under 20 GB free:** `jarvis doctor` refuses an unattended run.
+- **Under 40 GB free:** concurrency drops to one writing task.
+- The runner re-checks between tasks. Falling under the floor mid-run is handled like a budget cap: pause, don't kill (decision 14).
+
+Tightens decision 46's concurrency rule.
+*From:* stage 0 checks; Fabricio, Oct 23.
+
+### 64. The Jarvis repo stays at `~/Desktop/jarvis` (new; stage 0)
+iCloud's Desktop & Documents sync is off on this Mac (`FXICloudDriveDesktop = 0`), so architecture §10's move to `~/Developer/jarvis` isn't needed. `jarvis doctor` keeps checking: if sync is ever turned on, unattended runs stop until the repo moves.
+*From:* stage 0 checks; Fabricio, Oct 23.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice
@@ -489,6 +571,31 @@ Effort levels map across harnesses:
 
 Codex (Astra) proposed routing purely by difficulty. Jarvis adopts that for everything except tier-2 deciding and judging.
 *From:* research/02 (#3, #7, #8), research/03, research/04; Fable F11; Codex M3.
+
+### 61. The routing table names full model IDs, never aliases (new; stage 0)
+Aliases change meaning with the Claude Code version: on 2.1.270, `haiku` resolved to Claude Haiku 4.5, and on 2.1.309 it resolves to Claude Haiku 5.5. So `routing.yaml` uses full IDs, verified on the pinned version:
+
+| Tier | Model ID |
+|---|---|
+| strong | `claude-opus-5-5` |
+| fast | `claude-sonnet-5-5` |
+| cheap | `claude-haiku-5-5` |
+
+`jarvis doctor` checks that each ID is accepted and that the `init` message reports the same ID back.
+
+Supersedes the aliases in architecture §3.9.
+*From:* stage 0 probe, Oct 23.
+
+### 66. How the Codex reviewer runs (new; stage 0)
+- **By absolute path:** `~/.npm-global/bin/codex`, pinned at codex-cli 0.163.0. Never through `PATH`, because a wrapper owns `codex` there (decision 58).
+- **Isolated:** a Jarvis-owned `CODEX_HOME` that contains only a symlink to the login file `~/.codex/auth.json`, so the credential isn't copied. With that, none of Fabricio's Codex skills (gstack), config, rules, memories or plugins load. A trivial review used about 26k input tokens instead of about 53k. The flags `--ignore-user-config` and `--ignore-rules` alone still loaded the skills.
+- **Read-only:** `codex exec --sandbox read-only --ephemeral --json --output-schema <verdict schema> -o <file>`.
+- **It reads evidence, not narrative:** the repo at the candidate revision, the docs, and the runner's evidence files. It never gets the builder's summary (decision 49).
+- **Its verdict is kept:** each review is saved to `docs/reviews/` with the revision it reviewed.
+- **Fallback:** on a usage-limit error (`You've hit your usage limit`, then `turn.failed` and exit 1) or a missing binary, the strong Claude reviewer takes over, and the report says so.
+
+Tightens decisions 17 and 24.
+*From:* stage 0 probes, Oct 23; Codex non-interactive docs and source.
 
 ### 25. Switch models only at subagent boundaries
 Jarvis never changes the model or tool set mid-session, and the start of every prompt stays identical.
@@ -840,6 +947,16 @@ The golden tasks and their snapshots of your job automation live in a separate p
   - Jarvis stays private until stage 7,
   - Codex is the cross-model reviewer, with a Claude fallback,
   - overnight usage windows may be spent on test runs.
+- **Oct 23, stage 0 round:**
+  - pin Claude Code 2.1.309, called by absolute path; the ai-harness wrapper and everyday `claude` stay untouched (decision 57),
+  - full model IDs in the routing table (decision 61),
+  - keep the repo at `~/Desktop/jarvis` (decision 64),
+  - a 20 GB disk floor, and one writing task below 40 GB (decision 63),
+  - ntfy: buttons plus the publish box, no typed replies (decision 50),
+  - read-only Documents access for the FreeHire scan; install Maestro,
+  - Codex reviews run on the Mac, read-only, without the gstack skills, with verdicts in `docs/reviews/` (decision 66),
+  - `failIfUnavailable`, `--setting-sources project`, auto-memory off and the doctor canary probe are permanent, each with a test (decisions 59, 60),
+  - Jarvis runs only Fabricio's own work on his own plan (decision 65).
 
 ## Key sources
 

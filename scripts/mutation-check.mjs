@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { classify, testIds } from "./mutation-classify.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
 const A = "packages/cli/src/harness/claude/args.ts";
@@ -41,39 +42,42 @@ const mutations = [
   ["snapshot ignores inline comments", N, '      const c = line.slice(head.length).search(/\\s#/);', '      const c = -1;'],
   ["snapshot skips binary files", N, "  if (buf.includes(0)) {\n    const le", "  if (false) {\n    const le"],
   ["usage wait ignores windows", J, "  const over = Object.values(last.windows).filter((w) => w.utilization >= threshold);", "  const over: RateLimitWindow[] = [];"],
+  ["placeholder rule exempts short passwords", N, "export function isPlaceholderPassword(raw: string): boolean {\n", "export function isPlaceholderPassword(raw: string): boolean {\n  if (raw.length <= 4) return true;\n"],
+  ["snapshot ignores DER private keys", N, "    if (isDerPrivateKey(buf)) {", "    if (false) {"],
+  ["session kills only the parent", X, "      process.kill(-child.pid, sig);", "      child.kill(sig);"],
+  ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],
+  ["scheduler counts unstarted runs", C, "        if (!r.started) {", "        if (false) {"],
+  ["scheduler waits right after each run (old bug)", C, "        if (r.usageWaitUntil !== undefined && dispatched < total) pendingWait = { until: r.usageWaitUntil, after: id };", "        if (r.usageWaitUntil !== undefined) { const stop = await wait(id, r.usageWaitUntil, \"usage is high\"); if (stop) return { completed, stopped: { task: id, reason: stop } }; }"],
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],
 ];
 
 const work = mkdtempSync(join(tmpdir(), "jarvis-mut-"));
 function runSuite(tag) {
   const out = join(work, `${tag}.json`);
-  const r = spawnSync("pnpm", ["-s", "vitest", "run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8" });
-  if (!existsSync(out)) return { error: `no report (exit ${r.status}): ${(r.stderr || r.stdout).slice(0, 200)}` };
-  const j = JSON.parse(readFileSync(out, "utf8"));
-  const failedAssertions = j.testResults.flatMap((f) => f.assertionResults).filter((a) => a.status === "failed").length;
-  const crashedFiles = j.testResults.filter((f) => f.status === "failed" && !f.assertionResults.some((a) => a.status === "failed")).map((f) => f.name.split("/").pop());
-  return { total: j.numTotalTests, failedAssertions, crashedFiles };
+  const proc = spawnSync("pnpm", ["-s", "vitest", "run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8", timeout: 300_000 });
+  const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
+  return { proc, report };
 }
 
 const results = [];
+let controlIds;
 try {
   const control = runSuite("control");
-  if (control.error || control.failedAssertions || control.crashedFiles.length) {
-    console.log(`control run is not clean: ${JSON.stringify(control)}`);
+  const c = classify(control.proc, control.report, undefined);
+  if (c.kind !== "clean" || control.proc.status !== 0) {
+    console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
     process.exit(2);
   }
-  results.push(`control  ${control.total} tests, all passing`);
+  controlIds = testIds(control.report);
+  results.push(`control  ${c.detail}`);
   for (const [name, file, from, to] of mutations) {
     const orig = readFileSync(file, "utf8");
     if (!orig.includes(from)) { results.push(`ERROR    ${name}: anchor not found in ${file}`); continue; }
     try {
       writeFileSync(file, orig.replace(from, to));
       const m = runSuite(name.replace(/\W+/g, "-"));
-      if (m.error) results.push(`ERROR    ${name}: ${m.error}`);
-      else if (m.crashedFiles.length) results.push(`ERROR    ${name}: suites crashed without assertions (${m.crashedFiles.join(", ")})`);
-      else if (m.total !== control.total) results.push(`ERROR    ${name}: collected ${m.total} tests, control had ${control.total}`);
-      else if (m.failedAssertions > 0) results.push(`caught   ${name} (${m.failedAssertions} failing assertions)`);
-      else results.push(`SURVIVED ${name}`);
+      const k = classify(m.proc, m.report, controlIds);
+      results.push(`${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail})`);
     } finally {
       writeFileSync(file, orig);
     }

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { safeGit } from "./git.ts";
@@ -18,6 +19,8 @@ export interface SnapshotInput {
   revert?: readonly string[];
   /** Files reviewed by a person and allowed to contain credential-looking text (e.g. test fixtures). */
   allowSecretsIn?: readonly string[];
+  /** Test seam: the size above which a file is refused as uninspectable. */
+  maxScanBytes?: number;
   dest: string;
 }
 
@@ -118,9 +121,22 @@ const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
   ["Stripe live key", /\b[rs]k_live_[0-9A-Za-z]{20,}\b/],
 ];
 
-/** Documentation and test placeholders ("user:pass", "%s", "<pass>", "u:p") are not credentials. */
-export function isPlaceholderPassword(pw: string): boolean {
-  return pw.length <= 4 || /[<>{}%$*]/.test(pw) || /^(pass(word)?|secret|changeme|example|test(ing)?|dummy|placeholder|x{3,}|redacted)$/i.test(pw);
+/**
+ * Documentation and test placeholders are not credentials, but only in narrow, complete forms:
+ * a whole-value template (%s, <pass>, {password}, ${DB_PASSWORD}, $DB_PASSWORD) or a whole-value
+ * placeholder word. No length or punctuation exemptions (Codex review 3): anything else, including
+ * short or percent-encoded passwords, counts as real. Ambiguous fixtures go through allowSecretsIn.
+ */
+export function isPlaceholderPassword(raw: string): boolean {
+  let pw = raw;
+  try {
+    pw = decodeURIComponent(raw);
+  } catch {
+    // not valid percent-encoding (e.g. "%s"): classify the raw text
+  }
+  const template = /^(%s|<[A-Za-z_][\w-]*>|\{[A-Za-z_][\w-]*\}|\$\{[A-Za-z_][\w]*\}|\$[A-Z_][A-Z0-9_]*|\*{3,}|x{3,}|X{3,})$/;
+  const word = /^(pass|password|passwd|secret|changeme|example|test|testing|dummy|placeholder|redacted|REDACTED)$/;
+  return template.test(raw) || template.test(pw) || word.test(pw);
 }
 
 export function findCredentials(text: string): string[] {
@@ -152,6 +168,23 @@ export function scanViews(buf: Buffer): string[] {
 
 /** Files larger than this are refused unless a person allowlisted them. */
 export const MAX_SCAN_BYTES = 64 * 1024 * 1024;
+
+/** Credential containers that can't be inspected as text: refused unless a person reviewed them. */
+const CREDENTIAL_CONTAINERS = /\.(p12|pfx|jks|jceks|keystore|bks|kdbx|ppk|gpg|pgp|key|der|p8|pk8)$/i;
+
+/** True if the bytes parse as a DER private key (PKCS#8, PKCS#1 RSA or SEC1 EC). */
+export function isDerPrivateKey(buf: Buffer): boolean {
+  if (buf.length > 64 * 1024 || buf[0] !== 0x30) return false;
+  for (const type of ["pkcs8", "pkcs1", "sec1"] as const) {
+    try {
+      createPrivateKey({ key: buf, format: "der", type });
+      return true;
+    } catch {
+      // not this format
+    }
+  }
+  return false;
+}
 
 function walk(dir: string, root: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -204,12 +237,20 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
     }
     if (!st.isFile()) continue;
     if (allowed.has(rel)) continue; // a person reviewed this file
-    if (st.size > MAX_SCAN_BYTES) {
+    if (st.size > (input.maxScanBytes ?? MAX_SCAN_BYTES)) {
       found.push(`${rel} (too large to scan)`);
       continue;
     }
     const name = rel.split("/").at(-1) ?? "";
     const buf = readFileSync(p);
+    if (isDerPrivateKey(buf)) {
+      found.push(`${rel} (binary private key)`);
+      continue;
+    }
+    if (CREDENTIAL_CONTAINERS.test(name) && (buf.includes(0) || !/^-----BEGIN /.test(buf.toString("latin1", 0, 11)))) {
+      found.push(`${rel} (credential container; needs review)`);
+      continue;
+    }
     if (/^\.env(\..+)?$/.test(name)) {
       if (buf.includes(0)) {
         found.push(`${rel} (non-UTF-8 env file)`);

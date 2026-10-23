@@ -55,6 +55,8 @@ export interface BaselineRunResult {
   timedOut: boolean;
   durationMs: number;
   init: ReturnType<typeof initInfo>;
+  /** False when no model session actually started (no init event): never counts as a recorded baseline. */
+  started: boolean;
   resultSubtype: string | undefined;
   numTurns: number | undefined;
   toolCalls: number;
@@ -144,6 +146,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     timedOut: outcome.timedOut,
     durationMs: outcome.durationMs,
     init: initInfo(events),
+    started: initInfo(events) !== undefined,
     resultSubtype: typeof result?.subtype === "string" ? result.subtype : undefined,
     numTurns: typeof result?.num_turns === "number" ? result.num_turns : undefined,
     toolCalls: toolCalls(events).length,

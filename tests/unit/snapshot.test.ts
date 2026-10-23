@@ -106,11 +106,20 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(findCredentials('{"db": "postgres://admin:hunter2@prod.db.example.net:5432/app"}')).toEqual(["credential URL"]);
     expect(findCredentials("url: postgres://hire:hire@localhost:5432/hire and http://user:pass@proxy.example:8080")).toEqual([]);
     expect(findCredentials("postgres://REDACTED:REDACTED@prod.db.example.net/app")).toEqual([]);
-    // Placeholders seen in FreeHire's docs and tests:
-    for (const p of ["http://user:pass@host", "postgres://%s:%s@%s", "http://<user>-rotate:<pass>@p.webshare.io", "http://u:p@1.2.3.4", "http://u-{n}:p@gw"]) {
+    // Narrow placeholder forms seen in FreeHire's docs:
+    for (const p of ["http://user:pass@host", "postgres://%s:%s@%s", "http://<user>-rotate:<pass>@p.webshare.io", "postgres://app:${DB_PASSWORD}@prod.acme.net/app", "postgres://app:{password}@prod.acme.net"]) {
       expect(findCredentials(p)).toEqual([]);
     }
-    expect(findCredentials("http://scraper:Zq8vT2mWx91@p.webshare.io:80")).toEqual(["credential URL"]);
+    // Codex review 3, high: real passwords that the old rule exempted.
+    for (const p of [
+      "http://scraper:Zq8vT2mWx91@p.webshare.io:80",
+      '{"db": "postgres://svc:N7q4%40QmV8n2Lp9@prod.acme.net/app"}',
+      "postgres://svc:Pa$$w0rd!x9@prod.acme.net/app",
+      "postgres://svc:8k2Z@prod.acme.net/app",
+      "http://u:p@1.2.3.4",
+    ]) {
+      expect(findCredentials(p)).toEqual(["credential URL"]);
+    }
   });
 
   it("fails closed on a credential anywhere in the tree, unless a person allowlisted that file", async () => {
@@ -143,6 +152,30 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(err).toContain("notes.txt (GitHub token)");
     expect(err).toContain("blob.bin (AWS access key)");
     expect(err).toContain(".env (unterminated");
+  });
+
+  // Codex review 3, high: binary credentials, and the size boundary.
+  it("refuses binary private keys and credential containers, and files over the size limit", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const repo5 = join(root, "src5");
+    mkdirSync(repo5, { recursive: true });
+    git(repo5, "init", "-q", "-b", "main");
+    git(repo5, "config", "user.email", "t@t");
+    git(repo5, "config", "user.name", "t");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    writeFileSync(join(repo5, "signing.bin"), privateKey.export({ format: "der", type: "pkcs8" }));
+    writeFileSync(join(repo5, "release.p12"), Buffer.from([0x30, 0x82, 0x01, 0x00, 0x02, 0x01, 0x03]));
+    writeFileSync(join(repo5, "just-under.txt"), "a".repeat(2000));
+    writeFileSync(join(repo5, "just-over.txt"), "a".repeat(2001));
+    git(repo5, "add", "-A");
+    git(repo5, "commit", "-qm", "c");
+    const err = await createSnapshot({ sourceRepo: repo5, rev: "HEAD", dest: join(root, "snapK"), maxScanBytes: 2000 }).then(() => "", (e: Error) => e.message);
+    expect(err).toContain("signing.bin (binary private key)");
+    expect(err).toContain("release.p12 (credential container");
+    expect(err).toContain("just-over.txt (too large to scan)");
+    expect(err).not.toContain("just-under.txt");
+    const ok = await createSnapshot({ sourceRepo: repo5, rev: "HEAD", dest: join(root, "snapK2"), maxScanBytes: 2000, allowSecretsIn: ["signing.bin", "release.p12", "just-over.txt"] });
+    expect(ok.commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("removes symlinks that point outside the snapshot", async () => {

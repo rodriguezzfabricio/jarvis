@@ -49,9 +49,19 @@ export async function runSchedule(ids: readonly string[], repeat: number, label:
     return undefined;
   };
 
+  // A high-usage wait is applied just before the next dispatch, never after the last run (Codex review 3).
+  let pendingWait: { until: number; after: string } | undefined;
+  const total = repeat * ids.length;
+  let dispatched = 0;
   for (let i = 1; i <= repeat; i++) {
     for (const id of ids) {
       const task = deps.loadTask(id);
+      dispatched++;
+      if (pendingWait) {
+        const stop = await wait(id, pendingWait.until, `usage is high after ${pendingWait.after}`);
+        pendingWait = undefined;
+        if (stop) return { completed, stopped: { task: id, reason: stop } };
+      }
       let usageRetries = 0;
       for (let attempt = 1; ; attempt++) {
         const runId = `baseline-${new Date(deps.nowMs()).toISOString().replace(/[:.]/g, "-")}${label ? `-${label}` : ""}-r${i}-a${attempt}`;
@@ -70,6 +80,10 @@ export async function runSchedule(ids: readonly string[], repeat: number, label:
           return { completed, stopped: { task: id, reason } };
         }
         deps.log(`${id} ${runId}: exit ${r.exitCode}${r.timedOut ? " (timed out)" : ""}, ${r.resultSubtype}, ${r.numTurns} turns, ${Math.round(r.durationMs / 60000)} min, ${r.diffStat || "no changes"}`);
+        if (!r.started) {
+          deps.log(`${id}: stopping the chain; the session did not start`);
+          return { completed, stopped: { task: id, reason: "the session did not start (no init event)" } };
+        }
         if (r.usageLimited) {
           if (usageRetries >= (deps.maxUsageRetries ?? 8)) return { completed, stopped: { task: id, reason: `still usage-limited after ${usageRetries} waits` } };
           usageRetries++;
@@ -78,10 +92,7 @@ export async function runSchedule(ids: readonly string[], repeat: number, label:
           continue; // the same task again; waiting is not a failure
         }
         completed.push({ task: id, runId });
-        if (r.usageWaitUntil !== undefined) {
-          const stop = await wait(id, r.usageWaitUntil, "usage is high");
-          if (stop) return { completed, stopped: { task: ids[ids.indexOf(id) + 1] ?? id, reason: stop } };
-        }
+        if (r.usageWaitUntil !== undefined && dispatched < total) pendingWait = { until: r.usageWaitUntil, after: id };
         break;
       }
     }

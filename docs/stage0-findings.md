@@ -129,3 +129,18 @@ The hidden checks and rubric grading are applied to the recorded revisions once 
 - **Jarvis's own plugin hooks** (`--plugin-dir`) run under `--restricted`; this is now a live probe check.
 - **A real dotenv parser** and a fail-closed scan of every file in every encoding.
 - **Live probe:** 21 checks plus 2 negative controls, all as expected on 2.1.309.
+
+## 12. After Codex review 3
+
+`docs/reviews/stage0-codex-3.md` (FAIL: 2 high, 4 medium) and `stage0-codex-3-response.md`.
+
+- **Credential scan:**
+  - Placeholders are only complete template forms or placeholder words. Short, percent-encoded and punctuated passwords are flagged.
+  - Binary DER private keys and credential containers are refused.
+  - FreeHire's one ambiguous fixture, `test_engines.py` (`u:p@1.2.3.4`), is allowlisted by review in jarvis-evals.
+- **Sessions:**
+  - They run in their own process group, and shutdown is SIGTERM then SIGKILL after a grace period.
+  - Leftover background processes are cleaned when a session ends. Writing the test showed a killed shell's grandchild kept the output pipes open.
+  - A session that fails to spawn is an error with a written diagnostic, never an empty run.
+- **Scheduler:** high-usage waits only happen before a next run. Unstarted runs stop the chain and aren't counted.
+- **Mutation check:** results are classified by test identity, assertion type, timeouts, signals and file errors (tested). 28 of 28 mutations caught. The stricter classifier caught one equivalent mutation and one weak test, and both were replaced.

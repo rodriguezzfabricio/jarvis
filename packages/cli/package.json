@@ -10,6 +10,7 @@
     "node": ">=24 <25"
   },
   "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.81",
     "commander": "15.0.0",
     "zod": "4.6.7"
   }

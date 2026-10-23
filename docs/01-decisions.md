@@ -619,11 +619,12 @@ Codex noted that four items in architecture §9 or §8's stage 0 row can't be fi
 | Maestro flows on an Expo development build in the iOS simulator (§9 item 7) | Stage 4 | Task 9 is the first to need it; the dev build needs several GB of disk |
 | Impeccable on a real Next.js app (§9 item 7) | Stage 4 | Task 11's app is the first real Next.js app. Stage 0 checked JSX source and rendered HTML |
 | `jarvis setup` account creation (GitHub, Vercel, Neon, …) | Stage 5 | Preview deploys are the first use; setup's local parts (folders, ntfy topics, isolated Codex home) exist now |
+| ntfy typed replies from the phone (the button half passed: every tap reached the reply topic) | Stage 2 | The iOS ntfy app can't publish. The Safari web app or an iOS Shortcut is the likely route, and intake (stage 2) is the first stage that needs remote answers. Fabricio, Oct 23: "debug the app later" |
 
 **Stage 0's proof is now:**
 - every remaining §9 item resolved,
 - the Codex review findings fixed and re-reviewed,
-- the ntfy button and publish-box test done,
+- the ntfy button test done (typed replies moved to stage 2),
 - baselines recorded for tasks 1, 2 and 11 (at least one run each to start stage 1; the second repeat may finish during stage 1).
 
 Supersedes those parts of architecture §8 and §9.

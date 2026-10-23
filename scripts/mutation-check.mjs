@@ -102,7 +102,8 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 }
 function runSuite(tag) {
   const out = join(work, `${tag}.json`);
-  const proc = spawnSync("pnpm", ["-s", "vitest", "run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8", timeout: 300_000 });
+  // Vitest directly: pnpm's dependency check rejects the clone's symlinked node_modules.
+  const proc = spawnSync(join(sandboxRepo, "node_modules", ".bin", "vitest"), ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8", timeout: 300_000 });
   const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
   return { proc, report };
 }

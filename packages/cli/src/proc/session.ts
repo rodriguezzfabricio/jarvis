@@ -54,6 +54,25 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   const sinks: Promise<void>[] = [];
   const timers: NodeJS.Timeout[] = [];
 
+  const groupAlive = () => {
+    if (child.pid === undefined) return false;
+    try {
+      process.kill(-child.pid, 0);
+      return true;
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code === "EPERM";
+    }
+  };
+  const cleanupGroup = async () => {
+    if (!groupAlive()) return;
+    killGroup("SIGTERM");
+    const killAt = Date.now() + grace;
+    while (groupAlive() && Date.now() < killAt) await new Promise((res) => setTimeout(res, 50));
+    if (groupAlive()) killGroup("SIGKILL");
+    const giveUp = Date.now() + 5_000;
+    while (groupAlive() && Date.now() < giveUp) await new Promise((res) => setTimeout(res, 50));
+  };
+
   // One idempotent shutdown path: SIGTERM now, SIGKILL after a bounded grace period.
   let shuttingDown = false;
   const shutdown = () => {
@@ -95,7 +114,10 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     child.on("close", (c) => resolve(c));
   });
   for (const t of timers) clearTimeout(t);
-  killGroup("SIGTERM"); // leftovers the session started in the background (dev servers, watchers)
+  // The leader is gone; anything else in its group (background servers, watchers, a descendant that
+  // ignores SIGTERM) gets the same bounded TERM -> KILL, and we wait until the group is empty
+  // before returning, so nothing outlives the session (Codex review 4).
+  await cleanupGroup();
   // Evidence is parsed from these files, so wait until every byte is on disk.
   await Promise.all(sinks);
   if (spawnError) {

@@ -4,8 +4,17 @@
 // failed test whose failure is an assertion, not a timeout or a runner error.
 
 const TIMEOUT = /test timed out|timed out in \d+ms/i;
-// Vitest reports .rejects/.resolves failures as "promise resolved … instead of rejecting" from its _Assertion code.
-const ASSERTION = /AssertionError|expected .+ to |toThrow|toEqual|toBe|toContain|toMatch|instead of (rejecting|resolving)|_Assertion\./;
+
+/**
+ * True only for a completed assertion: Chai/Vitest's AssertionError, or Vitest's own .rejects/.resolves
+ * assertion (its message AND its _Assertion stack frame). No matcher-name substrings: a
+ * "TypeError: expect(...).toBe is not a function" is a runtime error (Codex review 4).
+ */
+export function isAssertionFailure(message) {
+  const first = message.split("\n")[0] ?? "";
+  if (/^AssertionError\b/.test(first)) return true;
+  return /instead of (rejecting|resolving)$/.test(first) && /\bat _Assertion\.__VITEST_(REJECTS|RESOLVES)__/.test(message);
+}
 
 export function testIds(report) {
   return report.testResults.flatMap((f) => f.assertionResults.map((a) => `${f.name.split("/").slice(-2).join("/")} > ${a.fullName}`)).sort();
@@ -22,15 +31,19 @@ export function classify(proc, report, controlIds) {
   if (controlIds && (ids.length !== controlIds.length || ids.some((x, i) => x !== controlIds[i]))) {
     return { kind: "error", detail: `ran ${ids.length} tests, not the control's ${controlIds.length}` };
   }
-  const failed = report.testResults.flatMap((f) => f.assertionResults).filter((a) => a.status === "failed");
+  const all = report.testResults.flatMap((f) => f.assertionResults);
+  const unfinished = all.filter((a) => a.status !== "passed" && a.status !== "failed");
+  if (unfinished.length) return { kind: "error", detail: `${unfinished.length} test(s) did not finish (${[...new Set(unfinished.map((a) => a.status))].join(", ")})` };
+  const failed = all.filter((a) => a.status === "failed");
   if (failed.length === 0) {
     if (proc.status !== 0 || report.success === false) return { kind: "error", detail: `suite failed (exit ${proc.status}) with no failed test: unhandled error?` };
     return controlIds ? { kind: "survived", detail: "all tests passed" } : { kind: "clean", detail: `${ids.length} tests passed` };
   }
+  if (proc.status !== 1) return { kind: "error", detail: `tests failed but the suite exited ${proc.status}` };
   const timeouts = failed.filter((a) => a.failureMessages.some((m) => TIMEOUT.test(m)));
-  const assertions = failed.filter((a) => !timeouts.includes(a) && a.failureMessages.some((m) => ASSERTION.test(m)));
-  const other = failed.filter((a) => !timeouts.includes(a) && !assertions.includes(a));
   if (timeouts.length) return { kind: "error", detail: `${timeouts.length} test(s) timed out` };
-  if (assertions.length === 0) return { kind: "error", detail: `${other.length} failure(s), none an assertion` };
-  return { kind: "caught", detail: `${assertions.length} failing assertion(s): ${assertions.slice(0, 2).map((a) => a.title).join("; ")}` };
+  // Every failure must be a completed assertion; a mix with runtime errors is not a clean catch.
+  const nonAssertion = failed.filter((a) => a.failureMessages.length === 0 || !a.failureMessages.every(isAssertionFailure));
+  if (nonAssertion.length) return { kind: "error", detail: `${nonAssertion.length} failure(s) not assertions: ${(nonAssertion[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
+  return { kind: "caught", detail: `${failed.length} failing assertion(s): ${failed.slice(0, 2).map((a) => a.title).join("; ")}` };
 }

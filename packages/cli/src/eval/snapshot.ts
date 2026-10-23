@@ -36,7 +36,8 @@ export interface SnapshotManifest {
 const SECRET_KEY = /(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE|CREDENTIAL|AUTH|_KEY$)/i;
 /** Hosts whose credentials are local dev defaults or documentation placeholders, not real secrets. */
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|postgres|redis|minio|mailhog|host\.docker\.internal|([a-z0-9-]+\.)*(example|test|invalid|localhost)|example\.(com|org|net))$/i;
-const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@'"]+):([^\s/@'"]+)@([^\s/:'"?#]+)/gi;
+// userinfo may have an empty username (redis://:password@host) (Codex review 4).
+const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@'"]*):([^\s/@'"]+)@([^\s/:'"?#]+)/gi;
 
 /** Credential URLs pointing anywhere but local dev services keep their host and lose user:password. */
 function redactCredUrls(v: string): string {
@@ -112,7 +113,9 @@ export function redactEnvText(text: string): { text: string; keys: string[] } {
 
 /** Patterns that mean "a real credential is probably here". Dummy PEM bodies (like "test") don't match. */
 const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
-  ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----\s*[A-Za-z0-9+/=\s]{100,}-----END/],
+  // Any private-key envelope, whatever its body length or headers: short Ed25519/X25519 keys and
+  // encrypted (Proc-Type/DEK-Info) RSA keys included. Dummy fixtures need explicit review (Codex review 4).
+  ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
   ["OpenAI/Anthropic-style key", /\bsk-(ant-)?[A-Za-z0-9_-]{32,}\b/],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],

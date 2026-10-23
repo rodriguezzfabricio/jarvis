@@ -90,6 +90,12 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(() => redactEnvText('A="never closed\nAPI_TOKEN=secret\n')).toThrow(/unterminated/);
   });
 
+  it("redacts password-only credential URLs (redis://:password@host)", () => {
+    const r = redactEnvText("REDIS_URL=redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0\n");
+    expect(r.text).toBe("REDIS_URL=redis://REDACTED:REDACTED@cache.prod.acme.net:6379/0\n");
+    expect(r.keys).toEqual(["REDIS_URL"]);
+  });
+
   it("strips user:password from non-local credential URLs and keeps local dev defaults", () => {
     const r = redactEnvText("DATABASE_URL=postgres://admin:hunter2@prod.db.example.com:5432/app\nDEV_URL=postgres://hire:hire@localhost:5432/hire\n");
     expect(r.text).toContain("postgres://REDACTED:REDACTED@prod.db.example.com:5432/app");
@@ -97,10 +103,12 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(r.keys).toEqual(["DATABASE_URL"]);
   });
 
-  it("recognizes real-looking credentials but not dummy fixtures", () => {
+  it("recognizes credentials, including any private-key envelope", () => {
     const realKey = `-----BEGIN PRIVATE KEY-----\n${"A".repeat(120)}\n-----END PRIVATE KEY-----`;
     expect(findCredentials(realKey)).toEqual(["private key"]);
-    expect(findCredentials("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----")).toEqual([]);
+    // Dummy envelopes count too: a person must allowlist them (Codex review 4).
+    expect(findCredentials("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----")).toEqual(["private key"]);
+    expect(findCredentials("redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0")).toEqual(["credential URL"]);
     expect(findCredentials(`token: ghp_${"a".repeat(36)}`)).toEqual(["GitHub token"]);
     expect(findCredentials("nothing here")).toEqual([]);
     expect(findCredentials('{"db": "postgres://admin:hunter2@prod.db.example.net:5432/app"}')).toEqual(["credential URL"]);
@@ -176,6 +184,45 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(err).not.toContain("just-under.txt");
     const ok = await createSnapshot({ sourceRepo: repo5, rev: "HEAD", dest: join(root, "snapK2"), maxScanBytes: 2000, allowSecretsIn: ["signing.bin", "release.p12", "just-over.txt"] });
     expect(ok.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  // Codex reviews 3 and 4: snapshot-level regressions, not just the helper.
+  it("refuses snapshots carrying real keys or passwords in any of these forms", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const cases: Record<string, string> = {
+      "ed25519.pem": generateKeyPairSync("ed25519").privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+      "x25519.pem": generateKeyPairSync("x25519").privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+      "rsa-enc.key": generateKeyPairSync("rsa", { modulusLength: 1024 }).privateKey.export({ format: "pem", type: "pkcs1", cipher: "aes-256-cbc", passphrase: "pw" }).toString(),
+      "config.json": '{"db": "postgres://svc:N7q4%40QmV8n2Lp9@prod.acme.net/app"}\n',
+      "short.yaml": "db: postgres://svc:8k2Z@prod.acme.net/app\n",
+      "punct.yaml": "db: postgres://svc:Pa$$w0rd!x9@prod.acme.net/app\n",
+      "redis.json": '{"cache": "redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0"}\n',
+    };
+    for (const [name, content] of Object.entries(cases)) {
+      const repo = join(root, `srcX-${name}`);
+      mkdirSync(repo, { recursive: true });
+      git(repo, "init", "-q", "-b", "main");
+      git(repo, "config", "user.email", "t@t");
+      git(repo, "config", "user.name", "t");
+      writeFileSync(join(repo, name), content);
+      git(repo, "add", "-A");
+      git(repo, "commit", "-qm", "c");
+      const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapX-${name}`) }).then(() => "", (e: Error) => e.message);
+      expect(err, name).toContain(name);
+    }
+  });
+
+  it("redacts a password-only Redis URL in a tracked .env file", async () => {
+    const repo = join(root, "srcR");
+    mkdirSync(repo, { recursive: true });
+    git(repo, "init", "-q", "-b", "main");
+    git(repo, "config", "user.email", "t@t");
+    git(repo, "config", "user.name", "t");
+    writeFileSync(join(repo, ".env"), "REDIS_URL=redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-qm", "c");
+    await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapR") });
+    expect(readFileSync(join(root, "snapR", ".env"), "utf8")).not.toContain("Synthetic9qvM2");
   });
 
   it("removes symlinks that point outside the snapshot", async () => {

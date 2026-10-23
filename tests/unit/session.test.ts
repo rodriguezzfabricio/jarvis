@@ -57,6 +57,31 @@ describe("session output capture (Codex review 2, medium)", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  // Codex review 4, medium: a cooperative leader that leaves a SIGTERM-resistant descendant behind.
+  for (const capture of ["normal completion", "capture failure"] as const) {
+    it(`kills a SIGTERM-resistant descendant after the leader exits (${capture})`, async () => {
+      const pidFile = join(dir, `desc-${capture.replace(" ", "-")}.pid`);
+      const leader = join(dir, `leader-${capture.replace(" ", "-")}`);
+      writeFileSync(leader, `#!/bin/sh\nsh -c 'trap "" TERM; echo $$ > ${pidFile}; while :; do sleep 1; done' > /dev/null 2>&1 &\nsleep 0.3\necho leader-done\n`);
+      chmodSync(leader, 0o755);
+      // The capture fails on the leader's first output, which comes after the descendant is running.
+      const failingSink = () =>
+        new Writable({
+          write(_c, _e, cb) {
+            cb(Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }));
+          },
+        });
+      const spec = { ...base, bin: leader, killGraceMs: 300, ...(capture === "capture failure" ? { stdoutPath: join(dir, "x.txt"), openSink: failingSink } : {}) };
+      const t0 = Date.now();
+      const run = runSession(spec);
+      if (capture === "capture failure") await expect(run).rejects.toBeInstanceOf(EvidenceCaptureError);
+      else await run;
+      expect(Date.now() - t0).toBeLessThan(8_000);
+      const pid = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
+      expect(() => process.kill(pid, 0)).toThrow(); // gone
+    });
+  }
+
   // Codex review 3, medium: a session that never started is an error, not an empty run.
   it("rejects when the binary can't be started, and keeps the diagnostic", async () => {
     const errPath = join(dir, "spawn-err.txt");

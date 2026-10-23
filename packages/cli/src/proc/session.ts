@@ -106,18 +106,28 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     }, spec.timeoutMs),
   );
 
+  // React to the leader's *exit*, not to its pipes closing: a background descendant can hold the
+  // inherited stdout/stderr open indefinitely (backlog #10, Codex stage 0 review 5).
+  // Registered at spawn, so a close that happens before we look is never missed.
+  const closed = new Promise<void>((res) => child.once("close", () => res()));
   const code = await new Promise<number | null>((resolve) => {
     child.on("error", (err) => {
       spawnError = err;
       resolve(null);
     });
-    child.on("close", (c) => resolve(c));
+    child.on("exit", (c) => resolve(c));
   });
   for (const t of timers) clearTimeout(t);
   // The leader is gone; anything else in its group (background servers, watchers, a descendant that
   // ignores SIGTERM) gets the same bounded TERM -> KILL, and we wait until the group is empty
   // before returning, so nothing outlives the session (Codex review 4).
   await cleanupGroup();
+  // The group is gone, so the pipes close; wait briefly for the last bytes, then stop waiting.
+  if (!spawnError) {
+    await Promise.race([closed, new Promise<void>((res) => setTimeout(res, 5_000).unref())]);
+    child.stdout.destroy();
+    child.stderr.destroy();
+  }
   // Evidence is parsed from these files, so wait until every byte is on disk.
   await Promise.all(sinks);
   if (spawnError) {

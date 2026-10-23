@@ -26,10 +26,14 @@ export function testIds(report) {
 }
 
 /** @returns {{ kind: "clean" | "caught" | "survived" | "error", detail: string }} */
-export function classify(proc, report, controlIds) {
+export function classify(proc, report, controlIds, runEnd) {
   if (proc.error) return { kind: "error", detail: `could not run the suite: ${proc.error.message ?? proc.error}` };
   if (proc.signal) return { kind: "error", detail: `suite killed by ${proc.signal}` };
   if (!report) return { kind: "error", detail: `no JSON report (exit ${proc.status})` };
+  // Standalone unhandled errors and interrupted runs never count as a clean catch (backlog #11).
+  if (!runEnd) return { kind: "error", detail: "no run-end record (unhandled-reporter missing)" };
+  if (runEnd.unhandled > 0) return { kind: "error", detail: `${runEnd.unhandled} unhandled error(s): ${runEnd.messages?.[0] ?? ""}` };
+  if (runEnd.reason !== "passed" && runEnd.reason !== "failed") return { kind: "error", detail: `run ended as ${runEnd.reason}` };
   const fileErrors = report.testResults.filter((f) => typeof f.message === "string" && f.message.trim() !== "");
   if (fileErrors.length) return { kind: "error", detail: `file-level errors in ${fileErrors.map((f) => f.name.split("/").pop()).join(", ")}` };
   const ids = testIds(report);

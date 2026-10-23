@@ -58,6 +58,7 @@ const mutations = [
   ["password-only URLs ignored", N, ':\\/\\/)([^\\s/:@"<>`]*):', ':\\/\\/)([^\\s/:@"<>`]+):'],
   ["apostrophes end the password", N, ':([^\\s/@"<>`]+)@([^\\s/:', ":([^\\s/@'\"<>`]+)@([^\\s/:"],
   ["PEM rule needs a long body", N, '  ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],', '  ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----\\s*[A-Za-z0-9+/=\\s]{100,}-----END/],'],
+  ["session waits for pipes, not the leader's exit", X, '    child.on("exit", (c) => resolve(c));', '    child.on("close", (c) => resolve(c));'],
   ["session skips group cleanup", X, "  await cleanupGroup();\n", ""],
   ["ledger ignores the chain", L, '    if (e.prev_hash !== prev) problems.push', '    if (false) problems.push'],
   ["ledger ignores edited entries", L, '    if (entryHash(rest) !== hash) problems.push', '    if (false) problems.push'],
@@ -104,16 +105,22 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 function runSuite(tag) {
   const out = join(work, `${tag}.json`);
   // Vitest directly: pnpm's dependency check rejects the clone's symlinked node_modules.
-  const proc = spawnSync(join(sandboxRepo, "node_modules", ".bin", "vitest"), ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8", timeout: 300_000 });
+  const end = join(work, `${tag}.end.json`);
+  const proc = spawnSync(
+    join(sandboxRepo, "node_modules", ".bin", "vitest"),
+    ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
+    { encoding: "utf8", timeout: 300_000, env: { ...process.env, JARVIS_RUN_END_OUT: end } },
+  );
   const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
-  return { proc, report };
+  const runEnd = existsSync(end) ? JSON.parse(readFileSync(end, "utf8")) : undefined;
+  return { proc, report, runEnd };
 }
 
 const results = [];
 let controlIds;
 try {
   const control = runSuite("control");
-  const c = classify(control.proc, control.report, undefined);
+  const c = classify(control.proc, control.report, undefined, control.runEnd);
   if (c.kind !== "clean" || control.proc.status !== 0) {
     console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
     process.exit(2);
@@ -127,7 +134,7 @@ try {
       current = [file, orig];
       writeFileSync(file, orig.replace(from, to));
       const m = runSuite(name.replace(/\W+/g, "-"));
-      const k = classify(m.proc, m.report, controlIds);
+      const k = classify(m.proc, m.report, controlIds, m.runEnd);
       results.push(`${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail})`);
     } finally {
       writeFileSync(file, orig);

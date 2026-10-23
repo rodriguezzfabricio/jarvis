@@ -82,6 +82,25 @@ describe("session output capture (Codex review 2, medium)", () => {
     });
   }
 
+  // Backlog #10 (Codex review 5, medium): a descendant that keeps the inherited output pipes open.
+  for (const resistant of [false, true]) {
+    it(`returns promptly when a ${resistant ? "SIGTERM-resistant " : ""}descendant holds the output pipes`, async () => {
+      const pidFile = join(dir, `pipe-holder-${resistant}.pid`);
+      const leader = join(dir, `pipe-leader-${resistant}`);
+      const trap = resistant ? `trap "" TERM; ` : "";
+      writeFileSync(leader, `#!/bin/sh\nsh -c '${trap}echo $$ > ${pidFile}; while :; do sleep 1; done' &\nsleep 0.3\necho leader-done\nexit 0\n`);
+      chmodSync(leader, 0o755);
+      const t0 = Date.now();
+      const out = await runSession({ ...base, bin: leader, timeoutMs: 60_000, killGraceMs: 300 });
+      expect(Date.now() - t0).toBeLessThan(10_000);
+      expect(out.timedOut).toBe(false);
+      expect(out.code).toBe(0);
+      expect(out.stdout).toContain("leader-done");
+      const pid = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
+      expect(() => process.kill(pid, 0)).toThrow();
+    }, 20_000);
+  }
+
   // Codex review 3, medium: a session that never started is an error, not an empty run.
   it("rejects when the binary can't be started, and keeps the diagnostic", async () => {
     const errPath = join(dir, "spawn-err.txt");

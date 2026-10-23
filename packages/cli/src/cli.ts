@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Broker, type Op } from "./broker/broker.ts";
 import { ACT_EXIT, requestBroker } from "./broker/client.ts";
 import { outboxAdapters } from "./broker/outbox.ts";
@@ -13,6 +14,9 @@ import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts"
 import { loadTask, runBaseline } from "./eval/baseline.ts";
 import { runSchedule } from "./eval/schedule.ts";
 
+const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
+const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET ?? join(homedir(), ".jarvis", "run", "broker.sock");
+
 const program = new Command().name("jarvis").description("Jarvis: research, ask once, build autonomously, prove it with evidence.");
 
 program
@@ -21,7 +25,10 @@ program
   .option("--live", "run the live canary probe with the pinned Claude Code (uses a little plan usage)")
   .option("--json", "print JSON")
   .action(async (opts: { live?: boolean; json?: boolean }) => {
-    const checks = await runDoctor({ live: opts.live === true });
+    const checks = await runDoctor({
+      live: opts.live === true,
+      foundation: { jarvisHome: join(homedir(), ".jarvis"), pluginDir: fileURLToPath(new URL("../../../plugin", import.meta.url)), socketPath: defaultSocket() },
+    });
     if (opts.json) console.log(JSON.stringify(checks, null, 2));
     else {
       const mark = { pass: "ok  ", warn: "warn", fail: "FAIL" } as const;
@@ -59,8 +66,6 @@ evalCmd
     process.exitCode = out.stopped ? 1 : 0;
   });
 
-const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
-const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET ?? join(homedir(), ".jarvis", "run", "broker.sock");
 
 program
   .command("act")

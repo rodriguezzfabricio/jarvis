@@ -10,6 +10,7 @@ import {
   pinnedCodexBin,
 } from "../config/pins.ts";
 import { buildChildEnv, findForbiddenEnv, runCanaryProbe, type ProbeOptions } from "../harness/claude/index.ts";
+import { foundationChecks, type FoundationDeps } from "./foundation.ts";
 
 /** jarvis doctor, first version (decision 46; tightened by 57–60, 63, 64). */
 
@@ -33,6 +34,8 @@ export interface DoctorDeps {
   freeBytes?: (p: string) => number;
   live?: boolean;
   probe?: (opts: ProbeOptions) => ReturnType<typeof runCanaryProbe>;
+  /** Stage 1 foundation checks; omitted in unit tests of the stage 0 checks. */
+  foundation?: FoundationDeps;
 }
 
 const defaultExec = (bin: string, args: string[]) =>
@@ -106,6 +109,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
     if (flag === "1" && synced) add("icloud_sync", "fail", `iCloud Desktop & Documents sync is on and ${repo} is inside it`);
     else add("icloud_sync", "pass", flag === "1" ? "sync is on, but the repo is outside synced folders" : "Desktop & Documents sync is off");
   }
+
+  if (deps.foundation) for (const c of await foundationChecks(deps.foundation)) checks.push(c);
 
   // Live canary probe (decision 59): permanent; required before unattended runs.
   if (deps.live) {

@@ -630,6 +630,46 @@ Codex noted that four items in architecture §9 or §8's stage 0 row can't be fi
 Supersedes those parts of architecture §8 and §9.
 *From:* Codex stage 0 review 1 ("remaining for stage 0"); Fabricio, Oct 23.
 
+### 72. Stage 1 starts while stage 0's baselines and final review finish (new; Oct 23)
+Fabricio, Oct 23: "continue with the main structured code to make the whole flow work." So stage 1 began while two things were still pending:
+- Codex's fifth stage 0 review (reviews 1–4 found real issues, all fixed),
+- the baselines, which need a passing review before they restart.
+
+This relaxes the "previous stage's proof first" rule in architecture §10 for this one overlap only:
+- Stage 1 can't be *declared* done until stage 0's proof has passed.
+- Stage 1 gets its own Codex review.
+- Every stage 0 fix also applies to stage 1 code.
+
+*From:* Fabricio, Oct 23.
+
+### 73. How stage 1's foundation works (new; stage 1)
+- **Ledger** (`packages/cli/src/ledger/`):
+  - Hash-chained JSONL. Every entry is fsynced before it's acknowledged; the head hash is kept beside the ledger and replaced atomically.
+  - A torn final line, or a head one entry behind, is crash debris and gets repaired. Anything else that fails verification is tampering, and both appends and the broker refuse to act.
+  - Writers are serialized by a pid lock file. A lock left by a dead writer is taken over only under a second exclusive lock, after re-reading the holder.
+  - Fault tests: 12 SIGKILLs mid-run lose no acknowledged entry, and 4 concurrent writers produce one valid chain.
+- **Protected checks** (`checks/store.ts`): `checks.lock` hashes every check file, and the ledger's `checks_approved` entry holds the lock's own hash. So editing a check, or a check and the lock together, is caught before any run.
+- **Gates** (`checks/gate.ts`):
+  - Each check runs on a fresh clone of the committed revision, with no hooks, no repo config and no worktree edits.
+  - It runs inside **Anthropic's sandbox runtime** (`srt`, pinned 0.0.81): no runner folder, no home, no network, writes only inside the checkout. Agent-written tests never run with the runner's access.
+  - The raw stdout and stderr are hashed into a `gate_result` entry, so evidence edited afterwards is detected.
+  - Unlike Claude Code, `srt` refuses an invalid config loudly.
+- **Broker** (`broker/`):
+  - Exact-payload approvals or standing grants, all in the ledger. An "executing" intent is written before acting and a receipt after.
+  - Succeeded and unknown are final: never re-executed, and unknown is never retried. A definite failure may be retried under the same approval. Interrupted executions are reconciled to unknown on restart.
+  - Credentials come only from the owner-only secrets file (`chmod 600` is enforced).
+  - Stage 1 adapters write to a local outbox; real adapters arrive in stage 5.
+- **`jarvis act`** is the session-side client. Sessions get the Jarvis install folder as **read-only** (`readOnlyDirs`, write-denied at both layers), so they can run it.
+- **Plugin** (`plugin/`): a PreToolUse tripwire covering force-push, pushes, production deploy flags, publishing, schema pushes, remote GitHub changes, mail tools, the Keychain and the runner folder, plus a SessionStart run header. These are tripwires, not walls (decision 12).
+- **Live stage 1 safety test** (real 2.1.309, with the plugin):
+  - `jarvis act email.send` reaches the broker and gets *pending*.
+  - The secrets file is unreadable.
+  - Gmail SMTP, SendGrid, Vercel and Stripe are blocked, each with a sandbox denial record.
+  - The tripwire blocks `npm publish`.
+  - After approval the exact message is delivered to the outbox once, and a retry is a *duplicate*.
+
+*From:* stage 1 build, Oct 23.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

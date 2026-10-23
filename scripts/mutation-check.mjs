@@ -76,6 +76,15 @@ const mutations = [
 ];
 
 const work = mkdtempSync(join(tmpdir(), "jarvis-mut-"));
+// If the check is interrupted, put back whatever file is currently mutated before exiting.
+let current; // [file, original]
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    if (current) writeFileSync(current[0], current[1]);
+    rmSync(work, { recursive: true, force: true });
+    process.exit(130);
+  });
+}
 function runSuite(tag) {
   const out = join(work, `${tag}.json`);
   const proc = spawnSync("pnpm", ["-s", "vitest", "run", "tests/unit", "--reporter=json", `--outputFile=${out}`], { encoding: "utf8", timeout: 300_000 });
@@ -98,12 +107,14 @@ try {
     const orig = readFileSync(file, "utf8");
     if (!orig.includes(from)) { results.push(`ERROR    ${name}: anchor not found in ${file}`); continue; }
     try {
+      current = [file, orig];
       writeFileSync(file, orig.replace(from, to));
       const m = runSuite(name.replace(/\W+/g, "-"));
       const k = classify(m.proc, m.report, controlIds);
       results.push(`${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail})`);
     } finally {
       writeFileSync(file, orig);
+      current = undefined;
     }
   }
 } finally {

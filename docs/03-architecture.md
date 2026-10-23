@@ -26,7 +26,8 @@ Wherever a piece depends on a Claude Code feature, this doc names the feature, a
  │      ├─ notifier (ntfy / email) ◄─► your phone                  executes the exact operation, writes receipt)   │
  │      └─ morning report                                                                                          │
  └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-   ~/.jarvis/            runner-owned: ledger, evidence, protected checks, secrets, worktrees, memory (user)
+   ~/.jarvis/            runner-owned, denied to sessions: ledger, evidence, protected checks, secrets, memory, run/
+   ~/.jarvis-work/       worktrees and eval workspaces (decision 67)
    <repo>/               agent-editable: code, AGENTS.md, docs/ (spec, decisions, PRODUCT.md, DESIGN.md), .jarvis/ views
 ```
 
@@ -107,7 +108,7 @@ load ledger → rebuild state → clean leftovers of any dead run (worktrees, br
 while there are runnable tasks and the budget allows:
     read the inbox (steer notes, approvals) → replan the affected slice if needed (decision 40)
     pick the next task → write a lease to the ledger → reserve budget
-    create a worktree at the task's base revision (in ~/.jarvis/worktrees/…)
+    create a worktree at the task's base revision (in ~/.jarvis-work/worktrees/…, decision 67)
     start a fresh `claude -p` in that worktree (flags in §5), streaming JSON to a log file
         on a usage-limit message → checkpoint, sleep until the reset, resume (not a failure)
     when the session ends: commit whatever is there as a candidate revision

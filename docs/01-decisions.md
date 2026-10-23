@@ -6,7 +6,7 @@ Each decision says what Jarvis does, why, and where the evidence comes from.
 - **Evidence:** raw research notes are in `docs/research/`. "Oct 22 brief" means `Your Agent Workflow Research Brief.md` on your Desktop.
 - **Reviews:** v1 of this doc was reviewed by two models that didn't write it. Claude Fable 5.1's review is in `docs/reviews/review-fable.md` and Codex (Astra)'s in `docs/review-codex.md`. Citations like "Fable F1" and "Codex H3" point into those reviews.
 - **Numbering:** decisions 1–36 keep their v1 numbers, so the reviews still line up. New decisions are numbered 37 and up, placed in the section where they belong.
-- **Stage 0 findings (Oct 23):** decisions 57–66 record what the stage 0 checks found on Fabricio's Mac. Each says which earlier decision or doc line it supersedes or tightens. The raw check results are in `docs/stage0-findings.md`.
+- **Stage 0 findings (Oct 23):** decisions 57–67 record what the stage 0 checks found on Fabricio's Mac. Each says which earlier decision or doc line it supersedes or tightens. The raw check results are in `docs/stage0-findings.md`.
 
 ## What changed in v2
 
@@ -553,6 +553,15 @@ Tightens decision 46's concurrency rule.
 ### 64. The Jarvis repo stays at `~/Desktop/jarvis` (new; stage 0)
 iCloud's Desktop & Documents sync is off on this Mac (`FXICloudDriveDesktop = 0`), so architecture §10's move to `~/Developer/jarvis` isn't needed. `jarvis doctor` keeps checking: if sync is ever turned on, unattended runs stop until the repo moves.
 *From:* stage 0 checks; Fabricio, Oct 23.
+
+### 67. Worktrees live outside the runner-owned folder (new; stage 0)
+Architecture §3.4 put task worktrees in `~/.jarvis/worktrees/`, while §3.5 and decision 59 deny all of `~/.jarvis` to sessions. A worktree there would be unreadable to the agent working in it. So:
+- Task worktrees and eval workspaces live in `~/.jarvis-work/` (`worktrees/<project>/<task>/`, `evals/<task>/<run>/`). That folder is never denied.
+- `~/.jarvis/` keeps only what agents must never touch: the ledger, evidence, protected checks, secrets, memory, eval results and `run/`.
+- The broker socket stays at `~/.jarvis/run/broker.sock`. Verified live: a socket inside a `denyRead` folder is still reachable when it is listed in `allowUnixSockets`, and the live probe now uses exactly this layout.
+
+Supersedes the worktree path in architecture §3.4 and §6.
+*From:* stage 0, found while building the baseline runner; live probe, Oct 23.
 
 ## 6. Models, effort and cost
 

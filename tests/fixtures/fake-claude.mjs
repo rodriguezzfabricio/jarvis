@@ -53,12 +53,20 @@ for (const st of steps) {
   let isError = true;
   let text = "Operation not permitted";
   if (mode === "dropped-settings") text = denied(st.tool);
-  else if (st.step === "A") { const [, val, file] = st.command.match(/printf %s (\S+) > (\S+)/); writeFileSync(file, val); isError = false; text = ""; }
-  else if (st.step === "B") { writeFileSync(st.file_path, st.content); isError = false; text = "File created"; }
-  else if (st.step === "C") { const [, path, msg] = st.command.match(/connect\('([^']+)'\);s\.sendall\(b'([^']+)'\)/); text = await socketSend(path, msg); isError = false; }
-  else if (st.step === "D" && mode === "leak-read") { text = readFileSync(st.command.replace(/^cat /, ""), "utf8"); isError = false; }
-  else if (st.step === "F") { text = mode === "leak-network" ? "200" : "Exit code 56\n000\n<sandbox_violations>deny network-outbound</sandbox_violations>"; isError = mode !== "leak-network"; }
-  else if (st.step === "G" && mode === "escape-write") { writeFileSync(st.command.replace(/^printf x > /, ""), "x"); isError = false; text = ""; }
+  else if (st.tool === "Bash") {
+    // Act out selftest.sh line by line, the way a sandboxed shell would for this mode.
+    const lines = readFileSync(st.command.replace(/^sh /, ""), "utf8").split("\n");
+    const line = (id) => lines.find((l) => l.endsWith(`# step:${id}`)) ?? "";
+    const res = [];
+    { const [, val, file] = line("A").match(/printf %s (\S+) > (\S+)/); writeFileSync(file, val); res.push("A:ok"); }
+    { const [, path, msg] = line("C").match(/connect\('([^']+)'\);s\.sendall\(b'([^']+)'\)/); res.push(`C:${await socketSend(path, msg)}`); }
+    { const file = line("D").match(/^cat (\S+)/)[1]; res.push(mode === "leak-read" ? `D:${readFileSync(file, "utf8").trim()}` : `D:cat: ${file}: Operation not permitted`); }
+    res.push(mode === "leak-network" ? "F:200" : "F:000");
+    { const file = line("G").match(/printf x > (\S+)\)/)[1]; if (mode === "escape-write") { writeFileSync(file, "x"); res.push("G:written"); } else res.push("G:blocked"); }
+    isError = false; text = res.join("\n");
+  }
+  else if (st.tool === "Write" && st.file_path.includes("/work/")) { writeFileSync(st.file_path, st.content); isError = false; text = "File created"; }
+  else if (st.tool === "Read") text = "File is in a directory that is denied by your permission settings.";
   out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: text }] } });
 }
 out({ type: "result", subtype: "success", is_error: false, result: "DONE" });

@@ -65,17 +65,27 @@ Still open: one interactive check, with Fabricio present, that the Jarvis plugin
 
 `init` reports `apiKeySource: "none"`, so runs use the Max login, and limits are shared with interactive use. An `ANTHROPIC_API_KEY` in the environment would switch billing to the API (decision 58). Usage terms: decision 65.
 
-## 6. ntfy (pending phone test)
+## 6. ntfy (buttons verified; typed reply pending)
 
-- The public server is reachable (`/v1/health` returned 200).
-- The docs confirm `view`, `http` and `copy` buttons on iOS.
-- There is **no typed-reply action**. Decision 50 is corrected to buttons plus the app's publish box.
+- The public server is reachable.
+- On Fabricio's iPhone the three `http` buttons rendered, and every tap reached the reply topic: 34 taps in the first minute, 60+ in total.
+- **The iOS app gives no feedback after a tap**, so it looked broken and he kept tapping. Decision 50 now requires first-answer-wins, a per-request nonce, and a confirmation message.
+- There is no typed-reply action; the publish-box test is pending.
 
-## 7. Impeccable and Maestro (in progress)
+## 7. Impeccable and Maestro (partly verified)
 
-- Impeccable 4.7.0 (Apache-2.0) scans local files and live URLs; exit code 2 means findings.
-- Open issue #795: contrast and accessibility rules don't run on `.svelte` source. That matters for FreeHire.
-- Maestro isn't installed yet.
+- **Impeccable 4.7.0 on FreeHire** (a copy of `web/src` at `23d3266`): exit 2 with 7 findings.
+  - `overused-font` ×5, all in server-side OG image generators.
+  - `side-tab` ×1 in `AssistantChat.svelte`.
+  - `marquee` ×1 on the nav progress bar. That's a false positive: a loading indicator with reduced-motion handled.
+  - So Jarvis needs reviewed inline ignores, not a blind "exit 0 or fail".
+- **Impeccable on a deliberately generic page:**
+  - The *source* scan of a `.tsx` file found only `ai-color-palette`.
+  - The *DOM* scan of the same page as HTML found `overused-font`, `gray-on-color`, `low-contrast`, `flat-type-hierarchy` and `skipped-heading`.
+  - Neither caught emoji icons, three identical cards, generic copy, the ALL-CAPS eyebrow, `→` on every button, or two primary buttons.
+  - Consequences: the QA lane must scan both source and the running app's URL, and Jarvis's own copy and layout checks (decision 54) must cover the rest. The design negative control (stage 4) will measure this.
+- **Maestro 2.11.0** was installed with the official installer into `~/.maestro`. Homebrew refused because the Command Line Tools (15.3) are out of date; updating them needs an admin prompt.
+- **Not yet run:** a Maestro flow on an Expo development build in the iOS simulator. A dev build needs several GB, and the disk is at the 40 GB single-writer threshold. Deferred to stage 4 (task 9), where it's needed.
 
 ## 8. Codex reviewer (pass)
 

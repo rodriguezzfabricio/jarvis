@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { parse as parseToml } from "smol-toml";
+import { parseAllDocuments } from "yaml";
 import { safeGit } from "./git.ts";
 
 /**
@@ -210,51 +212,140 @@ const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey
 
 function fieldName(raw: string): string {
   const last = raw.split(/[/:.[\]]/).filter((x) => x !== "").at(-1) ?? raw;
-  return last.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_").replace(/^_+/, "").toLowerCase();
+  return last.replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_").replace(/^_+/, "").toLowerCase();
 }
 
-/** A field value that is clearly not a literal credential: empty, a template or reference, a placeholder word, or a non-string scalar. */
-export function isInertValue(raw: string): boolean {
+/**
+ * A string value that is clearly not a literal credential: empty, a template or reference, or a
+ * placeholder word. Digits are not exempt: "9372165408" is a perfectly good password (Codex review 7).
+ */
+export function isInertString(raw: string): boolean {
   const v = raw.trim();
-  if (v === "" || /^(null|nil|none|~|true|false|yes|no|on|off)$/i.test(v) || /^-?\d+(\.\d+)?$/.test(v)) return true;
+  if (v === "") return true;
   // A reference with a default (${DB_PASSWORD:-hunter2}) is only as inert as its default.
-  const ref = /^\$\{[A-Za-z_]\w*(?::?[-=](.*))?\}$/.exec(v);
-  if (ref) return ref[1] === undefined || isInertValue(ref[1]);
+  const ref = /^\$\{[A-Za-z_][\w.]*(?::?[-=](.*))?\}$/.exec(v);
+  if (ref) return ref[1] === undefined || isInertString(ref[1]);
   if (/^\$\{\{.*\}\}$/.test(v) || /^\{\{.*\}\}$/.test(v) || /^%\([A-Za-z_]\w*\)s$/.test(v)) return true;
   if (/^(env|ENV)\(|^process\.env\.|^os\.environ|^!(env|Ref|Sub|GetAtt|ImportValue)\b|^(secretref|vault|op|aws-sm|gcp-sm):/.test(v)) return true;
   if (/^(password|passwd|pass|secret|token|api[ _-]?key|changeme|example|test|testing|dummy|placeholder|redacted|your[_-][\w-]*|x{3,})$/i.test(v)) return true;
   return isPlaceholderPassword(v);
 }
 
-/** Credential-named fields with literal values in a configuration file (JSON parsed; other formats line by line). */
+/** For untyped formats (INI, properties): an unquoted value that is a switch, not a secret. */
+function isInertUntyped(raw: string): boolean {
+  return /^(null|nil|none|~|true|false|yes|no|on|off)$/i.test(raw.trim()) || isInertString(raw);
+}
+
+/** Strips line and block comments and trailing commas from JSONC, leaving strings untouched. */
+export function stripJsonc(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === '"') {
+      const close = closingQuote(text, '"', i + 1);
+      const end = close === -1 ? text.length : close;
+      out += text.slice(i, end);
+      i = end - 1;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      const e = text.indexOf("*/", i + 2);
+      i = e === -1 ? text.length : e + 1;
+      out += " ";
+    } else out += c;
+  }
+  return out.replace(/,(\s*[}\]])/g, "$1");
+}
+
+/** Typed values from a structured config, or undefined if it doesn't parse. */
+function parseStructured(name: string, text: string): unknown[] | undefined {
+  const tryJson = (t: string): unknown[] | undefined => {
+    try {
+      return [JSON.parse(t)];
+    } catch {
+      return undefined;
+    }
+  };
+  const tryYaml = (t: string): unknown[] | undefined => {
+    try {
+      const docs = parseAllDocuments(t, { uniqueKeys: false });
+      const list = Array.isArray(docs) ? docs : [docs];
+      if (list.some((d) => d.errors.length > 0)) return undefined;
+      return list.map((d) => d.toJS({ maxAliasCount: 100 }) as unknown);
+    } catch {
+      return undefined;
+    }
+  };
+  if (/\.(json|jsonc|json5|tfvars\.json)$/i.test(name)) return tryJson(text) ?? tryJson(stripJsonc(text)) ?? tryYaml(stripJsonc(text));
+  if (/\.ya?ml$/i.test(name)) return tryYaml(text);
+  if (/\.toml$/i.test(name)) {
+    try {
+      return [parseToml(text)];
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+const decodeXml = (v: string) =>
+  v.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_m, e: string) => {
+    const l = e.toLowerCase();
+    if (l.startsWith("#x")) return String.fromCodePoint(Number.parseInt(l.slice(2), 16));
+    if (l.startsWith("#")) return String.fromCodePoint(Number.parseInt(l.slice(1), 10));
+    return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as Record<string, string>)[l] ?? "";
+  });
+
+const isSecretName = (k: string) => SECRET_FIELD.test(fieldName(k));
+
+/**
+ * Credential-named fields with literal values in a configuration file (Codex stage 0 reviews 6, 7).
+ * JSON, JSONC, YAML (block and flow values, anchors) and TOML are parsed into typed values and walked;
+ * plist and XML elements and attributes are read by structure; INI-like formats line by line. A
+ * structured file that doesn't parse but names credential fields can't be inspected safely: refused.
+ */
 export function findSecretFields(name: string, text: string): string[] {
   if (!CONFIG_FILE.test(name)) return [];
   const hits = new Set<string>();
-  const consider = (key: string, value: unknown) => {
-    if (typeof value === "string" && SECRET_FIELD.test(fieldName(key)) && !isInertValue(value)) hits.add(key);
-  };
-  if (/\.json$/i.test(name)) {
-    try {
-      const walk = (v: unknown, key = "") => {
-        if (Array.isArray(v)) v.forEach((x) => walk(x, key));
-        else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k);
-        else consider(key, v);
-      };
-      walk(JSON.parse(text));
-      return [...hits].map((k) => `credential field "${k}"`);
-    } catch {
-      // not strict JSON (comments, trailing commas): read it line by line like the other formats
+  const structured = /\.(json|jsonc|json5|ya?ml|toml)$/i.test(name);
+  if (structured) {
+    const docs = parseStructured(name, text);
+    if (!docs) {
+      const named = [...text.matchAll(/[A-Za-z_][A-Za-z0-9_-]*/g)].some((m) => isSecretName(m[0]));
+      return named ? ["unparseable configuration with credential-named fields"] : [];
     }
+    const walk = (v: unknown, key: string) => {
+      if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+      else if (v instanceof Map) for (const [k, x] of v) walk(x, String(k));
+      else if (v && typeof v === "object" && !(v instanceof Date)) for (const [k, x] of Object.entries(v)) walk(x, k);
+      else if (isSecretName(key)) {
+        if (typeof v === "string" && !isInertString(v)) hits.add(key);
+        // A long number under a credential name is a PIN or numeric secret, not a setting.
+        else if ((typeof v === "number" || typeof v === "bigint") && String(v).replace(/\D/g, "").length >= 4) hits.add(key);
+      }
+    };
+    for (const d of docs) walk(d, "");
+    return [...hits].map((k) => `credential field "${k}"`);
+  }
+  if (/\.(plist|xml)$/i.test(name)) {
+    for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(string|data)>([\s\S]*?)<\/\2>/gi)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[3]!))) hits.add(m[1]!);
+    for (const m of text.matchAll(/<([A-Za-z_][\w.:-]*)(\s[^>]*)?>([^<]*)<\/\1\s*>/g)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[3]!))) hits.add(m[1]!);
+    for (const m of text.matchAll(/<([A-Za-z_][\w.:-]*)(\s[^>]*)?>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/\1\s*>/g)) if (isSecretName(m[1]!) && !isInertString(m[3]!)) hits.add(m[1]!);
+    for (const m of text.matchAll(/\s([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[2] ?? m[3] ?? ""))) hits.add(m[1]!);
+    // A plist key whose value isn't a string or data element (e.g. an array of strings) still needs review.
+    for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(array|dict)>/gi)) if (isSecretName(m[1]!)) hits.add(m[1]!);
+    return [...hits].map((k) => `credential field "${k}"`);
   }
   for (const line of text.split("\n")) {
-    const m = /^\s*(?:-\s+)?["']?([^"'=:#;\s][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*,?\s*$/.exec(line);
+    const m = /^\s*["']?([^"'=:#;\s[][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*$/.exec(line);
     if (!m) continue;
     let value = m[2] ?? "";
-    if (/^\s*[#;]/.test(value) || value === "|" || value === ">" || value === "{" || value === "[") continue;
+    if (/^[#;]/.test(value)) continue;
     const q = value[0];
     if ((q === '"' || q === "'") && value.lastIndexOf(q) > 0) value = q === '"' ? decodeEscapes(value.slice(1, value.lastIndexOf(q))) : value.slice(1, value.lastIndexOf(q));
     else value = value.replace(/\s+[#;].*$/, "");
-    consider(m[1] ?? "", value);
+    if (isSecretName(m[1] ?? "") && !isInertUntyped(value)) hits.add(m[1] ?? "");
   }
   return [...hits].map((k) => `credential field "${k}"`);
 }
@@ -369,7 +460,14 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
     }
     const views = scanViews(readFileSync(p));
     const hits = new Set([...views, ...views.flatMap(decodedViews)].flatMap(findCredentials));
-    if (!/^\.env(\..+)?$/.test(name)) for (const h of findSecretFields(name, views[0] ?? "")) hits.add(h);
+    if (!/^\.env(\..+)?$/.test(name)) {
+      // Every text view (UTF-8, UTF-16), and the percent-decoded text, is inspected as configuration.
+      const texts = [...views, ...views.filter((t) => /%(3a|2f|40)/i.test(t)).map((t) => t.replace(/%([0-9a-fA-F]{2})/g, (_m, h: string) => String.fromCharCode(Number.parseInt(h, 16))))];
+      for (const [i, t] of texts.entries()) {
+        if (i > 0 && t.includes("\u0000")) continue;
+        for (const h of findSecretFields(name, t)) if (i === 0 || !h.startsWith("unparseable")) hits.add(h);
+      }
+    }
     if (hits.size) found.push(`${rel} (${[...hits].join(", ")})`);
   }
   if (found.length) {

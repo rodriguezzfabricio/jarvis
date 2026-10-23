@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { Broker } from "../../packages/cli/src/broker/broker.ts";
 import { startBrokerServer } from "../../packages/cli/src/broker/server.ts";
+import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { foundationChecks } from "../../packages/cli/src/doctor/foundation.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
@@ -31,6 +32,19 @@ describe("doctor foundation checks (stage 1)", () => {
     } finally {
       await server.close();
     }
+  });
+
+  // Codex review 7, medium: an approved project whose checks.lock was deleted must not look healthy.
+  it("fails when an approved project's checks.lock is missing", async () => {
+    const jh = join(root, "jh3");
+    const dir = join(jh, "projects", "p");
+    const l = Ledger.open(dir);
+    mkdirSync(join(dir, "checks"), { recursive: true });
+    writeFileSync(join(dir, "checks", "unit.sh"), "exit 1\n");
+    new ChecksStore(dir).approve(l, "v1");
+    rmSync(join(dir, "checks.lock"));
+    const cs = await foundationChecks({ jarvisHome: jh, pluginDir, socketPath: join(jh, "none.sock") });
+    expect(level(cs, "checks.p")).toBe("fail");
   });
 
   it("fails on a tampered ledger and an over-readable secrets file", async () => {

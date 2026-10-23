@@ -233,6 +233,21 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       ".netrc": "machine api.acme.net login svc password Synthetic9qvM2\n",
       "compose-default.yml": "services:\n  app:\n    environment:\n      JWT_SECRET: \"${JWT_SECRET:-Synthetic9qvM2}\"\n",
       "master-key.yml": "search:\n  MEILI_MASTER_KEY: q8Zr2vLm0Tx\n",
+      // Codex review 7: structure the line reader missed, and a quoted numeric password.
+      "block-scalar.yaml": "database:\n  password: |\n    Synthetic9qvM2\n",
+      "folded.yaml": "database:\n  password: >-\n    Synthetic9qvM2\n",
+      "flow.yaml": "database: {host: db.prod.acme.net, password: Synthetic9qvM2}\n",
+      "anchor.yaml": "base: &creds\n  password: Synthetic9qvM2\nprod:\n  <<: *creds\n",
+      "compact.jsonc": '{"db":{/* prod */"password":"Synthetic9qvM2",},}\n',
+      "numeric.json": '{"password": "9372165408"}\n',
+      "numeric-bare.yaml": "pin_password: 9372165408\n",
+      "inline.toml": 'db = { host = "db.prod.acme.net", password = "Synthetic9qvM2" }\n',
+      "Info.plist": '<?xml version="1.0"?>\n<plist><dict><key>APIToken</key><string>q8Zr2vLm0Tx</string></dict></plist>\n',
+      "settings.xml": "<settings><server><id>x</id><password>Synthetic9qvM2</password></server></settings>\n",
+      "attr.xml": '<datasource url="jdbc:x" password="Synthetic9qvM2"/>\n',
+      "cdata.xml": "<cfg><secret><![CDATA[Synthetic9qvM2]]></secret></cfg>\n",
+      "broken.yaml": "database:\n  password: Synthetic9qvM2\n bad: [unclosed\n",
+      "utf16.json": Buffer.from('\ufeff{"password": "Synthetic9qvM2"}', "utf16le").toString("latin1"),
     };
     for (const [name, content] of Object.entries(cases)) {
       const repo = join(root, `srcE-${name}`);
@@ -240,7 +255,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       git(repo, "init", "-q", "-b", "main");
       git(repo, "config", "user.email", "t@t");
       git(repo, "config", "user.name", "t");
-      writeFileSync(join(repo, name), content);
+      writeFileSync(join(repo, name), name === "utf16.json" ? Buffer.from(content, "latin1") : content);
       git(repo, "add", "-A");
       git(repo, "commit", "-qm", "c");
       const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapE-${name}`) }).then(() => "", (e: Error) => e.message);
@@ -258,6 +273,9 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "config.json"), '{"auth": true, "password": "", "token": null, "apiKey": "${API_KEY}", "clientSecret": "${CLIENT_SECRET:-}", "secret": "<secret>", "passwordMinLength": 8, "url": "https:\\/\\/example.com\\/x"}\n');
     writeFileSync(join(repo, ".github", "workflows", "ci.yml"), "jobs:\n  t:\n    env:\n      token: ${{ secrets.GITHUB_TOKEN }}\n      password: changeme\n");
     writeFileSync(join(repo, "app.toml"), 'password = ""\ntoken = "{{ vault_token }}"\n');
+    writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
+    writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
+    writeFileSync(join(repo, "limits.yaml"), "password_min_length: 12\ntoken_ttl: 3600\nauth: true\n");
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");
     await expect(createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapInert") })).resolves.toMatchObject({ redactions: [] });

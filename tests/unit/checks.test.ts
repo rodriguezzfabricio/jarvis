@@ -32,11 +32,16 @@ function project() {
 }
 /** The completion line a verify phase prints last (decision 76). */
 const COMPLETE = 'echo "JARVIS-CHECK-COMPLETE $(cat "$JARVIS_COMPLETION_FILE")"\n';
-const check = (name: string, script: string, p: ReturnType<typeof project>, verify = COMPLETE) => {
-  writeFileSync(join(p.projectDir, "checks", `${name}.sh`), script);
+/** The default assertions: the case exited 0. */
+const EXIT0 = `test "$(cat main/code)" = 0 || exit 1\n${COMPLETE}`;
+/** One case, "main", running checks/fixtures/<name>.sh in the candidate sandbox; assertions in checks/<name>.verify.sh. */
+const check = (name: string, script: string, p: ReturnType<typeof project>, verify = EXIT0) => {
+  mkdirSync(join(p.projectDir, "checks", "fixtures"), { recursive: true });
+  writeFileSync(join(p.projectDir, "checks", "fixtures", `${name}.sh`), script);
   writeFileSync(join(p.projectDir, "checks", `${name}.verify.sh`), verify);
-  return { name, command: `sh "$JARVIS_CHECKS/${name}.sh"`, verify: `sh "$JARVIS_CHECKS/${name}.verify.sh"`, timeoutMs: 30_000 };
+  return { name, cases: [{ id: "main", command: `sh "$JARVIS_FIXTURES/${name}.sh"` }], verify: `sh "$JARVIS_CHECKS/${name}.verify.sh"`, timeoutMs: 30_000 };
 };
+const out = (r: { evidenceDir: string }, f = "stdout") => readFileSync(join(r.evidenceDir, "cases", "main", f), "utf8");
 type Check = ReturnType<typeof check>;
 const gate = (p: ReturnType<typeof project>, c: Check, extra = {}) =>
   runGate({ ledger: p.ledger, store: p.store, projectDir: p.projectDir, jarvisHome: p.jarvisHome, workRoot: p.workRoot, repoPath: p.repo, revision: p.revision, check: c, taskId: "t1", attemptId: "a1", ...extra });
@@ -52,9 +57,9 @@ describe("protected checks (decisions 15, 49)", () => {
 
   it("detects an edited, added or removed check file", () => {
     for (const mutate of [
-      (d: string) => writeFileSync(join(d, "unit.sh"), "exit 0 # loosened\n"),
+      (d: string) => writeFileSync(join(d, "fixtures", "unit.sh"), "exit 0 # loosened\n"),
       (d: string) => writeFileSync(join(d, "extra.sh"), "exit 0\n"),
-      (d: string) => rmSync(join(d, "unit.sh")),
+      (d: string) => rmSync(join(d, "fixtures", "unit.sh")),
     ]) {
       const p = project();
       check("unit", "exit 1\n", p);
@@ -77,26 +82,25 @@ describe("protected checks (decisions 15, 49)", () => {
     const p = project();
     check("unit", "exit 1\n", p);
     p.store.approve(p.ledger, "v1");
-    writeFileSync(join(p.projectDir, "checks", "unit.sh"), "exit 0\n");
+    writeFileSync(join(p.projectDir, "checks", "fixtures", "unit.sh"), "exit 0\n");
     const lock = JSON.parse(readFileSync(join(p.projectDir, "checks.lock"), "utf8"));
-    lock.files["unit.sh"] = p.store.hashAll()["unit.sh"];
+    lock.files["fixtures/unit.sh"] = p.store.hashAll()["fixtures/unit.sh"];
     writeFileSync(join(p.projectDir, "checks.lock"), JSON.stringify(lock));
     expect(p.store.verify(p.ledger).problems.join(" ")).toMatch(/not the approved lock/);
   });
 });
 
-describe("gates: evidence made by the runner (decision 49)", () => {
+describe("gates: evidence made by the runner (decisions 49, 76)", () => {
   it("runs the check on a fresh checkout of the revision and records hashed evidence", async () => {
     const p = project();
     const c = check("value", 'test "$(cat value.txt)" = 42 && echo "value ok"\n', p);
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c);
     expect(r.status).toBe("pass");
-    if (r.status !== "pass") return;
     const e = p.ledger.entries().at(-1)!;
     expect(e.kind).toBe("gate_result");
-    expect(e.data).toMatchObject({ check: "value", revision: p.revision, status: "pass", exitCode: 0 });
-    expect(readFileSync(join(r.evidenceDir, "stdout.log"), "utf8")).toContain("value ok");
+    expect(e.data).toMatchObject({ check: "value", revision: p.revision, status: "pass", caseResults: [{ id: "main", code: 0, timedOut: false }], completed: true });
+    expect(out(r)).toContain("value ok");
     expect(verifyEvidence(e)).toEqual({ ok: true, problems: [] });
   });
 
@@ -113,32 +117,49 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     const marker = join(root, `ran-${n}`);
     const c = check("unit", `touch ${marker}\nexit 1\n`, p);
     p.store.approve(p.ledger, "v1");
-    writeFileSync(join(p.projectDir, "checks", "unit.sh"), `touch ${marker}\nexit 0\n`);
+    writeFileSync(join(p.projectDir, "checks", "fixtures", "unit.sh"), `touch ${marker}\nexit 0\n`);
     const r = await gate(p, c);
     expect(r.status).toBe("tampered");
     expect(existsSync(marker)).toBe(false);
     expect(p.ledger.entries().at(-1)?.data).toMatchObject({ status: "tampered" });
   });
 
-  // Codex review 5, high: candidate code that kills the check's own shell must never yield a pass.
-  it("fails a check whose shell is killed before its assertions run", async () => {
+  // Codex review 5, high: candidate code that kills its own shell must never look like success.
+  it("records a case killed by a signal as a signal, never as exit 0", async () => {
     const p = project();
-    const c = check("killed", 'kill -TERM $$\nsleep 1\nexit 1\n', p);
+    const c = check("killed", "kill -TERM $$\nsleep 1\nexit 1\n", p);
     p.store.approve(p.ledger, "v1");
-    expect((await gate(p, c)).status).toBe("fail");
-    const c2 = check("killed-int", 'kill -INT $$\nsleep 1\nexit 1\n', p);
+    const r = await gate(p, c);
+    expect(r.status).toBe("fail");
+    expect(out(r, "code").trim()).toBe("signal");
+    const c2 = check("killed-int", "kill -INT $$\nsleep 1\nexit 1\n", p);
     p.store.approve(p.ledger, "v2");
     expect((await gate(p, c2)).status).toBe("fail");
   });
 
-  // Codex review 6, high: candidate code that exits 0 before the assertions run must never yield a pass.
-  it("fails when candidate code exits 0 before the assertions run", async () => {
-    const drive = '. ./candidate.sh\necho "value=$(answer)" > "$JARVIS_OUT/result"\n';
-    const assert = `grep -qx 'value=42' "$JARVIS_OUT/result" || exit 1\n${COMPLETE}`;
+  it("fails a case that times out, whatever the assertions say", async () => {
+    const p = project();
+    const c = { ...check("slow", "sleep 30\n", p, COMPLETE), timeoutMs: 1_000 };
+    p.store.approve(p.ledger, "v1");
+    const r = await gate(p, c);
+    expect(r.status).toBe("fail");
+    expect((r.entry.data as { completed: boolean }).completed).toBe(true);
+  }, 30_000);
+
+  // Codex reviews 6 and 7, high: early exits and fabricated observations must never earn a pass.
+  it("judges a candidate only by its own output: early exits and planted observations fail", async () => {
+    const drive = '. ./candidate.sh\necho "value=$(answer)"\n';
+    const assert = `grep -qx 'value=42' main/stdout || exit 1\n${COMPLETE}`;
+    const plant = [
+      "for d in ../../verify/obs/main \"$JARVIS_OUT/main\" \"$EVIDENCE_HINT\"/*/cases/main; do",
+      "  mkdir -p \"$d\" 2>/dev/null && echo value=42 > \"$d/stdout\" 2>/dev/null",
+      "done",
+    ].join("\n");
     for (const [candidate, want] of [
       ["answer() { echo 42; }\n", "pass"],
       ["answer() { echo 41; }\n", "fail"],
-      ["exit 0\nanswer() { echo 41; }\n", "fail"], // exits during "import", before anything is observed
+      ["exit 0\nanswer() { echo 41; }\n", "fail"], // exits during "import", before printing anything
+      [`${plant}\nexit 0\nanswer() { echo 41; }\n`, "fail"], // writes the expected observation, then exits
     ] as const) {
       const p = project();
       writeFileSync(join(p.repo, "candidate.sh"), candidate);
@@ -147,7 +168,7 @@ describe("gates: evidence made by the runner (decision 49)", () => {
       const revision = git(p.repo, "rev-parse", "HEAD");
       const c = check("early-exit", drive, p, assert);
       p.store.approve(p.ledger, "v1");
-      const r = await gate({ ...p, revision }, c);
+      const r = await gate({ ...p, revision }, c, { extraEnv: { EVIDENCE_HINT: join(p.projectDir, "evidence") } });
       expect(r.status, candidate).toBe(want);
     }
   });
@@ -171,49 +192,35 @@ describe("gates: evidence made by the runner (decision 49)", () => {
 
   it("doesn't let candidate output forge the completion line", async () => {
     const p = project();
-    // The candidate guesses the line and plants it where a naive verify phase echoes it last.
-    const c = check("forge", 'echo "JARVIS-CHECK-COMPLETE $(cat ../../verify/completion 2>/dev/null || echo guess)" > "$JARVIS_OUT/result"\n', p, 'cat "$JARVIS_OUT/result"\n');
+    // The candidate guesses the line and prints it where a naive verify phase echoes it last.
+    const c = check("forge", 'echo "JARVIS-CHECK-COMPLETE $(cat ../../verify/completion 2>/dev/null || echo guess)"\n', p, "cat main/stdout\n");
     p.store.approve(p.ledger, "v1");
     expect((await gate(p, c)).status).toBe("fail");
   });
 
-  it("refuses a check without a verify phase", async () => {
+  it("refuses a check without a verify phase or cases, or with bad case ids", async () => {
     const p = project();
-    const c = { ...check("noverify", "exit 0\n", p), verify: "" };
+    const base = check("shape", "exit 0\n", p);
     p.store.approve(p.ledger, "v1");
-    expect((await gate(p, c)).status).toBe("error");
+    for (const c of [
+      { ...base, verify: "" },
+      { ...base, cases: [] },
+      { ...base, cases: [{ id: "__proto__", command: "true" }] },
+      { ...base, cases: [{ id: "a/../b", command: "true" }] },
+      { ...base, cases: [{ id: "a", command: "true" }, { id: "a", command: "true" }] },
+    ]) expect((await gate(p, c)).status).toBe("error");
   });
 
-  it("hashes the observations into the evidence", async () => {
+  it("runs several cases and records each one's output separately", async () => {
     const p = project();
-    const c = check("obs", 'echo "value=42" > "$JARVIS_OUT/result"\n', p, `grep -qx value=42 result || exit 1\n${COMPLETE}`);
+    mkdirSync(join(p.projectDir, "checks", "fixtures"), { recursive: true });
+    writeFileSync(join(p.projectDir, "checks", "fixtures", "in.txt"), "7\n");
+    writeFileSync(join(p.projectDir, "checks", "multi.verify.sh"), `test "$(cat one/stdout)" = 7 && test "$(cat two/code)" = 3 || exit 1\n${COMPLETE}`);
+    const c = { name: "multi", cases: [{ id: "one", command: 'cat "$JARVIS_FIXTURES/in.txt"' }, { id: "two", command: "exit 3" }], verify: 'sh "$JARVIS_CHECKS/multi.verify.sh"', timeoutMs: 30_000 };
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c);
     expect(r.status).toBe("pass");
-    const e = p.ledger.entries().at(-1)!;
-    expect(Object.keys((e.data as { evidence: { files: Record<string, string> } }).evidence.files)).toContain("out/result");
-    expect(verifyEvidence(e).ok).toBe(true);
-    writeFileSync(join(r.evidenceDir, "out", "result"), "value=41\n");
-    expect(verifyEvidence(e).ok).toBe(false);
-  });
-
-  it.skipIf(process.platform !== "darwin")("keeps the phases apart: assertions can't read the checkout, the candidate can't read the verify folder", async () => {
-    const p = project();
-    const c = check(
-      "apart",
-      ['pwd > "$JARVIS_OUT/where"', "ls ../../verify > /dev/null 2>&1 && echo SAW-VERIFY", "cat value.txt > /dev/null && echo READ-OWN-CHECKOUT"].join("\n"),
-      p,
-      ['cat "$(cat "$JARVIS_OUT/where")/value.txt" > /dev/null 2>&1 && echo READ-CHECKOUT', 'ls "$(cat "$JARVIS_OUT/where")/../../out" > /dev/null 2>&1 && echo READ-LIVE-OUT', COMPLETE].join("\n"),
-    );
-    p.store.approve(p.ledger, "v1");
-    const r = await gate(p, c);
-    expect(r.status).toBe("pass");
-    const run = readFileSync(join(r.evidenceDir, "stdout.log"), "utf8");
-    const ver = readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8");
-    expect(run).toContain("READ-OWN-CHECKOUT");
-    expect(run).not.toContain("SAW-VERIFY");
-    expect(ver).not.toContain("READ-CHECKOUT");
-    expect(ver).not.toContain("READ-LIVE-OUT");
+    expect(Object.keys((r.entry.data as { evidence: { files: Record<string, string> } }).evidence.files)).toEqual(expect.arrayContaining(["cases/one/stdout", "cases/two/code", "verify-stdout.log"]));
   });
 
   it("detects edited evidence", async () => {
@@ -222,7 +229,15 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c);
     expect(r.status).toBe("pass");
-    writeFileSync(join(r.evidenceDir, "stdout.log"), "all tests passed (typed by an agent)\n");
+    for (const f of ["stdout", "code"]) {
+      const path = join(r.evidenceDir, "cases", "main", f);
+      const before = readFileSync(path);
+      writeFileSync(path, "all tests passed (typed by an agent)\n");
+      expect(verifyEvidence(p.ledger.entries().at(-1)!).ok).toBe(false);
+      writeFileSync(path, before);
+    }
+    expect(verifyEvidence(p.ledger.entries().at(-1)!).ok).toBe(true);
+    rmSync(join(r.evidenceDir, "verify-stdout.log"));
     expect(verifyEvidence(p.ledger.entries().at(-1)!).ok).toBe(false);
   });
 
@@ -234,7 +249,6 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     git(p.repo, "commit", "-qam", "candidate fails the check");
     const revision = git(p.repo, "rev-parse", "HEAD");
     const blob = git(p.repo, "rev-parse", "HEAD:value.txt");
-    // Replace the failing blob's stored contents with passing contents, keeping its file name.
     const objPath = join(p.repo, ".git", "objects", blob.slice(0, 2), blob.slice(2));
     const { chmodSync } = await import("node:fs");
     chmodSync(objPath, 0o644);
@@ -255,7 +269,7 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
-  it.skipIf(process.platform !== "darwin")("runs checks sandboxed: no runner folder, no home, no network, no writes outside the checkout", async () => {
+  it.skipIf(process.platform !== "darwin")("runs cases sandboxed: no runner folder, no expectations, no home, no network, no writes outside the checkout", async () => {
     const p = project();
     writeFileSync(join(p.projectDir, "secret.env"), "CHECK-CANARY\n");
     const outside = join(root, `outside-${n}.txt`);
@@ -263,6 +277,9 @@ describe("gates: evidence made by the runner (decision 49)", () => {
       "escape",
       [
         `cat "${join(p.projectDir, "secret.env")}" && echo READ-RUNNER`,
+        `cat "${join(p.projectDir, "checks", "escape.verify.sh")}" > /dev/null 2>&1 && echo READ-EXPECTATIONS`,
+        'cat "$JARVIS_FIXTURES/escape.sh" > /dev/null && echo READ-FIXTURES',
+        'ls ../../verify > /dev/null 2>&1 && echo SAW-VERIFY',
         `cat "$HOME_REAL/.zshrc" > /dev/null 2>&1 && echo READ-HOME`,
         `curl -s -m 5 -o /dev/null https://example.com && echo NET`,
         `echo x > "${outside}" && echo WROTE-OUTSIDE`,
@@ -274,9 +291,21 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c, { extraEnv: { HOME_REAL: process.env.HOME ?? "/" } });
     expect(r.status).toBe("pass");
-    const out = readFileSync(join(r.evidenceDir, "stdout.log"), "utf8");
-    expect(out).toContain("WROTE-INSIDE");
-    for (const leak of ["READ-RUNNER", "READ-HOME", "NET", "WROTE-OUTSIDE"]) expect(out).not.toContain(leak);
+    const o = out(r);
+    expect(o).toContain("WROTE-INSIDE");
+    expect(o).toContain("READ-FIXTURES");
+    for (const leak of ["READ-RUNNER", "READ-EXPECTATIONS", "SAW-VERIFY", "READ-HOME", "NET", "WROTE-OUTSIDE"]) expect(o).not.toContain(leak);
     expect(existsSync(outside)).toBe(false);
+  });
+
+  it.skipIf(process.platform !== "darwin")("runs the assertions without the checkout or the candidate's folders", async () => {
+    const p = project();
+    const c = check("apart", "pwd\n", p, ['W=$(head -1 main/stdout)', 'cat "$W/value.txt" > /dev/null 2>&1 && echo READ-CHECKOUT', 'ls "$W/../home" > /dev/null 2>&1 && echo READ-CANDIDATE-HOME', COMPLETE].join("\n"));
+    p.store.approve(p.ledger, "v1");
+    const r = await gate(p, c);
+    expect(r.status).toBe("pass");
+    const ver = readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8");
+    expect(ver).not.toContain("READ-CHECKOUT");
+    expect(ver).not.toContain("READ-CANDIDATE-HOME");
   });
 });

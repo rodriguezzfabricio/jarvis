@@ -27,7 +27,10 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
     const v = verifyLedger(dir);
     add(`ledger.${id}`, v.ok ? "pass" : "fail", v.ok ? `${v.entries.length} entries verified${v.repairable.length ? ` (repairable: ${v.repairable.join(", ")})` : ""}` : v.problems.join("; "));
     const store = new ChecksStore(dir);
-    if (existsSync(store.lockPath) && v.ok) {
+    // A project that ever approved checks must still have its lock (Codex stage 0 review 7): a missing
+    // lock is a failure, not a project without checks.
+    const approved = v.ok && v.entries.some((e) => e.kind === "checks_approved");
+    if (v.ok && (approved || existsSync(store.lockPath))) {
       try {
         const { Ledger } = await import("../ledger/ledger.ts");
         const c = store.verify(Ledger.open(dir));

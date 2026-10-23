@@ -1,0 +1,73 @@
+# Stage 0 review 7: Codex
+
+Oct 23, 2026 · codex-cli, `--sandbox read-only`, reasoning effort high, isolated `CODEX_HOME` and `HOME` (decision 66).
+- **Reviewed revision:** `a40be54f01ac53c7ae4ee6339f2904ec140ab481`, plus the stage 1 modules.
+- **Raw verdict:** `stage0-codex-7.json`.
+
+## Verdict: FAIL
+
+Reviewed a40be54f01ac53c7ae4ee6339f2904ec140ab481. Two high findings block approval. Stage 0 does not meet decision 71's revised proof, even excluding baselines; the stage 1 modules do not meet their safety proof, even excluding the desktop plugin check.
+
+Prior critical/high findings, by original review and finding number:
+
+Review 1: #1 Project hooks: fixed by restricted mode and explicit tools; args/probe regressions and the live malicious-hook negative control guard it. #2 Outside reads: the reported boundary is fixed, with settings/probe tests, escaping-symlink removal and private-cache tests. #3 Research tools: fixed by tool exclusion and explicit denial, guarded by args/settings tests. #4 Missing preflight: fixed; baseline.test.ts verifies rejection starts neither workspace nor session. #5 Snapshot secrets: the reported multiline dotenv, credential-URL and private-key cases are fixed and regression-tested; the broader safeguard remains incomplete below. #6 False network PASS: fixed by requiring allowed-host connectivity, blocked-host 000 and a policy-denial record; fake cases and the live network negative control guard it.
+
+Review 2: #1 Inline-comment redaction: fixed, with the exact reproduction plus escaping and unterminated-value tests. #2 Uninspected files: the reported size/NUL skips and plain JSON URL omission are fixed, with size-boundary, UTF-16 and binary regressions. #3 Shared cache: fixed by private per-run caches, with distinct-path, cross-run-marker and deletion assertions. #4 Host-specific connectivity failure: fixed by requiring denial evidence, with probe regressions and the live negative control.
+
+Review 3: #1 Broad placeholder exemptions: the reported short, percent-encoded and punctuated URL passwords are fixed, with helper and snapshot regressions. #2 Binary private keys: fixed for the reported DER formats, with generated-key and snapshot tests.
+
+Review 4: #1 Short/encrypted PEM keys: fixed by envelope detection, with generated Ed25519, X25519 and encrypted RSA regressions. #2 Password-only URLs: fixed in detection/redaction, with helper and tracked-dotenv snapshot tests.
+
+Review 5: #1 Apostrophes in URL userinfo: fixed, with JSON/YAML snapshot and dotenv regressions. #2 Signal converted to success: fixed by using the sandbox library and observing the child outcome; gate tests require SIGTERM/SIGINT checks to fail. #3 Corrupt candidate objects: fixed by verified pack-transport cloning; the swapped-blob regression requires refusal. #4 Short writes: fixed by writeAll, with successful short-write and zero-progress tests. #5 Concurrent stale-lock reclamation: the reported replacement-unlink race is fixed by instance-specific ownership markers; live-marker and racing-writer tests guard reclamation. These regression assertions reject the original reproductions when their corresponding fixes are removed.
+
+Review 6: #1 Concurrent broker execution: fixed. Claiming occurs under Ledger.transact, unresolved intents prevent another execution, and tests cover concurrent calls, sockets, multiple instances and multiple processes. #2 Encoded credentials: the original escaped-JSON reproduction is fixed and has snapshot regressions, but configuration inspection still fails open as described below. #3 Premature successful exit: the literal early-exit reproduction now fails and is regression-tested, but candidate code can fabricate the observations the verifier accepts. The overall false-pass safeguard is therefore incomplete.
+
+I found no new concurrent ledger-corruption or acknowledged-entry-loss path. Entries and heads use complete writes and fsync; head recovery precedes extension; ownership is published atomically. The supplied fault tests cover killed writers, concurrent writers and a killed reclaimer. The earlier inherited-pipe and standalone-unhandled-error findings also have code fixes and regression tests now.
+
+Evidence records 180 passing unit/fault tests, four passing live tests, successful typecheck and doctor --live, and all 64 mutations caught in a disposable clone. Doctor reports warnings for disk space and Codex 0.164.0 versus the documented 0.163.0 pin. I independently passed typecheck under Node 24 and reproduced scanner misses and the observation-map omission without filesystem writes. A read-only process reproduction demonstrated the forged-observation protocol; I did not rerun the full filesystem-writing gate, unit/fault or live suites. The logs do not establish tests-first development order. No additional broker, plugin or jarvis act approval bypass was established; current adapters remain local outbox stubs.
+
+## Remaining for stage 0
+
+- Fix the two high findings, add regressions and mutation coverage, capture fresh revision-linked evidence, and obtain another independent review.
+- Record the medium findings in docs/backlog.md under decision 74; they do not independently block approval.
+- After a passing review, record valid baselines for tasks 1, 2 and 11, at least one each; decision 71 permits the second repeats during stage 1.
+- Save this revision-linked review in docs/reviews/. This checkout is read-only.
+- Stage 1 completion additionally requires the user-assisted desktop plugin check. ntfy typed replies remain deferred to stage 2.
+
+## Findings
+
+### 1. [high] Candidate code can fabricate observations and earn a passing gate
+
+`packages/cli/src/checks/gate.ts:109`
+
+**Scenario.** Phase 1 gives candidate code write access to JARVIS_OUT, then phase 2 treats those files as observations from the protected driver. Using the driver and verifier in the early-exit regression, candidate.sh can define answer() to return 41, write 'value=42' directly to "$JARVIS_OUT/result", and exit 0 during sourcing. The protected driver's actual observation never executes. Nevertheless, phase 1 exits 0, the copied fabricated result satisfies the verifier's grep, and the trusted verifier prints the genuine nonce. All conditions for pass are satisfied. The nonce proves verifier completion, not observation provenance; expected-case lists can likewise be fabricated.
+
+**Fix.** Keep the observation-producing driver outside candidate control and deny candidate code access to its observation store. Drive candidates through black-box interfaces across a separate sandbox/process boundary, with completion accounting owned by the trusted driver. Remove support for treating records serialized by a process importing candidate code as trusted evidence. Add a gate regression that writes the expected observation and exits during import while the actual implementation is wrong; it must fail.
+
+### 2. [high] Configuration credential inspection still fails open
+
+`packages/cli/src/eval/snapshot.ts:249`
+
+**Scenario.** findSecretFields skips YAML block scalars and does not parse flow mappings, compact JSONC or XML/plist structure. I reproduced zero hits from the complete scanning combination for 'password: |' followed by an indented opaque password, 'database: {password: Synthetic9qvM2}', compact JSONC containing a password, and a plist password field. Separately, a valid JSON password string such as "9372165408" is exempted by isInertValue as though it were a non-string numeric scalar. None matches a token-prefix pattern, so createSnapshot retains these credentials without allowSecretsIn and exposes them to the task.
+
+**Fix.** Parse supported configuration formats into typed scalar values and inspect credential-bearing keys recursively, including block and flow values. Preserve the distinction between a numeric scalar and a quoted numeric password. Refuse potentially sensitive configurations that cannot be safely inspected unless explicitly reviewed. Add snapshot-level regressions for these cases and apply field inspection to decoded text views.
+
+### 3. [medium] An observation named __proto__ is omitted from recorded evidence
+
+`packages/cli/src/checks/gate.ts:178`
+
+**Scenario.** copyObservations uses a normal object as its filename map. Assigning files['__proto__'] = '' creates no own property. I reproduced the current function copying that regular file into the verifier's observations while returning an empty recordedFiles list and truncated false. A verifier can base a pass on this file, but the later Object.keys loop neither preserves nor hashes it into evidence, and verifyEvidence cannot detect its absence.
+
+**Fix.** Use a null-prototype map or Map for observation filenames. Add a regression that verifies an observation named __proto__ is copied into evidence, hashed, and checked for subsequent modification or deletion.
+
+### 4. [medium] Doctor silently skips a missing approved check lock
+
+`packages/cli/src/doctor/foundation.ts:30`
+
+**Scenario.** For a project with an existing checks_approved ledger entry, deleting checks.lock makes foundationChecks skip check verification entirely. Doctor can therefore report no failure although the approved protected-check store is incomplete. runGate independently refuses the missing lock, so this causes false preflight readiness and a later stop rather than an unearned gate pass.
+
+**Fix.** Report failure when an approved project's checks.lock is missing. Distinguish an explicitly uninitialized project from one that previously approved checks, and add a doctor regression for deletion of an approved lock.
+
+## Builder response
+
+See `stage0-codex-7-response.md`.

@@ -17,4 +17,6 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | 11 | Codex stage 0 review 5 #10 | medium | Vitest's JSON report omits standalone unhandled errors, so the mutation classifier can't see them alongside a failed assertion. Fix: a custom reporter that records them | Done (2690a55) |
 | 12 | Codex stage 0 review 6 #4 | medium | A reclaimer that died holding its marker blocked every later append. Fix: markers name their owner and are reclaimed the same way one level down | Done (7c96527) |
 | 13 | Decision 76 | low | A daemon that escapes a check's process group (setsid) outlives the phase. It can't forge a pass, but the runner should kill leftover sandboxed processes by sandbox profile, not only by process group | Stage 3 |
-| 14 | Decision 76 | — | Write the golden tasks' acceptance checks in the two-phase form (drive the candidate, then assert over observations) | Stage 3 |
+| 14 | Decision 76 | — | Write the golden tasks' acceptance checks as cases plus a verify phase (black-box drivers in `fixtures/`) | Stage 3 |
+| 15 | Codex stage 0 review 7 #3 | medium | An observation file named `__proto__` was dropped from the evidence map. Fix: observations are now fixed per case (`<id>/stdout`, `stderr`, `code`), case ids are validated, and the map has no prototype | Done |
+| 16 | Codex stage 0 review 7 #4 | medium | Doctor skipped a project whose approved `checks.lock` was deleted. Fix: a project that ever approved checks must have its lock | Done |

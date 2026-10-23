@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { createSnapshot, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
+import { createSnapshot, findCredentials, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jts-");
@@ -65,6 +65,59 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(git(dest, "rev-list", "--count", "HEAD")).toBe("1");
     expect(git(dest, "ls-files")).toBe("");
     expect(m.sourceRev).toBeNull();
+  });
+
+  // Codex review 1, high: multi-line values, credential URLs and real keys must not survive.
+  it("redacts quoted multi-line secrets entirely", () => {
+    const r = redactEnvText('A=1\nPRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\nmorekeymaterial\n-----END PRIVATE KEY-----"\nB=2\n');
+    expect(r.text).toBe("A=1\nPRIVATE_KEY=\nB=2\n");
+    expect(r.text).not.toContain("MIIE");
+  });
+
+  it("strips user:password from non-local credential URLs and keeps local dev defaults", () => {
+    const r = redactEnvText("DATABASE_URL=postgres://admin:hunter2@prod.db.example.com:5432/app\nDEV_URL=postgres://hire:hire@localhost:5432/hire\n");
+    expect(r.text).toContain("postgres://REDACTED:REDACTED@prod.db.example.com:5432/app");
+    expect(r.text).toContain("postgres://hire:hire@localhost:5432/hire");
+    expect(r.keys).toEqual(["DATABASE_URL"]);
+  });
+
+  it("recognizes real-looking credentials but not dummy fixtures", () => {
+    const realKey = `-----BEGIN PRIVATE KEY-----\n${"A".repeat(120)}\n-----END PRIVATE KEY-----`;
+    expect(findCredentials(realKey)).toEqual(["private key"]);
+    expect(findCredentials("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----")).toEqual([]);
+    expect(findCredentials(`token: ghp_${"a".repeat(36)}`)).toEqual(["GitHub token"]);
+    expect(findCredentials("nothing here")).toEqual([]);
+  });
+
+  it("fails closed on a credential anywhere in the tree, unless a person allowlisted that file", async () => {
+    const repo2 = join(root, "src2");
+    mkdirSync(repo2, { recursive: true });
+    git(repo2, "init", "-q", "-b", "main");
+    git(repo2, "config", "user.email", "t@t");
+    git(repo2, "config", "user.name", "t");
+    writeFileSync(join(repo2, "deploy.yaml"), `aws_key: AKIA${"ABCDEFGHIJKLMNOP"}\n`);
+    git(repo2, "add", "-A");
+    git(repo2, "commit", "-qm", "c");
+    await expect(createSnapshot({ sourceRepo: repo2, rev: "HEAD", dest: join(root, "snapF") })).rejects.toThrow(/deploy.yaml \(AWS access key\)/);
+    expect(existsSync(join(root, "snapF"))).toBe(false);
+    const m = await createSnapshot({ sourceRepo: repo2, rev: "HEAD", dest: join(root, "snapG"), allowSecretsIn: ["deploy.yaml"] });
+    expect(m.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("removes symlinks that point outside the snapshot", async () => {
+    const repo3 = join(root, "src3");
+    mkdirSync(repo3, { recursive: true });
+    git(repo3, "init", "-q", "-b", "main");
+    git(repo3, "config", "user.email", "t@t");
+    git(repo3, "config", "user.name", "t");
+    writeFileSync(join(repo3, "a.txt"), "a");
+    symlinkSync("/etc/hosts", join(repo3, "out"));
+    symlinkSync("a.txt", join(repo3, "in"));
+    git(repo3, "add", "-A");
+    git(repo3, "commit", "-qm", "c");
+    const m = await createSnapshot({ sourceRepo: repo3, rev: "HEAD", dest: join(root, "snapL") });
+    expect(m.removedSymlinks).toEqual(["out"]);
+    expect(existsSync(join(root, "snapL", "in"))).toBe(true);
   });
 
   it("refuses a destination that isn't empty", async () => {

@@ -76,11 +76,16 @@ export function toolCalls(events: readonly StreamEvent[]): ToolCall[] {
   return [...calls.values()];
 }
 
+export interface RateLimitWindow {
+  utilization: number;
+  resetsAt: number | undefined;
+}
+
 export interface RateLimitInfo {
   status: string | undefined;
   resetsAt: number | undefined;
   rateLimitType: string | undefined;
-  utilization: Record<string, number>;
+  windows: Record<string, RateLimitWindow>;
 }
 
 /** decision 62: usage limits come from rate_limit_event, never from the exit code. */
@@ -89,14 +94,38 @@ export function rateLimits(events: readonly StreamEvent[]): RateLimitInfo[] {
     .filter((e) => e.type === "rate_limit_event")
     .map((e) => {
       const i = (e.rate_limit_info ?? {}) as Record<string, unknown>;
-      const windows = (i.unifiedWindows ?? {}) as Record<string, { utilization?: unknown }>;
-      const utilization: Record<string, number> = {};
-      for (const [k, w] of Object.entries(windows)) if (typeof w?.utilization === "number") utilization[k] = w.utilization;
+      const raw = (i.unifiedWindows ?? {}) as Record<string, { utilization?: unknown; resetsAt?: unknown }>;
+      const windows: Record<string, RateLimitWindow> = {};
+      for (const [k, w] of Object.entries(raw)) {
+        if (typeof w?.utilization === "number") windows[k] = { utilization: w.utilization, resetsAt: typeof w.resetsAt === "number" ? w.resetsAt : undefined };
+      }
       return {
         status: typeof i.status === "string" ? i.status : undefined,
         resetsAt: typeof i.resetsAt === "number" ? i.resetsAt : undefined,
         rateLimitType: typeof i.rateLimitType === "string" ? i.rateLimitType : undefined,
-        utilization,
+        windows,
       };
     });
+}
+
+/** True when any assistant message reports a rate-limit error (a limited run can still end "success"). */
+export function hitRateLimitError(events: readonly StreamEvent[]): boolean {
+  return events.some((e) => e.type === "assistant" && (e.error === "rate_limit" || (e.message as { error?: unknown } | undefined)?.error === "rate_limit"));
+}
+
+/**
+ * When to resume after a run (decision 62): if the plan rejected the run, or any window is at or
+ * above the threshold, the latest reset among the windows that are over it (or the event's own
+ * reset when the run was rejected). Undefined means no wait is needed.
+ */
+export function usageWaitUntil(infos: readonly RateLimitInfo[], opts: { threshold?: number; limitedByError?: boolean } = {}): number | undefined {
+  const threshold = opts.threshold ?? 0.85;
+  const last = infos.at(-1);
+  if (!last) return opts.limitedByError ? Math.floor(Date.now() / 1000) + 3600 : undefined;
+  const over = Object.values(last.windows).filter((w) => w.utilization >= threshold);
+  const rejected = last.status === "rejected" || opts.limitedByError === true;
+  if (!rejected && over.length === 0) return undefined;
+  const resets = over.map((w) => w.resetsAt).filter((r): r is number => typeof r === "number");
+  if (rejected && last.resetsAt !== undefined) resets.push(last.resetsAt);
+  return resets.length ? Math.max(...resets) : Math.floor(Date.now() / 1000) + 3600;
 }

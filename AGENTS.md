@@ -21,24 +21,31 @@ Jarvis is a thin orchestrator around Claude Code: research, one round of questio
 - **Small commits with clear messages.** The repo is private until stage 7.
 - **Jarvis runs only Fabricio's own work on his own plan** (decision 65).
 
-## Permanent safety requirements (decisions 59, 60)
+## Permanent safety requirements (decisions 59, 60, 68, 69)
 Every task session must run with all of these. Each has a test; don't weaken them.
 1. `sandbox.failIfUnavailable: true` and `allowUnsandboxedCommands: false` (`harness/claude/settings.ts`).
-2. `--permission-mode dontAsk --permission-prompts none` (`harness/claude/args.ts`).
-3. `--setting-sources project`, `--strict-mcp-config`, `--no-session-persistence`.
+2. `--restricted` plus an explicit `--tools` list from `BUILD_TOOLS` (`harness/claude/args.ts`). Never `--setting-sources`: it loads project hooks, which run outside the sandbox.
+3. `--permission-mode dontAsk --permission-prompts none`, `--strict-mcp-config`, `--no-session-persistence`.
 4. `autoMemoryEnabled: false`.
-5. The live canary probe (`doctor/canary.ts`) passes before any unattended run.
-Settings files go to disk only through `writeTaskSettings`, which validates them first. Claude Code silently drops an invalid settings file.
+5. `blockReadsOutsideWorkingDirectories: true`; only the toolchain cache is reopened.
+6. The live canary probe (`harness/claude/probe.ts`) passes before any unattended run. `jarvis eval` runs it before every session.
+
+Rules that go with these:
+- Settings reach disk only through `writeTaskSettings`, which refuses anything but the exact policy for the context. Claude Code silently drops an invalid settings file.
+- The runner's git calls in agent-writable folders go through `eval/git.ts` (no hooks, no fsmonitor, no global config).
+- `node scripts/mutation-check.mjs` must report every mutation caught.
 
 ## Layout
 ```
 packages/cli/src/
   config/pins.ts           pinned versions, model IDs, disk thresholds
-  harness/claude/          settings, args, clean env, stream-json parsing (the only Claude-specific code)
-  doctor/                  jarvis doctor and the live canary probe
+  harness/claude/          settings, args, clean env, sessions, stream-json, live probe (the only Claude-specific code)
+  doctor/                  jarvis doctor
+  eval/                    sanitized snapshots, baselines, runner-safe git
   cli.ts                   entry point (Node 24 runs the TypeScript directly)
 tests/unit/                fast tests (fake claude)
-tests/live/                real pinned Claude Code, only with JARVIS_LIVE=1
+tests/live/                real pinned Claude Code, only with JARVIS_LIVE=1 (probe + negative control)
+scripts/mutation-check.mjs breaks each safeguard and checks the suite catches it
 docs/                      brief, decisions, golden tasks, architecture, findings, reviews
 ```
 

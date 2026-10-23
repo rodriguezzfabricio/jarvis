@@ -6,7 +6,7 @@ Each decision says what Jarvis does, why, and where the evidence comes from.
 - **Evidence:** raw research notes are in `docs/research/`. "Oct 22 brief" means `Your Agent Workflow Research Brief.md` on your Desktop.
 - **Reviews:** v1 of this doc was reviewed by two models that didn't write it. Claude Fable 5.1's review is in `docs/reviews/review-fable.md` and Codex (Astra)'s in `docs/review-codex.md`. Citations like "Fable F1" and "Codex H3" point into those reviews.
 - **Numbering:** decisions 1–36 keep their v1 numbers, so the reviews still line up. New decisions are numbered 37 and up, placed in the section where they belong.
-- **Stage 0 findings (Oct 23):** decisions 57–67 record what the stage 0 checks found on Fabricio's Mac. Each says which earlier decision or doc line it supersedes or tightens. The raw check results are in `docs/stage0-findings.md`.
+- **Stage 0 findings (Oct 23):** decisions 57–71 record what the stage 0 checks and the first Codex review found on Fabricio's Mac. Each says which earlier decision or doc line it supersedes or tightens. The raw check results are in `docs/stage0-findings.md`.
 
 ## What changed in v2
 
@@ -276,7 +276,7 @@ Checked on Claude Code 2.1.309 on macOS:
 - **Permanent requirements for every task session.** Each has a test:
   1. `sandbox.failIfUnavailable: true` and `sandbox.allowUnsandboxedCommands: false`. Without the first, a sandbox that can't start means commands run unsandboxed.
   2. `--permission-mode dontAsk --permission-prompts none`. With these, a dropped settings file fails closed: nothing is pre-approved, so every tool is refused. Any other mode would fail open.
-  3. `--setting-sources project` (decision 60).
+  3. ~~`--setting-sources project` (decision 60).~~ Superseded by decision 68: `--restricted` with an explicit tool list.
   4. `autoMemoryEnabled: false` (decision 60).
   5. **`jarvis doctor` runs a live canary probe before every unattended run.** A real `claude -p` with the generated settings must fail to read a planted canary file via Bash and via the Read tool, must fail to reach a non-allowlisted host, and must fail to write outside its worktree. It must also succeed in reaching the broker socket. If any result differs, the run doesn't start.
 - **What was verified:** `sandbox.filesystem.denyRead` blocks shell reads, and a `Read(//abs/path/**)` deny rule blocks the Read tool. These are separate layers, because the file tools sit outside the shell sandbox. `sandbox.network.allowedDomains` blocks other hosts. `sandbox.network.allowUnixSockets` allows exactly the listed socket, but only by its **real path**: `/tmp/x.sock` failed and `/private/tmp/x.sock` worked. The broker socket path is always resolved with `realpath` before it's written into settings.
@@ -533,7 +533,7 @@ Tightens decision 3 ("explicit config").
 
 ### 60. Fabricio's global Claude Code config never reaches a task session (new; stage 0)
 `--settings` *adds* to the user config; it doesn't replace it. On this Mac the user config has hooks (PostToolUse, SessionStart, Stop), two plugins and about 100 skills. So every task session runs with:
-- `--setting-sources project`, which keeps out user hooks, plugins and skills (verified: the `init` message lists only built-in agents and skills),
+- ~~`--setting-sources project`, which keeps out user hooks, plugins and skills.~~ Superseded by decision 68. It still loaded the *project's* settings and hooks. `--restricted` keeps out user, project and local settings,
 - `--strict-mcp-config` with Jarvis's own MCP file,
 - `autoMemoryEnabled: false` in the generated settings, because otherwise each session writes auto-memory under `~/.claude/projects/` (verified: `memory_paths` disappears from `init`). Memory comes only through decisions 27–28,
 - `--no-session-persistence`, so task transcripts aren't added to the interactive history.
@@ -562,6 +562,64 @@ Architecture §3.4 put task worktrees in `~/.jarvis/worktrees/`, while §3.5 and
 
 Supersedes the worktree path in architecture §3.4 and §6.
 *From:* stage 0, found while building the baseline runner; live probe, Oct 23.
+
+### 68. Task sessions run `--restricted` with an explicit tool list (new; stage 0, after Codex review 1)
+**Supersedes** the `--setting-sources project` requirement in decisions 59 and 60.
+
+**The flaw.** Codex's first stage 0 review found it, and a live test confirmed it: `--setting-sources project` still loads the worktree's own `.claude/settings.json`. Hooks defined there run outside the sandbox with full access. An agent could write such a hook and escape on the next session.
+
+**The requirement now.** Every task session runs with:
+- `--restricted`. It ignores user, project and local settings files; only `--settings` and managed settings apply. It confines the file tools to the working directories and refuses `bypassPermissions`. It leaves writes to settings, git and tool-config files to a person, which under `dontAsk` means they're refused.
+- `--tools Bash,Read,Edit,Write,Glob,Grep` (or a subset). `--restricted` removes Bash unless it's named, and no other tools are allowed.
+- `--setting-sources` is refused outright, so there's only one mechanism.
+
+**Verified live on 2.1.309:**
+- A malicious project hook doesn't run.
+- Jarvis's own plugin hooks (`--plugin-dir`, runner-owned) do run.
+- Agent writes to `.git/hooks`, `.git/config` and `.claude/` are blocked.
+- The live probe's negative control, started the old way, catches the hook.
+
+**What it costs.** Sessions can't `git commit`; the runner commits the candidate revision, as architecture §3.4 already says. The runner's own git never runs hooks or `fsmonitor` (`core.hooksPath=/dev/null`, `core.fsmonitor=false`, no global or system config).
+*From:* Codex stage 0 review 1, finding 1 (`docs/reviews/stage0-codex-1.md`); live tests, Oct 23; Fabricio, Oct 23.
+
+### 69. Sessions can't read outside their worktree (new; stage 0, after Codex review 1)
+Codex found that sandboxed sessions could read the rest of the disk, including the original FreeHire repo and its history (the golden tasks' answers) and sibling eval runs. Now:
+- `permissions.blockReadsOutsideWorkingDirectories: true` blocks reads of `/Users` and similar for sandboxed shells. `--restricted` confines the file tools.
+- One shared toolchain cache, `~/.jarvis-work/cache`, is reopened for reading and writing (`allowRead`, `allowWrite`). Go, npm and pnpm are pointed at it through environment variables. It holds packages, not answers.
+- Writes to `.git/hooks`, `.git/config` and `.claude/` inside the worktree are denied as a second layer.
+- Snapshots fail closed on credential-looking content anywhere in the tree, unless a person allowlists the file as a fixture (`allowSecretsIn`). They also remove symlinks pointing outside the snapshot, redact quoted multi-line values, and strip user:password from non-local credential URLs.
+- Settings are valid only if they're *exactly* what the builder produces for the trusted context (worktree, Jarvis home, cache, socket, allowlist). A swapped protected path or a widened rule is refused before it reaches disk.
+
+All of this is verified by the live probe. Tightens decisions 12, 13 and 15.
+*From:* Codex stage 0 review 1, findings 2, 5 and 7; live tests, Oct 23.
+
+### 70. No live web in evals until recorded research fixtures exist (new; stage 0, after Codex review 1)
+Codex found that the baseline's web research allowed `WebFetch` to any URL. `WebFetch` runs outside the shell sandbox, so this was a way to leak data. Decision 15 already said evals use recorded research. So:
+- Eval and task sessions get no web tools. `WebSearch` and `WebFetch` aren't in the tool list and are also denied.
+- Recorded research fixtures arrive with the research skill in stage 2.
+- Live web research belongs only to the quarantined researcher role (decision 2), which has no write tools.
+
+Plain Claude Code made no web calls in task 01's first baseline, so the comparison is unaffected. Reaffirms decision 15.
+*From:* Codex stage 0 review 1, finding 3; Fabricio, Oct 23.
+
+### 71. Stage 0 checks that need later stages move to those stages (new; stage 0)
+Codex noted that four items in architecture §9 or §8's stage 0 row can't be finished without things later stages build. Each moves to the stage that first needs it, and that stage's proof now includes it:
+
+| Item | Moves to | Why |
+|---|---|---|
+| The desktop app loads the Jarvis plugin, settings and hooks the same way as the CLI (§9 item 4) | Stage 1 | The Jarvis plugin is built in stage 1 |
+| Maestro flows on an Expo development build in the iOS simulator (§9 item 7) | Stage 4 | Task 9 is the first to need it; the dev build needs several GB of disk |
+| Impeccable on a real Next.js app (§9 item 7) | Stage 4 | Task 11's app is the first real Next.js app. Stage 0 checked JSX source and rendered HTML |
+| `jarvis setup` account creation (GitHub, Vercel, Neon, …) | Stage 5 | Preview deploys are the first use; setup's local parts (folders, ntfy topics, isolated Codex home) exist now |
+
+**Stage 0's proof is now:**
+- every remaining §9 item resolved,
+- the Codex review findings fixed and re-reviewed,
+- the ntfy button and publish-box test done,
+- baselines recorded for tasks 1, 2 and 11 (at least one run each to start stage 1; the second repeat may finish during stage 1).
+
+Supersedes those parts of architecture §8 and §9.
+*From:* Codex stage 0 review 1 ("remaining for stage 0"); Fabricio, Oct 23.
 
 ## 6. Models, effort and cost
 
@@ -979,6 +1037,10 @@ The golden tasks and their snapshots of your job automation live in a separate p
   - Codex reviews run on the Mac, read-only, without the gstack skills, with verdicts in `docs/reviews/` (decision 66),
   - `failIfUnavailable`, `--setting-sources project`, auto-memory off and the doctor canary probe are permanent, each with a test (decisions 59, 60),
   - Jarvis runs only Fabricio's own work on his own plan (decision 65).
+- **Oct 23, after Codex's first stage 0 review:**
+  - `--restricted` with an explicit tool list replaces `--setting-sources project` as a permanent requirement (decision 68),
+  - stage-dependent checks move to the stages that need them (decision 71),
+  - no live web in evals until fixtures exist (decision 70).
 
 ## Key sources
 

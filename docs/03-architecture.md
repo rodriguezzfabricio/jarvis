@@ -4,7 +4,7 @@ Oct 23, 2026 · Fabricio + Claude
 
 How Jarvis itself is built. It turns `docs/01-decisions.md` (the what and why) into components, files, formats and a build order. v1 runs on Claude Code (CLI and desktop app) on macOS. The design keeps the Codex and DSH phases cheap: every component that touches the harness sits behind one adapter.
 
-Wherever a piece depends on a Claude Code feature, this doc names the feature, and stage 0 verifies the exact flag or setting name against the pinned version. All *(verify)* items were resolved in stage 0 on Claude Code 2.1.309 (`docs/stage0-findings.md`, decisions 57–66).
+Wherever a piece depends on a Claude Code feature, this doc names the feature, and stage 0 verifies the exact flag or setting name against the pinned version. The flag and setting names marked *(verify)* in v1 were checked in stage 0 on Claude Code 2.1.309 (`docs/stage0-findings.md`, decisions 57–71). Items that need later stages moved there (decision 71).
 
 ---
 
@@ -235,7 +235,8 @@ Every flag is explicit, so neither your global config nor a friend's changes beh
   --settings ~/.jarvis/projects/<id>/claude-settings.json \   # sandbox, network allowlist, permission deny rules, hooks
   --plugin-dir ~/.jarvis/plugin \                             # the Jarvis plugin (skills, agents, hooks)
   --mcp-config ~/.jarvis/projects/<id>/mcp.json --strict-mcp-config \
-  --setting-sources project --no-session-persistence \       # no user hooks, plugins, skills or history (decision 60)
+  --restricted --tools Bash,Read,Edit,Write,Glob,Grep \       # no user/project/local settings or hooks; explicit tools (decision 68)
+  --no-session-persistence \                                  # no transcript in the interactive history (decision 60)
   --append-system-prompt-file <run header> \                  # task, spec version, constraints
   --permission-mode dontAsk --permission-prompts none \      # fails closed if the settings file is dropped (decision 59)
   --model <from routing table> \
@@ -250,7 +251,9 @@ The task prompt is short and structured:
 - "write your result notes to `.jarvis/notes/<task>.md`". Those notes are claims, not evidence.
 
 **Permission deny rules** (in the generated settings) block:
-- writes, and file-tool reads, under `~/.jarvis/` (except reading the run header),
+- writes, and file-tool reads, under `~/.jarvis/` (the run header is read by Claude Code itself through `--append-system-prompt-file`, not by the agent),
+- any read outside the worktree and the shared toolchain cache (`blockReadsOutsideWorkingDirectories`, decision 69),
+- writes to `.git/hooks`, `.git/config` and `.claude/` in the worktree,
 - web fetches outside the allowlist,
 - MCP servers not in the Jarvis config,
 - `git push --force`, production deploy CLIs, and package publishing.
@@ -296,8 +299,8 @@ The golden tasks and snapshots live in a separate private repo, `jarvis-evals` (
 
 | Stage | Components | Proof before moving on |
 |---|---|---|
-| 0. Setup | `jarvis setup`, `doctor` (first version), pinned Claude Code, accounts, ntfy, the `jarvis-evals` repo, baseline runs | Baselines recorded for tasks 1, 2, 11; every *(verify)* item in this doc resolved |
-| 1. Foundation | Ledger, protected checks, evidence capture, broker + `jarvis act`, generated settings (sandbox, allowlist, deny rules), hooks, full `doctor` | Safety tests: every send, deploy, spend or secret read outside the broker fails; tampering is detected; the ledger survives a kill |
+| 0. Setup | `doctor` (first version, live canary probe), pinned Claude Code, ntfy, the `jarvis-evals` repo, sanitized snapshots, baseline runs | Baselines recorded for tasks 1, 2, 11; remaining §9 items resolved; Codex review findings fixed and re-reviewed (decision 71 moved account setup, the desktop plugin check, Maestro and the Next.js scan to stages 5, 1, 4, 4) |
+| 1. Foundation | Ledger, protected checks, evidence capture, broker + `jarvis act`, generated settings (sandbox, allowlist, deny rules), hooks, full `doctor` | Safety tests: every send, deploy, spend or secret read outside the broker fails; tampering is detected; the ledger survives a kill; the desktop app loads the Jarvis plugin like the CLI (decision 71) |
 | 2. Intake | Triage, `research`, `intake`, `spec` and `design` skills (mockups, DESIGN.md), decision register, notifier questions | You rate task 1's questions; task 11's intake and mockups |
 | 3. Build loop | Runner loop, worktrees, usage-wait, steer, repair/blocked, `build` and `debug` skills | Tasks 2, 4, 5 beat the baseline |
 | 4. Verify | Review roles (with Codex), `security`, `qa` (Playwright, Maestro, Impeccable, token lint, axe), standards lanes | Tasks 3, 6 + the design negative control |

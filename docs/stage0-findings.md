@@ -2,7 +2,7 @@
 
 Oct 23, 2026 · Fabricio + Claude
 
-These are the results of the eight checks in `03-architecture.md` §9, run on Fabricio's MacBook Air (macOS 26.5.2, 16 GB, arm64). Probes used a planted dummy canary file and temporary folders under `/tmp`, deleted afterward. No real secret was read. Decisions 57–66 in `01-decisions.md` turn these into rules.
+These are the results of the eight checks in `03-architecture.md` §9, run on Fabricio's MacBook Air (macOS 26.5.2, 16 GB, arm64). Probes used a planted dummy canary file and temporary folders under `/tmp`, deleted afterward. No real secret was read. Decisions 57–71 in `01-decisions.md` turn these into rules. Section 10 covers what Codex's first review changed.
 
 ## Machine
 
@@ -106,3 +106,14 @@ Plain Claude Code 2.1.309 on `claude-opus-5-5`, on sanitized snapshots, in the s
 | 02 build | Overnight | Overnight |
 
 The hidden checks and rubric grading are applied to the recorded revisions once they're written (stage 2 for task 01's rubric).
+
+## 10. After Codex review 1
+
+`docs/reviews/stage0-codex-1.md` (FAIL: 1 critical, 5 high) and `stage0-codex-1-response.md`.
+
+- **Project hooks ran outside the sandbox** under `--setting-sources project` (confirmed live). Task sessions now run `--restricted --tools Bash,Read,Edit,Write,Glob,Grep` (decision 68).
+- Under `--restricted`: project hooks don't run, Jarvis's own plugin hooks do, and agent writes to `.git/hooks`, `.git/config` and `.claude/` are blocked. Agents can't `git commit`; the runner commits.
+- **Reads outside the worktree** are blocked with `blockReadsOutsideWorkingDirectories`. The toolchain cache `~/.jarvis-work/cache` is reopened with `allowRead` and `allowWrite`, and Go, npm and pnpm are pointed at it (decision 69).
+- **The live probe now has 20 checks**, all passing on 2.1.309. A live negative control started with the old flags fails exactly `project_hooks_not_run`.
+- **Mutation check:** 14 of 14 mutations caught.
+- The baseline chain was stopped. Task 01's first baseline ran under the old envelope and is kept only for reference; all baselines rerun under the fixed one.

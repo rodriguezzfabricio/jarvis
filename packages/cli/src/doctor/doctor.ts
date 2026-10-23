@@ -9,8 +9,7 @@ import {
   pinnedClaudeBin,
   pinnedCodexBin,
 } from "../config/pins.ts";
-import { buildChildEnv, findForbiddenEnv } from "../harness/claude/env.ts";
-import { runCanaryProbe, type ProbeOptions } from "./canary.ts";
+import { buildChildEnv, findForbiddenEnv, runCanaryProbe, type ProbeOptions } from "../harness/claude/index.ts";
 
 /** jarvis doctor, first version (decision 46; tightened by 57–60, 63, 64). */
 

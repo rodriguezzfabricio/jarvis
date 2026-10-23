@@ -1,0 +1,64 @@
+// A stand-in for `claude -p --output-format stream-json`, used by unit tests.
+// It derives its init message from the flags and settings it was given, the way
+// the real binary does, and acts out one behavior chosen by FAKE_CLAUDE_MODE:
+//   safe | leak-read | leak-network | escape-write | dropped-settings | lazy
+// It never touches anything outside the paths in the probe's steps.
+import { readFileSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
+
+const argv = process.argv.slice(2);
+const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
+const mode = process.env.FAKE_CLAUDE_MODE ?? "safe";
+const prompt = flag("-p") ?? "";
+const settings = JSON.parse(readFileSync(flag("--settings"), "utf8"));
+const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
+
+if (argv.includes("--version")) { console.log(`${process.env.FAKE_CLAUDE_VERSION ?? "2.1.309"} (Claude Code)`); process.exit(0); }
+
+const init = {
+  type: "system", subtype: "init",
+  claude_code_version: process.env.FAKE_CLAUDE_VERSION ?? "2.1.309",
+  model: flag("--model"),
+  permissionMode: flag("--permission-mode") ?? "default",
+  apiKeySource: process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : "none",
+  plugins: [
+    { name: "cc-plugin-telemetry", path: "builtin", source: "cc-plugin-telemetry@builtin" },
+    ...(flag("--setting-sources") === "project" && mode !== "user-plugins" ? [] : [{ name: "user-plugin", path: "/x", source: "user-plugin@market" }]),
+  ],
+  tools: ["Bash", "Read", "Write"],
+};
+if (settings.autoMemoryEnabled !== false || mode === "memory-on") init.memory_paths = { auto: "/fake/.claude/projects/x/memory/" };
+out(init);
+out({ type: "rate_limit_event", rate_limit_info: { status: "allowed", resetsAt: 1792786200, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: 0.1, resetsAt: 1792786200 } } } });
+
+if (mode === "lazy") {
+  out({ type: "assistant", message: { content: [{ type: "text", text: "I won't run these." }] } });
+  out({ type: "result", subtype: "success", is_error: false, result: "I won't run these." });
+  process.exit(0);
+}
+
+const steps = JSON.parse(prompt.split("```json")[1].split("```")[0]);
+const denied = (tool) => `Permission to use ${tool} has been denied because Claude Code is running in don't ask mode.`;
+const socketSend = (path, msg) => new Promise((res) => {
+  const s = connect(path, () => s.write(msg));
+  s.on("data", (d) => { res(d.toString()); s.end(); });
+  s.on("error", (e) => res(String(e)));
+});
+
+let n = 0;
+for (const st of steps) {
+  const id = `toolu_${++n}`;
+  const input = st.tool === "Bash" ? { command: st.command } : st.tool === "Write" ? { file_path: st.file_path, content: st.content } : { file_path: st.file_path };
+  out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: st.tool, input }] } });
+  let isError = true;
+  let text = "Operation not permitted";
+  if (mode === "dropped-settings") text = denied(st.tool);
+  else if (st.step === "A") { const [, val, file] = st.command.match(/printf %s (\S+) > (\S+)/); writeFileSync(file, val); isError = false; text = ""; }
+  else if (st.step === "B") { writeFileSync(st.file_path, st.content); isError = false; text = "File created"; }
+  else if (st.step === "C") { const [, path, msg] = st.command.match(/connect\('([^']+)'\);s\.sendall\(b'([^']+)'\)/); text = await socketSend(path, msg); isError = false; }
+  else if (st.step === "D" && mode === "leak-read") { text = readFileSync(st.command.replace(/^cat /, ""), "utf8"); isError = false; }
+  else if (st.step === "F") { text = mode === "leak-network" ? "200" : "Exit code 56\n000\n<sandbox_violations>deny network-outbound</sandbox_violations>"; isError = mode !== "leak-network"; }
+  else if (st.step === "G" && mode === "escape-write") { writeFileSync(st.command.replace(/^printf x > /, ""), "x"); isError = false; text = ""; }
+  out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: text }] } });
+}
+out({ type: "result", subtype: "success", is_error: false, result: "DONE" });

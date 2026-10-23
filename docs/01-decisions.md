@@ -420,6 +420,12 @@ Notifications come from the runner, a plain script, not from the model or the ha
   - You answer with a button such as "Use defaults", "Approve" or "Pause". Each button is an ntfy `http` action that POSTs a fixed answer to a second, reply topic. The runner polls that topic between tasks (`/json?poll=1&since=<last id>`).
   - **There are no typed replies.** ntfy has no text-input action (corrected in stage 0). For a free-text answer, such as a steer note, you open the reply topic in the ntfy app and type into its publish box. The runner reads that as a steer note. Anything longer waits for `jarvis steer` at the computer.
   - Setup checks that buttons and publish-box replies both reach the reply topic on your phone before away mode relies on them.
+  - **Every answer gets a confirmation, and repeat taps don't count** (from the stage 0 phone test). On iOS a button tap gives no visible feedback, so in the test 34 taps arrived for one question. So:
+    - Each button's body carries the request ID and a one-time nonce (`approve:<request>:<nonce>`).
+    - The runner takes the **first** valid answer for a request and ignores the rest.
+    - It then posts a confirmation to the main topic: "Got it: Approve (request …)", naming the answer that counted.
+    - An answer with an unknown or reused nonce is ignored and logged. Anyone who learns the topic name could post to it, so a bare "approve" counts for nothing.
+    - For approvals of outside actions (decision 12), a tap is only the answer. The broker still checks the exact payload hash.
   - Limits on the public server: at most 3 buttons per message, 250 messages a day, and 2 MB per attachment. The docs call the iOS app "a little buggy", so a missed notification must never block a run: the 15-minute default still applies (decision 10).
 - **Optional: email, send-only,** through your mail provider's SMTP with an app password. Jarvis can send, but it never reads your inbox; you answer through ntfy or at the computer. Email isn't the default because it needs credentials, and two-way email would mean giving Jarvis access to read your inbox.
 - **Privacy:** messages pass through ntfy's public server, and the topic name acts as the password. Messages stay short (questions and status, never code or secrets), and the full details stay in `REPORT.md` on your Mac. Self-hosting ntfy, or using its access tokens, is an option later.
@@ -503,7 +509,7 @@ If anything fails, the run doesn't start unattended. Your Claude Code is 2.1.270
 
 ### 57. Pin Claude Code 2.1.309, called by absolute path (new; stage 0)
 - **The pin is 2.1.309:** `~/.local/share/claude/versions/2.1.309`. It includes a macOS fix (in 2.1.309) for sandboxed Bash running shell startup files *outside* the sandbox, so earlier versions don't qualify.
-- **Absolute path, never `PATH`.** Fabricio's `claude` on `PATH` is a wrapper (decision 58) and stays as it is. Jarvis never changes it or his everyday version.
+- **Absolute path, never `PATH`.** Whatever `claude` on `PATH` happens to be (a wrapper until Oct 23, decision 58), Jarvis never relies on it and never changes Fabricio's everyday install.
 - **The desktop app is separate.** It bundles its own Claude Code (2.1.308 on Oct 23) and updates on its own, so it can't be pinned. Desktop is used only for interactive intake. Every task session runs the pinned CLI. `dontAsk` mode is CLI-only anyway.
 - **Codex** is pinned the same way (decision 66).
 
@@ -519,6 +525,8 @@ So:
 - The runner never inherits its environment. It builds each child's environment from an allowlist: `PATH` (fixed), `HOME`, `USER`, `LANG`, `TMPDIR` and `SHELL`, plus the variables Jarvis sets on purpose.
 - `jarvis doctor` refuses an unattended run if any of these would reach the session: `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` (they would bill the API instead of the plan), `CLAUDE_CODE_USE_*`, `*_BASE_URL`, or `CLAUDE_CONFIG_DIR`.
 - `doctor` reports any wrapper in front of a binary Jarvis uses, for information only.
+
+At Fabricio's request on Oct 23, the audn tools were removed. The wrappers, the `.zshrc` block and the audn folders were moved into `~/audn-removed-2026-10-23/`, and his everyday `claude` now links to 2.1.309. The rule stays, because any future tool can do the same thing.
 
 Tightens decision 3 ("explicit config").
 *From:* stage 0 checks, Oct 23 (`docs/stage0-findings.md` §1, §5).
@@ -948,7 +956,8 @@ The golden tasks and their snapshots of your job automation live in a separate p
   - Codex is the cross-model reviewer, with a Claude fallback,
   - overnight usage windows may be spent on test runs.
 - **Oct 23, stage 0 round:**
-  - pin Claude Code 2.1.309, called by absolute path; the ai-harness wrapper and everyday `claude` stay untouched (decision 57),
+  - pin Claude Code 2.1.309, called by absolute path (decision 57),
+  - remove the audn tools: moved, not deleted, into `~/audn-removed-2026-10-23/`; everyday `claude` now runs 2.1.309 (decision 58),
   - full model IDs in the routing table (decision 61),
   - keep the repo at `~/Desktop/jarvis` (decision 64),
   - a 20 GB disk floor, and one writing task below 40 GB (decision 63),

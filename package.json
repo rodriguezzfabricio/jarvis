@@ -1,0 +1,20 @@
+{
+  "name": "jarvis-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:live": "JARVIS_LIVE=1 vitest run tests/live",
+    "typecheck": "tsc -p packages/cli --noEmit",
+    "jarvis": "node packages/cli/src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

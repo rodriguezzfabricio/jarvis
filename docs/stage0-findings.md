@@ -117,3 +117,15 @@ The hidden checks and rubric grading are applied to the recorded revisions once 
 - **The live probe now has 20 checks**, all passing on 2.1.309. A live negative control started with the old flags fails exactly `project_hooks_not_run`.
 - **Mutation check:** 14 of 14 mutations caught.
 - The baseline chain was stopped. Task 01's first baseline ran under the old envelope and is kept only for reference; all baselines rerun under the fixed one.
+
+## 11. After Codex review 2
+
+`docs/reviews/stage0-codex-2.md` (FAIL: 4 high, 3 medium) and `stage0-codex-2-response.md`.
+
+- **Private toolchain cache per run**, deleted afterwards. A shared cache let runs pass notes to each other.
+- **The network check requires the sandbox's denial record** (`deny network-outbound example.com:443`). A live negative control with the blocked host allowlisted fails exactly that check.
+- **Loopback:** without `allowLocalBinding`, even allowlisted `127.0.0.1:<port>` is unreachable (curl exit 7). With it, every local port is reachable, allowlisted or not. It stays off.
+- **Compound commands:** under `dontAsk`, a `for` loop in Bash was refused even with the sandbox on. Plain commands and `sh script.sh` ran.
+- **Jarvis's own plugin hooks** (`--plugin-dir`) run under `--restricted`; this is now a live probe check.
+- **A real dotenv parser** and a fail-closed scan of every file in every encoding.
+- **Live probe:** 21 checks plus 2 negative controls, all as expected on 2.1.309.

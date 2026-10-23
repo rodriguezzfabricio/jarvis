@@ -23,4 +23,10 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("live canary probe on the pinne
     expect(r.ok).toBe(false);
     expect(r.checks.find((c) => c.name === "project_hooks_not_run")?.ok).toBe(false);
   }, 300_000);
+
+  it("negative control: with the blocked host allowlisted, it catches the open network", async () => {
+    const r = await runCanaryProbe({ claudeBin: pinnedClaudeBin(), negativeControlAllowBlockedHost: true });
+    for (const c of r.checks) console.log(`${c.ok ? "ok  " : "FAIL"} [network negative control] ${c.name}: ${c.detail}`);
+    expect(r.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["network_blocked"]);
+  }, 300_000);
 });

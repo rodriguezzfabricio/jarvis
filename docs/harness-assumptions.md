@@ -10,3 +10,6 @@ Each piece of scaffolding, the weakness it covers, and how to tell when it can g
 | Built-in-plugin filter in the probe | 2.1.309 lists `…@builtin` plugins in `init` even with `--setting-sources project` | Not a weakness: keep it, re-check the format on each pin |
 | Clean child environment (decision 58) | Wrappers and shell profiles can reroute or rebill a session | Never |
 | ntfy answer confirmations and first-answer-wins (decision 50) | The iOS ntfy app gives no feedback after a button tap, so people tap repeatedly | The ntfy iOS app shows tap feedback; keep first-answer-wins regardless |
+| The sandbox denial record required by the probe's network check | curl's `000` can't tell a policy denial from a DNS or TLS failure | Never; it's the evidence that the policy, not luck, blocked the host |
+| Private per-run toolchain cache | Sessions can write the cache, so a shared one carries data between runs | A runner-managed read-only mirror plus a private overlay gives the same isolation faster |
+| Avoiding compound shell commands in sessions (stage 3 build skill) | Under `dontAsk`, Claude Code refuses some compound commands (`for` loops) even when sandboxed | A Claude Code version auto-allows sandboxed compound commands (re-test on each pin) |

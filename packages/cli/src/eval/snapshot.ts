@@ -31,7 +31,8 @@ export interface SnapshotManifest {
 }
 
 const SECRET_KEY = /(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE|CREDENTIAL|AUTH|_KEY$)/i;
-const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|postgres|redis|minio|mailhog|host\.docker\.internal)$/i;
+/** Hosts whose credentials are local dev defaults or documentation placeholders, not real secrets. */
+const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|postgres|redis|minio|mailhog|host\.docker\.internal|([a-z0-9-]+\.)*(example|test|invalid|localhost)|example\.(com|org|net))$/i;
 const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@'"]+):([^\s/@'"]+)@([^\s/:'"?#]+)/gi;
 
 /** Credential URLs pointing anywhere but local dev services keep their host and lose user:password. */
@@ -39,42 +40,70 @@ function redactCredUrls(v: string): string {
   return v.replace(CRED_URL, (m, scheme: string, _u: string, _p: string, host: string) => (LOCAL_HOSTS.test(host) ? m : `${scheme}REDACTED:REDACTED@${host}`));
 }
 
+export class SnapshotRefused extends Error {}
+
+/** Index just past the closing quote q in s (starting after the opening quote), honoring backslash escapes in "…". */
+function closingQuote(s: string, q: string, from: number): number {
+  for (let i = from; i < s.length; i++) {
+    if (q === '"' && s[i] === "\\") {
+      i++;
+      continue;
+    }
+    if (s[i] === q) return i + 1;
+  }
+  return -1;
+}
+
 /**
- * Blank the values of secret-looking keys in a dotenv file, including quoted multi-line values,
- * and strip user:password from non-local credential URLs. Comments and other keys are kept.
+ * Blank the values of secret-looking keys in a dotenv file and strip user:password from
+ * non-local credential URLs. Handles single, double and back-quoted values (multi-line allowed),
+ * escapes and inline comments. An unterminated quote makes the file uninspectable: refused.
  */
 export function redactEnvText(text: string): { text: string; keys: string[] } {
   const keys: string[] = [];
-  const lines = text.split("\n");
   const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const m = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(line);
+  let i = 0;
+  while (i < text.length) {
+    const nl = text.indexOf("\n", i);
+    const lineEnd = nl === -1 ? text.length : nl;
+    const line = text.slice(i, lineEnd);
+    const m = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=\s*)/.exec(line);
     if (!m) {
       out.push(line);
+      i = lineEnd + 1;
       continue;
     }
-    const pre = m[1] ?? "";
-    const key = m[2] ?? "";
-    let value = m[3] ?? "";
-    // A quoted value that opens but doesn't close on this line continues on the next lines.
-    const q = value.trimStart()[0];
-    if ((q === '"' || q === "'") && value.trim().length > 0 && !(value.trim().length > 1 && value.trim().endsWith(q))) {
-      while (i + 1 < lines.length) {
-        i++;
-        value += `\n${lines[i] ?? ""}`;
-        if ((lines[i] ?? "").trimEnd().endsWith(q)) break;
-      }
+    const [head, , key = ""] = m;
+    const valueStart = i + head.length;
+    const q = text[valueStart];
+    let valueEnd: number; // end of the value itself
+    let restEnd: number; // end of the line holding the value's end (comments etc.)
+    if (q === '"' || q === "'" || q === "`") {
+      const close = closingQuote(text, q, valueStart + 1);
+      if (close === -1) throw new SnapshotRefused(`unterminated ${q} value for ${key}`);
+      valueEnd = close;
+      const e = text.indexOf("\n", close);
+      restEnd = e === -1 ? text.length : e;
+    } else {
+      // Unquoted: the value ends at an inline comment (" #") or the end of the line.
+      const c = line.slice(head.length).search(/\s#/);
+      valueEnd = c === -1 ? lineEnd : valueStart + c;
+      restEnd = lineEnd;
     }
-    if (SECRET_KEY.test(key) && value.trim() !== "" && value.trim() !== '""' && value.trim() !== "''") {
+    const value = text.slice(valueStart, valueEnd);
+    const rest = text.slice(valueEnd, restEnd);
+    const empty = value.trim() === "" || value === '""' || value === "''";
+    if (SECRET_KEY.test(key) && !empty) {
       keys.push(key);
-      out.push(`${pre}${key}=`);
-      continue;
+      out.push(`${head.trimEnd().replace(/\s*=\s*$/, "")}=${rest.trimStart().startsWith("#") ? ` ${rest.trimStart()}` : ""}`);
+    } else {
+      const red = redactCredUrls(value);
+      if (red !== value) keys.push(key);
+      out.push(`${head}${red}${rest}`);
     }
-    const red = redactCredUrls(value);
-    if (red !== value) keys.push(key);
-    out.push(`${pre}${key}=${red}`);
+    i = restEnd + 1;
   }
+  if (text.endsWith("\n")) out.push("");
   return { text: out.join("\n"), keys };
 }
 
@@ -89,9 +118,40 @@ const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
   ["Stripe live key", /\b[rs]k_live_[0-9A-Za-z]{20,}\b/],
 ];
 
-export function findCredentials(text: string): string[] {
-  return CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+/** Documentation and test placeholders ("user:pass", "%s", "<pass>", "u:p") are not credentials. */
+export function isPlaceholderPassword(pw: string): boolean {
+  return pw.length <= 4 || /[<>{}%$*]/.test(pw) || /^(pass(word)?|secret|changeme|example|test(ing)?|dummy|placeholder|x{3,}|redacted)$/i.test(pw);
 }
+
+export function findCredentials(text: string): string[] {
+  const hits = CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+  for (const m of text.matchAll(CRED_URL)) {
+    if (!isPlaceholderPassword(m[3] ?? "") && !LOCAL_HOSTS.test(m[4] ?? "")) {
+      hits.push("credential URL");
+      break;
+    }
+  }
+  return hits;
+}
+
+/** Text views of a file for scanning: UTF-8, UTF-16 (BOM or NUL-interleaved ASCII), and raw bytes for binaries. */
+export function scanViews(buf: Buffer): string[] {
+  const views = [buf.toString("utf8")];
+  if (buf.includes(0)) {
+    const le = buf[0] === 0xff && buf[1] === 0xfe;
+    const be = buf[0] === 0xfe && buf[1] === 0xff;
+    if (be) {
+      const swapped = Buffer.from(buf.subarray(2));
+      swapped.swap16();
+      views.push(swapped.toString("utf16le"));
+    } else views.push(buf.subarray(le ? 2 : 0).toString("utf16le"), buf.subarray(1).toString("utf16le"));
+    views.push(buf.toString("latin1").replace(/\u0000/g, ""));
+  }
+  return views;
+}
+
+/** Files larger than this are refused unless a person allowlisted them. */
+export const MAX_SCAN_BYTES = 64 * 1024 * 1024;
 
 function walk(dir: string, root: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -142,20 +202,35 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
       }
       continue;
     }
-    if (!st.isFile() || st.size > 5 * 1024 * 1024) continue;
+    if (!st.isFile()) continue;
+    if (allowed.has(rel)) continue; // a person reviewed this file
+    if (st.size > MAX_SCAN_BYTES) {
+      found.push(`${rel} (too large to scan)`);
+      continue;
+    }
     const name = rel.split("/").at(-1) ?? "";
-    let text = readFileSync(p, "utf8");
-    if (text.includes("\u0000")) continue; // binary
+    const buf = readFileSync(p);
     if (/^\.env(\..+)?$/.test(name)) {
-      const r = redactEnvText(text);
-      if (r.keys.length) {
-        writeFileSync(p, r.text);
-        redactions.push({ file: rel, keys: r.keys });
-        text = r.text;
+      if (buf.includes(0)) {
+        found.push(`${rel} (non-UTF-8 env file)`);
+        continue;
+      }
+      try {
+        const r = redactEnvText(buf.toString("utf8"));
+        if (r.keys.length) {
+          writeFileSync(p, r.text);
+          redactions.push({ file: rel, keys: r.keys });
+        }
+      } catch (e) {
+        if (e instanceof SnapshotRefused) {
+          found.push(`${rel} (${e.message})`);
+          continue;
+        }
+        throw e;
       }
     }
-    const hits = findCredentials(text);
-    if (hits.length && !allowed.has(rel)) found.push(`${rel} (${hits.join(", ")})`);
+    const hits = new Set(scanViews(readFileSync(p)).flatMap(findCredentials));
+    if (hits.size) found.push(`${rel} (${[...hits].join(", ")})`);
   }
   if (found.length) {
     rmSync(dest, { recursive: true, force: true });

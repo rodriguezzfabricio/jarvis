@@ -579,19 +579,27 @@ Supersedes the worktree path in architecture §3.4 and §6.
 - Agent writes to `.git/hooks`, `.git/config` and `.claude/` are blocked.
 - The live probe's negative control, started the old way, catches the hook.
 
+**Network proof.** The probe's network check requires the sandbox's own denial record (`deny network-outbound <host>`) as well as curl's `000`. A host that merely failed (DNS, TLS, timeout) gives `000` without that record, and the check fails. A live negative control that allowlists the blocked host fails exactly this check (Codex review 2).
+
+**Loopback is all-or-nothing.** Without `allowLocalBinding`, no local port is reachable from a session, even one on the allowlist. With it, every local port is. It stays off, because a session could otherwise reach any local service. Tests against local dev servers run in the runner's checks (architecture §3.4), not inside sessions. Stages 3–4 must design around this.
+
+**Compound shell commands are refused.** Under `dontAsk`, Claude Code refuses some commands even when sandboxed. A `for` loop was refused in testing; plain commands and `sh script.sh` ran. Stage 3's build skill must account for this, and the runner logs `permission_denied` events, so the cost can be measured.
+
 **What it costs.** Sessions can't `git commit`; the runner commits the candidate revision, as architecture §3.4 already says. The runner's own git never runs hooks or `fsmonitor` (`core.hooksPath=/dev/null`, `core.fsmonitor=false`, no global or system config).
 *From:* Codex stage 0 review 1, finding 1 (`docs/reviews/stage0-codex-1.md`); live tests, Oct 23; Fabricio, Oct 23.
 
 ### 69. Sessions can't read outside their worktree (new; stage 0, after Codex review 1)
 Codex found that sandboxed sessions could read the rest of the disk, including the original FreeHire repo and its history (the golden tasks' answers) and sibling eval runs. Now:
 - `permissions.blockReadsOutsideWorkingDirectories: true` blocks reads of `/Users` and similar for sandboxed shells. `--restricted` confines the file tools.
-- One shared toolchain cache, `~/.jarvis-work/cache`, is reopened for reading and writing (`allowRead`, `allowWrite`). Go, npm and pnpm are pointed at it through environment variables. It holds packages, not answers.
+- Each run gets a **private, empty toolchain cache**, reopened for reading and writing (`allowRead`, `allowWrite`) and deleted after the run. Go, npm and pnpm are pointed at it through environment variables. Codex's second review showed that a shared cache lets one run leave notes for the next. A runner-managed, read-only package mirror can come later if download time matters.
 - Writes to `.git/hooks`, `.git/config` and `.claude/` inside the worktree are denied as a second layer.
 - Snapshots fail closed on credential-looking content anywhere in the tree, unless a person allowlists the file as a fixture (`allowSecretsIn`). They also remove symlinks pointing outside the snapshot, redact quoted multi-line values, and strip user:password from non-local credential URLs.
 - Settings are valid only if they're *exactly* what the builder produces for the trusted context (worktree, Jarvis home, cache, socket, allowlist). A swapped protected path or a widened rule is refused before it reaches disk.
 
+- Snapshots parse dotenv quoting, escapes and inline comments properly. An unterminated quote, an oversized file, or credential-looking content in any encoding (UTF-8, UTF-16, raw bytes) or any format (credential URLs included) refuses the snapshot unless a person allowlists the file (Codex review 2).
+
 All of this is verified by the live probe. Tightens decisions 12, 13 and 15.
-*From:* Codex stage 0 review 1, findings 2, 5 and 7; live tests, Oct 23.
+*From:* Codex stage 0 reviews 1 (findings 2, 5, 7) and 2 (findings 1–3); live tests, Oct 23.
 
 ### 70. No live web in evals until recorded research fixtures exist (new; stage 0, after Codex review 1)
 Codex found that the baseline's web research allowed `WebFetch` to any URL. `WebFetch` runs outside the shell sandbox, so this was a way to leak data. Decision 15 already said evals use recorded research. So:

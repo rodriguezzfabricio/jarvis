@@ -74,6 +74,22 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(r.text).not.toContain("MIIE");
   });
 
+  // Codex review 2, high: inline comments, escapes and unterminated quotes.
+  it("redacts a secret that follows a quoted value with an inline comment", () => {
+    const r = redactEnvText('PUBLIC_NAME="hello" # comment\nAPI_TOKEN=synthetic-sensitive-value\n');
+    expect(r.text).toBe('PUBLIC_NAME="hello" # comment\nAPI_TOKEN=\n');
+    expect(r.keys).toEqual(["API_TOKEN"]);
+  });
+
+  it("handles escaped quotes and unquoted inline comments", () => {
+    const r = redactEnvText('GREETING="say \\"hi\\" # not a comment"\nDB_PASSWORD=hunter2 # prod\nNEXT=1\n');
+    expect(r.text).toBe('GREETING="say \\"hi\\" # not a comment"\nDB_PASSWORD= # prod\nNEXT=1\n');
+  });
+
+  it("refuses an unterminated quoted value instead of guessing", () => {
+    expect(() => redactEnvText('A="never closed\nAPI_TOKEN=secret\n')).toThrow(/unterminated/);
+  });
+
   it("strips user:password from non-local credential URLs and keeps local dev defaults", () => {
     const r = redactEnvText("DATABASE_URL=postgres://admin:hunter2@prod.db.example.com:5432/app\nDEV_URL=postgres://hire:hire@localhost:5432/hire\n");
     expect(r.text).toContain("postgres://REDACTED:REDACTED@prod.db.example.com:5432/app");
@@ -87,6 +103,14 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(findCredentials("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----")).toEqual([]);
     expect(findCredentials(`token: ghp_${"a".repeat(36)}`)).toEqual(["GitHub token"]);
     expect(findCredentials("nothing here")).toEqual([]);
+    expect(findCredentials('{"db": "postgres://admin:hunter2@prod.db.example.net:5432/app"}')).toEqual(["credential URL"]);
+    expect(findCredentials("url: postgres://hire:hire@localhost:5432/hire and http://user:pass@proxy.example:8080")).toEqual([]);
+    expect(findCredentials("postgres://REDACTED:REDACTED@prod.db.example.net/app")).toEqual([]);
+    // Placeholders seen in FreeHire's docs and tests:
+    for (const p of ["http://user:pass@host", "postgres://%s:%s@%s", "http://<user>-rotate:<pass>@p.webshare.io", "http://u:p@1.2.3.4", "http://u-{n}:p@gw"]) {
+      expect(findCredentials(p)).toEqual([]);
+    }
+    expect(findCredentials("http://scraper:Zq8vT2mWx91@p.webshare.io:80")).toEqual(["credential URL"]);
   });
 
   it("fails closed on a credential anywhere in the tree, unless a person allowlisted that file", async () => {
@@ -102,6 +126,23 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(existsSync(join(root, "snapF"))).toBe(false);
     const m = await createSnapshot({ sourceRepo: repo2, rev: "HEAD", dest: join(root, "snapG"), allowSecretsIn: ["deploy.yaml"] });
     expect(m.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("fails closed on credentials hidden in UTF-16, binary or unterminated env files", async () => {
+    const repo4 = join(root, "src4");
+    mkdirSync(repo4, { recursive: true });
+    git(repo4, "init", "-q", "-b", "main");
+    git(repo4, "config", "user.email", "t@t");
+    git(repo4, "config", "user.name", "t");
+    writeFileSync(join(repo4, "notes.txt"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`key=ghp_${"b".repeat(36)}`, "utf16le")]));
+    writeFileSync(join(repo4, "blob.bin"), Buffer.concat([Buffer.from([0, 1, 2, 0]), Buffer.from(`AKIA${"QRSTUVWXYZABCDEF"}`), Buffer.from([0, 0])]));
+    writeFileSync(join(repo4, ".env"), 'A="open\nTOKEN=x\n');
+    git(repo4, "add", "-A");
+    git(repo4, "commit", "-qm", "c");
+    const err = await createSnapshot({ sourceRepo: repo4, rev: "HEAD", dest: join(root, "snapU") }).then(() => "", (e: Error) => e.message);
+    expect(err).toContain("notes.txt (GitHub token)");
+    expect(err).toContain("blob.bin (AWS access key)");
+    expect(err).toContain(".env (unterminated");
   });
 
   it("removes symlinks that point outside the snapshot", async () => {

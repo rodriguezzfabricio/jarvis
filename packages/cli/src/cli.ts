@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { homedir } from "node:os";
 import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts";
 import { loadTask, runBaseline } from "./eval/baseline.ts";
+import { runSchedule } from "./eval/schedule.ts";
 
 const program = new Command().name("jarvis").description("Jarvis: research, ask once, build autonomously, prove it with evidence.");
 
@@ -30,37 +31,24 @@ evalCmd
   .option("--repeat <n>", "runs per task", "1")
   .option("--label <s>", "added to run ids", "")
   .action(async (ids: string[], opts: { evals: string; repeat: string; label: string }) => {
-    const repeat = Number.parseInt(opts.repeat, 10);
     const log = (m: string) => console.log(`${new Date().toISOString()} ${m}`);
     // A fresh live doctor before every session: the binary, settings and sandbox must hold now (decision 59).
     const preflight = async () => {
       const checks = await runDoctor({ live: true });
       const ok = allowsUnattended(checks);
       if (!ok) for (const c of checks.filter((x) => x.level === "fail")) log(`preflight FAIL ${c.name}: ${c.detail}`);
-      return ok;
+      const waitUntil = checks.find((c) => c.name === "canary_probe")?.waitUntil;
+      return { ok, ...(waitUntil !== undefined ? { waitUntil } : {}) };
     };
-    for (let i = 1; i <= repeat; i++) {
-      for (const id of ids) {
-        const task = loadTask(opts.evals, id);
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          const runId = `baseline-${new Date().toISOString().replace(/[:.]/g, "-")}${opts.label ? `-${opts.label}` : ""}-r${i}-a${attempt}`;
-          log(`start ${id} ${runId}`);
-          const r = await runBaseline(task, { preflight, runId });
-          log(`end ${id}: exit ${r.exitCode}${r.timedOut ? " (timed out)" : ""}, ${r.resultSubtype}, ${r.numTurns} turns, ${Math.round(r.durationMs / 60000)} min, ${r.diffStat || "no changes"}; ${r.resultsDir}`);
-          if (r.usageWaitUntil) {
-            const ms = r.usageWaitUntil * 1000 + 120_000 - Date.now();
-            if (ms > 12 * 3600_000) {
-              log(`usage window resets in ${Math.round(ms / 3600_000)} h: stopping the chain`);
-              return;
-            }
-            log(`usage ${r.usageLimited ? "limit hit" : "high"}: waiting ${Math.round(ms / 60000)} min for the reset`);
-            if (ms > 0) await new Promise((res) => setTimeout(res, ms));
-          }
-          if (!r.usageLimited) break; // a limited run is retried; waiting is not a failure (decision 3)
-          log(`retrying ${id} after the usage wait`);
-        }
-      }
-    }
+    const out = await runSchedule(ids, Number.parseInt(opts.repeat, 10), opts.label, {
+      loadTask: (id) => loadTask(opts.evals, id),
+      runOne: (task, runId) => runBaseline(task, { preflight, runId }),
+      sleepUntil: (t) => new Promise((res) => setTimeout(res, Math.max(0, t * 1000 - Date.now()))),
+      nowMs: () => Date.now(),
+      log,
+    });
+    log(`done: ${out.completed.length} run(s) completed${out.stopped ? `; STOPPED at ${out.stopped.task}: ${out.stopped.reason}` : ""}`);
+    process.exitCode = out.stopped ? 1 : 0;
   });
 
 await program.parseAsync();

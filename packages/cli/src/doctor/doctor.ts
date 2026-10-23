@@ -18,6 +18,8 @@ export interface DoctorCheck {
   name: string;
   level: Level;
   detail: string;
+  /** On canary_probe: the probe hit a usage limit; retry after this Unix time. */
+  waitUntil?: number;
 }
 
 export interface DoctorDeps {
@@ -110,7 +112,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
     const probe = deps.probe ?? runCanaryProbe;
     const r = await probe({ claudeBin: claude, parentEnv: env, home });
     for (const c of r.checks) add(`probe.${c.name}`, c.ok ? "pass" : "fail", c.detail);
-    add("canary_probe", r.ok ? "pass" : "fail", r.ok ? "the generated settings took effect and held" : "the live probe failed: no unattended runs");
+    add("canary_probe", r.ok ? "pass" : "fail", r.ok ? "the generated settings took effect and held" : r.usageWaitUntil ? "the probe hit a usage limit; retry after the reset" : "the live probe failed: no unattended runs");
+    if (r.usageWaitUntil !== undefined) (checks.at(-1) as DoctorCheck).waitUntil = r.usageWaitUntil;
   } else {
     add("canary_probe", "warn", "not run (use --live; required before any unattended run)");
   }

@@ -24,6 +24,13 @@ if (!restricted && existsSync(".claude/settings.json")) {
   for (const h of proj.hooks?.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
 }
 
+// Plugins passed with --plugin-dir always load and their hooks run (they are runner-owned).
+const pluginDir = flag("--plugin-dir");
+if (pluginDir && existsSync(`${pluginDir}/hooks/hooks.json`) && mode !== "plugin-hooks-off") {
+  const hooks = JSON.parse(readFileSync(`${pluginDir}/hooks/hooks.json`, "utf8")).hooks ?? {};
+  for (const h of hooks.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
+}
+
 const init = {
   type: "system", subtype: "init",
   claude_code_version: process.env.FAKE_CLAUDE_VERSION ?? "2.1.309",
@@ -32,6 +39,7 @@ const init = {
   apiKeySource: process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : "none",
   plugins: [
     { name: "cc-plugin-telemetry", path: "builtin", source: "cc-plugin-telemetry@builtin" },
+    ...(pluginDir ? [{ name: "jarvis-probe", path: pluginDir, source: "jarvis-probe@inline" }] : []),
     ...(restricted && mode !== "user-plugins" ? [] : [{ name: "user-plugin", path: "/x", source: "user-plugin@market" }]),
   ],
   tools,
@@ -41,8 +49,16 @@ out(init);
 
 const rl = (status, u, at) => out({ type: "rate_limit_event", rate_limit_info: { status, resetsAt: at, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: u, resetsAt: at }, seven_day: { utilization: 0.2, resetsAt: at + 86400 } } } });
 
-if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected") {
+if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy") {
   writeFileSync("app.txt", `built for: ${prompt}\n`);
+  if (mode === "cache-spy") {
+    // Try to leave a note for the next run in the toolchain cache, and look for one from the last run.
+    const note = `${process.env.GOCACHE}/note-for-next-run.txt`;
+    const saw = existsSync(note);
+    execSync(`mkdir -p "${process.env.GOCACHE}"`);
+    writeFileSync(note, "the answer is 42");
+    writeFileSync("app.txt", `saw-note: ${saw ? "yes" : "no"}\n`);
+  }
   if (mode === "baseline-evil") {
     // Not sandboxed here, so this simulates what a sandbox escape would leave for the runner.
     writeFileSync(".git/hooks/post-commit", `#!/bin/sh\ntouch ${process.env.FAKE_CLAUDE_EVIL_MARKER}\n`, { mode: 0o755 });
@@ -98,7 +114,9 @@ for (const st of steps) {
     res.push(mode === "offline" ? "P:000" : "P:200");
     { const f = target("D", /^cat (\S+)/); res.push(mode === "leak-read" ? `D:${readFileSync(f, "utf8").trim()}` : `D:cat: ${f}: Operation not permitted`); }
     { const f = target("R", /^cat (\S+)/); res.push(mode === "leak-outside" ? `R:${readFileSync(f, "utf8").trim()}` : `R:cat: ${f}: Operation not permitted`); }
-    res.push(mode === "leak-network" ? "F:404" : "F:000");
+    res.push(mode === "leak-network" || mode === "reached-despite-record" ? "F:404" : "F:000");
+    const blockedHost = line("F").match(/https:\/\/([^/]+)\//)[1];
+    if (mode !== "leak-network" && mode !== "dns-fail") res.push(`<sandbox_violations>\ndeny network-outbound ${blockedHost}:443 (user denied)\n</sandbox_violations>`);
     { const f = target("G", /printf x > (\S+)\)/); if (mode === "escape-write") { writeFileSync(f, "x"); res.push("G:written"); } else res.push("G:blocked"); }
     { const f = target("H", /printf x > (\S+)\)/); if (mode === "git-hook") { writeFileSync(f, "x"); res.push("H:written"); } else res.push("H:blocked"); }
     isError = false; text = res.join("\n");

@@ -19,7 +19,7 @@ const task: GoldenTask = {
   timeoutMinutes: 1,
   allowedDomains: ["registry.npmjs.org"],
 };
-const pass = async () => true;
+const pass = async () => ({ ok: true });
 const run = (mode: string, runId: string, extraEnv: Record<string, string> = {}, preflight = pass) =>
   runBaseline(task, { preflight, claudeBin: bin, jarvisHome, workRoot: join(root, "work"), runId, parentEnv: { HOME: root, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: mode, ...extraEnv } });
 
@@ -42,7 +42,7 @@ describe("baseline runs (decision 47)", () => {
   // Codex review 1, high: no session without a passing live preflight.
   it("starts no session when the preflight fails", async () => {
     const marker = join(root, "started-anyway");
-    await expect(run("baseline", "r2", { FAKE_CLAUDE_MARKER: marker }, async () => false)).rejects.toThrow(/preflight/);
+    await expect(run("baseline", "r2", { FAKE_CLAUDE_MARKER: marker }, async () => ({ ok: false }))).rejects.toThrow(/preflight/);
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(join(root, "work", "evals", task.id, "r2"))).toBe(false);
   });
@@ -53,6 +53,19 @@ describe("baseline runs (decision 47)", () => {
     const r = await run("baseline-evil", "r3", { FAKE_CLAUDE_EVIL_MARKER: evil });
     expect(r.finalCommit).toMatch(/^[0-9a-f]{40}$/);
     expect(existsSync(evil)).toBe(false);
+  });
+
+  // Codex review 2, high: nothing passes between runs through the toolchain cache.
+  it("gives each run a private cache and deletes it afterwards", async () => {
+    const a = await run("cache-spy", "c1");
+    const b2 = await run("cache-spy", "c2");
+    expect(readFileSync(join(a.workspace, "app.txt"), "utf8")).toBe("saw-note: no\n");
+    expect(readFileSync(join(b2.workspace, "app.txt"), "utf8")).toBe("saw-note: no\n");
+    expect(existsSync(join(root, "work", "cache-runs", task.id, "c1"))).toBe(false);
+    // Private per run, so concurrent runs can't share either.
+    const cacheOf = (dir: string) => JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).cacheDir as string;
+    expect(cacheOf(a.resultsDir)).not.toBe(cacheOf(b2.resultsDir));
+    expect(cacheOf(a.resultsDir)).toContain("c1");
   });
 
   // Codex review 1, medium: a limited run says so, with when to retry.

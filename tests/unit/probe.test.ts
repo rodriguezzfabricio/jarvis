@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { isBuiltinPlugin, runCanaryProbe, type ProbeResult } from "../../packages/cli/src/harness/claude/probe.ts";
+import { isAllowedPlugin, isBuiltinPlugin, runCanaryProbe, type ProbeResult } from "../../packages/cli/src/harness/claude/probe.ts";
 import { fakeClaudeBin, shortTmp } from "../helpers.ts";
 
 const dir = shortTmp("jtc-");
@@ -34,6 +34,19 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
   // Codex review 1, high: a 4xx/5xx means the host was reached.
   it("fails when a non-allowlisted host answers with an error code", async () => {
     expect(failed(await probe("leak-network"))).toEqual(["network_blocked"]);
+  });
+
+  // Codex review 2, high: a host-specific failure (DNS, TLS) with protection off must not pass.
+  it("fails when the blocked host merely failed, with no sandbox denial recorded", async () => {
+    expect(failed(await probe("dns-fail"))).toEqual(["network_blocked"]);
+  });
+
+  it("fails when the host answered, even if a denial was recorded for some other attempt", async () => {
+    expect(failed(await probe("reached-despite-record"))).toEqual(["network_blocked"]);
+  });
+
+  it("fails when Jarvis's own plugin hooks don't run", async () => {
+    expect(failed(await probe("plugin-hooks-off"))).toEqual(["jarvis_plugin_hooks_run"]);
   });
 
   it("is inconclusive, not a pass, when the network is down", async () => {
@@ -80,6 +93,8 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
     expect(isBuiltinPlugin({ name: "x", path: "/Users/f/.claude/plugins/x", source: "x@builtin" })).toBe(false);
     expect(isBuiltinPlugin({ name: "x", path: "builtin", source: "x@market" })).toBe(false);
     expect(isBuiltinPlugin(null)).toBe(false);
+    expect(isAllowedPlugin({ name: "jarvis", path: "/j/plugin", source: "jarvis@inline" }, "/j/plugin")).toBe(true);
+    expect(isAllowedPlugin({ name: "jarvis", path: "/elsewhere", source: "jarvis@inline" }, "/j/plugin")).toBe(false);
   });
 
   it("cleans up after itself", async () => {

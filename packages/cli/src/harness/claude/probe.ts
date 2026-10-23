@@ -9,7 +9,7 @@ import { buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
 import { runSession } from "./session.ts";
 import { cacheEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
-import { initInfo, parseStreamJson, toolCalls, type ToolCall } from "./streamjson.ts";
+import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls, usageWaitUntil, type ToolCall } from "./streamjson.ts";
 
 /**
  * The live canary probe (decisions 59, 68, 69). A real session, started exactly the way the
@@ -44,6 +44,8 @@ export interface ProbeOptions {
    * Never used by doctor or the runner.
    */
   negativeControlArgs?: (args: string[]) => string[];
+  /** Live negative control only: put the blocked host on the allowlist; network_blocked must then fail. */
+  negativeControlAllowBlockedHost?: boolean;
 }
 
 export interface ProbeCheck {
@@ -56,6 +58,8 @@ export interface ProbeResult {
   ok: boolean;
   checks: ProbeCheck[];
   exitCode: number | null;
+  /** Set when the probe's own session hit a usage limit: the caller waits until then (decision 62). */
+  usageWaitUntil?: number;
 }
 
 type Step =
@@ -96,6 +100,12 @@ function findCall(calls: readonly ToolCall[], step: Step): ToolCall | undefined 
   });
 }
 
+/** Plugins a task session may load: Claude Code's built-ins and Jarvis's own plugin directory. */
+export function isAllowedPlugin(p: unknown, jarvisPluginDir?: string): boolean {
+  if (isBuiltinPlugin(p)) return true;
+  return jarvisPluginDir !== undefined && !!p && typeof p === "object" && (p as { path?: unknown }).path === jarvisPluginDir;
+}
+
 export function isBuiltinPlugin(p: unknown): boolean {
   if (!p || typeof p !== "object") return false;
   const { source, path } = p as { source?: unknown; path?: unknown };
@@ -132,12 +142,20 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
   // A malicious project hook: if project settings load, this runs outside the sandbox.
   writeFileSync(join(work, ".claude", "settings.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `touch ${hookMarker}` }] }] } }));
   const socketPath = join(runDir, "b.sock");
+  // A Jarvis-style plugin in the runner-owned folder: its hooks must still run under --restricted.
+  const pluginDir = join(jarvisHome, "plugin");
+  const pluginMarker = join(root, `plugin-hook-ran-${nonce}`);
+  mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(pluginDir, "hooks"), { recursive: true });
+  writeFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "jarvis-probe", version: "0.0.0" }));
+  writeFileSync(join(pluginDir, "hooks", "hooks.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `touch ${pluginMarker}` }] }] } }));
 
   const received: string[] = [];
   const checks: ProbeCheck[] = [];
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail });
   let server: Server | undefined;
   let exitCode: number | null = null;
+  let usageWait: number | undefined;
 
   // Shell-level checks run as one script, so they don't depend on the model agreeing to each one.
   const script = join(work, "selftest.sh");
@@ -170,10 +188,11 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     server = await socketServer(socketPath, received);
     const settingsPath = join(root, "settings.json");
     const mcpPath = join(root, "mcp.json");
-    const ctx: TaskSettingsInput = { worktree: work, jarvisHome, cacheDir, brokerSocket: socketPath, allowedDomains: [allowedHost] };
+    const allowedDomains = opts.negativeControlAllowBlockedHost ? [allowedHost, blockedHost] : [allowedHost];
+    const ctx: TaskSettingsInput = { worktree: work, jarvisHome, cacheDir, brokerSocket: socketPath, allowedDomains };
     writeTaskSettings(settingsPath, ctx);
     writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
-    const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 20 });
+    const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 20, pluginDir });
     const args = opts.negativeControlArgs ? opts.negativeControlArgs(safeArgs) : safeArgs;
     const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}) });
     const out = await runSession({ bin: opts.claudeBin, args, cwd: work, env, timeoutMs: opts.timeoutMs ?? 240_000 });
@@ -181,14 +200,17 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     const events = parseStreamJson(out.stdout);
     const init = initInfo(events);
     const calls = toolCalls(events);
+    const limited = hitRateLimitError(events) || rateLimits(events).at(-1)?.status === "rejected";
+    if (limited) usageWait = usageWaitUntil(rateLimits(events), { limitedByError: true });
 
     add("session_started", init !== undefined, init ? "init message received" : `no init message (exit ${out.code}): ${out.stderr.slice(0, 300)}`);
     add("pinned_version", init?.claudeCodeVersion === expectedVersion, `reported ${init?.claudeCodeVersion}, expected ${expectedVersion}`);
     add("model_id", init?.model === model, `reported ${init?.model}, requested ${model}`);
     add("dont_ask_mode", init?.permissionMode === "dontAsk", `permissionMode ${init?.permissionMode}`);
     add("subscription_auth", init?.apiKeySource === "none", `apiKeySource ${init?.apiKeySource}`);
-    const foreign = (init?.plugins ?? [null]).filter((p) => !isBuiltinPlugin(p));
-    add("no_foreign_plugins", init !== undefined && foreign.length === 0, foreign.length ? `non-built-in plugins loaded: ${JSON.stringify(foreign)}` : "only built-in plugins loaded");
+    const foreign = (init?.plugins ?? [null]).filter((p) => !isAllowedPlugin(p, pluginDir));
+    add("no_foreign_plugins", init !== undefined && foreign.length === 0, foreign.length ? `foreign plugins loaded: ${JSON.stringify(foreign)}` : "only built-in plugins and Jarvis's own loaded");
+    add("jarvis_plugin_hooks_run", existsSync(pluginMarker), existsSync(pluginMarker) ? "the runner-owned plugin's SessionStart hook ran" : "the runner-owned plugin's hook did not run");
     const mem = init?.memoryPaths;
     const memOff = mem === undefined || mem === null || (typeof mem === "object" && Object.keys(mem).length === 0);
     add("auto_memory_off", init !== undefined && memOff, `memory_paths ${JSON.stringify(mem ?? null)}`);
@@ -216,8 +238,15 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     add("runner_folder_not_readable", !all.includes(canaryToken), all.includes(canaryToken) ? "the runner-folder canary appeared in session output" : "canary never appeared (Bash and Read tool)");
     add("outside_worktree_not_readable", !all.includes(outsideToken), all.includes(outsideToken) ? `a file outside the worktree (${outsideReadFile}) was readable` : "a file outside the worktree was unreadable (Bash and Read tool)");
     const f = line(shellOut, "F");
-    const blocked = allowedReached && f === "000";
-    add("network_blocked", blocked, `curl ${blockedHost} returned "${f ?? "nothing"}"${allowedReached ? "" : " (inconclusive: allowed host unreachable)"}`);
+    // Proof of a policy denial, not just a failure: the sandbox records the refused connection.
+    // A DNS, TLS or routing failure gives 000 without this record.
+    const denial = new RegExp(`deny network-outbound ${blockedHost.replace(/[.]/g, "\\.")}`).test(shellOut);
+    const blocked = allowedReached && f === "000" && denial;
+    add(
+      "network_blocked",
+      blocked,
+      `curl ${blockedHost} returned "${f ?? "nothing"}"; sandbox denial ${denial ? "recorded" : "NOT recorded"}${allowedReached ? "" : " (inconclusive: allowed host unreachable)"}`,
+    );
     add("runner_folder_not_writable", !existsSync(tamperFile), existsSync(tamperFile) ? "the session wrote into the runner-owned folder" : "write into the runner-owned folder was blocked");
     add("git_hooks_not_writable", !existsSync(gitHook), existsSync(gitHook) ? "the session wrote a git hook the runner would execute" : "writing a git hook was blocked");
     add("outside_worktree_not_writable", !existsSync(outsideWriteFile), existsSync(outsideWriteFile) ? `the session wrote ${outsideWriteFile}` : "write outside the worktree was blocked");
@@ -229,5 +258,5 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     rmSync(outsideReadFile, { force: true });
     rmSync(outsideWriteFile, { force: true });
   }
-  return { ok: checks.length > 0 && checks.every((c) => c.ok), checks, exitCode };
+  return { ok: checks.length > 0 && checks.every((c) => c.ok), checks, exitCode, ...(usageWait !== undefined ? { usageWaitUntil: usageWait } : {}) };
 }

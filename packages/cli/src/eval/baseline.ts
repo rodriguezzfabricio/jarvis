@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CLAUDE_CODE_VERSION, pinnedClaudeBin } from "../config/pins.ts";
@@ -17,6 +17,7 @@ import {
   type RateLimitInfo,
 } from "../harness/claude/index.ts";
 import { safeGit } from "./git.ts";
+import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
 
 /**
@@ -67,8 +68,8 @@ export interface BaselineRunResult {
 }
 
 export interface BaselineOptions {
-  /** Must resolve true (a passing live doctor) before any session starts (decision 59). */
-  preflight: () => Promise<boolean>;
+  /** Must pass (a live doctor) before any session starts (decision 59). */
+  preflight: () => Promise<PreflightResult>;
   claudeBin?: string;
   jarvisHome?: string;
   workRoot?: string;
@@ -80,7 +81,8 @@ export interface BaselineOptions {
 const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
 
 export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Promise<BaselineRunResult> {
-  if (!(await opts.preflight())) throw new Error("preflight failed: run `jarvis doctor --live`; no session was started");
+  const pre = await opts.preflight();
+  if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
   const home = homedir();
   const jarvisHome = realpathSync(opts.jarvisHome ?? join(home, ".jarvis"));
   const workRoot = opts.workRoot ?? join(home, ".jarvis-work");
@@ -88,9 +90,11 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   const resultsDir = join(jarvisHome, "evals", task.id, runId);
   mkdirSync(resultsDir, { recursive: true, mode: 0o700 });
   mkdirSync(join(workRoot, "evals", task.id), { recursive: true, mode: 0o700 });
-  mkdirSync(join(workRoot, "cache"), { recursive: true, mode: 0o700 });
+  // A private, empty toolchain cache per run, deleted afterwards: nothing passes between runs (Codex review 2).
+  const cacheRoot = join(workRoot, "cache-runs", task.id, runId);
+  mkdirSync(cacheRoot, { recursive: true, mode: 0o700 });
   const workspace = join(realpathSync(join(workRoot, "evals", task.id)), runId);
-  const cacheDir = realpathSync(join(workRoot, "cache"));
+  const cacheDir = realpathSync(cacheRoot);
 
   const snapshot = await createSnapshot({
     dest: workspace,
@@ -106,7 +110,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   const bin = opts.claudeBin ?? pinnedClaudeBin();
   writeFileSync(
     join(resultsDir, "manifest.json"),
-    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, snapshot, startedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, cacheDir, snapshot, startedAt: new Date().toISOString() }, null, 2)}\n`,
   );
 
   const streamPath = join(resultsDir, "stream.jsonl");
@@ -118,7 +122,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     timeoutMs: task.timeoutMinutes * 60_000,
     stdoutPath: streamPath,
     stderrPath: join(resultsDir, "stderr.txt"),
-  });
+  }).finally(() => rmSync(cacheDir, { recursive: true, force: true }));
 
   const events = parseStreamJson(readFileSync(streamPath, "utf8"));
   const result = events.filter((e) => e.type === "result").at(-1);

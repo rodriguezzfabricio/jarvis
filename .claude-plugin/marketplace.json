@@ -1,0 +1,7 @@
+{
+  "name": "jarvis",
+  "owner": { "name": "Fabricio Rodriguez" },
+  "plugins": [
+    { "name": "jarvis", "source": "./plugin", "description": "Jarvis tripwire and run-header hooks (decision 73). Task sessions load it with --plugin-dir; this entry lets the desktop app load the same plugin." }
+  ]
+}

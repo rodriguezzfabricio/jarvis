@@ -24,10 +24,15 @@ describe("ledger under faults", () => {
     const acked = new Set<string>();
     for (let round = 0; round < 12; round++) {
       const child = writer(dir, 100_000, `r${round}`);
+      let first: () => void = () => {};
+      const firstAck = new Promise<void>((r) => (first = r));
       child.stdout.on("data", (d: Buffer) => {
         for (const m of d.toString().matchAll(/ack ([0-9a-f]{64})/g)) acked.add(m[1]!);
+        first();
       });
-      await new Promise((r) => setTimeout(r, 120 + Math.floor(Math.random() * 200)));
+      // Kill at a random moment after the writer is demonstrably appending (independent of machine load).
+      await firstAck;
+      await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 150)));
       child.kill("SIGKILL");
       await new Promise((r) => child.on("close", r));
       const v = verifyLedger(dir);
@@ -37,7 +42,7 @@ describe("ledger under faults", () => {
     for (const h of acked) expect(hashes.has(h)).toBe(true);
     const seqs = Ledger.open(dir).entries().map((e) => e.seq);
     expect(seqs).toEqual(seqs.map((_, i) => i + 1));
-    expect(acked.size).toBeGreaterThan(20);
+    expect(acked.size).toBeGreaterThanOrEqual(12); // at least one acknowledged write per round
   }, 60_000);
 
   it("serializes concurrent writers into one valid chain", async () => {

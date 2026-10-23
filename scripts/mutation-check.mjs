@@ -24,6 +24,7 @@ const L = "packages/cli/src/ledger/ledger.ts";
 const K = "packages/cli/src/checks/store.ts";
 const GT = "packages/cli/src/checks/gate.ts";
 const BR = "packages/cli/src/broker/broker.ts";
+const SR = "packages/cli/src/sandbox/srt.ts";
 const TW = "plugin/hooks/tripwire.mjs";
 
 const mutations = [
@@ -63,17 +64,17 @@ const mutations = [
   ["ledger ignores the head", L, '    else problems.push("head.hash does not match', '    else if (false) problems.push("head.hash does not match'],
   ["checks lock not tied to the ledger", K, "    if (!approved || (approved.data", "    if (false && (approved.data"],
   ["gate skips check verification", GT, "  if (!v.ok) return { status: \"tampered\"", "  if (false) return { status: \"tampered\""],
-  ["gate runs checks unsandboxed", GT, "    const [bin, ...args] = srtCommand(settings, g.check.command);", "    const [bin, ...args] = [\"/bin/sh\", \"-c\", g.check.command] as [string, ...string[]];"],
-  ["gate runs the worktree, not the revision", GT, "    const head = safeGit(checkout, [\"rev-parse\", \"HEAD\"], { home: homedir() }).toString().trim();", "    const head = g.revision; rmSync(checkout, { recursive: true, force: true }); safeGit(runDir, [\"-c\", \"protocol.file.allow=always\", \"clone\", \"--quiet\", \"--no-hardlinks\", g.repoPath, checkout], { home: homedir() }); safeGit(g.repoPath, [\"diff\", \"--output=\" + join(runDir, \"wt.patch\")], { home: homedir() }); safeGit(checkout, [\"apply\", join(runDir, \"wt.patch\")], { home: homedir() });"],
+  ["gate runs checks unsandboxed", SR, "      const wrapped = await SandboxManager.wrapWithSandbox(r.command);", "      const wrapped = r.command;"],
+  ["gate lets checks read the runner folder", GT, "      denyRead: [real(g.jarvisHome), real(homedir())],", "      denyRead: [real(homedir())],"],
+  ["gate runs the worktree, not the revision", GT, "cwd: real(checkout), env,", "cwd: real(g.repoPath), env,"],
   ["gate clones without hash verification", GT, '"-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout"', '"clone", "--quiet", "--no-hardlinks", "--no-checkout"'],
-  ["gate skips fsck", GT, '    safeGit(checkout, ["fsck", "--full", "--strict", "--no-dangling", "--no-progress"], { home: homedir() });\n', ""],
   ["gate trusts a signal as success", GT, "    const status: GateStatus = !out.timedOut && out.code === 0 ? \"pass\" : \"fail\";", "    const status: GateStatus = !out.timedOut && (out.code === 0 || out.code === null) ? \"pass\" : \"fail\";"],
   ["ledger ignores short writes", L, "    if (!Number.isInteger(n) || n <= 0) throw new Error", "    if (false) throw new Error"],
   ["lock reclaimed without a marker", L, "        if (claimed) {", "        if (true) {"],
   ["evidence not re-hashed", GT, "    else if (sha(p) !== h) problems.push", "    else if (false) problems.push"],
   ["broker approves by operation, not payload", BR, '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);', '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).op === op);'],
   ["broker retries unknown outcomes", BR, '["succeeded", "unknown"].includes', '["succeeded"].includes'],
-  ["broker skips the executing intent", BR, "      this.recordExecuting(hash, approvalId, op);\n", ""],
+  ["broker skips the executing intent", BR, '    return this.o.ledger.append({ kind: "broker_request", actor: "broker", data: { phase: "executing"', '    return { seq: 0 } as LedgerEntry; ({ kind: "broker_request", actor: "broker", data: { phase: "executing"'],
   ["broker treats adapter crashes as failures", BR, '        result = { outcome: "unknown", detail: { reason: `adapter error', '        result = { outcome: "failed", detail: { reason: `adapter error'],
   ["broker auto-allows everything", BR, "      if (!spec.autoAllow) {", "      if (false) {"],
   ["broker ignores ledger tampering", BR, '      if (err instanceof LedgerTamperError) return { status: "error"', '      if (err instanceof LedgerTamperError) return { status: "succeeded"'],

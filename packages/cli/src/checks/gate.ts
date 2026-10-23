@@ -67,8 +67,8 @@ export async function runGate(g: GateInput): Promise<GateResult> {
     // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
     // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
     // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
+    // No separate fsck afterwards: index-pack already checked everything it would (decision 75).
     safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
-    safeGit(checkout, ["fsck", "--full", "--strict", "--no-dangling", "--no-progress"], { home: homedir() });
     safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
     const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
     if (head !== g.revision) return { status: "error", entry: record("error", { problems: [`checkout is at ${head}`] }), evidenceDir };

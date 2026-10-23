@@ -184,6 +184,7 @@ describe("gates: evidence made by the runner (decision 49)", () => {
     );
     p.store.approve(p.ledger, "v1");
     const r = await gate(p, c, { extraEnv: { HOME_REAL: process.env.HOME ?? "/" } });
+    expect(r.status).toBe("pass");
     const out = readFileSync(join(r.evidenceDir, "stdout.log"), "utf8");
     expect(out).toContain("WROTE-INSIDE");
     for (const leak of ["READ-RUNNER", "READ-HOME", "NET", "WROTE-OUTSIDE"]) expect(out).not.toContain(leak);

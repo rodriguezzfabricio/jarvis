@@ -108,6 +108,25 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("writes the executing intent before the adapter acts, and the receipt points at it", async () => {
+    const { dir, broker } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    let seenWhileExecuting: number[] = [];
+    const watching = new Broker({
+      ledger: Ledger.open(dir),
+      project: "freehire",
+      adapters: [{ op: "email.send", execute: async () => {
+        seenWhileExecuting = Ledger.open(dir).entries().filter((e) => e.kind === "broker_request" && (e.data as { phase?: string }).phase === "executing").map((e) => e.seq);
+        return { outcome: "succeeded", detail: {} };
+      } }],
+      secrets: { get: () => undefined },
+    });
+    const r = await watching.handle({ op: "email.send", payload: mail() });
+    expect(seenWhileExecuting).toHaveLength(1);
+    expect(r.receipt).toMatchObject({ executionSeq: seenWhileExecuting[0] });
+  });
+
   it("reconciles a request that was executing when the runner died as unknown, and never re-executes it", async () => {
     const { dir, broker, calls } = setup();
     const p = await broker.handle({ op: "email.send", payload: mail() });

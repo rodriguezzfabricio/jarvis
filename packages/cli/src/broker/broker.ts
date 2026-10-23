@@ -107,8 +107,8 @@ export class Broker {
   }
 
   /** Test seam for crash simulation; production code calls it only from handle(). */
-  recordExecuting(hash: string, approvalId: string | null, op: string): void {
-    this.o.ledger.append({ kind: "broker_request", actor: "broker", data: { phase: "executing", payloadHash: hash, approvalId, op } });
+  recordExecuting(hash: string, approvalId: string | null, op: string): LedgerEntry {
+    return this.o.ledger.append({ kind: "broker_request", actor: "broker", data: { phase: "executing", payloadHash: hash, approvalId, op } });
   }
 
   /** On start: requests that were executing when the runner died get an "unknown" receipt. */
@@ -164,8 +164,8 @@ export class Broker {
       if (!adapter) return { status: "error", payloadHash: hash, message: `no adapter for ${op}` };
 
       // Intent first: if we die after this line, reconcile() marks it unknown and it is never retried.
-      this.recordExecuting(hash, approvalId, op);
-      const executionSeq = this.entries().at(-1)!.seq;
+      // Its own entry's seq, not the ledger's last: another writer may append in between.
+      const executionSeq = this.recordExecuting(hash, approvalId, op).seq;
       let result: AdapterResult;
       try {
         result = await adapter.execute(payload, this.o.secrets);

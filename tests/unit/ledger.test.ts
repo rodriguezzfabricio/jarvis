@@ -116,8 +116,16 @@ describe("ledger (decisions 41, 49)", () => {
     const e = short.append({ kind: "steer", actor: "runner", data: { note: "written seven bytes at a time" } });
     expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
     expect(Ledger.open(dir).entries().at(-1)?.hash).toBe(e.hash);
-    expect(() => writeAll(0, "abc", () => 0)).toThrow(/no progress/);
-    const stuck = Ledger.open(dir, { write: () => 0 });
+    // A writer stuck at zero bytes, bounded so a missing guard fails here instead of hanging the suite.
+    const zero = () => {
+      let calls = 0;
+      return () => {
+        if (++calls > 100) throw new Error("test writer gave up: the loop never stopped on a zero-byte write");
+        return 0;
+      };
+    };
+    expect(() => writeAll(0, "abc", zero())).toThrow(/no progress/);
+    const stuck = Ledger.open(dir, { write: zero() });
     expect(() => stuck.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/no progress/);
     expect(verifyLedger(dir).ok).toBe(true);
     expect(Ledger.open(dir).entries()).toHaveLength(2);

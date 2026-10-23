@@ -678,6 +678,14 @@ Each stage still ends with an independent Codex review, run strictly stage by st
 *Why:* stage 0 took five review rounds. The later rounds found progressively narrower cases, mostly in the snapshot credential scanner.
 *From:* Fabricio, Oct 23.
 
+### 75. The gate's verified clone is its only object check; no separate fsck (new; Oct 23)
+The fix for Codex review 5 finding 3 had two layers: a `--no-local` clone with `transfer.fsckObjects`, then `git fsck --full --strict` on the result. The mutation check showed neither layer could be tested on its own, because each one catches a swapped object by itself. Tested directly: the verified clone refuses a loose blob swapped under its old name ("did not receive expected object"). An unverified local clone checks out the swapped contents, and only `fsck` finds them.
+- **The gate keeps the verified clone and drops the `fsck`.** `index-pack --strict` already recomputes every received object's hash and runs the same fsck checks, and the clone checks connectivity. A layer no test can tell apart from its absence is not a safeguard we can keep honest.
+- **The swapped-object test now guards the clone directly.** Remove `--no-local` or `transfer.fsckObjects` and the gate passes the tampered candidate, so the test fails.
+
+*Why:* every safeguard needs a test that fails without it (AGENTS.md). The mutation check reported "gate clones without hash verification" and "gate skips fsck" as surviving.
+*From:* stage 1 mutation check, Oct 23.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

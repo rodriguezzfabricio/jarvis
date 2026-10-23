@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { Broker, type Op } from "./broker/broker.ts";
+import { ACT_EXIT, requestBroker } from "./broker/client.ts";
+import { outboxAdapters } from "./broker/outbox.ts";
+import { envFileSecrets } from "./broker/secrets.ts";
+import { startBrokerServer } from "./broker/server.ts";
+import { Ledger } from "./ledger/ledger.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts";
 import { loadTask, runBaseline } from "./eval/baseline.ts";
 import { runSchedule } from "./eval/schedule.ts";
@@ -49,6 +57,57 @@ evalCmd
     });
     log(`done: ${out.completed.length} run(s) completed${out.stopped ? `; STOPPED at ${out.stopped.task}: ${out.stopped.reason}` : ""}`);
     process.exitCode = out.stopped ? 1 : 0;
+  });
+
+const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
+const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET ?? join(homedir(), ".jarvis", "run", "broker.sock");
+
+program
+  .command("act")
+  .description("Ask the broker to perform an outside action (decision 12). Exit: 0 done, 2 pending approval, 3 rejected, 4 failed, 5 unknown, 6 duplicate, 7 invalid, 8 error")
+  .argument("<operation>", "e.g. email.send, deploy.preview, deploy.promote")
+  .option("--json <payload>", "the payload as JSON")
+  .option("--payload-file <path>", "read the payload from a JSON file")
+  .option("--socket <path>", "broker socket", defaultSocket())
+  .action(async (op: string, opts: { json?: string; payloadFile?: string; socket: string }) => {
+    const raw = opts.payloadFile ? readFileSync(opts.payloadFile, "utf8") : (opts.json ?? "{}");
+    const res = await requestBroker(opts.socket, { op: op as Op, payload: JSON.parse(raw) as unknown });
+    console.log(JSON.stringify(res, null, 2));
+    process.exitCode = ACT_EXIT[res.status] ?? 8;
+  });
+
+for (const decision of ["approve", "reject"] as const) {
+  program
+    .command(decision)
+    .description(`${decision === "approve" ? "Approve" : "Reject"} a pending outside action by its approval id`)
+    .argument("<approval-id>")
+    .requiredOption("--project <id>", "project id")
+    .action((id: string, opts: { project: string }) => {
+      const broker = new Broker({ ledger: Ledger.open(projectDir(opts.project)), project: opts.project, adapters: [], secrets: { get: () => undefined } });
+      broker.decide(id, decision, `${process.env.USER ?? "user"} (terminal)`);
+      console.log(`${decision === "approve" ? "Approved" : "Rejected"} ${id}.`);
+    });
+}
+
+program
+  .command("broker")
+  .description("Run the broker in the foreground (the runner hosts it during runs). Stage 1 uses local outbox adapters: nothing leaves the machine")
+  .requiredOption("--project <id>", "project id")
+  .option("--socket <path>", "socket path", defaultSocket())
+  .action(async (opts: { project: string; socket: string }) => {
+    const dir = projectDir(opts.project);
+    const secretsPath = join(homedir(), ".jarvis", "secrets", `${opts.project}.env`);
+    const broker = new Broker({
+      ledger: Ledger.open(dir),
+      project: opts.project,
+      adapters: outboxAdapters(join(dir, "outbox")),
+      secrets: existsSync(secretsPath) ? envFileSecrets(secretsPath) : { get: () => undefined },
+    });
+    const reconciled = broker.reconcile();
+    if (reconciled) console.log(`Marked ${reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
+    mkdirSync(dirname(opts.socket), { recursive: true, mode: 0o700 });
+    await startBrokerServer(broker, opts.socket);
+    console.log(`Broker listening on ${opts.socket} for project ${opts.project}.`);
   });
 
 await program.parseAsync();

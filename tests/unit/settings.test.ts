@@ -79,6 +79,16 @@ describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () 
     expect(() => buildTaskSettings({ ...ctx, allowedDomains: ["*"] })).toThrow(/domain/);
   });
 
+  it("lets sessions read, never write, the Jarvis install folder", () => {
+    const s = buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/Desktop/jarvis"] });
+    expect(s.sandbox.filesystem.allowRead).toContain("/Users/f/Desktop/jarvis");
+    expect(s.sandbox.filesystem.denyWrite).toContain("/Users/f/Desktop/jarvis");
+    expect(s.permissions.deny).toContain("Edit(//Users/f/Desktop/jarvis/**)");
+    expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f"] })).toThrow(/runner-owned|worktree/);
+    expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/.jarvis/plugin"] })).toThrow(/runner-owned/);
+    expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/.jarvis-work/worktrees/p/t1/src"] })).toThrow(/worktree/);
+  });
+
   it("allows no socket when no broker runs", () => {
     const { brokerSocket: _, ...noBroker } = ctx;
     expect(buildTaskSettings(noBroker).sandbox.network.allowUnixSockets).toEqual([]);

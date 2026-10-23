@@ -24,6 +24,8 @@ export interface TaskSettingsInput {
   brokerSocket?: string;
   /** Hosts sandboxed commands may reach. */
   allowedDomains: readonly string[];
+  /** Folders sessions may read but never write: the Jarvis install, so `jarvis act` runs (decision 12). */
+  readOnlyDirs?: readonly string[];
 }
 
 /** Permission-rule form of an absolute path: //abs/path (a single leading / is relative to the settings file). */
@@ -83,6 +85,11 @@ function checkContext(input: TaskSettingsInput): void {
   if (under(input.cacheDir, input.jarvisHome)) throw new Error("the cache must be outside the runner-owned folder");
   if (under(input.cacheDir, input.worktree) || under(input.worktree, input.cacheDir)) throw new Error("the cache and the worktree must not contain each other");
   if (input.brokerSocket && !under(input.brokerSocket, input.jarvisHome)) throw new Error("the broker socket must live in the runner-owned folder");
+  for (const d of input.readOnlyDirs ?? []) {
+    if (!isAbsolute(d) || d.startsWith("/tmp/") || d.startsWith("/var/")) throw new Error(`read-only dir must be an absolute real path: ${d}`);
+    if (under(d, input.jarvisHome) || under(input.jarvisHome, d)) throw new Error("a read-only dir must not contain or sit inside the runner-owned folder");
+    if (under(input.worktree, d) || under(d, input.worktree)) throw new Error("a read-only dir must not contain or sit inside the worktree");
+  }
   for (const d of input.allowedDomains) if (!/^[a-z0-9.*-]+(:\d+)?$/i.test(d) || d === "*") throw new Error(`invalid allowed domain: ${d}`);
 }
 
@@ -102,19 +109,20 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
       filesystem: {
         denyRead: [input.jarvisHome],
         // blockReadsOutsideWorkingDirectories closes reads of /Users and similar; the cache is reopened.
-        allowRead: [input.cacheDir],
+        allowRead: [input.cacheDir, ...(input.readOnlyDirs ?? [])],
         allowWrite: [input.cacheDir],
         denyWrite: [
           input.jarvisHome,
           join(input.worktree, ".git", "hooks"),
           join(input.worktree, ".git", "config"),
           join(input.worktree, ".claude"),
+          ...(input.readOnlyDirs ?? []),
         ],
       },
     },
     permissions: {
-      allow: [`Edit(${absRule(input.worktree)}/**)`],
-      deny: [`Read(${absRule(input.jarvisHome)}/**)`, `Edit(${absRule(input.jarvisHome)}/**)`, "WebSearch", "WebFetch"],
+      allow: [`Edit(${absRule(input.worktree)}/**)`, ...(input.readOnlyDirs ?? []).map((d) => `Read(${absRule(d)}/**)`)],
+      deny: [`Read(${absRule(input.jarvisHome)}/**)`, `Edit(${absRule(input.jarvisHome)}/**)`, ...(input.readOnlyDirs ?? []).map((d) => `Edit(${absRule(d)}/**)`), "WebSearch", "WebFetch"],
       blockReadsOutsideWorkingDirectories: true,
     },
   };

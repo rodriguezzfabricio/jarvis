@@ -22,6 +22,8 @@ const C = "packages/cli/src/eval/schedule.ts";
 const L = "packages/cli/src/ledger/ledger.ts";
 const K = "packages/cli/src/checks/store.ts";
 const GT = "packages/cli/src/checks/gate.ts";
+const BR = "packages/cli/src/broker/broker.ts";
+const TW = "plugin/hooks/tripwire.mjs";
 
 const mutations = [
   ["failIfUnavailable off", S, "      failIfUnavailable: true,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input", "      failIfUnavailable: false,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input"],
@@ -62,6 +64,14 @@ const mutations = [
   ["gate runs checks unsandboxed", GT, "    const [bin, ...args] = srtCommand(settings, g.check.command);", "    const [bin, ...args] = [\"/bin/sh\", \"-c\", g.check.command] as [string, ...string[]];"],
   ["gate runs the worktree, not the revision", GT, "    const head = safeGit(checkout, [\"rev-parse\", \"HEAD\"], { home: homedir() }).toString().trim();", "    const head = g.revision; rmSync(checkout, { recursive: true, force: true }); safeGit(runDir, [\"-c\", \"protocol.file.allow=always\", \"clone\", \"--quiet\", \"--no-hardlinks\", g.repoPath, checkout], { home: homedir() }); safeGit(g.repoPath, [\"diff\", \"--output=\" + join(runDir, \"wt.patch\")], { home: homedir() }); safeGit(checkout, [\"apply\", join(runDir, \"wt.patch\")], { home: homedir() });"],
   ["evidence not re-hashed", GT, "    else if (sha(p) !== h) problems.push", "    else if (false) problems.push"],
+  ["broker approves by operation, not payload", BR, '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);', '          const answers = es.filter((e) => e.kind === "approval" && (e.data as D).op === op);'],
+  ["broker retries unknown outcomes", BR, '["succeeded", "unknown"].includes', '["succeeded"].includes'],
+  ["broker skips the executing intent", BR, "      this.recordExecuting(hash, approvalId, op);\n", ""],
+  ["broker treats adapter crashes as failures", BR, '        result = { outcome: "unknown", detail: { reason: `adapter error', '        result = { outcome: "failed", detail: { reason: `adapter error'],
+  ["broker auto-allows everything", BR, "      if (!spec.autoAllow) {", "      if (false) {"],
+  ["broker ignores ledger tampering", BR, '      if (err instanceof LedgerTamperError) return { status: "error"', '      if (err instanceof LedgerTamperError) return { status: "succeeded"'],
+  ["tripwire misses publishing", TW, '  [/\\b(npm|pnpm|yarn)\\s+publish\\b/, "publishing packages is a hard stop"],\n', ""],
+  ["read-only dirs writable", S, "          ...(input.readOnlyDirs ?? []),\n        ],", "        ],"],
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],
 ];
 

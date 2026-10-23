@@ -183,7 +183,9 @@ describe("ledger (decisions 41, 49)", () => {
         writeFileSync(path, `${dead} ${owner}`);
       }
       const l = Ledger.open(dir, { lockTimeoutMs: 3000 });
-      expect(l.append({ kind: "steer", actor: "runner", data: { depth } }).seq).toBe(3);
+      let seq = 0;
+      expect(() => (seq = l.append({ kind: "steer", actor: "runner", data: { depth } }).seq)).not.toThrow();
+      expect(seq).toBe(3);
       expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
       expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
     }

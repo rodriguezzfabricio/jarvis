@@ -3,7 +3,7 @@
 // A mutation counts as caught only if: the unmodified control run passed, the mutated run collected
 // the same number of tests, and at least one assertion failed. Crashes and collection errors are
 // errors, never "caught". Every file is restored, even on failure.
-// Usage: node scripts/mutation-check.mjs
+// Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset)
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -137,7 +137,9 @@ try {
   }
   controlIds = testIds(control.report);
   results.push(`control  ${c.detail}`);
-  for (const [name, file, from, to] of mutations) {
+  // JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
+  const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
+  for (const [name, file, from, to] of mutations.filter(([n]) => !only || only.test(n))) {
     const orig = readFileSync(file, "utf8");
     if (!orig.includes(from)) { results.push(`ERROR    ${name}: anchor not found in ${file}`); continue; }
     try {

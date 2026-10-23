@@ -33,9 +33,19 @@ function setup(behavior: (payload: unknown) => AdapterResult = () => ({ outcome:
 function barrier() {
   let release = () => {};
   let arrived = () => {};
+  let armed = false;
   const open = new Promise<void>((r) => (release = r));
   const reached = new Promise<void>((r) => (arrived = r));
-  return { wait: async () => { arrived(); await open; }, reached, release: () => release() };
+  return {
+    wait: async () => {
+      if (!armed) return;
+      arrived();
+      await open;
+    },
+    arm: () => (armed = true),
+    reached,
+    release: () => release(),
+  };
 }
 function deadPid(): number {
   const r = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
@@ -161,7 +171,9 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
     const gate = barrier();
     const { broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
     const p = await broker.handle({ op: "email.send", payload: mail() });
+    expect(p.status).toBe("pending");
     broker.decide(p.approvalId!, "approve", "fabricio");
+    gate.arm();
     const both = Promise.all([broker.handle({ op: "email.send", payload: mail() }), broker.handle({ op: "email.send", payload: mail() })]);
     await gate.reached;
     gate.release();
@@ -175,7 +187,9 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
     const gate = barrier();
     const { dir, broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
     const p = await broker.handle({ op: "email.send", payload: mail() });
+    expect(p.status).toBe("pending");
     broker.decide(p.approvalId!, "approve", "fabricio");
+    gate.arm();
     const other = new Broker({ ledger: Ledger.open(dir), project: "freehire", adapters: [{ op: "email.send", execute: async () => (calls.push({ op: "email.send", payload: null, secret: undefined }), { outcome: "succeeded", detail: {} }) }], secrets: { get: () => undefined } });
     const first = broker.handle({ op: "email.send", payload: mail() });
     await gate.reached;
@@ -191,6 +205,7 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
   it("executes once when broker processes race on the same approved payload", async () => {
     const { dir, broker } = setup();
     const p = await broker.handle({ op: "email.send", payload: mail() });
+    expect(p.status).toBe("pending");
     broker.decide(p.approvalId!, "approve", "fabricio");
     const log = join(dir, "sent.log");
     const code = `import { appendFileSync } from "node:fs";
@@ -211,7 +226,9 @@ process.stdout.write(r.status);`;
     const gate = barrier();
     const { broker, calls } = setup(() => ({ outcome: "succeeded", detail: {} }), gate.wait);
     const p = await broker.handle({ op: "email.send", payload: mail() });
+    expect(p.status).toBe("pending");
     broker.decide(p.approvalId!, "approve", "fabricio");
+    gate.arm();
     const sock = join(root, `c${n}.sock`);
     const server = await startBrokerServer(broker, sock);
     try {

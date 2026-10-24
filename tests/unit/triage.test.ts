@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
-import { Command } from "commander";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { register } from "../../packages/cli/src/triage/command.ts";
 import { readFolder } from "../../packages/cli/src/triage/folder.ts";
@@ -10,6 +10,8 @@ import {
 } from "../../packages/cli/src/triage/triage.ts";
 import { shortTmp } from "../helpers.ts";
 
+// commander is a dependency of packages/cli only, so load it from there.
+const { Command } = createRequire(new URL("../../packages/cli/src/cli.ts", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 const root = shortTmp("jttr-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
@@ -63,12 +65,12 @@ describe("triage: your override always wins (architecture §2)", () => {
   });
 
   it("reads the override from the first word, as typed after /jarvis", () => {
-    expect(leadingOverride("fix the login")).toEqual({ override: "fix", request: "the login" });
-    expect(leadingOverride("  Feature: dark mode toggle")).toEqual({ override: "feature", request: "dark mode toggle" });
-    expect(leadingOverride("ASK why the gate failed")).toEqual({ override: "ask", request: "why the gate failed" });
-    expect(leadingOverride("build me a habit tracker")).toEqual({ override: "build", request: "me a habit tracker" });
+    expect(leadingOverride("fix the login")).toBe("fix");
+    expect(leadingOverride("  Feature: dark mode toggle")).toBe("feature");
+    expect(leadingOverride("ASK why the gate failed")).toBe("ask");
+    expect(leadingOverride("build me a habit tracker")).toBe("build");
     for (const s of ["fixture loading is slow", "fix", "fix:", "builders page", "please fix the login", "rebuild the index"]) {
-      expect(leadingOverride(s), s).toEqual({ request: s.trim() });
+      expect(leadingOverride(s), s).toBeUndefined();
     }
   });
 });
@@ -147,6 +149,8 @@ describe("triage: bugs never run intake, mockups, design or architecture", () =>
 
   it("several sentences, a risky area or several modules make it tier 1, never 2", () => {
     expect(run("Login is broken. Users see a blank page after the password step.").tier).toBe(1);
+    expect(run("The date label is wrong. It shows yesterday instead of today.").tier).toBe(1);
+    expect(signal(run("The date label is wrong. It shows yesterday instead of today."), "one-sentence")).toBeUndefined();
     expect(run("The password reset email is broken").tier).toBe(1);
     expect(run("The date label is wrong", { touches: ["web/a.ts", "api/b.go", "worker/c.ts"] }).tier).toBe(1);
     expect(signal(run("The date label is wrong", { touches: ["web/a.ts", "api/b.go", "worker/c.ts"] }), "several-modules")).toBeDefined();
@@ -393,6 +397,10 @@ describe("jarvis triage", () => {
   it("reads a leading override word unless --literal says it's part of the sentence", async () => {
     const d = dir("src/");
     expect(JSON.parse((await cli(["--json", "--repo", d, "fix", "the export"])).out).type).toBe("bug");
+    const word = JSON.parse((await cli(["--json", "--repo", d, "feature flags are broken"])).out);
+    expect([word.type, word.decidedBy]).toEqual(["feature", "override"]);
+    expect(JSON.parse((await cli(["--json", "--repo", d, "build", "a CSV export"])).out).type).toBe("new-product");
+    expect(JSON.parse((await cli(["--json", "--repo", d, "--literal", "feature flags are broken"])).out).type).toBe("bug");
     const lit = JSON.parse((await cli(["--json", "--repo", d, "--literal", "ask users for their email at signup"])).out);
     expect(lit.type).toBe("feature");
     expect(lit.request).toBe("ask users for their email at signup");

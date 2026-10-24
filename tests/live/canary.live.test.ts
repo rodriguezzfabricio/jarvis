@@ -4,7 +4,7 @@ import { runCanaryProbe } from "../../packages/cli/src/harness/claude/probe.ts";
 
 // Runs the real, pinned Claude Code (a few cents of plan usage). Only with JARVIS_LIVE=1.
 describe.skipIf(process.env.JARVIS_LIVE !== "1")("live canary probe on the pinned Claude Code", () => {
-  it("holds: runner folder and outside files unreadable, network closed, project hooks inert, worktree usable", async () => {
+  it("holds: runner folder and outside files unreadable, network closed, project hooks inert, no hardlinks out, worktree and session notes usable", async () => {
     const r = await runCanaryProbe({ claudeBin: pinnedClaudeBin() });
     for (const c of r.checks) console.log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`);
     expect(r.checks.filter((c) => !c.ok)).toEqual([]);
@@ -28,5 +28,11 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("live canary probe on the pinne
     const r = await runCanaryProbe({ claudeBin: pinnedClaudeBin(), negativeControlAllowBlockedHost: true });
     for (const c of r.checks) console.log(`${c.ok ? "ok  " : "FAIL"} [network negative control] ${c.name}: ${c.detail}`);
     expect(r.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["network_blocked"]);
+  }, 300_000);
+
+  it("negative control: without the tripwire hook, it catches the write to .jarvis/anything-else", async () => {
+    const r = await runCanaryProbe({ claudeBin: pinnedClaudeBin(), negativeControlNoTripwire: true });
+    for (const c of r.checks) console.log(`${c.ok ? "ok  " : "FAIL"} [tripwire negative control] ${c.name}: ${c.detail}`);
+    expect(r.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["jarvis_folder_other_not_writable"]);
   }, 300_000);
 });

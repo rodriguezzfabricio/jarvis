@@ -27,6 +27,7 @@ const BR = "packages/cli/src/broker/broker.ts";
 const SR = "packages/cli/src/sandbox/srt.ts";
 const TW = "plugin/hooks/tripwire.mjs";
 const RS = "scripts/review-status.mjs";
+const RR = "scripts/review-run.mjs";
 
 const mutations = [
   ["failIfUnavailable off", S, "      failIfUnavailable: true,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input", "      failIfUnavailable: false,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input"],
@@ -98,13 +99,26 @@ const mutations = [
   ["shell references flagged", N, "  if (/^\\$(\\d+|[@*#?])$/.test(v) ||", "  if (false &&"],
   // Review-status summarizer (Codex, review-status-opus.md): advisory, but it must never show a false PASS.
   ["missing required evidence ignored", RS, "\"unit-tests\", \"live-probe\", \"doctor-live\"", "\"unit-tests\", \"doctor-live\""],
-  ["fourth review lane ignored", RS, "[\"A\", \"B\", \"C\", \"D\"] : [\"single\"]", "[\"A\", \"B\", \"C\"] : [\"single\"]"],
+  ["fourth review lane ignored", RS, "let ids = parallel ? [\"A\", \"B\", \"C\", \"D\"] : [\"single\"];", "let ids = parallel ? [\"A\", \"B\", \"D\"] : [\"single\"];"],
   ["invalid verdict not reported", RS, "if (!valid) problems.push", "if (false) problems.push"],
   ["revision mismatch ignored", RS, "if (documented && inferred && documented !== inferred)", "if (false)"],
   ["missing completion marker ignored", RS, "if (exitCode === null) problems.push", "if (false) problems.push"],
   ["mixed help accepted", RS, "(help && args.length !== 1)", "false"],
   ["symlink entry point ignored", RS, "realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))", "resolve(process.argv[1]) === fileURLToPath(import.meta.url)"],
   ["FIFO open blocks", RS, "constants.O_RDONLY | constants.O_NONBLOCK", "\"r\""],
+  ["review manifest ignored", RS, "    else ids = declared;", "    else ids = [\"A\", \"B\", \"C\", \"D\"];"],
+  ["review required lanes ignored", RS, "    if (missing.length) problems.push", "    if (false) problems.push"],
+  ["review manifest validation bypassed", RS, "    if (!match || new Set(declared).size !== declared.length) problems.push(\"invalid lane manifest\");", "    if (false) problems.push(\"invalid lane manifest\");"],
+  ["review runner inherits parent environment", RR, "const env = codexEnvironment(home);", "const env = { ...process.env, ...codexEnvironment(home) };"],
+  ["review runner accepts dirty source", RR, "  if (git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');", ""],
+  ["review runner exposes builder response", RR, "if (name.endsWith('-response.md')) unlinkSync", "if (false) unlinkSync"],
+  ["review runner loses lane failure", RR, "`lane ${l} exit ${code}\\n`", "`lane ${l} exit 0\\n`"],
+  ["review runner gives writable sandbox", RR, "'--sandbox', 'read-only'", "'--sandbox', 'workspace-write'"],
+  ["review runner loses evidence failure", RR, "}exit ${code}\\n`", "}exit 0\\n`"],
+  ["review runner refreshes source index", RR, "['--no-optional-locks', 'status'", "['status'"],
+  ["review runner parses prompt as flags", RR, "), '--', texts[l]]", "), texts[l]]"],
+  ["review runner overwrites lane reservation", RR, "`lanes ${lanes.join(',')}\\n`, { flag: 'wx', mode: 0o600 }", "`lanes ${lanes.join(',')}\\n`, { flag: 'w', mode: 0o600 }"],
+  ["review runner hides setup failure", RR, "    appendFileSync(join(roundDir, 'status'), 'runner-error\\n');", ""],
   // Codex stage 0 review 16, lane D.
   ["sandbox wrapper sees the runner environment", SR, '  const env = { PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),', '  const env = { ...process.env, PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),'],
   ["run TMPDIR not given to the sandbox", SR, "...(r.env.TMPDIR ? { CLAUDE_CODE_TMPDIR: r.env.TMPDIR } : {})", "...{}"],

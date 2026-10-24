@@ -52,6 +52,13 @@ describe("footprint log", () => {
     });
   });
 
+  it("counts concurrency without going negative on an extra end, and keeps the peak", () => {
+    const log = createFootprintLog(paths, fake({ "/w": 1, "/c1": 1, "/c2": 1, "/e": 1 }).deps);
+    log.sessionStarted(); log.sessionStarted(); log.sessionEnded(); log.sessionEnded(); log.sessionEnded(); log.sessionStarted();
+    expect(log.sample().active).toBe(1);
+    expect(log.finish().peakConcurrent).toBe(2);
+  });
+
   it("never throws when a measurement fails, and records the problem once", () => {
     const f = fake({ "/w": 10, "/c1": 1, "/e": 1 });
     const failingFree = { ...f.deps, freeBytes: () => { throw new Error("statfs failed"); } };
@@ -103,7 +110,7 @@ describe("footprint log", () => {
     const outside = fresh();
     writeFileSync(join(outside, "big"), Buffer.alloc(1024 * 1024));
     mkdirSync(join(root, "a", "b"), { recursive: true });
-    writeFileSync(join(root, "a", "b", "f"), Buffer.alloc(64 * 1024));
+    writeFileSync(join(root, "a", "b", "f"), Buffer.alloc(1024 * 1024));
     linkSync(join(root, "a", "b", "f"), join(root, "a", "hard"));
     symlinkSync(join(outside, "big"), join(root, "a", "link"));
     symlinkSync(outside, join(root, "dirlink"));

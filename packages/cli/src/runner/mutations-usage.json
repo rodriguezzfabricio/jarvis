@@ -1,0 +1,182 @@
+[
+  {
+    "name": "usage absurd figures accepted",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "value < 0 || value > max || (integer",
+    "replacement": "value < 0 || (integer"
+  },
+  {
+    "name": "usage missing figure counted as zero",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "if (value === undefined) { problems.push(`missing ${name}`); return null; }",
+    "replacement": "if (value === undefined) return 0;"
+  },
+  {
+    "name": "usage unrecognized model kept",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "if (FULL_MODEL_ID.test(reported.reportedModel)) reportedModel = reported.reportedModel;\n    else problems.push(\"unrecognized reportedModel\");",
+    "replacement": "reportedModel = reported.reportedModel;"
+  },
+  {
+    "name": "usage refused sessions logged",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "  if (input.outcome.status === \"refused\") return { recorded: false, reason: \"session not started\" };\n",
+    "replacement": ""
+  },
+  {
+    "name": "usage summary trusts broker entries",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "if (e.kind !== \"session_usage\" || e.actor !== \"runner\" || e.task_id === null) continue;",
+    "replacement": "if (e.kind !== \"session_usage\" || e.task_id === null) continue;"
+  },
+  {
+    "name": "usage summary mixes runs",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "    if (runId !== null && d.runId !== runId) continue;\n",
+    "replacement": ""
+  },
+  {
+    "name": "usage cost per accepted divides by sessions",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "{ usd: total.costUsd / accepted.size,",
+    "replacement": "{ usd: total.costUsd / total.sessions,"
+  },
+  {
+    "name": "usage window use ignores its starting level",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "sum + Math.max(...points) - Math.min(...points)",
+    "replacement": "sum + Math.max(...points)"
+  },
+  {
+    "name": "usage window warning disabled",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "if (w.consumed >= MOST_OF_A_WINDOW)",
+    "replacement": "if (w.consumed > 1)"
+  },
+  {
+    "name": "usage report cells unescaped",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "const esc = (value: unknown): string => String(value ?? \"\").replace(/[\\r\\n\\u0000-\\u001f\\u007f]/g, \" \").replace(/[<>`*_[\\]\\\\|#]/g, \"\\\\$&\");",
+    "replacement": "const esc = (value: unknown): string => String(value ?? \"\");"
+  },
+  {
+    "name": "usage truncated stream marked complete",
+    "file": "packages/cli/src/harness/claude/usage.ts",
+    "anchor": "complete: result !== undefined,",
+    "replacement": "complete: true,"
+  },
+  {
+    "name": "usage assistant messages double counted",
+    "file": "packages/cli/src/harness/claude/usage.ts",
+    "anchor": "byMessage.set(typeof message?.id === \"string\" ? message.id : `#${anonymous++}`, t);",
+    "replacement": "byMessage.set(`#${anonymous++}`, t);"
+  },
+  {
+    "name": "usage partial sum invents zero",
+    "file": "packages/cli/src/harness/claude/usage.ts",
+    "anchor": "return values.length ? values.reduce((a, b) => a + b, 0) : undefined;",
+    "replacement": "return values.reduce((a, b) => a + b, 0);"
+  },
+  {
+    "name": "usage ledger kind missing",
+    "file": "packages/cli/src/ledger/ledger.ts",
+    "anchor": "  \"session_usage\", \"footprint\",\n",
+    "replacement": "  \"footprint\",\n"
+  },
+  {
+    "name": "usage footprint floor flag missing",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "else if (s.minFreeBytes < DISK_FLOOR_BYTES) flags.push",
+    "replacement": "else if (false) flags.push"
+  },
+  {
+    "name": "usage footprint low-disk concurrency missed",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "if (active > 1 && lastFree !== null && lastFree < DISK_SINGLE_WRITER_BYTES) lowDiskConcurrent = true;",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "usage footprint concurrency goes negative",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "if (active > 0) active--;",
+    "replacement": "active--;"
+  },
+  {
+    "name": "usage footprint peak concurrency untracked",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "if (active > peakConcurrent) peakConcurrent = active;",
+    "replacement": "peakConcurrent = active;"
+  },
+  {
+    "name": "usage footprint absurd sizes reported",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "if (plausible(v)) return v;",
+    "replacement": "return v;"
+  },
+  {
+    "name": "usage footprint hard links counted twice",
+    "file": "packages/cli/src/runner/footprint.ts",
+    "anchor": "      if (seen.has(id)) continue;\n",
+    "replacement": ""
+  },
+  {
+    "name": "usage tuning trusts broker history",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "if (e.actor !== \"runner\" || e.task_id === null || e.attempt_id === null) continue;",
+    "replacement": "if (e.task_id === null || e.attempt_id === null) continue;"
+  },
+  {
+    "name": "usage tuning counts tampered attempts",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "  if (a.tampered) return \"excluded\";\n",
+    "replacement": ""
+  },
+  {
+    "name": "usage tuning counts repairs as first attempts",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "firstOf.get(a.task) === a.id && !a.escalated;",
+    "replacement": "firstOf.get(a.task) === a.id;"
+  },
+  {
+    "name": "usage tuning escalates at the threshold",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "s.firstPassRate >= threshold) continue;",
+    "replacement": "s.firstPassRate > threshold) continue;"
+  },
+  {
+    "name": "usage tuning ignores the minimum sample",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "s.firstAttempts < minSamples || ",
+    "replacement": ""
+  },
+  {
+    "name": "usage tuning floor admits the reviewer",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "/^roles\\.(build|debug)\\.start$/.exec(p.path)",
+    "replacement": "/^roles\\.(build|debug|review)\\.(start|default)$/.exec(p.path)"
+  },
+  {
+    "name": "usage tuning from-tier unchecked",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "if (p.from !== routing.roles[role].start) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "usage tuning allows a no-op proposal",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "STRENGTH[p.to] <= STRENGTH[p.from]",
+    "replacement": "STRENGTH[p.to] < STRENGTH[p.from]"
+  },
+  {
+    "name": "usage proposals override unchecked",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "if (JSON.stringify(file.override) !== JSON.stringify(overrideFor(file.proposals))) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "usage proposals written through a symlink",
+    "file": "packages/cli/src/runner/routing-tuning.ts",
+    "anchor": "  if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(\"refusing to write through a symlink\");\n",
+    "replacement": ""
+  }
+]

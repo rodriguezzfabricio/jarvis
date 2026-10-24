@@ -32,7 +32,7 @@ function history(tasks: Attempt[][], actor: "runner" | "broker" = "runner"): Led
       out.push({ ...buildSessionUsageEntry({ runId: "r1", taskId: task, attemptId: attempt, role: a.role ?? "build", tier: 1, route: { model: model[a.tier], modelTier: a.tier }, outcome: finished, ...(failure ? { failure } : {}) }), actor });
       out.push(at("session_usage", { ignored: true }));
       if (a.verdict === "gate_fail") out.push(at("gate_result", { check: "unit", revision, status: "fail" }));
-      if (a.verdict === "tampered") out.push(at("gate_result", { check: "unit", revision, status: "tampered" }));
+      if (a.verdict === "tampered") out.push(at("gate_result", { check: "unit", revision, status: "tampered" }), at("gate_result", { check: "e2e", revision, status: "fail" }));
       if (a.verdict === "review_fail") out.push(at("gate_result", { check: "unit", revision, status: "pass" }), at("review_result", { reviewer: "code", revision, status: "fail" }));
       if (a.verdict === "pass") out.push(at("gate_result", { check: "unit", revision, status: "pass" }), at("review_result", { reviewer: "code", revision, status: "pass" }), at("state_reached", { state: "passed", revision }));
     });
@@ -113,14 +113,15 @@ describe("routing proposals", () => {
   });
 
   it.each([
-    ["a reviewer downgrade", { id: "x", path: "roles.review.default", from: "fast", to: "cheap", reason: "" }],
-    ["a strong-tier model change", { id: "x", path: "tiers.strong.model", from: "fast", to: "strong", reason: "" }],
-    ["an escalate_on change", { id: "x", path: "escalate_on", from: "fast", to: "strong", reason: "" }],
-    ["a builder downgrade", { id: "x", path: "roles.build.start", from: "fast", to: "cheap", reason: "" }],
-    ["a no-op", { id: "x", path: "roles.build.start", from: "fast", to: "fast", reason: "" }],
-    ["a proposal from a tier not in effect", { id: "x", path: "roles.build.start", from: "cheap", to: "fast", reason: "" }],
-  ])("refuses %s", (_name, proposal) => {
-    expect(() => assertWithinFloors([proposal as RoutingProposal], DEFAULT_ROUTING)).toThrow();
+    ["a reviewer downgrade", { id: "x", path: "roles.review.default", from: "fast", to: "cheap", reason: "" }, /outside the tunable floor/],
+    ["a reviewer start change", { id: "x", path: "roles.review.start", from: "fast", to: "strong", reason: "" }, /outside the tunable floor/],
+    ["a strong-tier model change", { id: "x", path: "tiers.strong.model", from: "fast", to: "strong", reason: "" }, /outside the tunable floor/],
+    ["an escalate_on change", { id: "x", path: "escalate_on", from: "fast", to: "strong", reason: "" }, /outside the tunable floor/],
+    ["a builder downgrade", { id: "x", path: "roles.build.start", from: "fast", to: "cheap", reason: "" }, /not an escalation/],
+    ["a no-op", { id: "x", path: "roles.build.start", from: "fast", to: "fast", reason: "" }, /not an escalation/],
+    ["a proposal from a tier not in effect", { id: "x", path: "roles.build.start", from: "cheap", to: "fast", reason: "" }, /not in effect/],
+  ])("refuses %s", (_name, proposal, message) => {
+    expect(() => assertWithinFloors([proposal as RoutingProposal], DEFAULT_ROUTING)).toThrow(message);
   });
 
   it("validates options", () => {
@@ -156,7 +157,7 @@ describe("routing proposal file", () => {
     const bad = { ...file, override: { roles: { review: { tier2: "strong", default: "cheap" } } } };
     const plain = fresh();
     mkdirSync(join(plain, "x"));
-    expect(() => writeRoutingProposals(plain, bad as unknown as typeof file, DEFAULT_ROUTING)).toThrow(/floor|override/);
+    expect(() => writeRoutingProposals(plain, bad as unknown as typeof file, DEFAULT_ROUTING)).toThrow(/override does not match/);
     expect(existsSync(join(plain, "routing-proposals.json"))).toBe(false);
   });
 

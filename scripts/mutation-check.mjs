@@ -11,7 +11,7 @@
 // Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
 // definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
 // every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
-// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
+// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3|4|5|6]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -19,7 +19,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classify, summarize, testIds } from "./mutation-classify.mjs";
-import { jobPlan, runAndRead, runPool, stopAll } from "./mutation-run.mjs";
+import { jobPlan, runAndRead, runPool, stopAll, suiteEnv } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
 import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
 
@@ -307,7 +307,7 @@ async function runSuite(clone, tag, files) {
       join(clone, "node_modules", ".bin", "vitest"),
       // Anchor-applicability tests (*-mutations.test.ts) fail on every mutation by design, so they never count as catching one.
       ["run", ...(files ?? ["tests/unit"]), "--exclude", "**/*-mutations.test.ts", "--reporter=json", `--outputFile=${join(work, `${id}.json`)}`, "--reporter=./scripts/unhandled-reporter.mjs", ...workerFlags],
-      { cwd: clone, env: { ...process.env, JARVIS_RUN_END_OUT: join(work, `${id}.end.json`), JARVIS_TEST_TMP: tmp } },
+      { cwd: clone, env: suiteEnv(process.env, { JARVIS_RUN_END_OUT: join(work, `${id}.end.json`), JARVIS_TEST_TMP: tmp }) },
       { report: join(work, `${id}.json`), end: join(work, `${id}.end.json`) },
     );
   } finally {

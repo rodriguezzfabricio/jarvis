@@ -16,10 +16,27 @@ export const RULES = [
   [/(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/, "the runner-owned folder is off limits"],
 ];
 
-// A task session owns only its worktree's notes (architecture §5) and scratch scripts (decision 68:
-// a script instead of a refused compound command). Never under a home folder, never through "..".
+// The files sessions may own under the repo's `.jarvis/`: a task session's notes (architecture §5) and
+// scratch scripts (decision 68: a script instead of a refused compound command), and what the skills
+// write there: intake rounds, answers and the taste draft; design mockups; the planner's plan and
+// check proposals; the onboard and sweep reports and plans. None of them is authority: candidates
+// touching `.jarvis/` are refused and the runner reads its own copies (decisions 87, 91). Every other
+// `.jarvis/` name stays refused. Never under a home folder, never through "..".
 const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/;
-const SESSION_OWNED = /(^|\/)\.jarvis\/(notes\/[A-Za-z0-9_-][A-Za-z0-9._-]*\.md|scratch\/[A-Za-z0-9_-][A-Za-z0-9._-]*)$/;
+const NAME = "[A-Za-z0-9_-][A-Za-z0-9._-]*";
+const SESSION_FILES = [
+  `notes\\/${NAME}\\.md`,
+  `scratch\\/${NAME}`,
+  "intake\\/(round|answers)-[1-9][0-9]*\\.json",
+  "intake\\/taste\\.json",
+  "mockups\\/index\\.html",
+  `mockups\\/${NAME}\\/${NAME}\\.(md|html|png)`,
+  "plan\\.json",
+  `checks\\/${NAME}\\.(check\\.json|sh|mjs|js|cjs)`,
+  `checks\\/(fixtures|expected)(\\/${NAME})+`,
+  "(onboard|sweep)\\/([0-9]{4}-[0-9]{2}-[0-9]{2}\\.md|plan\\.json)",
+];
+const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")})$`);
 
 function sessionOwned(path) {
   return SESSION_OWNED.test(path) && !RUNNER_HOME.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);

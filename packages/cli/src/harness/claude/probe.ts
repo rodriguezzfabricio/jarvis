@@ -23,7 +23,7 @@ import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls, us
  *   - report the pinned version, dontAsk, no foreign plugins and no auto-memory;
  *   - and, for the stage 3 runner loop: refuse hard links into the worktree of any file it may not
  *     write; let the file tools write the worktree's `.jarvis/notes/<task>.md` and `.jarvis/scratch/*`
- *     under Jarvis's real tripwire hook, and nothing else under `.jarvis/`; run a scratch script with
+ *     under Jarvis's real tripwire hook, and no unlisted name under `.jarvis/`; run a scratch script with
  *     `sh`; and record which compound shell forms (pipe, redirect, &&, for) run and which are refused.
  * Every verdict comes from what the probe observes (files, inodes, socket, stream), not from the model.
  */
@@ -259,7 +259,8 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     { key: "Ld", src: canaryFile, dst: join(work, "leak-runner"), mayLink: false, label: "a read-denied file in the runner-owned folder" },
     { key: "Lg", src: join(work, ".git", "config"), dst: join(work, "leak-gitconfig"), mayLink: false, label: "the write-denied .git/config" },
   ];
-  // Session-owned .jarvis files (architecture §5; the tripwire allows exactly these).
+  // Session-owned .jarvis files (architecture §5). The tripwire also allows the skills' own files there
+  // (intake, mockups, plan, checks, onboard, sweep); `other-<nonce>.txt` is on no list, so it stays refused.
   const notesFile = join(work, ".jarvis", "notes", `probe-${nonce}.md`);
   const scratchFile = join(work, ".jarvis", "scratch", "x");
   const scratchRan = join(work, "scratch-ran.txt");

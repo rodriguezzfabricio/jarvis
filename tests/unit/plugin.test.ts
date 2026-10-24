@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
@@ -36,7 +36,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     expect(check({ tool_name: "Read", tool_input: { file_path: "/Users/f/repo/src/a.ts" } })).toBeUndefined();
   });
 
-  it("lets file tools write the session's own notes and scratch files, nothing else under .jarvis", () => {
+  it("lets file tools write the session's own notes and scratch files", () => {
     const write = (file_path: string) => check({ tool_name: "Write", tool_input: { file_path } });
     for (const p of [
       ".jarvis/notes/T1.md", "/Users/x/.jarvis-work/worktrees/a/.jarvis/notes/T1.md",
@@ -47,6 +47,86 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       ".jarvis/ledger.jsonl", ".jarvis/notes/sub/x.md", ".jarvis/notes/x.txt", ".jarvis/scratch/..", ".jarvis/scratch/.hidden",
       "/tmp/.jarvis/../../Users/f/.jarvis/notes/x.md", "a/.jarvis/notes/../ledger/x.md",
     ]) expect(write(p), p).toBeTruthy();
+  });
+
+  // The files the skills write under the repo's `.jarvis/` (intake, spec, design, architect, onboard, sweep).
+  // After decision 87 the repo's `.jarvis/` is no privileged channel: the inbox lives in the runner home,
+  // candidates touching `.jarvis/` are refused, and the runner reads its own copies (decision 91). The
+  // runner home stays off limits without exception.
+  const SKILL_FILES = [
+    ".jarvis/intake/round-1.json", ".jarvis/intake/round-12.json", ".jarvis/intake/answers-3.json", ".jarvis/intake/taste.json",
+    ".jarvis/mockups/index.html", ".jarvis/mockups/calm/direction.md", ".jarvis/mockups/calm/home.html", ".jarvis/mockups/calm/home.png",
+    ".jarvis/plan.json",
+    ".jarvis/checks/habit-create.check.json", ".jarvis/checks/verify.sh", ".jarvis/checks/verify.mjs",
+    ".jarvis/checks/fixtures/driver.mjs", ".jarvis/checks/fixtures/inputs/one.json", ".jarvis/checks/expected/habit-create/out.txt",
+    ".jarvis/onboard/2026-10-24.md", ".jarvis/onboard/plan.json",
+    ".jarvis/sweep/2026-10-24.md", ".jarvis/sweep/plan.json",
+  ];
+  const fileTool = (tool_name: string, file_path: string) => check({ tool_name, tool_input: { file_path } });
+
+  it("lets Write, Edit and Read reach every file a skill writes under the repo's .jarvis/", () => {
+    for (const tool of ["Write", "Edit", "Read"]) {
+      for (const rel of SKILL_FILES) {
+        for (const p of [rel, `/Users/f/repo/${rel}`, `/Users/x/.jarvis-work/worktrees/a/${rel}`]) expect(fileTool(tool, p), `${tool} ${p}`).toBeUndefined();
+      }
+    }
+  });
+
+  it("keeps the runner home refused for those same names, through ~, $HOME, /Users/<u>, /home/<u> and ..", () => {
+    for (const tool of ["Write", "Edit", "Read"]) {
+      for (const rel of SKILL_FILES) {
+        const inner = rel.slice(".jarvis/".length);
+        for (const p of [
+          `~/.jarvis/${inner}`, `$HOME/.jarvis/${inner}`, `/Users/f/.jarvis/${inner}`, `/home/f/.jarvis/${inner}`,
+          `/Users/f/repo/../.jarvis/${inner}`, `/Users/f/repo/.jarvis/../../.jarvis/${inner}`, `/tmp/x/../../Users/f/.jarvis/${inner}`,
+          `/Users/f/.jarvis/projects/p-1/${rel}`,
+        ]) expect(fileTool(tool, p), `${tool} ${p}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("refuses every other .jarvis/ path, so the allowlist never becomes everything", () => {
+    for (const p of [
+      ".jarvis", ".jarvis/", ".jarvis/REPORT.md", ".jarvis/progress.md", ".jarvis/inbox.md", ".jarvis/ledger.jsonl",
+      ".jarvis/plan.md", ".jarvis/plan.json.bak", ".jarvis/other-1a2b3c.txt", "/Users/f/work/probe/.jarvis/other-1a2b3c.txt",
+      ".jarvis/intake/round-0.json", ".jarvis/intake/round-x.json", ".jarvis/intake/round-1.json.sh", ".jarvis/intake/notes.md", ".jarvis/intake/sub/round-1.json",
+      ".jarvis/mockups/calm/home.js", ".jarvis/mockups/calm/deep/home.html", ".jarvis/mockups/.hidden/home.html", ".jarvis/mockups/index.js",
+      ".jarvis/checks/notes.md", ".jarvis/checks/.hidden.sh", ".jarvis/checks/sub/x.check.json", ".jarvis/checks/fixtures/../../plan.json", ".jarvis/checks/fixtures/.env",
+      ".jarvis/checks/fixtures",
+      ".jarvis/onboard/notes.md", ".jarvis/onboard/2026-10-24.sh", ".jarvis/onboard/sub/plan.json",
+      ".jarvis/sweep/26-10-24.md", ".jarvis/sweep/plan.json/x", ".jarvis/inbox/1.md", ".jarvis/evidence/1/log.txt",
+    ]) {
+      for (const tool of ["Write", "Edit", "Read"]) expect(fileTool(tool, p), `${tool} ${p}`).toBeTruthy();
+    }
+  });
+
+  it("allows every .jarvis/ file a skill or template names as a target, so a new skill can't silently break", () => {
+    const repo = fileURLToPath(new URL("../../", import.meta.url));
+    // Placeholders the skills use in their .jarvis/ paths, filled with a valid example each.
+    const examples: Record<string, string> = {
+      "<n>": "2", "<task>": "T1", "<name>": "verify", "<direction>": "calm", "<screen>": "home", "<YYYY-MM-DD>": "2026-10-24", "<date>": "2026-10-24",
+    };
+    const sources = [
+      ...readdirSync(join(repo, "skills"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => join(repo, "skills", d.name, "SKILL.md")),
+      ...readdirSync(join(repo, "templates")).map((f) => join(repo, "templates", f)),
+      join(repo, "plugin", "commands", "jarvis.md"),
+    ].filter((f) => existsSync(f));
+    const targets = new Set<string>();
+    for (const file of sources) {
+      // Repo-relative mentions only: `~/.jarvis/…` names the runner home, which stays refused.
+      for (const m of readFileSync(file, "utf8").matchAll(/(?<![\w/~$-])\.jarvis\/[A-Za-z0-9<>._\/-]*/g)) {
+        const path = m[0].replace(/\.+$/, "");
+        if (path.endsWith("/")) continue; // a folder named in prose, not a file to write
+        const filled = path.replace(/<[^>]+>/g, (ph) => {
+          expect(examples, `placeholder ${ph} in ${file}`).toHaveProperty(ph);
+          return examples[ph]!;
+        });
+        targets.add(filled);
+      }
+    }
+    expect(targets.size).toBeGreaterThan(5);
+    expect([...targets]).toEqual(expect.arrayContaining([".jarvis/intake/round-2.json", ".jarvis/plan.json"]));
+    for (const p of targets) for (const tool of ["Write", "Edit", "Read"]) expect(fileTool(tool, p), `${tool} ${p}`).toBeUndefined();
   });
 
   it("blocks through the hook protocol (exit 2, reason on stderr)", () => {

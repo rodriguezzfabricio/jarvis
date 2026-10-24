@@ -32,7 +32,7 @@ Usage: scripts/install.sh [options]
   --dry-run       print what would change, change nothing
   --prefix DIR    install the jarvis launcher into DIR/bin (default: ~/.local)
   --node PATH     the Node 24 binary to use (default: node on PATH)
-  --offline       pass --offline to pnpm (use only packages already in the pnpm store)
+  --offline       pass --offline to pnpm (only after an earlier online install on this machine)
   --no-plugin     skip installing the Claude Code plugin
   --no-doctor     skip running jarvis doctor at the end
   -h, --help      show this help

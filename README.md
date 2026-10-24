@@ -131,8 +131,10 @@ Coming:
 Start with `jarvis doctor`. Each line is `ok`, `warn` or `FAIL`, and any `FAIL` blocks unattended runs.
 
 - **`jarvis: command not found`.** `~/.local/bin` (or your `--prefix`) isn't on your `PATH`. See [Install](#install).
-- **`Jarvis needs Node 24`.** Install Node 24, or pass `--node /path/to/node` to the installer. The launcher remembers the Node it was installed with; run the installer again after changing Node.
+- **`Jarvis needs Node 24`.** Install Node 24, or pass `--node /path/to/node` to the installer.
+- **`jarvis` stops working after you upgrade, move or uninstall Node.** The launcher calls the exact Node path it was installed with (for example `/opt/homebrew/bin/node`). Run `scripts/install.sh` again after any Node change; it rewrites the launcher.
 - **pnpm asks to download itself.** That's corepack fetching the pnpm version this repo pins. Answer yes, or run `corepack enable pnpm` first.
+- **The install needs the network the first time, even with `--offline`.** pnpm 11 checks the lockfile against the registry's supply-chain policies (release age, trust) before installing, and on a machine that has never installed Jarvis it has no cached result, so `--offline` stalls or fails there. Run the first install online. `--offline` only works once the pnpm store and that check's cache already hold everything.
 - **`FAIL claude_pinned`.** The file `~/.local/share/claude/versions/2.1.309` is missing or reports another version. Run `claude install 2.1.309`, then run the installer again so it can install the plugin.
 - **`warn codex_pinned`.** Codex is missing or a different version. That's fine; a Claude reviewer takes over.
 - **`FAIL child_env_clean`, or `warn parent_env`.** Your shell sets something like `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_*`, a `*_BASE_URL` or `CLAUDE_CONFIG_DIR`. Jarvis keeps these out of build sessions, because they could send work to another provider or bill an API key instead of your plan. Remove them from your shell startup files if doctor fails.
@@ -154,4 +156,4 @@ Start with `jarvis doctor`. Each line is `ok`, `warn` or `FAIL`, and any `FAIL` 
 
 ## License
 
-Not chosen yet. The repository stays private until stage 7, and the license will be added before it goes public.
+MIT (see `LICENSE`), as accepted in the decision register's answered questions (Oct 23). Pieces borrowed from other projects keep their own licenses and credits (`skills/CREDITS.md`).

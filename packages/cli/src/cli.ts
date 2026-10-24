@@ -16,6 +16,7 @@ import { runSchedule } from "./eval/schedule.ts";
 import * as decisionWrite from "./decisions/decide.ts";
 import * as decisionWhy from "./decisions/why.ts";
 import * as spec from "./spec/index.ts";
+import { register as registerTriage } from "./triage/command.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
 const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET;
@@ -134,5 +135,6 @@ program
 spec.register(program);
 decisionWhy.register(program);
 decisionWrite.register(program);
+registerTriage(program);
 
 await program.parseAsync();

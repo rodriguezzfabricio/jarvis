@@ -93,6 +93,7 @@ say "ok    macOS $(sw_vers -productVersion 2>/dev/null || echo '')"
 if [ -z "$NODE_BIN" ]; then
   NODE_BIN=$(command -v node 2>/dev/null) || die "Node 24 not found on PATH. Install it (for example: brew install node@24), or pass --node /path/to/node"
 fi
+case "$NODE_BIN" in /*) ;; *) die "--node must be an absolute path (the launcher calls it by that path)" ;; esac
 [ -x "$NODE_BIN" ] || die "not an executable: $NODE_BIN"
 NODE_VERSION=$("$NODE_BIN" -p 'process.versions.node' 2>/dev/null) || die "could not run $NODE_BIN"
 case "$NODE_VERSION" in

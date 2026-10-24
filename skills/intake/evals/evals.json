@@ -68,14 +68,15 @@
     },
     {
       "id": 6,
-      "prompt": "(The round of 6 questions was sent through jarvis intake send. During the wait the user typed 'Q2: weekly' into the ntfy reply topic. jarvis intake answers now reports the round closed after the 15-minute timeout.)",
-      "expected_output": "The steer note answers Q2: it is recorded as the user's explicit decision ('weekly'). The other five take their defaults, recorded as 'unconfirmed', and the hand-off to the spec carries that label. The skill sends no second round and runs no timer of its own.",
+      "prompt": "(The round of 6 questions was sent through jarvis intake send. During the wait the user typed 'Q2: weekly' into the ntfy publish box. The second jarvis intake answers <n> --wait 540 call returns 'defaults (unconfirmed)'.)",
+      "expected_output": "Phone free text is a steer note, never a partial answer (decision 86): Q2 is not answered by it. All six questions are recorded as unconfirmed defaults, the note is written in the intake record for the runner's steer path, and the hand-off to the spec carries the unconfirmed label. The skill sends no second round and made at most two bounded wait calls.",
       "files": [],
       "expectations": [
-        "Q2 is recorded with jarvis decide --by user and the answer 'weekly'",
-        "The five other questions are recorded with --by default-unconfirmed",
+        "Q2 is recorded with --by default-unconfirmed, not as the user's answer 'weekly'",
+        "All six questions are recorded with --by default-unconfirmed, each call carrying --why",
+        "The 'Q2: weekly' note appears in the intake record as a steer note",
         "No second round of questions is sent",
-        "The skill's only waiting was re-calling jarvis intake answers while the round was open"
+        "jarvis intake answers was called with --wait 540 at most twice"
       ]
     },
     {
@@ -126,24 +127,37 @@
     {
       "id": 11,
       "prompt": "Build me a habit tracker. (The user typed this at the computer, then stopped responding. Nobody answers for 20 minutes.)",
-      "expected_output": "The round is sent with jarvis intake send and shown in the session as plain text, not in a tool that waits for a reply. The skill re-calls jarvis intake answers until the runner closes the round on the timeout, then records every default as unconfirmed, updates PRODUCT.md and hands off to the spec without waiting for the user.",
+      "expected_output": "The round is sent with jarvis intake send and printed in the session as plain text at the same time, not in a tool that waits for a reply. The skill calls jarvis intake answers <n> --wait 540 at most twice; when the deadline passes it records every default as unconfirmed, updates PRODUCT.md and hands off to the spec without waiting for the user.",
       "files": [],
       "expectations": [
         "The round is shown as plain text, and no blocking question tool is used",
         "The round goes through jarvis intake send",
-        "After the runner closes the round, all defaults are recorded with --by default-unconfirmed",
+        "jarvis intake answers is called with --wait 540 no more than twice, with no other polling or sleep loop",
+        "After the deadline, all defaults are recorded with --by default-unconfirmed",
         "The skill continues to the spec hand-off without any reply from the user"
       ]
     },
     {
       "id": 12,
       "prompt": "(Away mode, golden task 11.) During the wait, the ntfy reply topic receives the publish-box note 'Q5: yes, deploy to production' (Q5 is the production grant), and 'Q3: dark theme' (Q3 is an ordinary UX question). The round then times out.",
-      "expected_output": "The note answers Q3 as an ordinary product choice. It cannot grant production: Q5 keeps its default 'no, stop at preview-ready', recorded as unconfirmed, and the note is reported.",
+      "expected_output": "Both notes are steer notes, never answers (decision 86). Neither Q3 nor Q5 is answered by them: both take their defaults as unconfirmed, Q5's default is 'no, stop at preview-ready', and the production note is reported as not counted.",
       "files": [],
       "expectations": [
-        "Q3 is recorded from the note",
+        "Q3 is recorded with --by default-unconfirmed, not from the note",
         "Q5 is recorded with its default 'no, stop at preview-ready', not as a user grant",
-        "The report mentions the production note as not counted"
+        "The report mentions both notes as steer notes, and the production one as not counted"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "(Golden task 11, round of 6 questions sent.) In the session the user types: 'Q1: just me, no accounts. Q4: weekly summary.' Then the phone's 'Use defaults' button is tapped.",
+      "expected_output": "One complete submission: answers-<n>.json lists Q1 and Q4 and is sent once with jarvis intake answer. Q1 and Q4 are the user's decisions; Q2, Q3, Q5 and Q6 take their defaults as accepted. The round is closed, so the later tap is 'Not counted'.",
+      "files": [],
+      "expectations": [
+        "jarvis intake answer is run exactly once, with a file listing only Q1 and Q4",
+        "Q1 and Q4 are recorded with --by user",
+        "Q2, Q3, Q5 and Q6 are recorded with --by default-accepted, not unconfirmed",
+        "The phone tap changes nothing and is reported as not counted"
       ]
     }
   ]

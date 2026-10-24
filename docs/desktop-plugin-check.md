@@ -26,7 +26,7 @@ remains independent. A screenshot or a model's assertion is not evidence.
 
 The parser requires an actual SessionStart success record containing the exact
 Jarvis receipt and a tool-result denial linked to the exact Bash command. Desktop
-records must match the new workspace, start time, session, SDK entrypoint (`sdk-cli`), and plugin hook path. Terminal entrypoint `cli` is rejected. This metadata distinguishes terminal records; it does not cryptographically attest to the desktop UI versus another SDK host.
+records must match the new workspace, start time, session, SDK entrypoint (`sdk-cli`), and plugin hook path. Interactive terminal (`cli`) records are rejected; headless `claude -p` and other SDK hosts are indistinguishable. This is not cryptographic attestation of the desktop UI.
 CLI records must identify the expected plugin and pinned version, complete successfully,
 and accompany a successful canary and process outcome. Hook files are hashed during
 preparation; changing them requires a new run. The run folder is runner-owned and

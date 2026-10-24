@@ -17,6 +17,8 @@ import * as decisionWrite from "./decisions/decide.ts";
 import * as decisionWhy from "./decisions/why.ts";
 import * as spec from "./spec/index.ts";
 import { register as registerTriage } from "./triage/command.ts";
+import { register as registerSteer } from "./commands/steer.ts";
+import { register as registerStatus } from "./commands/status.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
 const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET;
@@ -136,5 +138,7 @@ spec.register(program);
 decisionWhy.register(program);
 decisionWrite.register(program);
 registerTriage(program);
+registerSteer(program);
+registerStatus(program);
 
 await program.parseAsync();

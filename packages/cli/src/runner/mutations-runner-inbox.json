@@ -1,0 +1,182 @@
+[
+  {
+    "name": "runner-inbox repository notes never ingested",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (!existsSync(dir)) return result;",
+    "replacement": "if (existsSync(join(projectDir, \".jarvis\", \"inbox.md\"))) result.entries.push(ledger.append({ kind: \"steer\", actor: \"runner\", data: { note: readFileSync(join(projectDir, \".jarvis\", \"inbox.md\"), \"utf8\") } }));\n  if (!existsSync(dir)) return result;"
+  },
+  {
+    "name": "runner-inbox complete files only",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "!name.startsWith(\".\") && name.endsWith(\".json\")",
+    "replacement": "name !== \"ingested\""
+  },
+  {
+    "name": "runner-inbox exclusive temp publication",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "openSync(temporary, \"wx\", 0o600)",
+    "replacement": "openSync(temporary, \"w\", 0o600)"
+  },
+  {
+    "name": "runner-inbox crash replay idempotent",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (entries.some((e) => e.actor === \"runner\" && (e.kind === \"steer\" || e.kind === \"reconciled\") && (e.data as { inboxItem?: unknown } | null)?.inboxItem === file)) return undefined;",
+    "replacement": "if (false) return undefined;"
+  },
+  {
+    "name": "runner-inbox notes never approvals",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": ": add({ kind: \"steer\", actor: \"runner\", data: { note: item.note, inboxItem: file } });",
+    "replacement": ": add({ kind: \"approval\", actor: \"runner\", data: { note: item.note, inboxItem: file } });"
+  },
+  {
+    "name": "runner-inbox invalid ledger notes skipped",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (entry.kind !== \"steer\" || entry.actor !== \"runner\" || issueFor(entry)) continue;",
+    "replacement": "if (entry.kind !== \"steer\" || entry.actor !== \"runner\") continue;"
+  },
+  {
+    "name": "runner-inbox broker steers ignored",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (entry.kind !== \"steer\" || entry.actor !== \"runner\" || issueFor(entry)) continue;",
+    "replacement": "if (entry.kind !== \"steer\" || issueFor(entry)) continue;"
+  },
+  {
+    "name": "runner-inbox file size bound",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "const MAX_ITEM_BYTES = 128 * 1024;",
+    "replacement": "const MAX_ITEM_BYTES = 2 * 1024 * 1024;"
+  },
+  {
+    "name": "runner-inbox hard links skipped",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (stat.nlink !== 1) return { reason: \"hard-linked note refused\" };",
+    "replacement": "if (stat.nlink !== 1) return { note: \"T1\" };"
+  },
+  {
+    "name": "runner-inbox story mappings retained",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "...t.definition.storyIds,",
+    "replacement": ""
+  },
+  {
+    "name": "runner-inbox unnamed notes only unstarted",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "tasks.filter((t) => t.status === \"pending\" && t.attemptCount === 0)",
+    "replacement": "tasks"
+  },
+  {
+    "name": "runner-inbox cursor hash binding",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "cursor.hash !== hash",
+    "replacement": "false"
+  },
+  {
+    "name": "runner-inbox repair budget three failures",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "if (failures < 3)",
+    "replacement": "if (failures < 2)"
+  },
+  {
+    "name": "runner-inbox waits crashes not failures",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "if (event.kind !== \"failure\") return { kind: \"resume\" };",
+    "replacement": "if (false) return { kind: \"resume\" };"
+  },
+  {
+    "name": "runner-inbox only completed failures charged",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "if (!completed || !latest || failures === 0)",
+    "replacement": "if (!latest || failures === 0)"
+  },
+  {
+    "name": "runner-inbox tampered checks block immediately",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "if (evidence.some((e) => e.kind === \"gate_result\" && dataOf(e).status === \"tampered\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-inbox alternative critical path once",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "options.criticalPath && options.alternative && task.alternativeSwitches.length === 0",
+    "replacement": "options.alternative"
+  },
+  {
+    "name": "runner-inbox failure output tails preserved",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "failureEvidence(task, options.readEvidence, options.verifyEvidence)",
+    "replacement": "null as ReturnType<typeof failureEvidence>"
+  },
+  {
+    "name": "runner-inbox report completion reverified",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "[task.id, isDone(task, verify)]",
+    "replacement": "[task.id, task.status === \"passed\"]"
+  },
+  {
+    "name": "runner-inbox notifier completion reverified",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "isDone(task, options.verifyEvidence ?? verifyEvidence)",
+    "replacement": "task.status === \"passed\""
+  },
+  {
+    "name": "runner-inbox broker evidence excluded",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "const runnerAuthored = (entry: LedgerEntry): boolean => entry.actor === \"runner\";",
+    "replacement": "const runnerAuthored = (_entry: LedgerEntry): boolean => true;"
+  },
+  {
+    "name": "runner-inbox named review evidence",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "e.kind === \"review_result\" && dataOf(e).reviewer === name",
+    "replacement": "e.kind === \"review_result\" && dataOf(e).role === name"
+  },
+  {
+    "name": "runner-inbox usage fields only",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "return `- #${e.seq} Until",
+    "replacement": "return JSON.stringify(data) + `- #${e.seq} Until"
+  },
+  {
+    "name": "runner-inbox defaults match request",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "answer.acceptedDefaults === true && answer.confirmed === true && matches",
+    "replacement": "answer.acceptedDefaults === true && answer.confirmed === true"
+  },
+  {
+    "name": "runner-inbox narratives remain claims",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "Claim (unverified),",
+    "replacement": "Verified evidence,"
+  },
+  {
+    "name": "runner-inbox status contention classified",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "if (verified.contended)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-inbox status verifies ledger",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "if (!verified.ok) throw new LedgerTamperError",
+    "replacement": "if (false) throw new LedgerTamperError"
+  },
+  {
+    "name": "runner-inbox notification byte cap",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "return `${release ? String(dataOf(release).state) : \"not-reached\"}.",
+    "replacement": "return \"x\".repeat(4096) + `${release ? String(dataOf(release).state) : \"not-reached\"}."
+  },
+  {
+    "name": "runner-inbox source bound to project ledger",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (resolve(projectDir) !== resolve(ledger.dir)) throw new Error(\"inbox project must match the ledger root\");",
+    "replacement": "if (false) throw new Error(\"inbox project must match the ledger root\");"
+  },
+  {
+    "name": "runner-inbox recorded wait duration",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "typeof data.waitMs === \"number\" && Number.isFinite(data.waitMs)",
+    "replacement": "false"
+  }
+]

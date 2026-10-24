@@ -1,0 +1,200 @@
+[
+  {
+    "name": "spec-requires-positive-integer-ids-and-versions",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "  return /^[1-9]\\d*$/.test(raw) && Number.isSafeInteger(n) ? n : null;",
+    "replacement": "  return Number.isSafeInteger(n) ? n : null;"
+  },
+  {
+    "name": "spec-requires-all-sections",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    if (!section) { problem(1, \"missing-section\", `Missing required section: ${name}.`); continue; }",
+    "replacement": "    if (!section) { continue; }"
+  },
+  {
+    "name": "spec-requires-immediate-predecessor",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    || (spec.version !== null && spec.version > 1 && spec.supersedes !== spec.version - 1)) {",
+    "replacement": "    || false) {"
+  },
+  {
+    "name": "spec-rejects-duplicate-ids",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "      if (ids.has(entry.id)) problem(entry.line, \"duplicate-id\", `Duplicate ID: ${entry.id}.`);",
+    "replacement": "      if (false) problem(entry.line, \"duplicate-id\", `Duplicate ID: ${entry.id}.`);"
+  },
+  {
+    "name": "spec-requires-criterion-for-every-story",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    if (!spec.criteria.some((c) => c.storyId === story.id)) problem(story.line, \"story-without-criterion\", `${story.id} has no acceptance criterion.`);",
+    "replacement": "    if (false) problem(story.line, \"story-without-criterion\", `${story.id} has no acceptance criterion.`);"
+  },
+  {
+    "name": "spec-rejects-unknown-story-references",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    if (!storyIds.has(criterion.storyId)) problem(criterion.line, \"unknown-story\", `${criterion.id} refers to unknown story ${criterion.storyId}.`);",
+    "replacement": "    if (false) problem(criterion.line, \"unknown-story\", `${criterion.id} refers to unknown story ${criterion.storyId}.`);"
+  },
+  {
+    "name": "spec-requires-assumption-kind-and-description",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "      if (!/^(fixed|delegated)$/.test(m[2]!) || !m[3]?.trim()) {",
+    "replacement": "      if (false) {"
+  },
+  {
+    "name": "spec-requires-ears-criteria",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "      if (!/^WHEN\\s+\\S(?:.*\\S)?\\s+THE SYSTEM SHALL\\s+\\S.*$/.test(body)) {",
+    "replacement": "      if (false) {"
+  },
+  {
+    "name": "spec-requires-header-filename-agreement",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    if (!match || positive(match[1]!) !== spec.version) problems.push({ line: 2, code: \"filename-version\", message: \"The file must be named vN.md and match spec: N.\" });",
+    "replacement": "    if (false) problems.push({ line: 2, code: \"filename-version\", message: \"The file must be named vN.md and match spec: N.\" });"
+  },
+  {
+    "name": "spec-rejects-version-gaps",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    if (version.version !== previous + 1) problems.push(issue(version.path, \"version-gap\", `Missing v${previous + 1}.md before v${version.version}.md.`));",
+    "replacement": "    if (false) problems.push(issue(version.path, \"version-gap\", `Missing v${previous + 1}.md before v${version.version}.md.`));"
+  },
+  {
+    "name": "spec-checks-older-versions",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "  for (const version of versions) {",
+    "replacement": "  for (const version of versions.slice(-1)) {"
+  },
+  {
+    "name": "spec-refuses-symlink-directories",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "      if (!st.isDirectory() || st.isSymbolicLink()) {",
+    "replacement": "      if (false) {"
+  },
+  {
+    "name": "spec-validates-before-publishing",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "  if (!checked.ok) throw new SpecError(checked.problems.map((p) => ({ ...p, file: next.path })));",
+    "replacement": "  if (false) throw new SpecError(checked.problems.map((p) => ({ ...p, file: next.path })));"
+  },
+  {
+    "name": "spec-publishes-without-overwriting",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    linkSync(tmp, next.path);",
+    "replacement": "    writeFileSync(next.path, draft);"
+  },
+  {
+    "name": "spec-cleans-up-failed-writes",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    if (directoriesUnchanged(directories)) rmSync(tmp, { force: true });",
+    "replacement": "    void tmp;"
+  },
+  {
+    "name": "spec-next-version-does-not-inherit-confirmation",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    .replace(/^status: .*$/m, \"status: draft\")",
+    "replacement": "    .replace(/^status: .*$/m, \"status: confirmed\")"
+  },
+  {
+    "name": "spec-diff-includes-kind-priority-and-reference",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "  return JSON.stringify([entry.text, entry.details, extra]);",
+    "replacement": "  return JSON.stringify([entry.text, entry.details]);"
+  },
+  {
+    "name": "spec-diff-includes-new-criterion-dependencies",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "  for (const entry of [...before.criteria, ...after.criteria]) if (changedCriteria.has(entry.id)) affected.add(entry.storyId);",
+    "replacement": "  for (const entry of before.criteria) if (changedCriteria.has(entry.id)) affected.add(entry.storyId);"
+  },
+  {
+    "name": "spec-command-fails-on-problems",
+    "file": "packages/cli/src/spec/command.ts",
+    "anchor": "      process.exitCode = result.ok ? 0 : 1;",
+    "replacement": "      process.exitCode = 0;"
+  },
+  {
+    "name": "spec-rejects-entry-like-malformed-lines",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    const candidate = !subBullet && (/^(?:[-*+]|\\d+[.)])\\s+/.test(raw) || /THE SYSTEM SHALL|\\*\\*(?:S|AC|A)\\d/.test(raw));",
+    "replacement": "    const candidate = /^-\\s+(?:\\*\\*|(?:S|AC|A)\\d)/.test(value);"
+  },
+  {
+    "name": "spec-keeps-indented-sub-bullets-as-details",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    const candidate = !subBullet && (/^(?:[-*+]|\\d+[.)])\\s+/.test(raw) || /THE SYSTEM SHALL|\\*\\*(?:S|AC|A)\\d/.test(raw));",
+    "replacement": "    const candidate = /^(?:[-*+]|\\d+[.)])\\s+/.test(raw) || /THE SYSTEM SHALL|\\*\\*(?:S|AC|A)\\d/.test(raw);"
+  },
+  {
+    "name": "spec-caps-echoed-file-text",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "  return value.slice(0, 80);",
+    "replacement": "  return value;"
+  },
+  {
+    "name": "spec-ignores-html-comments",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    raw = visible(raw);",
+    "replacement": "    raw = raw;"
+  },
+  {
+    "name": "spec-subheadings-end-entry-details",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    if (/^ {0,3}#{3,6}(?:[ \\t]+.*)?$/.test(raw)) {\n      lastEntry = null;\n      continue;\n    }",
+    "replacement": "    if (/^ {0,3}#{3,6}(?:[ \\t]+.*)?$/.test(raw)) {\n      continue;\n    }"
+  },
+  {
+    "name": "spec-explains-bulleted-none",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "        problem(line, \"assumption\", \"Write None. without the bullet when there are no assumptions.\");",
+    "replacement": "        problem(line, \"assumption\", \"Expected a typed assumption.\");"
+  },
+  {
+    "name": "spec-allows-prose-goals",
+    "file": "packages/cli/src/spec/parser.ts",
+    "anchor": "    let nonempty = section.content.length > 0;",
+    "replacement": "    let nonempty = section.content.length > 0;\n    if (name === \"Goals\" || name === \"Non-goals\") nonempty = none || section.content.some((v) => /^(?:[-*+]|\\d+[.)])\\s+\\S/.test(v));"
+  },
+  {
+    "name": "spec-refuses-hard-linked-versions",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    if (st.nlink > 1) throw new Error(\"Spec versions must have a single link; hard links are refused.\");",
+    "replacement": "    if (false) throw new Error(\"Spec versions must have a single link; hard links are refused.\");"
+  },
+  {
+    "name": "spec-checks-directories-before-write",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    assertDirectories(directories); // before write",
+    "replacement": "    void directories; // before write"
+  },
+  {
+    "name": "spec-checks-directories-after-write",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    assertDirectories(directories); // after write",
+    "replacement": "    void directories; // after write"
+  },
+  {
+    "name": "spec-checks-directories-after-publication",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    assertDirectories(directories); // after publication",
+    "replacement": "    void directories; // after publication"
+  },
+  {
+    "name": "spec-preserves-files-in-replaced-directories",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "    if (directoriesUnchanged(directories)) rmSync(tmp, { force: true });",
+    "replacement": "    rmSync(tmp, { force: true });"
+  },
+  {
+    "name": "spec-compares-directory-identities",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "      return st.isDirectory() && !st.isSymbolicLink() && st.dev === directory.dev && st.ino === directory.ino;",
+    "replacement": "      return st.isDirectory() && !st.isSymbolicLink();"
+  },
+  {
+    "name": "spec-checks-directories-before-opening-draft",
+    "file": "packages/cli/src/spec/versions.ts",
+    "anchor": "  assertDirectories(directories); // before opening draft",
+    "replacement": "  void directories; // before opening draft"
+  }
+]

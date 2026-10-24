@@ -13,6 +13,7 @@ import { Ledger } from "./ledger/ledger.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts";
 import { loadTask, runBaseline } from "./eval/baseline.ts";
 import { runSchedule } from "./eval/schedule.ts";
+import * as spec from "./spec/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
 const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET;
@@ -127,5 +128,7 @@ program
     process.once("SIGHUP", shutdown);
     console.log(`Broker listening on ${server.socketPath} for project ${opts.project}. Public alias: ${socket}. Use the bound socket with --socket or JARVIS_BROKER_SOCKET.`);
   });
+
+spec.register(program);
 
 await program.parseAsync();

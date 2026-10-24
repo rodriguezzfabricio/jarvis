@@ -302,6 +302,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "kubeconfig.yaml": `users:\n  - name: admin\n    user:\n      client-key-data: ${Buffer.from(edKey.privateKey.export({ type: "pkcs8", format: "pem" }) as string).toString("base64")}\n`,
       "embedded-der.json": `{"blob": "${(edKey.privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).toString("base64")}"}\n`,
       "secret.yaml": `kind: Secret\ndata:\n  url: ${Buffer.from("postgres://svc:Synthetic9qvM2@db.prod.acme.net/app").toString("base64")}\n`,
+      "creds.ts": 'export const registryLogin = "c3ZjOlN5bnRoZXRpYzlxdk0y";\n',
       "auth-field.yaml": "headers:\n  authorization: Synthetic9qvM2\n",
       "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,

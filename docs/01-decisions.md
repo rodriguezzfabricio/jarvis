@@ -767,6 +767,41 @@ Fabricio runs the interactive half (opening the folder and typing one prompt), a
 Narrows decision 71's stage 1 item to match decision 57.
 *From:* Codex, Oct 24; decisions 57 and 71.
 
+### 81. Stage 2 is built in parallel while stages 0 and 1 close (new; Oct 24)
+Fabricio, Oct 24 (in the "Work status check" session, relayed to the integrator): "record decision 81, keep the current queue, then hand out the lanes and the ground rules. I approve the pre-decided thresholds and adding one Claude worker."
+
+This extends decision 72's overlap by one stage:
+- **Stage 2 is built on branches now. It can't be declared done** until the stage 0 and stage 1 proofs pass.
+- **It gets its own Codex review**, with lanes A, B and D (decision 79).
+- **Its final proof still needs Fabricio:** he rates task 1's questions and task 11's intake and mockups (architecture §8).
+- **The current queue comes first:** review 17, the baselines and the stage 1 review for the integrator, and the desktop plugin check kit for Codex.
+
+**Pre-decided thresholds (approved):**
+- Medium and low findings go to the backlog without asking him (decision 74, unchanged).
+- On product and design choices, the builder picks the recommended option and records it here, and he can veto later.
+- He's asked only about spending, outside actions, credentials, destructive operations or skipping a stage gate.
+
+**Lanes,** one owner per folder, all folders new:
+
+| Lane | Owner |
+|---|---|
+| 1. Notifier, `packages/cli/src/notify/`: ntfy send and poll, Approve and Reject buttons, replies as ledger entries, the 15-minute intake-wait timer, the 4 KB limit (§3.7, decisions 10 and 50, backlog #1) | Codex |
+| 2. Decision register and `jarvis why`, `packages/cli/src/decisions/` (decisions 11 and 48) | Codex |
+| 3. Spec format checker, `packages/cli/src/spec/` (decision 9) | Codex |
+| 4. The `research`, `intake` and `spec` skills, `skills/{research,intake,spec}/` and `templates/spec.md` (decisions 5–8, §3.1) | A second Claude worker |
+| 5. The `design` skill, `skills/design/` and `templates/{PRODUCT,DESIGN}.md` (decisions 51–56) | The second Claude worker |
+| 6. Triage (decision 37) and the `/jarvis` command, `packages/cli/src/triage/` and `plugin/commands/jarvis.md` | Codex, after lanes 1–3 |
+
+**Ground rules:**
+1. **Worktrees:** every writer has its own git worktree and branch from the latest main. Only the integrator writes main, by cherry-pick after reading.
+2. **Shared files have one writer, the integrator:** `cli.ts`, `package.json`, `pnpm-lock.yaml`, `scripts/mutation-check.mjs`, this file, `docs/backlog.md`, `AGENTS.md`, `plugin/hooks*`, the plugin manifest and `harness/claude/` (apart from new files assigned by name). Lanes send snippets instead. A new command exports `register(program)` from its own module, and the integrator adds one line to `cli.ts`. Mutations arrive as definitions.
+3. **Test slots:** while building, a lane runs only its own test files. The full suite, mutation checks and live tests run only in the integrator's quiet slot, because concurrent suites caused timing failures on Oct 24.
+4. **No new npm dependencies** without the integrator, since the lockfile is shared.
+5. **Each writer gets a queue of three or four tasks,** so nobody idles between heartbeats.
+6. **The same completion bar for every lane:** tests that fail first, the lane's own tests plus typecheck, an independent review, mutation definitions, and one commit per unit.
+
+*From:* Fabricio, Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

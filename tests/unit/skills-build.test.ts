@@ -63,6 +63,10 @@ const skills: Record<string, SkillRules> = {
       { section: "Protected checks", phrase: "never edit, skip, delete or loosen" },
       { section: "Protected checks", phrase: "test configuration" },
       { section: "Protected checks", phrase: "flag it in the notes" }, // legitimate test changes get a separate review
+      { section: "Protected checks", phrase: "Never game the check" }, // decision 15: reward hacking
+      { section: "Protected checks", phrase: "no special-casing test inputs in production code" },
+      { section: "Protected checks", phrase: "no detecting that a test is running" },
+      { section: "Protected checks", phrase: "no expected values copied into the implementation" },
       { section: "Verify before claiming done", phrase: "No completion claims without fresh verification" }, // superpowers
       { section: "Verify before claiming done", phrase: "every acceptance criterion" }, // decision 16
       { section: "Verify before claiming done", phrase: "feedback, not evidence" }, // decision 49: in-session gates
@@ -70,6 +74,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Write the notes", phrase: "claims, not evidence" }, // decision 49
       { section: "Write the notes", phrase: "the runner's protected checks decide done" }, // decisions 15, 16
       { section: "Write the notes", phrase: "done | done-with-concerns | blocked | needs-decision" },
+      { section: "Write the notes", phrase: "for the runner to reconcile" }, // decision 49: reviewers never get the account
       { section: "Gotchas", phrase: "test passes immediately" },
     ],
   },
@@ -78,6 +83,7 @@ const skills: Record<string, SkillRules> = {
       "When to use",
       "Session rules",
       "Reproduce",
+      "When the session can't reproduce it",
       "Write the failing test",
       "Isolate the root cause",
       "Fix",
@@ -96,6 +102,15 @@ const skills: Record<string, SkillRules> = {
       { section: "Session rules", phrase: "never edit, skip, delete or loosen" }, // decision 15
       { section: "Reproduce", phrase: "No fix without a reproduction" },
       { section: "Reproduce", phrase: "can't reproduce" },
+      // The sandbox exception (containers, browsers, local servers), defined once and pointed to by the strict steps.
+      { section: "When the session can't reproduce it", phrase: "containers, browsers, local servers" },
+      { section: "When the session can't reproduce it", phrase: "the runner's reproduction and check results" },
+      { section: "When the session can't reproduce it", phrase: "unverified" },
+      { section: "When the session can't reproduce it", phrase: "at most done-with-concerns" },
+      { section: "When the session can't reproduce it", phrase: "the task's stated file boundary" },
+      { section: "When the session can't reproduce it", phrase: "Never add a test or any other file outside" },
+      { section: "Write the failing test", phrase: "When the session can't reproduce it" },
+      { section: "Run the checks", phrase: "When the session can't reproduce it" },
       { section: "Write the failing test", phrase: "fails for the reported reason" },
       { section: "Write the failing test", phrase: "before the fix" },
       { section: "Isolate the root cause", phrase: "No fixes without root cause investigation first" }, // superpowers
@@ -237,6 +252,61 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
         expect(typeof f).toBe("string");
         expect(existsSync(`${skillsDir}${name}/evals/${f as string}`), f as string).toBe(true);
       }
+    }
+  });
+});
+
+describe("decision 49: notes are claims for the runner, never the reviewer's input", () => {
+  it.each(Object.keys(skills))("%s never says a reviewer reads the session's notes or account", (name) => {
+    const sentences = prose(readSkill(name)).split(/(?<=[.!?])\s+/);
+    for (const s of sentences) {
+      if (/\bnot from\b/i.test(s)) continue; // "the reviewer starts from the diff …, not from your account"
+      expect(s, s).not.toMatch(/reviewer[^.]*\b(reads?|gets?|sees?|uses?)\s+(it|them|this)\b/i);
+      expect(s, s).not.toMatch(/reviewer[^.]*\b(reads?|gets?|sees?|uses?)\b[^.]*\b(notes|account|record|red and green)\b/i);
+    }
+  });
+});
+
+type Eval = { id: number; prompt: string; expectations: string[]; files: string[] };
+function evalsOf(name: string): Eval[] {
+  return (JSON.parse(readFileSync(`${skillsDir}${name}/evals/evals.json`, "utf8")) as { evals: Eval[] }).evals;
+}
+
+describe("evals that carry golden-task boundaries", () => {
+  it("debug's Chromium eval states the exact file boundary and checks nothing else changes (golden task 4)", () => {
+    const e = evalsOf("debug").find((x) => x.prompt.includes("Chromium"));
+    expect(e, "a Chromium eval").toBeDefined();
+    expect(e!.prompt).toContain("May touch only: Dockerfile, docker-compose.yml");
+    const boundary = e!.expectations.filter((x) => x.includes("Dockerfile") && x.includes("docker-compose.yml"));
+    expect(boundary.some((x) => x.includes("no other file") && x.includes("no test"))).toBe(true);
+    expect(e!.expectations.some((x) => x.includes("unverified"))).toBe(true);
+  });
+
+  it("build's hostile-content eval checks the application flow, not only the builder (golden task 2)", () => {
+    const e = evalsOf("build").find((x) => x.files.includes("files/hostile-contact-page.html"));
+    expect(e, "a hostile-content eval").toBeDefined();
+    const trial = e!.expectations.filter((x) => x.includes("discovery → drafting → approval → stub delivery"));
+    expect(trial.length).toBeGreaterThanOrEqual(1);
+    expect(trial.some((x) => x.includes("recipient") && x.includes("runner"))).toBe(true);
+    expect(trial.some((x) => x.includes("before approval"))).toBe(true);
+  });
+});
+
+describe("skills-build-mutations.json", () => {
+  const repo = fileURLToPath(new URL("../../", import.meta.url));
+  const file = fileURLToPath(new URL("./skills-build-mutations.json", import.meta.url));
+
+  it("names mutations whose anchors each appear exactly once, so every one still applies", () => {
+    expect(existsSync(file)).toBe(true);
+    const muts = JSON.parse(readFileSync(file, "utf8")) as { name: string; file: string; anchor: string; replacement: string }[];
+    expect(muts.length).toBeGreaterThanOrEqual(10);
+    expect(new Set(muts.map((m) => m.name)).size).toBe(muts.length);
+    for (const m of muts) {
+      for (const k of ["name", "file", "anchor", "replacement"] as const) expect(typeof m[k], `${m.name}.${k}`).toBe("string");
+      expect(m.anchor.length, m.name).toBeGreaterThan(0);
+      expect(m.anchor, m.name).not.toBe(m.replacement);
+      expect(existsSync(`${repo}${m.file}`), `${m.name}: ${m.file}`).toBe(true);
+      expect(readFileSync(`${repo}${m.file}`, "utf8").split(m.anchor).length - 1, m.name).toBe(1);
     }
   });
 });

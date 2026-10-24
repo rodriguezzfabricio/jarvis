@@ -61,7 +61,33 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
   // The Jarvis plugin is in place with its hooks.
   try {
     const hooks = JSON.parse(readFileSync(join(d.pluginDir, "hooks", "hooks.json"), "utf8")) as { hooks?: Record<string, unknown> };
-    const ok = !!hooks.hooks?.PreToolUse && existsSync(join(d.pluginDir, "hooks", "tripwire.mjs")) && existsSync(join(d.pluginDir, ".claude-plugin", "plugin.json"));
+    const registrationsMatch = (name: string, command: string, matcher?: string): boolean => {
+      const registrations = hooks.hooks?.[name];
+      if (!Array.isArray(registrations) || registrations.length === 0) return false;
+      return registrations.some((registration: unknown) => {
+        if (!registration || typeof registration !== "object") return false;
+        const candidate = registration as { matcher?: unknown; hooks?: unknown };
+        const registrationKeys = Object.keys(candidate).sort();
+        const expectedRegistrationKeys = (matcher === undefined ? ["hooks"] : ["hooks", "matcher"]).sort();
+        if (registrationKeys.join("\0") !== expectedRegistrationKeys.join("\0")) return false;
+        if (candidate.matcher !== matcher) return false;
+        if (!Array.isArray(candidate.hooks) || candidate.hooks.length === 0) return false;
+        return candidate.hooks.some((hook: unknown) => {
+          if (!hook || typeof hook !== "object") return false;
+          const entry = hook as { type?: unknown; command?: unknown };
+          const keys = Object.keys(entry).sort();
+          return keys.join("\0") === ["command", "type"].join("\0")
+            && entry.type === "command" && entry.command === command;
+        });
+      });
+    };
+    const manifest = JSON.parse(readFileSync(join(d.pluginDir, ".claude-plugin", "plugin.json"), "utf8")) as { name?: unknown; version?: unknown };
+    const ok = registrationsMatch("PreToolUse", 'node "${CLAUDE_PLUGIN_ROOT}/hooks/tripwire.mjs"', "Bash|Read|Edit|Write|Glob|Grep")
+      && registrationsMatch("SessionStart", 'node "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"')
+      && existsSync(join(d.pluginDir, "hooks", "tripwire.mjs"))
+      && existsSync(join(d.pluginDir, "hooks", "session-start.mjs"))
+      && manifest.name === "jarvis"
+      && typeof manifest.version === "string" && manifest.version.length > 0;
     add("plugin", ok ? "pass" : "fail", ok ? `${d.pluginDir}: tripwire and SessionStart hooks present` : "plugin is incomplete");
   } catch (e) {
     add("plugin", "fail", `plugin unreadable: ${String(e)}`);

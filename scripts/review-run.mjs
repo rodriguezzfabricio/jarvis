@@ -24,7 +24,7 @@ export const DEFAULT_EVIDENCE = [
   { name: 'unit-tests', bin: '/opt/homebrew/bin/pnpm', args: ['-s', 'test'] },
   { name: 'live-probe', bin: '/opt/homebrew/bin/pnpm', args: ['-s', 'test:live'] },
   { name: 'doctor-live', bin: process.execPath, args: ['packages/cli/src/cli.ts', 'doctor', '--live'] },
-  { name: 'mutation-check', bin: process.execPath, args: ['scripts/mutation-check.mjs'] },
+  { name: 'mutation-check', bin: process.execPath, args: ['scripts/mutation-check.mjs', '--confirm'] },
 ];
 function inside(path, parent) { const r = relative(parent, path); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); }
 function exists(path) { try { lstatSync(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } }

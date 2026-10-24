@@ -129,4 +129,19 @@ describe("mutation run summary", () => {
     const s = summarize({ total: 3, selected: 3, filtered: false, results: [...caught(1), "SURVIVED m1 (all tests passed)", "ERROR    m2: anchor not found in f"] });
     expect(s).toEqual({ line: "2 mutation(s) not caught", exitCode: 1 });
   });
+
+  // Codex review of the subset mutation check, critical: a catch on related tests only is not the gate.
+  it("never passes a run whose catches weren't confirmed on the full suite", () => {
+    const s = summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 2 });
+    expect(s).toEqual({ line: "all 3 ran, 2 caught on related tests only; not confirmed on the full suite (not the gate: JARVIS_MUTATION_CONFIRM=1)", exitCode: 3 });
+    expect(s.line).not.toMatch(/^all \d+ mutations caught/);
+    const p = summarize({ total: 10, selected: 3, filtered: true, results: caught(3), unconfirmed: 3 });
+    expect(p).toEqual({ line: "partial run: 3 of 10 mutations selected, 3 caught on related tests only; not confirmed on the full suite (not the gate: JARVIS_MUTATION_CONFIRM=1)", exitCode: 3 });
+  });
+  it("still reports misses first when some catches are unconfirmed", () => {
+    expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed)"], unconfirmed: 2 })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
+  });
+  it("passes only when every catch is confirmed", () => {
+    expect(summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 0 })).toEqual({ line: "all 3 mutations caught", exitCode: 0 });
+  });
 });

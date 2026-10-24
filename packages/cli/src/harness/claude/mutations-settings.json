@@ -76,5 +76,11 @@
     "file": "packages/cli/src/harness/claude/settings.ts",
     "anchor": "\"/var/folders\", \"/private/var/tmp\", \"/var/tmp\"] as const;",
     "replacement": "\"/var/folders\", \"/var/tmp\"] as const;"
+  },
+  {
+    "name": "settings desktop capture keeps the shared Claude temp",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "{ ...cacheEnv(input.cacheDir), ...sessionTmpEnv(sessionTmpDir) }",
+    "replacement": "cacheEnv(input.cacheDir)"
   }
 ]

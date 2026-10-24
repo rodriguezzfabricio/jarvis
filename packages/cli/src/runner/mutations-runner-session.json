@@ -1,0 +1,200 @@
+[
+  {
+    "name": "runner-session sandbox fail closed",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  writeTaskSettings(settingsPath, context);",
+    "replacement": "  writeTaskSettings(settingsPath, context);\n  const weakened = JSON.parse(readFileSync(settingsPath, \"utf8\"));\n  weakened.sandbox.failIfUnavailable = false; weakened.sandbox.allowUnsandboxedCommands = true;\n  writeFileSync(settingsPath, JSON.stringify(weakened));"
+  },
+  {
+    "name": "runner-session restricted tools and no setting sources",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const tmpDir = join(cacheDir, \"tmp\");",
+    "replacement": "  args.splice(args.indexOf(\"--restricted\"), 1);\n  args[args.indexOf(\"--tools\") + 1] = \"Bash,WebFetch\";\n  args.push(\"--setting-sources\", \"project\");\n  const tmpDir = join(cacheDir, \"tmp\");"
+  },
+  {
+    "name": "runner-session permission flags strict MCP and no persistence",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const tmpDir = join(cacheDir, \"tmp\");",
+    "replacement": "  args[args.indexOf(\"--permission-mode\") + 1] = \"default\";\n  args[args.indexOf(\"--permission-prompts\") + 1] = \"auto\";\n  args.splice(args.indexOf(\"--strict-mcp-config\"), 1);\n  args.splice(args.indexOf(\"--no-session-persistence\"), 1);\n  const tmpDir = join(cacheDir, \"tmp\");"
+  },
+  {
+    "name": "runner-session auto memory off",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  writeTaskSettings(settingsPath, context);",
+    "replacement": "  writeTaskSettings(settingsPath, context);\n  const weakened = JSON.parse(readFileSync(settingsPath, \"utf8\"));\n  weakened.autoMemoryEnabled = true;\n  writeFileSync(settingsPath, JSON.stringify(weakened));"
+  },
+  {
+    "name": "runner-session outside reads closed",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  writeTaskSettings(settingsPath, context);",
+    "replacement": "  writeTaskSettings(settingsPath, context);\n  const weakened = JSON.parse(readFileSync(settingsPath, \"utf8\"));\n  weakened.permissions.blockReadsOutsideWorkingDirectories = false; weakened.sandbox.filesystem.allowRead.push(dirname(input.workspace));\n  writeFileSync(settingsPath, JSON.stringify(weakened));"
+  },
+  {
+    "name": "runner-session live preflight required",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "        if (!preflight.ok) throw new Error(\"live preflight failed; no task session started\");",
+    "replacement": "        if (false) throw new Error(\"live preflight failed; no task session started\");"
+  },
+  {
+    "name": "runner-session credential forwarding",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "bin: binary, args, cwd: worktree, env, timeoutMs: input.timeoutMs,",
+    "replacement": "bin: binary, args, cwd: worktree, env: { ...env, ...Object.fromEntries(Object.entries(opts.parentEnv ?? {}).filter(([key, value]) => /^(ANTHROPIC_|CLAUDE_CODE_OAUTH)/.test(key) && typeof value === \"string\")) }, timeoutMs: input.timeoutMs,"
+  },
+  {
+    "name": "runner-session binary from real home",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const binary = pinnedClaudeBin(homedir());",
+    "replacement": "  const binary = pinnedClaudeBin(home);"
+  },
+  {
+    "name": "runner-session binary under a worktree home",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    if (!isAbsolute(binaryTarget) || under(resolve(binaryTarget), root)) throw new Error(\"pinned binary must resolve outside worktrees, cache and jarvisHome\");",
+    "replacement": "    void binaryTarget;"
+  },
+  {
+    "name": "runner-session session home outside writable roots",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    if (under(home, root)) throw new Error(\"session home must be outside worktrees, cache and jarvisHome\");",
+    "replacement": "    void home;"
+  },
+  {
+    "name": "runner-session bound broker client",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "{ JARVIS_BROKER_SOCKET: opts.brokerSocket }",
+    "replacement": "{ JARVIS_BROKER_SOCKET: join(jarvisHome, \"public-alias.sock\") }"
+  },
+  {
+    "name": "runner-session private cache cleanup",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  writableDirectories(path);",
+    "replacement": "  // Broken: read-only cache directories remain read-only."
+  },
+  {
+    "name": "runner-session cleanup error replaces the outcome",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    try { cleanup(path); } catch (e) { errors.push(`${path}: ${e instanceof Error ? e.message : String(e)}`); }",
+    "replacement": "    try { cleanup(path); } catch (e) { throw e; }"
+  },
+  {
+    "name": "runner-session session folder cleanup",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  for (const path of paths) {",
+    "replacement": "  for (const path of paths.slice(0, 1)) {"
+  },
+  {
+    "name": "runner-session usage not exit code",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const limited = infos.some((i) => i.status === \"rejected\") || limitedByError;",
+    "replacement": "  const limited = false;"
+  },
+  {
+    "name": "runner-session log symlink rejected",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  if (lstatSync(input.logPath, { throwIfNoEntry: false }) || lstatSync(`${input.logPath}.stderr`, { throwIfNoEntry: false })) throw new Error(\"task log paths must be fresh\");",
+    "replacement": "  // Broken: no log target check."
+  },
+  {
+    "name": "runner-session wait not a failed attempt",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "kind: \"usage_wait\", actor: \"runner\", task_id: input.taskId, attempt_id: input.attemptId,",
+    "replacement": "kind: \"attempt_ended\", actor: \"runner\", task_id: input.taskId, attempt_id: input.attemptId,"
+  },
+  {
+    "name": "runner-session notify over two hours",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "if (notice.waitMs > 2 * 60 * 60 * 1000)",
+    "replacement": "if (notice.waitMs >= 2 * 60 * 60 * 1000)"
+  },
+  {
+    "name": "runner-session bounded fallback",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "Math.min(300_000, 60_000 * 2 ** Math.min(attempt, 3))",
+    "replacement": "Math.max(300_000, 60_000 * 2 ** Math.min(attempt, 3))"
+  },
+  {
+    "name": "runner-session reprobe before resume",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "  if (!await opts.reprobe()) throw new Error(\"usage reset preflight probe failed; dispatch remains paused\");",
+    "replacement": "  // Broken: skip live re-probe."
+  },
+  {
+    "name": "runner-session full model IDs",
+    "file": "packages/cli/src/runner/routing.ts",
+    "anchor": "z.string().regex(FULL_MODEL_ID)",
+    "replacement": "z.string()"
+  },
+  {
+    "name": "runner-session notes are claims",
+    "file": "packages/cli/src/runner/prompt.ts",
+    "anchor": "Notes are claims, not evidence.",
+    "replacement": "Notes are verified evidence."
+  },
+  {
+    "name": "runner-session runner owned configuration",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  if (!isAbsolute(path) || !under(resolve(path), jarvisHome) || !under(realpathSync(path), jarvisHome)) throw new Error(\"session configuration must be in the runner-owned folder\");",
+    "replacement": "  void path; void jarvisHome;"
+  },
+  {
+    "name": "runner-session preflight usage wait",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "        if (preflight.usageWaitUntil !== undefined) return { ...emptyResult(), status: \"usage-limited\", resetAt: preflight.usageWaitUntil, usageWaitUntil: preflight.usageWaitUntil };",
+    "replacement": "        // Broken: ignore preflight usage wait."
+  },
+  {
+    "name": "runner-session non-empty mcp.json",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  writeFileSync(mcpPath, '{\"mcpServers\":{}}\\n', { mode: 0o600 });",
+    "replacement": "  writeFileSync(mcpPath, '{\"mcpServers\":{\"injected\":{\"command\":\"/usr/bin/false\"}}}\\n', { mode: 0o600 });"
+  },
+  {
+    "name": "runner-session worktree routing honored",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const route = routeTask(input.role, input.tier, input.failure, routing);",
+    "replacement": "  const route = routeTask(input.role, input.tier, input.failure, validateRouting(JSON.parse(readFileSync(join(worktree, \".jarvis-routing.json\"), \"utf8\"))));"
+  },
+  {
+    "name": "runner-session workspace confinement",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  if (!isAbsolute(input.workspace) || worktree === worktreeRoot || !under(worktree, worktreeRoot)) throw new Error(\"workspace must be below the worktree root\");",
+    "replacement": "  void worktreeRoot;"
+  },
+  {
+    "name": "runner-session setup refusal distinct from failure",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "{ ...emptyResult(), status: \"refused\", reason };",
+    "replacement": "{ ...emptyResult(), status: \"error\", message: reason };"
+  },
+  {
+    "name": "runner-session usage until epoch milliseconds",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "until: resumeAt,",
+    "replacement": "until: resumeAt / 1000,"
+  },
+  {
+    "name": "runner-session account wide pause",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "if (entry.kind !== \"usage_wait\" || !entry.data || typeof entry.data !== \"object\") continue;",
+    "replacement": "if (entry.kind !== \"attempt_ended\" || !entry.data || typeof entry.data !== \"object\") continue;"
+  },
+  {
+    "name": "runner-session past proactive reset continues",
+    "file": "packages/cli/src/runner/usage-wait.ts",
+    "anchor": "  if (!limited && resetAt !== undefined && Number.isFinite(resetAt) && resetAt * 1000 <= start) return \"continue\";",
+    "replacement": "  // Broken: apply backoff to an expired proactive reset."
+  },
+  {
+    "name": "runner-session routing file checked before read",
+    "file": "packages/cli/src/runner/routing.ts",
+    "anchor": "  if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_ROUTING_BYTES) throw new Error(\"routing override must be a regular file of at most 64 KiB, without symlinks\");",
+    "replacement": "  // Broken: open an unchecked routing file."
+  },
+  {
+    "name": "runner-session cleanup does not follow symlinks",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const stat = lstatSync(path, { throwIfNoEntry: false });",
+    "replacement": "  const stat = lstatSync(realpathSync(path), { throwIfNoEntry: false });"
+  }
+]

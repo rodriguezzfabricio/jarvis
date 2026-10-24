@@ -1,0 +1,46 @@
+export interface TaskPromptInput {
+  taskId: string;
+  goal: string;
+  exitCondition: string;
+  acceptanceCriteria: readonly string[];
+  decisions: readonly string[];
+  specPath: string;
+  mayNotTouch: readonly string[];
+  maxTurns: number;
+}
+
+export interface RunHeaderInput extends TaskPromptInput {
+  runId: string;
+  specVersion: number;
+}
+
+export function taskNotesPath(taskId: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(taskId)) throw new Error("invalid task id for notes path");
+  return `.jarvis/notes/${taskId}.md`;
+}
+
+export function buildTaskPrompt(input: TaskPromptInput): string {
+  const notes = taskNotesPath(input.taskId);
+  if (!Number.isInteger(input.maxTurns) || input.maxTurns < 1) throw new Error("turn cap must be a positive integer");
+  return [
+    `Task: ${input.taskId}`,
+    `Goal: ${input.goal}`,
+    `Exit condition: ${input.exitCondition}; or stop after ${input.maxTurns} turns.`,
+    `Acceptance criteria: ${input.acceptanceCriteria.join(", ") || "none"}`,
+    `Relevant decisions:\n${input.decisions.map((d) => `- ${d}`).join("\n") || "none"}`,
+    `Spec: ${input.specPath}`,
+    `May not touch:\n${input.mayNotTouch.map((p) => `- ${p}`).join("\n") || "none"}`,
+    `Write your result notes to ${notes}.`,
+  ].join("\n");
+}
+
+/** Returned text belongs in a runner-owned file, passed by the harness as the run header. */
+export function buildRunHeader(input: RunHeaderInput): string {
+  return [
+    `Jarvis run: ${input.runId}`,
+    `Spec version: ${input.specVersion}`,
+    buildTaskPrompt(input),
+    "Notes are claims, not evidence. Only the runner makes evidence after this session ends, on a fresh checkout of the committed revision.",
+    "Only the runner commits candidates and runs protected checks. Do not modify check definitions, evidence or ledger files.",
+  ].join("\n") + "\n";
+}

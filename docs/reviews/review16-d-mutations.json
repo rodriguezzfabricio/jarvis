@@ -1,0 +1,188 @@
+{
+  "scope": "Focused isolated controls; not the full project mutation proof",
+  "controls": [
+    {
+      "name": "public path replacement",
+      "group": "D3",
+      "file": "packages/cli/src/broker/server.ts",
+      "anchor": "    linkSync(privatePath, socketPath);",
+      "replacement": "    rmSync(socketPath, {force:true}); linkSync(privatePath, socketPath);",
+      "classification": "caught",
+      "detail": "3 failing assertion(s): refuses to replace an active socket and keeps routing to its owner; preserves an existing file or symlink (symlink=false) on failed start",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "close removes replacement",
+      "group": "D3",
+      "file": "packages/cli/src/broker/server.ts",
+      "anchor": "if (current?.dev === owned.dev && current.ino === owned.ino)",
+      "replacement": "if (current)",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): closing a displaced owner preserves its replacement socket",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "project omitted from address",
+      "group": "D3",
+      "file": "packages/cli/src/broker/server.ts",
+      "anchor": "JSON.stringify([project, run])",
+      "replacement": "JSON.stringify([run])",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): assigns different addresses to separate projects and runs",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "run omitted from address",
+      "group": "D3",
+      "file": "packages/cli/src/broker/server.ts",
+      "anchor": "JSON.stringify([project, run])",
+      "replacement": "JSON.stringify([project])",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): assigns different addresses to separate projects and runs",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "foreground broker skips SIGINT cleanup",
+      "group": "D3",
+      "file": "packages/cli/src/cli.ts",
+      "anchor": "    process.once(\"SIGINT\", shutdown);",
+      "replacement": "",
+      "classification": "caught",
+      "detail": "3 failing assertion(s): foreground broker cleans up on SIGINT and explicit socket can restart; foreground broker cleans up on SIGTERM and explicit socket can restart",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "act omits explicit run socket requirement",
+      "group": "D3",
+      "file": "packages/cli/src/cli.ts",
+      "anchor": "    if (!opts.socket) throw new Error(\"Specify a run socket with --socket or JARVIS_BROKER_SOCKET; use the path printed by jarvis broker.\");",
+      "replacement": "",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): act requires an explicit run socket instead of falling back to a global broker",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "foreground broker skips SIGHUP cleanup",
+      "group": "D3",
+      "file": "packages/cli/src/cli.ts",
+      "anchor": "    process.once(\"SIGHUP\", shutdown);",
+      "replacement": "",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): foreground broker cleans up on SIGHUP and explicit socket can restart",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d3-sighup-controls-0ml8__cx/classifier-report.json"
+    },
+    {
+      "name": "lock reclaimed without a marker",
+      "group": "D5",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "anchor": "      if (!existsSync(marker) && this.createOwned(marker, mine)) {",
+      "replacement": "      if (true) {",
+      "classification": "caught",
+      "detail": "4 failing assertion(s): never reclaims a stale lock another live reclaimer is already handling, and never loops forever; recovers repeated crashed reclaimers with bounded names and respects a live deepest owner",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d5-m1-controls-3kexdwuw/classifier-report.json",
+      "replacesExisting": "lock reclaimed without a marker"
+    },
+    {
+      "name": "a dead reclaimer's marker blocks forever",
+      "group": "D5",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "anchor": "      if (m && !pidAlive(m.pid)) {",
+      "replacement": "      if (false) {",
+      "classification": "caught",
+      "detail": "2 failing assertion(s) + 3 refused by Jarvis guards: recovers when a reclaimer died holding its marker, at any depth; never recreates a legacy descendant after it disappears while a bounded competitor claims the parent",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d5-m1-controls-3kexdwuw/classifier-report.json",
+      "replacesExisting": "a dead reclaimer's marker blocks forever"
+    },
+    {
+      "name": "D5 bounded names removed",
+      "group": "D5",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "anchor": "      const marker = depth === 0\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);",
+      "replacement": "      const marker = legacy;",
+      "classification": "caught",
+      "detail": "2 failing assertion(s) + 1 refused by Jarvis guards: recovers repeated crashed reclaimers with bounded names and respects a live deepest owner; never recreates a legacy descendant after it disappears while a bounded competitor claims the parent",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d5-m1-controls-3kexdwuw/classifier-report.json"
+    },
+    {
+      "name": "M1 legacy creation name depends on existence",
+      "group": "D5",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "anchor": "      if (depth > 0 && legacyFits && existsSync(legacy)) {\n        this.opts.onLockStep?.(\"legacy-observed\");\n        const previous = readOwner(legacy);\n        if (previous && !pidAlive(previous.pid)) {\n          path = legacy;\n          h = previous;\n          depth++;\n          continue;\n        }\n        sleepMs(2 + Math.floor(Math.random() * 5));\n        return;\n      }\n      const marker = depth === 0\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n",
+      "replacement": "      const marker = legacyFits && (depth === 0 || existsSync(legacy))\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n      if (depth > 0 && marker === legacy) this.opts.onLockStep?.(\"legacy-observed\");\n",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): never recreates a legacy descendant after it disappears while a bounded competitor claims the parent",
+      "evidence": "/var/folders/6k/xsznvp4d4091y0cywp1yf0500000gn/T/jarvis-d5-m1-controls-3kexdwuw/classifier-report.json"
+    },
+    {
+      "name": "D4 conflicting answer throw to silent return",
+      "group": "D4-D8",
+      "file": "packages/cli/src/broker/broker.ts",
+      "anchor": "if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);",
+      "replacement": "if (firstDecision !== decision) return;",
+      "classification": "caught",
+      "detail": "5 failing assertion(s): keeps the first valid answer when approve is followed by reject; keeps the first valid answer when reject is followed by approve",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    },
+    {
+      "name": "D4 first linked answer find to findLast",
+      "group": "D4-D8",
+      "file": "packages/cli/src/broker/broker.ts",
+      "anchor": "const firstAnswer = open && es.find((e) => {",
+      "replacement": "const firstAnswer = open && es.findLast((e) => {",
+      "classification": "caught",
+      "detail": "2 failing assertion(s): honors the first valid linked answer in older ledgers (approve then reject); honors the first valid linked answer in older ledgers (reject then approve)",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    },
+    {
+      "name": "D4 linked answer payload hash predicate removed",
+      "group": "D4-D8",
+      "file": "packages/cli/src/broker/broker.ts",
+      "anchor": "return d.approvalId === openData?.approvalId && d.payloadHash === hash && d.op === op",
+      "replacement": "return d.approvalId === openData?.approvalId && d.op === op",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): does not accept a linked answer whose payload hash differs from its request",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    },
+    {
+      "name": "D4 operation-only approval binding (prior shared control)",
+      "group": "D4-D8",
+      "file": "packages/cli/src/broker/broker.ts",
+      "anchor": "        const open = es.find((e) => e.kind === \"approval_request\" && (e.data as D).payloadHash === hash && (e.data as D).op === op);\n        const openData = open?.data as D | undefined;\n        const firstAnswer = open && es.find((e) => {\n          if (e.kind !== \"approval\") return false;\n          const d = e.data as D;\n          return d.approvalId === openData?.approvalId && d.payloadHash === hash && d.op === op\n            && (d.decision === \"approve\" || d.decision === \"reject\");\n        });",
+      "replacement": "        const open = es.find((e) => e.kind === \"approval_request\" && (e.data as D).op === op);\n        const openData = open?.data as D | undefined;\n        const firstAnswer = open && es.find((e) => {\n          if (e.kind !== \"approval\") return false;\n          const d = e.data as D;\n          return d.approvalId === openData?.approvalId && d.op === op\n            && (d.decision === \"approve\" || d.decision === \"reject\");\n        });",
+      "classification": "caught",
+      "detail": "3 failing assertion(s): does not let an approval cover a changed payload; does not accept an answer linked to a different approval request",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json",
+      "replacesExisting": "broker approves by operation, not payload"
+    },
+    {
+      "name": "D8 hook exact-key validation bypassed",
+      "group": "D4-D8",
+      "file": "packages/cli/src/doctor/foundation.ts",
+      "anchor": "const keys = Object.keys(entry).sort();\n          return keys.join(\"\\0\") === [\"command\", \"type\"].join(\"\\0\")\n            && entry.type === \"command\" && entry.command === command;",
+      "replacement": "return entry.type === \"command\" && entry.command === command;",
+      "classification": "caught",
+      "detail": "2 failing assertion(s): fails when the plugin has asynchronous tripwire; fails when the plugin has tripwire with tiny timeout",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    },
+    {
+      "name": "D8 old truthy registration check",
+      "group": "D4-D8",
+      "file": "packages/cli/src/doctor/foundation.ts",
+      "anchor": "const ok = registrationsMatch(\"PreToolUse\", 'node \"${CLAUDE_PLUGIN_ROOT}/hooks/tripwire.mjs\"', \"Bash|Read|Edit|Write|Glob|Grep\")\n      && registrationsMatch(\"SessionStart\", 'node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"')\n      && existsSync(join(d.pluginDir, \"hooks\", \"tripwire.mjs\"))\n      && existsSync(join(d.pluginDir, \"hooks\", \"session-start.mjs\"))\n      && manifest.name === \"jarvis\"\n      && typeof manifest.version === \"string\" && manifest.version.length > 0;",
+      "replacement": "const ok = !!hooks.hooks?.PreToolUse && existsSync(join(d.pluginDir, \"hooks\", \"tripwire.mjs\")) && existsSync(join(d.pluginDir, \".claude-plugin\", \"plugin.json\"));",
+      "classification": "caught",
+      "detail": "12 failing assertion(s): fails when the plugin has missing SessionStart; fails when the plugin has empty PreToolUse",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    },
+    {
+      "name": "D8 SessionStart matcher strictness bypassed",
+      "group": "D4-D8",
+      "file": "packages/cli/src/doctor/foundation.ts",
+      "anchor": "const expectedRegistrationKeys = (matcher === undefined ? [\"hooks\"] : [\"hooks\", \"matcher\"]).sort();\n        if (registrationKeys.join(\"\\0\") !== expectedRegistrationKeys.join(\"\\0\")) return false;\n        if (candidate.matcher !== matcher) return false;",
+      "replacement": "const onlyHooks = registrationKeys.join(\"\\0\") === \"hooks\";\n        const hooksAndMatcher = registrationKeys.join(\"\\0\") === \"hooks\\0matcher\";\n        if (!onlyHooks && !hooksAndMatcher) return false;\n        if (matcher !== undefined && candidate.matcher !== matcher) return false;",
+      "classification": "caught",
+      "detail": "1 failing assertion(s): fails when the plugin has restrictive SessionStart matcher",
+      "evidence": "/tmp/jarvis-payload-controls.AUgg8U/raw-results.json"
+    }
+  ]
+}

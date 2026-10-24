@@ -76,7 +76,10 @@ run() {
 quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 [ -n "${HOME:-}" ] || die "HOME is not set"
-[ "$(id -u)" -ne 0 ] || die "don't run the installer as root or with sudo; it only writes to your own folders"
+# Before any write or binary call. JARVIS_INSTALL_TEST_UID lets a test claim root; it can't hide root.
+INSTALL_UID=$(id -u)
+if [ "${JARVIS_INSTALL_TEST_UID:-}" = "0" ]; then INSTALL_UID=0; fi
+[ "$INSTALL_UID" -ne 0 ] || die "don't run the installer as root or with sudo; it only writes to your own folders"
 [ -n "$PREFIX" ] || PREFIX="$HOME/.local"
 case "$PREFIX" in /*) ;; *) die "--prefix must be an absolute path" ;; esac
 
@@ -105,11 +108,21 @@ PNPM_BIN=$(command -v pnpm 2>/dev/null) || die "pnpm not found on PATH. Node 24 
 say "ok    pnpm ($PNPM_BIN)"
 
 # 2. Pinned binaries (checked, never installed) ----------------------------------------------------
+# Every call to a pinned binary, even `--version` on a dry run, gets a clean environment built from an
+# allowlist (decision 58), so tokens, CLAUDE_CONFIG_DIR or provider variables in your shell never reach
+# it. Node's folder is on PATH because codex-cli is a Node script.
+CLEAN_PATH="$(dirname "$NODE_BIN"):/usr/bin:/bin:/usr/sbin:/sbin"
+clean_env() {
+  env -i HOME="$HOME" USER="${USER:-$(id -un)}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" \
+    SHELL="${SHELL:-/bin/sh}" PATH="$CLEAN_PATH" "$@"
+}
+claude_clean() { clean_env "$CLAUDE_BIN" "$@"; }
+
 step "Checking pinned Claude Code $CLAUDE_VERSION and codex-cli $CODEX_VERSION"
 CLAUDE_BIN="$HOME/.local/share/claude/versions/$CLAUDE_VERSION"
 CLAUDE_OK=0
 if [ -x "$CLAUDE_BIN" ]; then
-  CLAUDE_REPORTED=$("$CLAUDE_BIN" --version 2>/dev/null || true)
+  CLAUDE_REPORTED=$(claude_clean --version 2>/dev/null || true)
   case "$CLAUDE_REPORTED" in
     "$CLAUDE_VERSION "*) CLAUDE_OK=1; say "ok    $CLAUDE_BIN ($CLAUDE_REPORTED)" ;;
     *) warn "$CLAUDE_BIN reports '$CLAUDE_REPORTED', expected $CLAUDE_VERSION" ;;
@@ -120,7 +133,7 @@ else
 fi
 CODEX_BIN="$HOME/.npm-global/bin/codex"
 if [ -x "$CODEX_BIN" ]; then
-  CODEX_REPORTED=$("$CODEX_BIN" --version 2>/dev/null || true)
+  CODEX_REPORTED=$(clean_env "$CODEX_BIN" --version 2>/dev/null || true)
   case "$CODEX_REPORTED" in
     *"$CODEX_VERSION"*) say "ok    $CODEX_BIN ($CODEX_REPORTED)" ;;
     *) warn "$CODEX_BIN reports '$CODEX_REPORTED', pinned $CODEX_VERSION; reviews fall back to the Claude reviewer" ;;
@@ -166,12 +179,7 @@ case ":${PATH:-}:" in
 esac
 
 # 5. The Claude Code plugin ---------------------------------------------------------------------------
-# The pinned Claude Code runs with a clean environment (decision 58), so a CLAUDE_CONFIG_DIR or
-# provider variable in your shell can't redirect where the plugin is installed.
-claude_clean() {
-  env -i HOME="$HOME" USER="${USER:-$(id -un)}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" \
-    SHELL="${SHELL:-/bin/sh}" PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$CLAUDE_BIN" "$@"
-}
+# claude_clean (section 2) means a CLAUDE_CONFIG_DIR in your shell can't redirect where the plugin goes.
 step "Installing the Jarvis plugin into Claude Code (user scope)"
 if [ "$PLUGIN" -eq 0 ]; then
   say "skipped (--no-plugin)"

@@ -803,6 +803,21 @@ This extends decision 72's overlap by one stage:
 
 *From:* Fabricio, Oct 24.
 
+### 82. Stage 2's Codex lanes run as CLI workers the integrator launches (new; Oct 24)
+Fabricio, Oct 24 (relayed by the "Work status check" session), on whether Codex is called through the CLI or needs his input: "Id prefer the first design", and after the design: "I like this why didn't you start it ?" He wants no manual input from him.
+
+**How a lane worker runs:**
+- **One clone per lane, not a git worktree:** `~/.jarvis-work/lanes/<lane>`, a `--no-hardlinks` clone of main with `origin` removed and hooks off. A linked worktree would need write access to main's `.git`, where a worker could plant hooks the integrator's git would then run.
+- **The pinned Codex** (`pinnedCodexBin`, decision 66), launched as `codex exec -s workspace-write -C <clone> -m gpt-6.1-sol -c model_reasoning_effort="high" --json -o <run>/final.md -- "<brief>"`. Stdin is `/dev/null`. The environment is decision 66's: `env -i` plus `HOME` (the empty one), `USER`, `PATH` and `CODEX_HOME`. Not `--ephemeral`, so `codex exec resume <id>` can send follow-ups.
+- **Checked on Oct 24 with a smoke worker:** writes outside the clone are denied, and so are writes to the clone's own `.git` (Codex protects it). Commands have no network ("Could not resolve host"). So workers can't commit, push or reach a host. They leave changes in the working tree, and the integrator reads the diff and commits it, crediting the worker.
+- **Tooling:** dependencies are installed by the integrator before launch. Workers call `node_modules/.bin/vitest` and `node_modules/.bin/tsc` directly, because `pnpm` through corepack would try to download itself into the empty `HOME`.
+- **Tests:** workers run only their own test files (decision 81, rule 3). While `~/.jarvis-work/quiet-slot` exists they run no tests at all, and wait. The integrator creates that file for its full suites, mutation runs and review evidence, and removes it afterwards. The Codex app chat and the Claude worker follow the same rule.
+- **Independent review:** a worker can't run one, since it has no network. The integrator has each lane's diff reviewed by a fresh reviewer from the other model family (Opus) before integration, then runs the full suite and mutation check in its quiet slot.
+- **One writer per lane:** lanes 1–3 move from the Codex app chat to CLI workers. The app chat keeps the desktop kit and lane 6.
+- **Plan usage:** three workers at once use Fabricio's ChatGPT plan about three times as fast. He accepted that. A stage review takes priority: if the plan's limit nears, workers pause before review lanes do.
+
+*From:* Fabricio, Oct 24; the integrator's smoke test.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "override ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  if (input.override !== undefined) {",
+    "replacement": "  if (false) {"
+  },
+  {
+    "name": "bug pipeline runs intake",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "steps(\"reproduce\", \"failing-test\"",
+    "replacement": "steps(\"intake\", \"reproduce\", \"failing-test\""
+  },
+  {
+    "name": "empty folder not a new product",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  } else if (input.folder.empty && j.type !== \"question\") {",
+    "replacement": "  } else if (false) {"
+  },
+  {
+    "name": "triage override loses to missing behavior",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (decidedBy === \"override\") add(\"missing-behavior\"",
+    "replacement": "if (false) add(\"missing-behavior\""
+  },
+  {
+    "name": "triage model judgment ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  } else if (j.type !== undefined) {",
+    "replacement": "  } else if (false) {"
+  },
+  {
+    "name": "triage upgrade is silent",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "announcement: upgradeSentence(tier === 2, j.questions)",
+    "replacement": "announcement: \"\""
+  },
+  {
+    "name": "triage missing behavior never upgrades",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "      upgraded = true;",
+    "replacement": "      upgraded = false;"
+  },
+  {
+    "name": "triage judgment lowers the tier",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (j.tier !== undefined && j.tier > t) {",
+    "replacement": "if (j.tier !== undefined) {"
+  },
+  {
+    "name": "triage bug can be tier 2",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  bug: [0, 1],",
+    "replacement": "  bug: [0, 2],"
+  },
+  {
+    "name": "triage multi-sentence bug is tier 0",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "risky || sentences > 1 ? 1 : 0",
+    "replacement": "risky ? 1 : 0"
+  },
+  {
+    "name": "triage several modules ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "dirs.size >= 3 ?",
+    "replacement": "dirs.size >= 30 ?"
+  },
+  {
+    "name": "triage pasted errors not detected",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const errorLine = lines.find((l) => ERROR_LINES.some((re) => re.test(l)));",
+    "replacement": "const errorLine = lines.find(() => false);"
+  },
+  {
+    "name": "triage design runs despite DESIGN.md",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "j.newScreen === true && !input.folder.designMd);",
+    "replacement": "j.newScreen === true);"
+  },
+  {
+    "name": "triage question allows edits",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "never: [\"any edit\"]",
+    "replacement": "never: []"
+  },
+  {
+    "name": "triage folder with one file is empty",
+    "file": "packages/cli/src/triage/folder.ts",
+    "anchor": "empty: entries.length === 0,",
+    "replacement": "empty: entries.length <= 1,"
+  },
+  {
+    "name": "triage symlinked DESIGN.md counts",
+    "file": "packages/cli/src/triage/folder.ts",
+    "anchor": "lstatSync(join(dir, \"DESIGN.md\"))",
+    "replacement": "statSync(join(dir, \"DESIGN.md\"))"
+  },
+  {
+    "name": "triage CLI ignores the leading override word",
+    "file": "packages/cli/src/triage/command.ts",
+    "anchor": "(opts.literal ? undefined : leadingOverride(request))",
+    "replacement": "undefined"
+  },
+  {
+    "name": "triage CLI drops the model's judgment",
+    "file": "packages/cli/src/triage/command.ts",
+    "anchor": "          ...(Object.keys(judgment).length ? { judgment } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "jarvis command skips the hand-off",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "Then run `jarvis run --detach` and tell",
+    "replacement": "Then tell"
+  },
+  {
+    "name": "jarvis command hides the upgrade",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "the `upgrade.announcement` sentence word for word when there is one, then the `headline`. Never upgrade silently.",
+    "replacement": "the `headline`."
+  }
+]

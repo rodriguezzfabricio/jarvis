@@ -161,7 +161,8 @@ for (const st of steps) {
     if (mode !== "leak-network" && mode !== "dns-fail") res.push(`<sandbox_violations>\ndeny network-outbound ${blockedHost}:443 (user denied)\n</sandbox_violations>`);
     { const f = target("G", /printf x > (\S+)\)/); if (mode === "escape-write") { writeFileSync(f, "x"); res.push("G:written"); } else res.push("G:blocked"); }
     { const f = target("H", /printf x > (\S+)\)/); if (mode === "git-hook") { writeFileSync(f, "x"); res.push("H:written"); } else res.push("H:blocked"); }
-    { const f = target("T", /^cat (\S+)/); res.push(`T:cat: ${f}: Operation not permitted`); }
+    // 2.1.309 lets sandboxed shells read /private/tmp outside the worktree (live probe, Oct 24).
+    { const f = target("T", /^cat (\S+)/); res.push(`T:${readFileSync(f, "utf8").trim()}`); }
     if (mode !== "link-silent") {
       const ln = (k) => line(k).match(/ln (\S+) (\S+) 2>&1/).slice(1);
       res.push(linkLine("Lc", ln("Lc"), mode === "cache-link-lies" ? { lie: true } : mode === "cache-link-refused" ? {} : { make: true }));

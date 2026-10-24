@@ -243,3 +243,33 @@ describe("review status is read-only, advisory and conservative", () => {
     expect(spawnSync(process.execPath, [script, f.base], { encoding: "utf8" }).status).toBe(1);
   });
 });
+
+describe('decision 79 lane manifests preserve historical reviews', () => {
+  it('uses an explicit A,B,D manifest without requiring C', () => {
+    const f = fixture(true);
+    writeFileSync(join(f.round, 'lanes'), 'lanes A,B,D\n');
+    writeFileSync(join(f.round, 'status'), 'evidence-done\nlane A exit 0\nlane B exit 0\nlane D exit 0\ncodex-done\n');
+    expect(read(f.base).result).toBe('PASS');
+    expect(read(f.base).lanes.map((x: {id: string}) => x.id)).toEqual(['A', 'B', 'D']);
+  });
+  it('rejects missing required lanes, invalid manifests, and undeclared completions', () => {
+    for (const manifest of ['lanes A,B\n', 'lanes A,B,B,D\n', 'lanes A,B,E\n', '', 'lanes A,B,D\nextra']) {
+      const f = fixture(true); writeFileSync(join(f.round, 'lanes'), manifest);
+      expect(read(f.base).result).toBe('FAIL');
+    }
+    const f = fixture(true); writeFileSync(join(f.round, 'lanes'), 'lanes A,B,D\n');
+    expect(read(f.base).result).toBe('FAIL');
+  });
+  it('fails future parallel rounds without a manifest', () => {
+    const f = fixture(true);
+    const newer = join(f.base, 'stage0-17'); mkdirSync(newer);
+    writeFileSync(join(newer, 'status'), 'evidence-done\n');
+    expect(inspectReviews(f.base).rounds[1].problems).toContain('missing lane manifest');
+  });
+  it('never downgrades historical lane C high findings', () => {
+    const f = fixture(true);
+    writeFileSync(join(f.round, 'verdict-C.json'), JSON.stringify(verdict({ verdict: 'FAIL', findings: [{ severity: 'high', title: 'historical', file: 'x', line: 1, scenario: 'x', fix: 'x' }] })));
+    expect(read(f.base).result).toBe('FAIL');
+    expect(read(f.base).lanes.find((x: {id: string}) => x.id === 'C').findings.high).toBe(1);
+  });
+});

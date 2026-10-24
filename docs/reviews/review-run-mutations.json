@@ -1,0 +1,63 @@
+[
+  {
+    "name": "review manifest ignored",
+    "file": "scripts/review-status.mjs",
+    "anchor": "    else ids = declared;",
+    "replacement": "    else ids = [\"A\", \"B\", \"C\", \"D\"];"
+  },
+  {
+    "name": "review required lanes ignored",
+    "file": "scripts/review-status.mjs",
+    "anchor": "    if (missing.length) problems.push",
+    "replacement": "    if (false) problems.push"
+  },
+  {
+    "name": "fourth review lane ignored",
+    "file": "scripts/review-status.mjs",
+    "anchor": "let ids = parallel ? [\"A\", \"B\", \"C\", \"D\"] : [\"single\"];",
+    "replacement": "let ids = parallel ? [\"A\", \"B\", \"D\"] : [\"single\"];",
+    "replacesExisting": "fourth review lane ignored"
+  },
+  {
+    "name": "review manifest validation bypassed",
+    "file": "scripts/review-status.mjs",
+    "anchor": "    if (!match || new Set(declared).size !== declared.length) problems.push(\"invalid lane manifest\");",
+    "replacement": "    if (false) problems.push(\"invalid lane manifest\");"
+  },
+  {
+    "name": "review runner inherits parent environment",
+    "file": "scripts/review-run.mjs",
+    "anchor": "const env = codexEnvironment(home);",
+    "replacement": "const env = { ...process.env, ...codexEnvironment(home) };"
+  },
+  {
+    "name": "review runner accepts dirty source",
+    "file": "scripts/review-run.mjs",
+    "anchor": "  if (git(repo, ['status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');",
+    "replacement": ""
+  },
+  {
+    "name": "review runner exposes builder response",
+    "file": "scripts/review-run.mjs",
+    "anchor": "if (name.endsWith('-response.md')) unlinkSync",
+    "replacement": "if (false) unlinkSync"
+  },
+  {
+    "name": "review runner loses lane failure",
+    "file": "scripts/review-run.mjs",
+    "anchor": "`lane ${l} exit ${code}\\n`",
+    "replacement": "`lane ${l} exit 0\\n`"
+  },
+  {
+    "name": "review runner gives writable sandbox",
+    "file": "scripts/review-run.mjs",
+    "anchor": "'--sandbox', 'read-only'",
+    "replacement": "'--sandbox', 'workspace-write'"
+  },
+  {
+    "name": "review runner loses evidence failure",
+    "file": "scripts/review-run.mjs",
+    "anchor": "}exit ${code}\\n`",
+    "replacement": "}exit 0\\n`"
+  }
+]

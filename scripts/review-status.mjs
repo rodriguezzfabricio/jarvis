@@ -59,11 +59,22 @@ function inspectRound(root, name) {
   const files = names(path)?.map((entry) => entry.name) ?? [];
   const statusFile = read(join(path, "status"));
   const status = statusFile.text?.trim() ?? "";
-  const parallel = /^stage0-(\d+)$/.test(name) && Number(name.split("-")[1]) >= 16 ||
+  let parallel = /^stage0-(\d+)$/.test(name) && Number(name.split("-")[1]) >= 16 ||
     files.some((file) => /^(?:prompt|verdict)-[A-D]\./.test(file)) || /^lane /m.test(status);
-  const ids = parallel ? ["A", "B", "C", "D"] : ["single"];
-  const exits = new Map();
   const problems = [];
+  const manifest = read(join(path, "lanes"));
+  const hasManifest = manifest.error !== "missing";
+  const match = /^lanes ([A-D](?:,[A-D])*)\n?$/.exec(manifest.text ?? "");
+  const declared = match ? match[1].split(",") : [];
+  let ids = parallel ? ["A", "B", "C", "D"] : ["single"];
+  if (hasManifest) {
+    if (!match || new Set(declared).size !== declared.length) problems.push("invalid lane manifest");
+    else ids = declared;
+    const missing = ["A", "B", "D"].filter(id => !declared.includes(id));
+    if (missing.length) problems.push(`lane set lacks required lanes ${missing.join(",")}, decision 79`);
+  } else if (parallel && name !== "stage0-16") problems.push("missing lane manifest");
+  parallel ||= hasManifest;
+  const exits = new Map();
   let completed = false;
   let evidenceReady = false;
   for (const line of status.split("\n").filter(Boolean)) {
@@ -78,6 +89,7 @@ function inspectRound(root, name) {
     if (!lane) { problems.push("Unrecognized status marker"); continue; }
     const id = parallel ? lane[1] : "single";
     const code = Number(parallel ? lane[2] : lane[1]);
+    if (!ids.includes(id)) problems.push(`Undeclared lane ${id}`);
     if (parallel && !evidenceReady) problems.push("Lane completion before evidence completion");
     if (exits.has(id)) problems.push(`Duplicate completion marker for ${id}`);
     exits.set(id, code);

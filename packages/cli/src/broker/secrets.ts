@@ -1,5 +1,9 @@
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, statSync, type renameSync } from "node:fs";
+import { dirname } from "node:path";
+import { privateDir, refuseSymlink, writePrivateAtomic } from "../config/private-file.ts";
 import type { SecretsBackend } from "./broker.ts";
+
+const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
 
 /**
  * The default secrets backend (decision 13): an env file at ~/.jarvis/secrets/<project>.env, owner-only.
@@ -11,11 +15,65 @@ export function envFileSecrets(path: string): SecretsBackend {
   if (typeof process.getuid === "function" && st.uid !== process.getuid()) throw new Error(`${path} must belong to the current user`);
   const values = new Map<string, string>();
   for (const line of readFileSync(path, "utf8").split("\n")) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    const m = LINE.exec(line);
     if (!m) continue;
     let v = (m[2] ?? "").trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
     values.set(m[1] ?? "", v);
   }
   return { get: (k) => values.get(k) };
+}
+
+/** The write side of the backend, used only by jarvis setup (decision 43). Errors name the key, never the value. */
+export interface SecretsWriter {
+  /** Where values go, for messages. Never a value. */
+  readonly location: string;
+  /** Creates or checks the backend before any value is asked for. */
+  prepare(): void;
+  /** brokerOnly marks a production token: only the broker's approval-bound operations may use it (decision 12). */
+  set(key: string, value: string, meta: { brokerOnly: boolean }): void;
+}
+
+/** Printable ASCII without spaces or quotes, so the reader above returns it byte for byte and no line can be injected. */
+export function isStorableSecret(value: string): boolean {
+  return /^[\x21\x23-\x26\x28-\x7e]{8,4096}$/.test(value);
+}
+
+const MARKER = "# broker-only: ";
+
+function checkOwnerOnly(path: string, what: string): void {
+  const existing = lstatSync(path, { throwIfNoEntry: false });
+  if (!existing) return;
+  if ((existing.mode & 0o077) !== 0) throw new Error(`${path}: the secrets ${what} must be owner only (it is ${(existing.mode & 0o777).toString(8)})`);
+  if (typeof process.getuid === "function" && existing.uid !== process.getuid()) throw new Error(`${path} must belong to the current user`);
+}
+
+/** Writes KEY=value lines into the env file envFileSecrets reads: owner-only folder and file, atomic replace, no symlinks. */
+export function envFileSecretsWriter(path: string, options: { rename?: typeof renameSync } = {}): SecretsWriter {
+  const directory = dirname(path);
+  const check = () => {
+    refuseSymlink(directory);
+    refuseSymlink(path);
+    checkOwnerOnly(directory, "folder");
+    checkOwnerOnly(path, "file");
+  };
+  return {
+    location: path,
+    prepare() {
+      check();
+      privateDir(directory);
+      check();
+    },
+    set(key, value, meta) {
+      if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(key)) throw new Error("Secret key names are upper-case letters, digits and underscores");
+      if (!isStorableSecret(value)) throw new Error(`Refusing to store ${key}: a token is 8 to 4096 printable ASCII characters with no spaces or quotes`);
+      check();
+      privateDir(directory);
+      const lines = lstatSync(path, { throwIfNoEntry: false }) ? readFileSync(path, "utf8").split("\n") : [];
+      const kept = lines.filter((line) => line !== "" && line !== `${MARKER}${key}` && LINE.exec(line)?.[1] !== key);
+      if (meta.brokerOnly) kept.push(`${MARKER}${key}`);
+      kept.push(`${key}=${value}`);
+      writePrivateAtomic(path, `${kept.join("\n")}\n`, options);
+    },
+  };
 }

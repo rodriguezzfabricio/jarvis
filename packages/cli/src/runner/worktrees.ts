@@ -190,7 +190,7 @@ function validateRunnerChanges(git: RunnerGit, w: TreeContext, tree?: string): v
   const comparison = tree === undefined ? ["--cached", w.baseRevision] : [w.baseRevision, tree];
   const changed = command(git, w.path, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", ...comparison, "--"], w.home).toString().split("\0").filter(Boolean);
   if (changed.some((path) => path.split("/")[0]?.toLowerCase() === ".jarvis")) throw new Error("candidate changes runner-owned .jarvis paths");
-  if (changed.some((path) => path.toLowerCase() === ".jarvis-routing.json")) throw new Error("candidate changes root routing policy");
+  if (changed.some((path) => path.toLowerCase() === ".jarvis-routing.json" || path.toLowerCase().startsWith(".jarvis-routing.json/"))) throw new Error("candidate changes root routing policy");
   if (changed.some((path) => path.toLowerCase() === ".gitignore") && !rootIgnoresRunnerFiles(git, w, tree)) throw new Error("candidate .gitignore must keep .jarvis/ ignored");
 }
 
@@ -288,6 +288,42 @@ export function checkCandidate(w: TaskWorkspace, candidate: CandidateRevision, i
   return gate({ ...input, repoPath: w.repoPath, revision: candidate.revision, taskId: w.taskId, attemptId: w.attemptId });
 }
 
+export interface MergeInput extends GitSeams {
+  repoPath: string;
+  candidate: CandidateRevision;
+  /** The run branch head the candidate's base has fallen behind. */
+  head: string;
+  home?: string;
+}
+
+/**
+ * A gated candidate whose base the run branch moved past: the runner merges it onto the new head as a
+ * new candidate on the same ref, without touching any working tree or branch. The merge is a new
+ * revision, so it is gated and reviewed again before it can be promoted (by fast-forward). Null on a
+ * conflict: the task is then redone from the new head.
+ */
+export function mergeCandidate(input: MergeInput): CandidateRevision | null {
+  requireRevision(input.candidate.revision);
+  requireRevision(input.head);
+  const git = input.git ?? safeGit;
+  const home = input.home ?? homedir();
+  const run = (args: readonly string[]) => command(git, input.repoPath, args, home).toString().trim();
+  if (!input.candidate.ref.startsWith("refs/heads/jarvis/candidates/") || run(["rev-parse", "--verify", input.candidate.ref]) !== input.candidate.revision) throw new Error("candidate ref moved or is not runner-owned");
+  let tree: string;
+  try {
+    tree = run(["merge-tree", "--write-tree", "--no-messages", "-z", input.head, input.candidate.revision]).split("\0")[0]!.trim();
+  } catch (e) {
+    if ((e as { status?: number }).status === 1) return null; // conflicts: nothing was written to a ref
+    throw e;
+  }
+  requireRevision(tree);
+  validateTree(git, { path: input.repoPath, home, baseRevision: input.head }, tree);
+  const revision = run(["commit-tree", tree, "-p", input.head, "-p", input.candidate.revision, "-m", `Jarvis merge of ${input.candidate.ref.slice("refs/heads/".length)} onto the run branch`]);
+  requireRevision(revision);
+  run(["update-ref", input.candidate.ref, revision, input.candidate.revision]);
+  return { revision, ref: input.candidate.ref };
+}
+
 /** The loop calls this only after every gate and review passed on this candidate revision. */
 export function promoteCandidate(input: PromoteInput): string {
   requireRevision(input.candidate.revision);
@@ -303,7 +339,8 @@ export function promoteCandidate(input: PromoteInput): string {
   if (run(["status", "--porcelain", "--untracked-files=all"]) !== "") throw new Error("project repository must be clean, not dirty");
   run(["checkout", "--quiet", input.runBranch]);
   try {
-    run(["merge", "--ff", "--no-edit", "--no-stat", input.candidate.revision]);
+    // Fast-forward only: a merge made here would be a revision no gate or reviewer saw (Opus loop review H1).
+    run(["merge", "--ff-only", "--no-edit", "--no-stat", input.candidate.revision]);
   } catch (e) {
     run(["merge", "--abort"]);
     throw e;

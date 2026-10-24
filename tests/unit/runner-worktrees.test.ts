@@ -2,7 +2,7 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, rm
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
-import { checkCandidate, commitCandidate, createWorkspace, deleteCandidateBranches, promoteCandidate, readTaskNotes } from "../../packages/cli/src/runner/worktrees.ts";
+import { checkCandidate, commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes } from "../../packages/cli/src/runner/worktrees.ts";
 import { runGate, verifyEvidence, type GateInput, type GateResult } from "../../packages/cli/src/checks/gate.ts";
 import * as sandbox from "../../packages/cli/src/sandbox/srt.ts";
 import { runSession } from "../../packages/cli/src/proc/session.ts";
@@ -351,25 +351,84 @@ describe("independent task workspaces", () => {
     expect(git(p.repoPath, "rev-parse", ref)).toBe(newer);
   });
 
-  it("fast-forwards an accepted candidate, keeps the last-green tag, and can merge a divergence", () => {
-    for (const diverge of [false, true]) {
-      const p = project();
-      const w = createWorkspace(p.options);
-      writeFileSync(join(w.path, "value"), "candidate");
-      const candidate = commitCandidate(w);
-      if (diverge) {
-        writeFileSync(join(p.repoPath, "other"), "parallel");
-        git(p.repoPath, "add", "-A");
-        git(p.repoPath, "commit", "-qm", "other task");
-      }
-      const expectedHead = git(p.repoPath, "rev-parse", "HEAD");
-      const revision = promoteCandidate({ ...p.options, candidate, runBranch: "run", expectedHead });
-      expect(git(p.repoPath, "rev-parse", "last-green")).toBe(revision);
-      expect(git(p.repoPath, "rev-parse", "run")).toBe(revision);
-      expect(readFileSync(join(p.repoPath, "value"), "utf8")).toBe("candidate");
-      if (!diverge) expect(revision).toBe(candidate.revision);
-      else expect(git(p.repoPath, "show", "-s", "--format=%P").split(" ")).toEqual([expectedHead, candidate.revision]);
-    }
+  it("fast-forwards an accepted candidate and tags exactly that revision last-green", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "value"), "candidate");
+    const candidate = commitCandidate(w);
+    const revision = promoteCandidate({ ...p.options, candidate, runBranch: "run", expectedHead: p.baseRevision });
+    expect(revision).toBe(candidate.revision);
+    expect(git(p.repoPath, "rev-parse", "last-green")).toBe(revision);
+    expect(git(p.repoPath, "rev-parse", "run")).toBe(revision);
+    expect(readFileSync(join(p.repoPath, "value"), "utf8")).toBe("candidate");
+  });
+
+  // Opus loop review H1: a merge commit made at promotion was never gated or reviewed.
+  it("never promotes a candidate whose base the run branch has moved past", () => {
+    const p = project();
+    git(p.repoPath, "tag", "last-green", p.baseRevision);
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "value"), "candidate");
+    const candidate = commitCandidate(w);
+    writeFileSync(join(p.repoPath, "other"), "parallel");
+    git(p.repoPath, "add", "-A");
+    git(p.repoPath, "commit", "-qm", "other task");
+    const expectedHead = git(p.repoPath, "rev-parse", "HEAD");
+    expect(() => promoteCandidate({ ...p.options, candidate, runBranch: "run", expectedHead })).toThrow();
+    expect(git(p.repoPath, "rev-parse", "run")).toBe(expectedHead);
+    expect(git(p.repoPath, "rev-parse", "last-green")).toBe(p.baseRevision);
+    expect(git(p.repoPath, "status", "--porcelain")).toBe("");
+  });
+
+  it("merges a candidate onto a moved run branch as a new runner-made candidate, never touching the branch", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "mine"), "candidate");
+    const candidate = commitCandidate(w);
+    writeFileSync(join(p.repoPath, "other"), "parallel");
+    git(p.repoPath, "add", "-A");
+    git(p.repoPath, "commit", "-qm", "other task");
+    const head = git(p.repoPath, "rev-parse", "HEAD");
+    const merged = mergeCandidate({ repoPath: p.repoPath, candidate, head, home: root });
+    expect(merged).not.toBeNull();
+    expect(merged!.ref).toBe(candidate.ref);
+    expect(git(p.repoPath, "rev-parse", candidate.ref)).toBe(merged!.revision);
+    expect(git(p.repoPath, "show", "-s", "--format=%P", merged!.revision).split(" ")).toEqual([head, candidate.revision]);
+    expect(git(p.repoPath, "ls-tree", "--name-only", merged!.revision).split("\n").sort()).toEqual([".gitignore", "mine", "other", "value"]);
+    expect(git(p.repoPath, "rev-parse", "run")).toBe(head);
+    // The merge is promotable only by fast-forward, like any candidate.
+    expect(promoteCandidate({ ...p.options, candidate: merged!, runBranch: "run", expectedHead: head })).toBe(merged!.revision);
+  });
+
+  it("reports a conflicting merge as null and leaves the candidate ref where it was", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "value"), "candidate");
+    const candidate = commitCandidate(w);
+    writeFileSync(join(p.repoPath, "value"), "parallel");
+    git(p.repoPath, "commit", "-qam", "other task");
+    const head = git(p.repoPath, "rev-parse", "HEAD");
+    expect(mergeCandidate({ repoPath: p.repoPath, candidate, head, home: root })).toBeNull();
+    expect(git(p.repoPath, "rev-parse", candidate.ref)).toBe(candidate.revision);
+    expect(git(p.repoPath, "rev-parse", "run")).toBe(head);
+  });
+
+  it("refuses to merge a candidate ref that moved or is not runner-owned", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "mine"), "candidate");
+    const candidate = commitCandidate(w);
+    expect(() => mergeCandidate({ repoPath: p.repoPath, candidate: { ...candidate, ref: "refs/heads/run" }, head: p.baseRevision, home: root })).toThrow(/runner-owned|moved/);
+    expect(() => mergeCandidate({ repoPath: p.repoPath, candidate: { ...candidate, revision: p.baseRevision }, head: p.baseRevision, home: root })).toThrow(/runner-owned|moved/);
+  });
+
+  // Opus loop review L4: the routing policy can't arrive as a directory either.
+  it("refuses a candidate that turns .jarvis-routing.json into a directory", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    mkdirSync(join(w.path, ".jarvis-routing.json"));
+    writeFileSync(join(w.path, ".jarvis-routing.json", "policy"), "{}");
+    expect(() => commitCandidate(w)).toThrow(/routing/i);
   });
 
 

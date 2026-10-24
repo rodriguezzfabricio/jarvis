@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
@@ -14,7 +14,7 @@ import { rebuildState } from "../../packages/cli/src/runner/state.ts";
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
 const roots: string[] = [];
-const fresh = () => { const root = mkdtempSync(join(tmpdir(), "jarvis-report-cmd-")); roots.push(root); return root; };
+const fresh = () => { const root = realpathSync(mkdtempSync(join(tmpdir(), "jarvis-report-cmd-"))); roots.push(root); return root; };
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
 const program = () => new Command().exitOverride().configureOutput({ writeErr: () => undefined });
 const now = Date.parse("2026-10-24T12:00:00Z");

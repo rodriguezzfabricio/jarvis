@@ -100,7 +100,7 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     writeFileSync(join(p.projectDir, "checks", "fixtures", "unit.sh"), `touch ${marker}\nexit 0\n`);
     const before = snapshot(p.projectDir);
     const r = await gate(p, ["test"]);
-    expect(r.output).toMatch(/unit: tampered/); expect(r.codes).toEqual([2]);
+    expect(r.output).toMatch(/test: tampered/); expect(r.output).toMatch(/check changed: fixtures\/unit.sh/); expect(r.codes).toEqual([2]);
     expect(existsSync(marker)).toBe(false);
     expect(snapshot(p.projectDir)).toEqual(before);
   });

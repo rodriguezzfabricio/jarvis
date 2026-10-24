@@ -841,6 +841,21 @@ Product choices made by the builders under decision 81's thresholds (recommended
 
 *From:* Codex (spec grammar) and the second Claude worker (drafts and both interface proposals), Oct 24.
 
+### 84. One integrator session drives all of v1; stages overlap; one review round per stage (new; Oct 24; supersedes the foreman draft and parts of 72, 81, 82)
+Fabricio, Oct 24 (in the "finish Jarvis" session): the finish line is **full v1, stages 0–7**. "Build as many stages as possible, yet do as much testing as possible so everything connects smoothly … Finish stage 0 and 1, while building stage 2 or 3 … my main goal is to get Jarvis V1 working as fast as possible while maximizing my subscriptions." He chose "this session runs it" over building foreman, milestone check-ins only, and "I stop all of them" for the sessions that were running.
+
+**Why:** 17 Codex review rounds on stage 0, each one finding new edge cases in the snapshot scanner, meant no product code landed. The agents were building tools to build Jarvis (review runner, review status, foreman) instead of Jarvis itself.
+
+**What changes:**
+- **One integrator, this session.** The earlier integrator and worker sessions were stopped. Foreman (`foreman` branch and its lane clones) is shelved, not merged. Nothing new gets built to manage the workers. They run with what already exists: Codex CLI workers (decision 82) and Claude subagents in their own worktrees.
+- **Stages overlap.** Stages 0 and 1 close while 2 and 3 are built. Stage 4 starts once the runner loop passes its end-to-end test. A stage still counts as **done** only when its §8 proof passes, including Fabricio's ratings.
+- **One Codex review round per stage** (lanes A, B, D, decision 79). **Blocking findings:** critical ones, and high ones with a concrete path to a credential leak or to an action outside the broker. Everything else goes to the backlog and is assigned to a lane. A fix gets its own tests and mutation entry, and doesn't trigger a new round. A second round runs only when blocking findings were fixed, and it covers only those findings.
+- **"Connects smoothly" is tested, not argued.** One end-to-end integration test on the fake `claude` (`tests/integration/`) goes from an intake hand-off file through the runner, checks, ledger, notifier and report. Every stage extends it. It runs in the full suite.
+- **Parallelism:** up to 3 Codex CLI workers and 2 Claude workers at once, on 16 GB. Full suites, mutation checks, live tests and review evidence still run only in the integrator's quiet slot (decision 81, rule 3).
+- **Check-ins:** only at the hard stops (money, outside actions, credentials, destructive operations) and at stage proofs Fabricio rates. Everything else is decided under decision 81's thresholds and recorded here.
+
+*From:* Fabricio, Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

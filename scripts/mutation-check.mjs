@@ -8,7 +8,10 @@
 // file (import graph plus files the tests name, scripts/mutation-select.mjs) against that set's own
 // control; a survivor or an error there is re-run on the full suite, but a catch is kept unconfirmed
 // (a test the selection can't see may still error on the full suite), so a fast run exits 3, never 0.
-// Usage: node scripts/mutation-check.mjs [--confirm]   (JARVIS_MUTATIONS=<regex> to run a subset;
+// Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
+// definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
+// every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
+// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> to run a subset;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -18,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { classify, summarize, testIds } from "./mutation-classify.mjs";
 import { jobPlan, runAndRead, runPool, stopAll } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
+import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
 const A = "packages/cli/src/harness/claude/args.ts";
@@ -217,8 +221,10 @@ const mutations = [
 ];
 // Lane-owned definitions live next to their code (decision 81: mutations arrive as definitions).
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-for (const file of globSync(["packages/cli/src/**/mutations*.json", "tests/unit/*mutations*.json"], { cwd: root }).sort()) {
-  for (const m of JSON.parse(readFileSync(join(root, file), "utf8"))) mutations.push([m.name, m.file, m.anchor, m.replacement]);
+// Each entry's fifth element is where it was defined, which sets its stage (decision 94).
+for (const m of mutations) m.push("inline");
+for (const file of globSync(DEFINITION_GLOBS, { cwd: root }).sort()) {
+  for (const m of JSON.parse(readFileSync(join(root, file), "utf8"))) mutations.push([m.name, m.file, m.anchor, m.replacement, file]);
 }
 const names = mutations.map(([n]) => n);
 const duplicate = names.find((n, i) => names.indexOf(n) !== i);
@@ -228,7 +234,14 @@ if (duplicate) { console.log(`duplicate mutation name: ${duplicate}`); process.e
 const requested = Number(process.env.JARVIS_MUTATION_JOBS ?? "1");
 if (!Number.isInteger(requested) || requested < 1) { console.log(`JARVIS_MUTATION_JOBS must be a whole number of at least 1, not "${process.env.JARVIS_MUTATION_JOBS}"`); process.exit(2); }
 const { jobs, flags: workerFlags } = jobPlan(requested, availableParallelism());
-const confirm = process.argv.includes("--confirm") || process.env.JARVIS_MUTATION_CONFIRM === "1";
+let mode;
+try {
+  mode = parseMode(process.argv.slice(2), process.env);
+} catch (err) {
+  console.log(err.message);
+  process.exit(2);
+}
+const modeLabel = mode.mode === "confirm" ? "confirm mode" : mode.mode === "stage" ? `stage ${mode.stage} confirmed, the rest in fast mode` : "fast mode (catches on related tests only)";
 const started = Date.now();
 
 // Mutations run in disposable clones of the committed revision, never in the working tree, so an
@@ -333,10 +346,10 @@ const selected = mutations.filter(([n]) => !only || only.test(n));
 /** The whole check after setup; resolves with the exit code. Every job has ended when it settles. */
 async function main() {
   const controls = [];
-  let unconfirmed = 0;
+  const verdicts = [];
   // Fast mode: which test files can observe each mutated file (the reference graph, plus Vitest's own).
   const testsFor = new Map();
-  if (!confirm) {
+  if (mode.mode !== "confirm") {
     const tracked = execFileSync("git", ["-c", "core.fsmonitor=false", "ls-files", "-z"], { cwd: sandboxRepo, encoding: "utf8", env: gitEnv }).split("\0").filter(Boolean);
     const graph = buildGraph(tracked, (p) => {
       try {
@@ -366,11 +379,12 @@ async function main() {
   controls.push(`control  ${c.detail} [full suite, ${collectedFiles(control.report, sandboxRepo).length} test files]`);
   const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), controlIds, onLine: (line) => controls.push(line) });
 
-  const mutate = async (clone, [name, file, from, to]) => {
+  const mutate = async (clone, [name, file, from, to, source]) => {
     const path = join(clone, file);
     const orig = readFileSync(path, "utf8");
     if (!orig.includes(from)) return `ERROR    ${name}: anchor not found in ${file}`;
     const tests = testsFor.get(file) ?? [];
+    const confirm = confirmFor(mode, source);
     // The subset's control runs before this clone is mutated, so a control only ever sees unmutated code.
     const ctl = tests.length && !confirm ? await subsetControl(tests, clone) : undefined;
     const tag = name.replace(/\W+/g, "-");
@@ -390,7 +404,7 @@ async function main() {
           return classify(m.proc, m.report, controlIds, m.runEnd);
         },
       });
-      if (k.kind === "caught" && !k.confirmed) unconfirmed++;
+      verdicts.push({ kind: k.kind, confirmed: k.confirmed, scoped: confirm });
       return `${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail}) [${k.scope}]`;
     } finally {
       writeFileSync(path, orig);
@@ -411,8 +425,10 @@ async function main() {
     return 2;
   }
   console.log([...controls, ...results].join("\n"));
-  console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s), ${confirm ? "confirm mode" : "fast mode (catches on related tests only)"}`);
-  const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results, unconfirmed });
+  console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s), ${modeLabel}`);
+  const t = tally(verdicts, mode);
+  const scope = mode.mode === "stage" ? { stage: mode.stage, confirmed: t.confirmed, fast: t.fast } : undefined;
+  const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results, unconfirmed: t.unconfirmed, scope });
   console.log(`\n${s.line}`);
   return s.exitCode;
 }

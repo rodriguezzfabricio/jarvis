@@ -141,6 +141,18 @@ describe("mutation run summary", () => {
   it("still reports misses first when some catches are unconfirmed", () => {
     expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed)"], unconfirmed: 2 })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
   });
+  // Decision 94: --confirm-stage confirms one stage's mutations and runs the rest in fast mode.
+  it("passes a stage-scoped run only when everything was caught, and says what was confirmed", () => {
+    expect(summarize({ total: 5, selected: 5, filtered: false, results: caught(5), unconfirmed: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } })).toEqual({ line: "all 5 mutations caught; stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 0-1)", exitCode: 0 });
+    expect(summarize({ total: 10, selected: 3, filtered: true, results: caught(3), unconfirmed: 0, scope: { stage: "2", confirmed: 1, fast: 2 } })).toEqual({ line: "partial run: 3 of 10 mutations selected, all 3 caught (not a complete proof); stage 2: 1 confirmed, 2 caught in fast mode (outside stage 2)", exitCode: 0 });
+  });
+  it("fails a stage-scoped run on a survivor outside the stage", () => {
+    expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed) [full suite, after 2 test files survived]"], unconfirmed: 0, scope: { stage: "3", confirmed: 1, fast: 1 } })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
+  });
+  it("never passes a stage-scoped run with a scoped catch on related tests only", () => {
+    const s = summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 1, scope: { stage: "2", confirmed: 1, fast: 1 } });
+    expect(s).toEqual({ line: "all 3 ran, 1 of stage 2's mutations caught on related tests only; not confirmed on the full suite", exitCode: 3 });
+  });
   it("passes only when every catch is confirmed", () => {
     expect(summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 0 })).toEqual({ line: "all 3 mutations caught", exitCode: 0 });
   });

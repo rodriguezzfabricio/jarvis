@@ -1,0 +1,69 @@
+# Stage 0 review 11: Codex
+
+Oct 24, 2026 · codex-cli, `--sandbox read-only`, reasoning effort high, isolated `CODEX_HOME` and `HOME` (decision 66).
+- **Reviewed revision:** `e55995b57f5908f24f05438834952386709b2a48`, plus the stage 1 modules.
+- **Raw verdict:** `stage0-codex-11.json`.
+
+## Verdict: FAIL
+
+Reviewed e55995b57f5908f24f05438834952386709b2a48. One high credential-exposure finding blocks approval; one medium ledger-read race should enter the backlog.
+
+Prior critical/high findings, using original numbering:
+
+Review 1: #1 Project hooks are excluded by restricted mode and explicit tools, guarded by args/probe tests and the live malicious-hook negative control. #2 Outside reads are restricted, with settings/probe tests, escaping-symlink removal and private-cache regressions. #3 Web tools are excluded and denied, guarded by args/settings tests. #4 Baselines require preflight before workspace/session creation, with a rejection regression. #5 The reported multiline dotenv, credential-URL and private-key cases are fixed and snapshot-tested. #6 Network proof requires connectivity, blocked-host 000 and a policy-denial record, with unit regressions and live negative controls.
+
+Review 2: #1 Inline-comment redaction is fixed, with quoted-comment, escaping and unterminated-value regressions. #2 Size/NUL skips and plain JSON URL omissions are fixed, with size-boundary, UTF-16 and binary tests. #3 Per-run caches replace the shared cache; tests assert distinct paths, absent cross-run markers and deletion. #4 Ordinary connectivity failures cannot satisfy the denial-evidence requirement, guarded by probe tests and the live negative control.
+
+Review 3: #1 Whole-value placeholder classification replaces broad length/punctuation exemptions, with helper and snapshot regressions. #2 DER private keys and credential containers are refused, with generated-key and snapshot tests.
+
+Review 4: #1 Private-key envelopes cover short and encrypted PEM keys, with generated Ed25519, X25519 and encrypted RSA regressions. #2 Password-only URLs are detected/redacted, with helper and tracked-dotenv snapshot tests.
+
+Review 5: #1 Apostrophes in URL userinfo are covered by snapshot and dotenv regressions. #2 The sandbox library preserves process outcomes; gate tests reject SIGTERM/SIGINT cases. #3 Pack-transport cloning verifies candidate objects; the swapped-blob regression requires refusal. #4 Complete-write loops protect ledger entries and heads; tests exercise short writes and zero progress. #5 Instance-specific reclamation markers prevent replacement-unlink races; live-marker and competing-writer tests guard reclamation.
+
+Review 6: #1 Broker claims occur atomically under Ledger.transact; regressions cover concurrent calls, sockets, instances and processes. #2 Escaped configuration URLs and literal credential fields are inspected and snapshot-tested. #3 Runner-captured output and isolated assertions reject premature successful exits, with a gate regression.
+
+Review 7: #1 Candidate-written files cannot replace runner-captured observations; the planted-observation regression fails. #2 YAML block/flow values, JSONC, plist and quoted-numeric passwords are inspected and snapshot-tested.
+
+Review 8: #1 Compose assignment lists, duplicate JSON/YAML fields and binary scalar credentials have corresponding fixes and snapshot regressions.
+
+Review 9: #1 Aliased names/values and duplicate environment-entry values retain sensitive-name context, with snapshot regressions. #2 Scoped and unscoped npm _auth credentials are detected and snapshot-tested.
+
+Review 10: #1 The original Docker example is caught by the new base64 heuristic and has a snapshot regression, but the general finding remains open below. #2 YAML merge expansion preserves environment-entry context; merged-name, merged-value and merge-sequence snapshot regressions guard it.
+
+All 29 original critical/high reproductions have corresponding fixes and regression assertions that would reject those cases when the relevant protection is removed. This establishes those specific fixes, not complete credential protection.
+
+I established no new broker approval bypass or protected-evidence forgery. Current outside-action adapters remain local outbox stubs. I found no concurrent writer-corruption or acknowledged-entry-loss path: appends are serialized, entries and heads receive complete writes and fsync, and recovery repairs a lagging head before extending the chain. Fault tests cover killed writers, concurrent writers and a killed reclaimer. The new ledger finding affects readers and availability.
+
+Revision-linked evidence records successful typecheck, 184 passing unit/fault tests, four passing live tests, successful doctor --live and all 86 mutations caught in a disposable clone. I independently passed typecheck under Node 24.21.0 and reproduced both findings in memory, including credential acceptance through the actual createSnapshot routine with filesystem/Git operations substituted. I did not rerun filesystem-writing or live suites in this read-only checkout. The logs do not establish tests-first development order.
+
+Stage 0 does not meet decision 71's revised proof, even excluding baselines. Stage 1's no-secret safety proof also remains incomplete, even excluding the user-assisted desktop-app plugin check.
+
+## Remaining for stage 0
+
+- Close the remaining Docker credential leak with structural inspection, snapshot regressions and mutation coverage; capture fresh revision-linked evidence and obtain another independent review.
+- Record the medium concurrent-ledger-read finding in docs/backlog.md under decision 74.
+- Save this revision-linked review in docs/reviews/; this checkout is read-only.
+- After approval, record at least one valid baseline each for tasks 1, 2 and 11. Decision 71 permits second repeats during stage 1.
+- Stage 1 completion additionally requires the user-assisted desktop-app plugin check.
+
+## Findings
+
+### 1. [high] Docker authentication still bypasses the snapshot scan
+
+`packages/cli/src/eval/snapshot.ts:149`
+
+**Scenario.** Docker auths.*.auth is still not inspected as a credential-bearing field. Detection instead depends on BASE64_RUN accepting 12–512 characters and isBase64UserPassword accepting printable ASCII. A tracked .docker/config.json containing an auth value of dTo4azJa, which decodes to u:8k2Z, passes every scanner. Values encoding svc: followed by a 400-character password, or svc:Syñthetic9qvM2, also pass. I reproduced all three being accepted and retained by the actual createSnapshot routine with filesystem/Git operations substituted in memory, without allowSecretsIn. Thus review 10's original example is fixed, but valid Docker registry credentials can still reach a task session.
+
+**Fix.** Inspect auth values beneath Docker's auths entries by structure. Refuse or redact literal credentials independently of generic base64 length, character and username heuristics, while preserving credential-helper references and explicit reviewed-fixture exceptions. Add snapshot-level regressions for short, long and non-ASCII credentials plus mutation coverage.
+
+### 2. [medium] Concurrent appends can make verified readers falsely report tampering
+
+`packages/cli/src/ledger/ledger.ts:130`
+
+**Scenario.** verifyLedger reads ledger.jsonl and head.hash separately without coordinating with writers. A reader can capture the ledger through entry N, then another process completes append N+1 before the reader loads head.hash. The valid newer head is compared against the older ledger snapshot and reported as forged/deleted history. I reproduced this interleaving in memory: the raced verification failed, while an immediate stable verification passed. Doctor can report a healthy active project as corrupt, and Broker.decide can throw LedgerTamperError instead of recording a person's approval. This does not corrupt writes or lose acknowledged entries.
+
+**Fix.** Make verified reads observe a consistent ledger/head pair through writer coordination or a bounded stable-snapshot retry protocol. Preserve rejection of genuine mismatches. Add a deterministic regression interleaving an append between the ledger and head reads, covering approval and doctor callers.
+
+## Builder response
+
+See `stage0-codex-11-response.md`.

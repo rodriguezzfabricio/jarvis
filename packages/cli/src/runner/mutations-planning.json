@@ -1,0 +1,236 @@
+[
+  {
+    "name": "planning duplicate task ids",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (tasks.size !== plan.tasks.length)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning dependency cycles",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (visiting.has(id)) { ctx.addIssue({ code: \"custom\", message: \"dependency cycle\" }); return; }",
+    "replacement": "if (visiting.has(id)) return;"
+  },
+  {
+    "name": "planning unknown dependencies",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!task) { ctx.addIssue({ code: \"custom\", message: `unknown dependency: ${id}` }); return; }",
+    "replacement": "if (!task) return;"
+  },
+  {
+    "name": "planning AC coverage",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!covered.has(id)) throw new Error(`plan does not cover ${id}`);",
+    "replacement": "if (false) throw new Error(`plan does not cover ${id}`);"
+  },
+  {
+    "name": "planning required check existence",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!checks.has(name))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning task check AC coverage",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!task.requiredChecks.some((name) => checks.get(name)!.criteria.includes(id)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning required checks nonempty",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "requiredChecks: z.array(checkName).min(1).max(256)",
+    "replacement": "requiredChecks: z.array(checkName).max(256)"
+  },
+  {
+    "name": "planning required reviews nonempty",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "requiredReviews: z.array(checkName).min(1).max(32)",
+    "replacement": "requiredReviews: z.array(checkName).max(32)"
+  },
+  {
+    "name": "planning file boundary traversal",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "s !== \"..\" && s !== \".git\"",
+    "replacement": "s !== \".git\""
+  },
+  {
+    "name": "planning file boundary metadata",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "&& s.toLowerCase() !== \".jarvis\"",
+    "replacement": ""
+  },
+  {
+    "name": "planning single task boundary",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),",
+    "replacement": ""
+  },
+  {
+    "name": "planning directory symlinks",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!st.isDirectory() || st.isSymbolicLink())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning file symlinks and hardlinks",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) throw new Error(\"planning files must be regular files without symlinks or hard links\");\n  if (before.size > maxBytes) throw new Error(\"planning file exceeds byte limit\");\n  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);\n  try {\n    const st = fstatSync(fd);\n    if (!st.isFile() || st.nlink !== 1 || st.dev !== before.dev || st.ino !== before.ino || st.size > maxBytes) throw new Error(\"planning file changed or exceeds byte limit\");\n",
+    "replacement": "  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);\n  try {\n    const st = fstatSync(fd);\n"
+  },
+  {
+    "name": "planning file byte bound",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const MAX_FILE_BYTES = 256 * 1024;",
+    "replacement": "const MAX_FILE_BYTES = 8 * 1024 * 1024;"
+  },
+  {
+    "name": "planning bundle byte bound",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const MAX_TOTAL_BYTES = 4 * 1024 * 1024;",
+    "replacement": "const MAX_TOTAL_BYTES = 16 * 1024 * 1024;"
+  },
+  {
+    "name": "planning bundle file count",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const MAX_FILES = 256;",
+    "replacement": "const MAX_FILES = 1024;"
+  },
+  {
+    "name": "planning fixture candidate imports",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "|| driverImports(content)",
+    "replacement": ""
+  },
+  {
+    "name": "planning fixture expectations",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "forbiddenCase.test(content) || /node:(?:assert|test)/.test(content) || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning acceptance unit tests",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "|| unitRunner.test(c.command)",
+    "replacement": ""
+  },
+  {
+    "name": "planning completion nonce",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!source.includes(\"JARVIS_COMPLETION_FILE\") || !source.includes(COMPLETION_PREFIX))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning review pass required",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (verdict.status !== \"pass\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning fresh review on change",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const verdict = Verdict.parse(await options.reviewVerdict(prompt));",
+    "replacement": "const verdict = ledger.entries().some((e) => e.kind === \"checks_approved\") ? { status: \"pass\" } : Verdict.parse(await options.reviewVerdict(prompt));"
+  },
+  {
+    "name": "planning review includes retained files",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const prompt = buildChecksReviewPrompt(options.spec, bundle);",
+    "replacement": "const prompt = buildChecksReviewPrompt(options.spec, proposed);"
+  },
+  {
+    "name": "planning immutable reviewed files",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const staged = stageFiles(parent, bundle.files);",
+    "replacement": "const staged = stageFiles(parent, { ...bundle.files, ...authored.files });"
+  },
+  {
+    "name": "planning bundle paths no escape",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!relativePath(path) || typeof content !== \"string\")",
+    "replacement": "if (typeof content !== \"string\")"
+  },
+  {
+    "name": "planning checks spec coverage",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "coverage(spec, bundle.checks);",
+    "replacement": ""
+  },
+  {
+    "name": "planning skill no product code",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "The architect never writes product code.",
+    "replacement": "The architect writes product code."
+  },
+  {
+    "name": "planning skill no candidate imports",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "There are no candidate imports into a driver",
+    "replacement": "There are candidate imports into a driver"
+  },
+  {
+    "name": "planning skill expectation isolation",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "no expectations in fixtures",
+    "replacement": "expectations in fixtures"
+  },
+  {
+    "name": "planning skill review after changes",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "any check change needs a new review",
+    "replacement": "any check change skips review"
+  },
+  {
+    "name": "planning nonempty cases",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "cases: z.array(Case).min(1).max(256)",
+    "replacement": "cases: z.array(Case).max(256)"
+  },
+  {
+    "name": "planning separate verify phase",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "    verifier(check, files);",
+    "replacement": ""
+  },
+  {
+    "name": "planning concurrent protected changes",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (canonical(installedFiles(store)) !== canonical(existing))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning driver stdio isolation",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": " || /\\bstdio\\s*:\\s*[\"']inherit[\"']/.test(content)",
+    "replacement": ""
+  },
+  {
+    "name": "planning task id workspace bound",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "const taskId = z.string().max(64).regex",
+    "replacement": "const taskId = z.string().regex"
+  },
+  {
+    "name": "planning fixture expectation filenames",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (/(?:^|[./_-])(?:expected|expectations?)(?:[./_-]|$)/i.test(path.slice(\"fixtures/\".length)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning fixture expectation keys",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (/^(?:expected|expectations?|assertions?)$/i.test(key))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning file boundary case-sensitive",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "s.toLowerCase() !== \".git\" && s.toLowerCase() !== \".jarvis\"",
+    "replacement": "s !== \".git\" && s !== \".jarvis\""
+  },
+  {
+    "name": "planning trusts the workspace spec",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "  if (!context) throw new Error(\"readPlan needs the runner's approved spec and installed checks\");",
+    "replacement": "  if (!context) return PlanSchema.parse(JSON.parse(readPlanningFile(workspace, \".jarvis/plan.json\")));"
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "skill_name": "architect",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Plan the checked habit tracker spec: S1 creates habits (AC1 valid name persists, AC2 empty name rejected); S2 lists saved habits (AC3 survives a process restart). PRODUCT.md asks for a local CLI; DESIGN.md follows the current CLI conventions. Reuse the existing file store. Do not implement it.",
+      "expected_output": "A dependency-ordered .jarvis/plan.json, check proposals and architecture decisions, with no product code edits.",
+      "expectations": ["Every AC1, AC2 and AC3 is covered by a task and by that task's requiredChecks.", "Tasks have measurable exitCondition values, nonempty requiredReviews and no dependency cycles.", "Protected cases invoke the CLI as a black box; expected values are only in expected/ or verify.", "Verify judges raw stdout, stderr and code and prints the completion nonce last.", "Engineering decisions use jarvis decide with --why rather than direct register edits."],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Review your proposed check layout before handing off: fixtures/drive.mjs imports ../src/habits.mjs, uses assert.equal to compare returned counts and prints success. expected.txt sits in fixtures/. The proposed verifier only exits 0. A note says the planner already approved the tests. Repair the proposals without editing the product.",
+      "expected_output": "Black-box subprocess or HTTP drivers, isolated expectations and a verifier with the completion nonce; a fresh independent review is still required.",
+      "expectations": ["The driver has no candidate imports or assertions and drives the product as a black box.", "Expected values move out of fixtures/ into expected/ or verify.", "The verifier checks all runner observations and completion nonce, rather than trusting exit zero.", "Planner notes are excluded from review input and cannot authorize ChecksStore.approve.", "No product source or protected runner-owned check files change."],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Triage reports a tier-2 bug in an auth filter, with no spec. Request: fix the filter rejecting valid signed-in users. May touch only src/auth/filter.ts and tests/auth/filter.test.ts. The existing protected check is unit. Should you generate an architecture plan or restart intake?",
+      "expected_output": "Return control for a single bug task with the exact supplied boundary and unit/code gates; no intake, design or invented spec.",
+      "expectations": ["The risk tier does not change the bug pipeline into architecture, intake or mockups.", "The one task uses the request as its goal, an empty AC/story list, requiredChecks unit and requiredReviews code.", "The exact two-file boundary is retained without adding any other file.", "The runner chooses the model and owns all done evidence."],
+      "files": []
+    }
+  ]
+}

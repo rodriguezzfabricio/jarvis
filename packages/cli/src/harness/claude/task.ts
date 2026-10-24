@@ -136,6 +136,7 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const env = buildChildEnv({ ...(opts.parentEnv ?? process.env), HOME: home }, {
     ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
+    JARVIS_SESSION: "1", // the plugin's tripwire enforces in Jarvis sessions only
   });
   return {
     bin: binary, args, cwd: worktree, env, timeoutMs: input.timeoutMs,

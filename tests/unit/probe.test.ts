@@ -133,6 +133,12 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
       expect(failed(await probe("pretool-hooks-off"))).toEqual(["jarvis_folder_other_not_writable"]);
     });
 
+    it("runs its session as a Jarvis session, so the tripwire refuses .jarvis/anything-else before .jarvis/ exists", async () => {
+      const r = await probe("other-first");
+      expect(failed(r)).toEqual([]);
+      expect(r.ok).toBe(true);
+    });
+
     it("fails as inconclusive, not as refused, when the .jarvis/anything-else write wasn't attempted", async () => {
       expect(failed(await probe("other-skip"))).toEqual(["all_steps_attempted", "jarvis_folder_other_not_writable"]);
     });

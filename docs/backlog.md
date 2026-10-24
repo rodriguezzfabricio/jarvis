@@ -22,3 +22,5 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | 16 | Codex stage 0 review 7 #4 | medium | Doctor skipped a project whose approved `checks.lock` was deleted. Fix: a project that ever approved checks must have its lock | Done |
 | 17 | Codex stage 0 review 9 #3 | medium | Two outbox actions in the same millisecond wrote one file, so the first succeeded action's payload was lost. Fix: unique file names, created exclusively | Done |
 | 18 | Codex stage 0 review 11 #2 | medium | An append between `verifyLedger`'s ledger and head reads looked like a forged head (doctor and `Broker.decide` could fail on a healthy ledger). Fix: read the head before and after, retry until stable. Review 12: exhausted retries still said tampering; now they say contended and `Ledger.verify` reads under the writer lock | Done |
+| 19 | Codex review 16 lane D, Codex's notes | low | An empty `JARVIS_BROKER_SOCKET` makes `jarvis broker` fail closed with an unhelpful path error | Open |
+| 20 | Codex review 16 lane D, Codex's notes | low | If `server.close` rejects in the live safety test, its temporary folder isn't removed (test cleanup only) | Open |

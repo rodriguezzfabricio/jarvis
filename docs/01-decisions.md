@@ -712,6 +712,20 @@ Reviews 8–15 each found one or two new credential forms the snapshot scanner m
 
 *From:* Fabricio, Oct 24.
 
+### 78. One broker socket per project and run; sandboxes trust the bound address only (new; Oct 24, after Codex review 16)
+Review 16 (lane D, finding 3) showed that a second `jarvis broker` replaced the first one's socket at the shared default path, so a task's requests reached the wrong project's ledger and grants. Fixing that hit runtime behavior the docs didn't anticipate:
+- **Node 24 on macOS unlinks a server's bound pathname on close,** even after another server has replaced it. A shared path can't be owned safely.
+- **The sandbox refuses a Unix socket reached through an alias.** A hard link or a symlink to the bound socket both fail with EPERM when only the alias is allowlisted.
+
+So:
+- **Each broker binds a unique private address** (`.b-<uuid>.sock`, shortened to fit the Unix path limit) beside its public alias, then publishes the alias with an atomic hard link. It refuses an occupied alias, and on close removes the alias only if its inode is still its own.
+- **The default alias is per project and run:** `~/.jarvis/run/<first 24 hex of sha256([project, uuid])>.sock`. An explicit `--socket` overrides `JARVIS_BROKER_SOCKET`, which overrides the default. There is no global default path any more.
+- **Task sessions use the bound address,** `startBrokerServer(...).socketPath`, both in `TaskSettingsInput.brokerSocket` (its one allowed Unix socket) and in the task's client. Host clients may use the alias. `writeTaskSettings` still refuses a socket outside `jarvisHome`. The live safety test checks that the socket folder is `0700` and outside work, cache and tmp, and that a task can't write to it.
+- **`jarvis act` requires** `--socket` or `JARVIS_BROKER_SOCKET`. `jarvis doctor` takes `--socket`. The broker closes its sockets on SIGINT, SIGTERM and SIGHUP.
+- **Upgrade note:** the ledger's reclaim markers changed format at the same time (finding 5, bounded names). Stop running brokers before switching versions; old and new reclaimers running at once aren't covered.
+
+*From:* Codex review 16, lane D findings 3 and 5; Codex's implementation and live test, Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

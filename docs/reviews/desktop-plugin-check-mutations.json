@@ -52,5 +52,29 @@
     "file": "scripts/desktop-plugin-check.mjs",
     "anchor": "probe.ok !== true || outcome.code !== 0 || outcome.timedOut !== false || outcome.overflowed !== false",
     "replacement": "false"
+  },
+  {
+    "name": "desktop terminal provenance accepted",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "if (relevant.some(e => e.entrypoint !== 'sdk-cli')) return fail('desktop SDK entrypoint missing');",
+    "replacement": ""
+  },
+  {
+    "name": "desktop attribution ignored",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "block.content.includes(`This hook comes from the jarvis@${format === 'cli' ? 'inline' : 'jarvis'} plugin.`)",
+    "replacement": "true"
+  },
+  {
+    "name": "desktop manifest changes ignored",
+    "file": "scripts/desktop-plugin-check.mjs",
+    "anchor": "'hooks/hooks.json', '.claude-plugin/plugin.json'",
+    "replacement": "'hooks/hooks.json'"
+  },
+  {
+    "name": "desktop symlink ancestors followed",
+    "file": "scripts/desktop-plugin-check.mjs",
+    "anchor": "if (existsSync(parent) && realpathSync(parent) !== parent) throw new Error('run ancestors must not use symlinks');",
+    "replacement": ""
   }
 ]

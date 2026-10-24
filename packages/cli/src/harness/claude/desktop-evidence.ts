@@ -11,6 +11,7 @@ export interface CompatibilityResult {
   sessionStart: boolean;
   tripwire: boolean;
   version: string | null;
+  entrypoint: string | null;
   problems: string[];
 }
 const receipt = 'Jarvis plugin: SessionStart ran (no run header).\n';
@@ -20,7 +21,7 @@ const array = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 
 /** Advisory compatibility only. Inputs must be framework-owned transcripts, not model output files. */
 export function inspectCompatibility(text: string, expected: CompatibilityContext, format: 'desktop' | 'cli'): CompatibilityResult {
-  const result: CompatibilityResult = { pass: false, sessionStart: false, tripwire: false, version: null, problems: [] };
+  const result: CompatibilityResult = { pass: false, sessionStart: false, tripwire: false, version: null, entrypoint: null, problems: [] };
   const fail = (problem: string) => { result.problems.push(problem); return result; };
   if (Buffer.byteLength(text) > 16 * 1024 * 1024) return fail('transcript exceeds 16 MiB');
   let events: RecordValue[];
@@ -33,6 +34,8 @@ export function inspectCompatibility(text: string, expected: CompatibilityContex
   const sessions = new Set(relevant.map(e => e[sessionKey]));
   if (sessions.size !== 1 || typeof [...sessions][0] !== 'string' || [...sessions][0] === '') return fail('missing or mixed session identity');
   if (format === 'desktop') {
+    if (relevant.some(e => e.entrypoint !== 'sdk-cli')) return fail('desktop SDK entrypoint missing');
+    result.entrypoint = 'sdk-cli';
     if (relevant.some(e => e.cwd !== expected.workspace || typeof e.timestamp !== 'string' || !Number.isFinite(Date.parse(e.timestamp)) || Date.parse(e.timestamp) < start)) return fail('unrelated workspace or stale records');
     const versions = new Set(relevant.map(e => e.version));
     if (versions.size !== 1 || typeof [...versions][0] !== 'string') return fail('inconsistent desktop version');
@@ -72,27 +75,31 @@ export function desktopTranscriptDirectory(home: string, workspace: string): str
   return `${home}/.claude/projects/${workspace.replace(/[^a-zA-Z0-9]/g, '-')}`;
 }
 
-export async function captureCompatibility(input: CompatibilityContext & { directory: string; jarvisHome: string; cacheDir: string }): Promise<void> {
-  const { writeFileSync, existsSync } = await import('node:fs');
+export interface CaptureDependencies {
+  probe?: typeof import('./probe.ts').runCanaryProbe;
+  session?: typeof import('./session.ts').runSession;
+}
+export async function captureCompatibility(input: CompatibilityContext & { directory: string; jarvisHome: string; cacheDir: string }, dependencies: CaptureDependencies = {}): Promise<void> {
+  const { writeFileSync, existsSync, readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
   const { pinnedClaudeBin, MODELS } = await import('../../config/pins.ts');
   const { runCanaryProbe } = await import('./probe.ts');
   const { buildTaskArgs } = await import('./args.ts');
   const { buildChildEnv } = await import('./env.ts');
-  const { writeTaskSettings, cacheEnv } = await import('./settings.ts');
+  const { assertSafeTaskSettings, cacheEnv } = await import('./settings.ts');
   const { runSession } = await import('./session.ts');
   const started = join(input.directory, 'cli-started');
   writeFileSync(started, new Date().toISOString(), { flag: 'wx', mode: 0o600 });
   if (existsSync(join(input.directory, 'stream.jsonl'))) throw new Error('CLI evidence already exists');
-  const probe = await runCanaryProbe({ claudeBin: pinnedClaudeBin() });
+  const probe = await (dependencies.probe ?? runCanaryProbe)({ claudeBin: pinnedClaudeBin() });
   writeFileSync(join(input.directory, 'probe.json'), JSON.stringify(probe, null, 2), { flag: 'wx', mode: 0o600 });
   if (!probe.ok) throw new Error('live canary failed; compatibility session was not started');
   const settingsPath = join(input.directory, 'settings.json');
-  writeTaskSettings(settingsPath, { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
+  assertSafeTaskSettings(JSON.parse(readFileSync(settingsPath, 'utf8')), { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
   const mcpConfigPath = join(input.directory, 'mcp.json');
   writeFileSync(mcpConfigPath, '{"mcpServers":{}}', { flag: 'wx', mode: 0o600 });
   const args = buildTaskArgs({ prompt: compatibilityPrompt, settingsPath, mcpConfigPath, model: MODELS.cheap, maxTurns: 4, tools: ['Bash'], pluginDir: input.pluginDir });
-  const outcome = await runSession({ bin: pinnedClaudeBin(), args, cwd: input.workspace, env: buildChildEnv(process.env, cacheEnv(input.cacheDir)), timeoutMs: 180_000, maxOutputBytes: 16 * 1024 * 1024, stdoutPath: join(input.directory, 'stream.jsonl'), stderrPath: join(input.directory, 'stderr.log') });
+  const outcome = await (dependencies.session ?? runSession)({ bin: pinnedClaudeBin(), args, cwd: input.workspace, env: buildChildEnv(process.env, cacheEnv(input.cacheDir)), timeoutMs: 180_000, maxOutputBytes: 16 * 1024 * 1024, stdoutPath: join(input.directory, 'stream.jsonl'), stderrPath: join(input.directory, 'stderr.log') });
   writeFileSync(join(input.directory, 'outcome.json'), JSON.stringify(outcome, null, 2), { flag: 'wx', mode: 0o600 });
   if (outcome.code !== 0 || outcome.timedOut || outcome.overflowed) throw new Error('CLI capture failed; inspect outcome.json');
 }

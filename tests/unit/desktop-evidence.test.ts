@@ -76,6 +76,29 @@ describe('desktop plugin compatibility uses harness evidence, never model claims
       expect(inspectCompatibility(jsonl(events), expected, 'desktop').pass).toBe(false);
     }
   });
+  it('rejects terminal provenance and incomplete desktop identity', () => {
+    for (const change of ['entrypoint', 'version', 'hookName', 'attribution']) {
+      const events = JSON.parse(JSON.stringify(desktop()));
+      if (change === 'entrypoint') for (const e of events) e.entrypoint = 'cli';
+      if (change === 'version') events[1].version = 'other';
+      if (change === 'hookName') events[0].attachment.hookName = 'SessionStart:resume';
+      if (change === 'attribution') events[2].message.content[0].content = denied.replace('jarvis@jarvis', 'jarvis@inline');
+      expect(inspectCompatibility(jsonl(events), expected, 'desktop').pass).toBe(false);
+    }
+  });
+  it('rejects mismatched or incomplete CLI identity and evidence', () => {
+    for (const change of ['cwd', 'duplicate', 'pluginName', 'session', 'receipt', 'denial', 'attribution']) {
+      const events = JSON.parse(JSON.stringify(cli()));
+      if (change === 'cwd') events[1].cwd = '/other';
+      if (change === 'duplicate') events.push(events[1]);
+      if (change === 'pluginName') events[1].plugins[0].name = 'other';
+      if (change === 'session') events[3].session_id = 'other';
+      if (change === 'receipt') events[0].stdout = '';
+      if (change === 'denial') events[3].message.content = [];
+      if (change === 'attribution') events[3].message.content[0].content = denied;
+      expect(inspectCompatibility(jsonl(events), expected, 'cli').pass).toBe(false);
+    }
+  });
   it('fails closed for partial, malformed or oversized records', () => {
     for (const text of [jsonl(desktop()) + '{', 'not json\n', jsonl(desktop()) + ' '.repeat(16 * 1024 * 1024)]) {
       expect(inspectCompatibility(text, expected, 'desktop').pass).toBe(false);
@@ -92,23 +115,46 @@ describe('desktop plugin compatibility uses harness evidence, never model claims
   });
 });
 
-// Fault injection uses only synthetic modules; no model or network call is made.
+// Explicit dependencies ensure fault injection never calls a model or the network.
 describe('compatibility capture safety gate', () => {
   it('does not start a compatibility session when the live canary fails', async () => {
     const { vi } = await import('vitest');
     const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
     const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'compat-capture-'));
     const session = vi.fn();
-    vi.doMock('../../packages/cli/src/harness/claude/probe.ts', () => ({ runCanaryProbe: vi.fn().mockResolvedValue({ ok: false, checks: [] }) }));
-    vi.doMock('../../packages/cli/src/harness/claude/session.ts', () => ({ runSession: session }));
+    const probe = vi.fn().mockResolvedValue({ ok: false, checks: [], exitCode: 1 });
     try {
       const { captureCompatibility } = await import('../../packages/cli/src/harness/claude/desktop-evidence.ts');
-      await expect(captureCompatibility({ ...expected, directory: dir, jarvisHome: '/synthetic/.jarvis', cacheDir: '/synthetic/cache' })).rejects.toThrow('live canary failed');
+      await expect(captureCompatibility({ ...expected, directory: dir, jarvisHome: '/synthetic/.jarvis', cacheDir: '/synthetic/cache' }, { probe, session })).rejects.toThrow('live canary failed');
+      expect(probe).toHaveBeenCalledOnce();
       expect(session).not.toHaveBeenCalled();
       expect(fs.existsSync(path.join(dir, 'stream.jsonl'))).toBe(false);
-    } finally {
-      vi.doUnmock('../../packages/cli/src/harness/claude/probe.ts'); vi.doUnmock('../../packages/cli/src/harness/claude/session.ts');
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
+  it('preserves prepared policy, exact restricted args and single-use capture', async () => {
+    const { vi } = await import('vitest');
+    const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+    const { writeTaskSettings } = await import('../../packages/cli/src/harness/claude/settings.ts');
+    const { captureCompatibility } = await import('../../packages/cli/src/harness/claude/desktop-evidence.ts');
+    const { pinnedClaudeBin } = await import('../../packages/cli/src/config/pins.ts');
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'compat-capture-'));
+    const input = { ...expected, directory: dir, workspace: dir + '/work', cacheDir: dir + '/cache', jarvisHome: dir + '/runner' };
+    for (const d of [input.workspace, input.cacheDir, input.jarvisHome]) fs.mkdirSync(d);
+    writeTaskSettings(dir + '/settings.json', { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
+    const before = fs.readFileSync(dir + '/settings.json'); const inode = fs.statSync(dir + '/settings.json').mtimeMs;
+    const probe = vi.fn().mockResolvedValue({ ok: true, checks: [], exitCode: 0 });
+    const session = vi.fn().mockResolvedValue({ code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: '', stderr: '' });
+    try {
+      await captureCompatibility(input, { probe, session });
+      expect(fs.readFileSync(dir + '/settings.json')).toEqual(before);
+      expect(fs.statSync(dir + '/settings.json').mtimeMs).toBe(inode);
+      const call = session.mock.calls[0]?.[0];
+      expect(call.bin).toBe(pinnedClaudeBin());
+      expect(call.args).toEqual(expect.arrayContaining(['--restricted', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--no-session-persistence', '--tools', 'Bash']));
+      expect(call.env.JARVIS_RUN_HEADER).toBeUndefined();
+      await expect(captureCompatibility(input, { probe, session })).rejects.toThrow();
+      expect(session).toHaveBeenCalledOnce(); expect(probe).toHaveBeenCalledOnce();
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
 });

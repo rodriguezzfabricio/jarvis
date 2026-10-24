@@ -15,7 +15,7 @@ const read = path => {
 };
 const json = path => JSON.parse(read(path));
 const save = (path, value) => writeFileSync(path, value, { flag: 'wx', mode: 0o600 });
-const hashes = pluginDir => Object.fromEntries(['hooks/session-start.mjs', 'hooks/tripwire.mjs', 'hooks/hooks.json'].map(name => [name, createHash('sha256').update(read(join(pluginDir, name))).digest('hex')]));
+const hashes = pluginDir => Object.fromEntries(['hooks/session-start.mjs', 'hooks/tripwire.mjs', 'hooks/hooks.json', '.claude-plugin/plugin.json'].map(name => [name, createHash('sha256').update(read(join(pluginDir, name))).digest('hex')]));
 export function prepareCheck({ home = homedir(), pluginDir = join(repo, 'plugin'), runId = randomUUID() } = {}) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,79}$/.test(runId)) throw new Error('invalid run id');
   home = realpathSync(home); pluginDir = realpathSync(pluginDir);
@@ -24,6 +24,11 @@ export function prepareCheck({ home = homedir(), pluginDir = join(repo, 'plugin'
   const workspace = join(home, '.jarvis-work/desktop-check', runId);
   const cacheDir = join(home, '.jarvis-work/desktop-check-cache', runId);
   if ([directory, workspace, cacheDir].some(existsSync)) throw new Error('run already exists; choose a new id');
+  for (const path of [directory, workspace, cacheDir]) {
+    for (let parent = dirname(path); parent !== dirname(parent); parent = dirname(parent)) {
+      if (existsSync(parent) && realpathSync(parent) !== parent) throw new Error('run ancestors must not use symlinks');
+    }
+  }
   for (const path of [directory, workspace, cacheDir]) { mkdirSync(dirname(path), { recursive: true, mode: 0o700 }); mkdirSync(path, { mode: 0o700 }); if (realpathSync(path) !== path) throw new Error('run folders must not use symlinks'); }
   const run = { schema: 1, runId, directory, workspace, cacheDir, jarvisHome: join(home, '.jarvis'), pluginDir, pluginHashes, notBefore: new Date().toISOString(), probeCommand: compatibilityCommand };
   writeTaskSettings(join(directory, 'settings.json'), { worktree: workspace, jarvisHome: run.jarvisHome, cacheDir, allowedDomains: [] });

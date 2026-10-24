@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,8 +9,8 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'desktop-kit-')); roots.push(home);
-  const pluginDir = join(home, 'repo/plugin'); mkdirSync(join(pluginDir, 'hooks'), { recursive: true });
-  for (const name of ['hooks/session-start.mjs', 'hooks/tripwire.mjs', 'hooks/hooks.json']) writeFileSync(join(pluginDir, name), 'synthetic');
+  const pluginDir = join(home, 'repo/plugin'); mkdirSync(join(pluginDir, 'hooks'), { recursive: true }); mkdirSync(join(pluginDir, '.claude-plugin')); 
+  for (const name of ['hooks/session-start.mjs', 'hooks/tripwire.mjs', 'hooks/hooks.json', '.claude-plugin/plugin.json']) writeFileSync(join(pluginDir, name), 'synthetic');
   return { home, pluginDir, runId: 'run-1' };
 }
 describe('desktop compatibility kit host orchestration', () => {
@@ -38,6 +38,15 @@ describe('desktop compatibility kit host orchestration', () => {
     writeFileSync(join(options.pluginDir, 'hooks/tripwire.mjs'), 'changed');
     expect(() => loadCheck(run.directory, options.home)).toThrow();
   });
+  it('rejects changed plugin manifest and symlink ancestors before creating run folders', () => {
+    const options = fixture(); const run = prepareCheck(options);
+    writeFileSync(join(options.pluginDir, '.claude-plugin/plugin.json'), 'changed');
+    expect(() => loadCheck(run.directory, options.home)).toThrow();
+    const other = fixture(); const target = join(other.home, 'target'); mkdirSync(target);
+    symlinkSync(target, join(other.home, '.jarvis-work'));
+    expect(() => prepareCheck(other)).toThrow();
+    expect(existsSync(join(target, 'desktop-check'))).toBe(false);
+  });
   it('never reports PASS without both independently captured channels', () => {
     const options = fixture(); const run = prepareCheck(options);
     expect(verifyCheck(run.directory, undefined, options.home)).toMatchObject({ pass: false });
@@ -46,7 +55,7 @@ describe('desktop compatibility kit host orchestration', () => {
   it('requires valid evidence in both channels and rejects copied or failed evidence', () => {
     const options = fixture(); const run = prepareCheck(options);
     const receipt = 'Jarvis plugin: SessionStart ran (no run header).\n';
-    const common = { cwd: run.workspace, sessionId: 's1', version: '2.1.308', timestamp: new Date().toISOString() };
+    const common = { cwd: run.workspace, sessionId: 's1', version: '2.1.308', timestamp: new Date().toISOString(), entrypoint: 'sdk-cli' };
     const denied = `PreToolUse:Bash hook error: [node "${run.pluginDir}/hooks/tripwire.mjs"]: Jarvis tripwire: publishing packages is a hard stop.\n\nThis hook comes from the jarvis@jarvis plugin.`;
     const assistant = { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', id: 't1', input: { command: run.probeCommand } }] } };
     const user = { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: denied }] } };

@@ -818,6 +818,29 @@ Fabricio, Oct 24 (relayed by the "Work status check" session), on whether Codex 
 
 *From:* Fabricio, Oct 24; the integrator's smoke test.
 
+### 83. Stage 2 interface contracts: the spec format, the intake hand-off and register writes (new; Oct 24)
+Product choices made by the builders under decision 81's thresholds (recommended option taken; Fabricio can veto).
+
+**The spec format** (`docs/spec/vN.md`, decision 9): a restricted grammar, so it can be checked without a YAML dependency.
+- **Front matter, first lines exactly:** `---`, `spec: N`, `date: YYYY-MM-DD`, `status: draft|confirmed|unconfirmed`, `supersedes: none|N-1`, `---`. N matches the file name. v1 supersedes none, and each later version supersedes its immediate predecessor.
+- **An optional `# Spec vN`**, then exactly these H2 sections, in this order: Goals, Non-goals, User stories, Acceptance criteria, Assumptions, Open questions.
+- **Entries:**
+  - stories `- **S1 (P1):** As …`, in priority order;
+  - criteria `- **AC1 (S1):** WHEN … THE SYSTEM SHALL …`, at least one per story;
+  - assumptions `- **A1 [fixed]:** …` or `[delegated]`.
+  - Empty sections say `None.`.
+- **The checker validates structure and references only.** A fresh-context reader still checks the content (decision 9).
+
+**The intake hand-off** (the intake skill to the notifier, decision 10):
+- The skill writes `.jarvis/intake/round-<n>.json`: the round, the spec path, a summary of at most 5 lines, at most 7 questions, and any mockup paths. Each question has an id, a topic (scope, security, privacy, legal, ux, technical or design), the question, why, a default with its reason, and alternatives.
+- The skill then runs `jarvis intake send <file>`.
+- Answers come back as ledger entries, which the skill reads with `jarvis intake answers <round>`. The 15-minute timeout and "unconfirmed" marking belong to the runner's timer, not the skill.
+
+**Register writes** (decision 48): one writer for the register's format.
+- Skills never edit `docs/decisions.md` directly. They call `jarvis decide --by user|default-accepted|default-unconfirmed|jarvis --class mechanical|taste|challenge --source <path> "<decision>"`, with `--supersedes <id> --reason "…"` to supersede.
+
+*From:* Codex (spec grammar) and the second Claude worker (drafts and both interface proposals), Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

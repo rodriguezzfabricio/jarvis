@@ -63,7 +63,7 @@ const mutations = [
   ["typed credential values pass", N, "      else hits.add(key);\n    };", "      else return;\n    };"],
   ["YAML aliases not followed", N, "        n = n.resolve(doc);", "        return undefined;"],
   ["YAML alias limit off", N, "        if (++aliases > MAX_YAML_ALIASES) {", "        if (false && ++aliases > MAX_YAML_ALIASES) {"],
-  ["YAML alias keys not followed", N, "          const k = deref(doc, p.key);", "          const k = p.key;"],
+  ["YAML alias keys not followed", N, "        const k = deref(doc, p.key);", "        const k = p.key;"],
   ["env entry name not carried to its values", N, '(k === "value" && envName ? envName : k)', "(k)"],
   ["npm _auth not a credential", N, " || /(^|[/:])_auth$/.test(k);", ";"],
   ["Yarn auth ident not a credential", N, "|auth_ident|", "|"],

@@ -888,6 +888,14 @@ An Opus review of the runner lanes found a task session could forge a steer note
 
 *From:* the integrator, Oct 24, after the Opus review of the runner-inbox lane.
 
+### 88. The stage 3 loop: reviewer, tampered checks, candidate refs (new; Oct 24)
+Open questions from the end-to-end harness, settled by the integrator (decision 81's thresholds; Fabricio can veto):
+- **The reviewer in stage 3 is a fresh Claude review session** through the Harness. Its role is `review`, and routing picks the model (tier 2 means strong). It gets the diff, the spec's criteria for the task and the gate evidence, never the builder's notes (decision 49). It returns a JSON verdict that the runner records as a `review_result` keyed `reviewer: "code"`. Its tools are read-only (Read, Glob, Grep). The loop takes the reviewer as an injected function, so stage 4 can add Codex as the cross-model reviewer (§3.9) without changing the loop.
+- **A `tampered` gate result blocks the task at once,** with no repair attempt. The reason is "protected check changed", the notifier is told, and other tasks continue (decision 15).
+- **Candidates live under `refs/heads/jarvis/candidates/<task>/<attempt>`,** so the gate's `clone --no-local` copies them. The runner deletes those branches when the run ends. Found by the harness: under `refs/jarvis/…` every gate run ended in `error`.
+
+*From:* the integrator, Oct 24, after the end-to-end harness.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

@@ -32,7 +32,7 @@
   {
     "name": "triage upgrade is silent",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "announcement: upgradeSentence(tier === 2, j.questions)",
+    "anchor": "announcement: upgradeSentence(first.tier === 2, j.questions)",
     "replacement": "announcement: \"\""
   },
   {
@@ -44,20 +44,20 @@
   {
     "name": "triage judgment lowers the tier",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "if (j.tier !== undefined && j.tier > t) {",
+    "anchor": "if (j.tier !== undefined && j.tier > tier) {",
     "replacement": "if (j.tier !== undefined) {"
   },
   {
-    "name": "triage bug can be tier 2",
+    "name": "triage risk doesn't raise bugs and refactors",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "  bug: [0, 1],",
-    "replacement": "  bug: [0, 2],"
+    "anchor": "let tier: Tier = risky ? 2 :",
+    "replacement": "let tier: Tier = risky && t !== \"bug\" && t !== \"refactor\" ? 2 :"
   },
   {
     "name": "triage multi-sentence bug is tier 0",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "risky || sentences > 1 ? 1 : 0",
-    "replacement": "risky ? 1 : 0"
+    "anchor": "risky ? 2 : t === \"bug\" && sentences > 1 ? 1 : min;",
+    "replacement": "risky ? 2 : min;"
   },
   {
     "name": "triage several modules ignored",
@@ -72,16 +72,64 @@
     "replacement": "const errorLine = lines.find(() => false);"
   },
   {
-    "name": "triage design runs despite DESIGN.md",
+    "name": "triage crash not a bug word",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "j.newScreen === true && !input.folder.designMd);",
-    "replacement": "j.newScreen === true);"
+    "anchor": "|crash(?:es|ed|ing)?|",
+    "replacement": "|"
+  },
+  {
+    "name": "triage bare first word is an override",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "/^\\s*(fix|build|feature|ask):\\s*\\S/i",
+    "replacement": "/^\\s*(fix|build|feature|ask)(?::\\s*|\\s+)\\S/i"
+  },
+  {
+    "name": "triage review read as release",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    words.review ? \"review\"",
+    "replacement": "    false ? \"review\""
+  },
+  {
+    "name": "triage review allows edits",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "steps: steps(\"review\"), never: [\"any edit\"]",
+    "replacement": "steps: steps(\"review\"), never: []"
   },
   {
     "name": "triage question allows edits",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "never: [\"any edit\"]",
-    "replacement": "never: []"
+    "anchor": "steps(\"read-only-research\", \"answer\"), never: [\"any edit\"]",
+    "replacement": "steps(\"read-only-research\", \"answer\"), never: []"
+  },
+  {
+    "name": "triage mixed request drops the edits",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (kind) then = pipeline(kind, LABELS[kind]);",
+    "replacement": "if (false) then = pipeline(kind!, LABELS[kind!]);"
+  },
+  {
+    "name": "triage judgment on the edits ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const kind = j.then ?? (",
+    "replacement": "const kind = ("
+  },
+  {
+    "name": "triage ask override keeps the edits",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (type === \"question\" && decidedBy !== \"override\" && j.then !== \"none\") {",
+    "replacement": "if (type === \"question\" && j.then !== \"none\") {"
+  },
+  {
+    "name": "triage design runs despite DESIGN.md",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "(j.newScreen === true && !input.folder.designMd)",
+    "replacement": "(j.newScreen === true)"
+  },
+  {
+    "name": "triage new platform ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "(j.newPlatform === true || (",
+    "replacement": "(false || ("
   },
   {
     "name": "triage folder with one file is empty",
@@ -96,10 +144,10 @@
     "replacement": "statSync(join(dir, \"DESIGN.md\"))"
   },
   {
-    "name": "triage CLI ignores the leading override word",
+    "name": "triage CLI ignores the colon override",
     "file": "packages/cli/src/triage/command.ts",
-    "anchor": "(opts.literal ? undefined : leadingOverride(request))",
-    "replacement": "undefined"
+    "anchor": "const override = opts.override ?? leadingOverride(request);",
+    "replacement": "const override = opts.override;"
   },
   {
     "name": "triage CLI drops the model's judgment",
@@ -118,5 +166,17 @@
     "file": "plugin/commands/jarvis.md",
     "anchor": "the `upgrade.announcement` sentence word for word when there is one, then the `headline`. Never upgrade silently.",
     "replacement": "the `headline`."
+  },
+  {
+    "name": "jarvis command starts chained skills again",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "It runs any spike and chains to intake, intake to spec, and spec hands back here",
+    "replacement": "It runs any spike. Then start the `intake` skill, then the `spec` skill, which hands back here"
+  },
+  {
+    "name": "jarvis command bare-word override",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "`fix:`, `build:`, `feature:` or `ask:`",
+    "replacement": "fix, build, feature or ask"
   }
 ]

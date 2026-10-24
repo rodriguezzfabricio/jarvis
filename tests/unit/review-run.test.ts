@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 // @ts-expect-error standalone script
-import { runReview, codexEnvironment, reserveLaneManifest, DEFAULT_EVIDENCE } from '../../scripts/review-run.mjs';
+import { runReview, codexEnvironment, reserveLaneManifest, DEFAULT_EVIDENCE, defaultEvidence } from '../../scripts/review-run.mjs';
 // @ts-expect-error standalone script
 import { inspectReviews } from '../../scripts/review-status.mjs';
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'review-run-')));
@@ -157,4 +157,23 @@ it('records setup failure and refuses a symlinked response directory', async () 
 it('runs the review evidence mutation check in confirm mode', () => {
   const m = DEFAULT_EVIDENCE.find((c: { name: string }) => c.name === 'mutation-check');
   expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm']);
+  expect(defaultEvidence().find((c: { name: string }) => c.name === 'mutation-check').args).toEqual(['scripts/mutation-check.mjs', '--confirm']);
+});
+
+// Decision 94: a stage review confirms its own stage's mutations.
+it('passes --confirm-stage through to the mutation check, and refuses an unknown stage', async () => {
+  const m = defaultEvidence({ confirmStage: '0-1' }).find((c: { name: string }) => c.name === 'mutation-check');
+  expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm-stage', '0-1']);
+  expect(defaultEvidence({ confirmStage: '0-1' }).filter((c: { name: string }) => c.name !== 'mutation-check')).toEqual(DEFAULT_EVIDENCE.filter((c: { name: string }) => c.name !== 'mutation-check'));
+  expect(() => defaultEvidence({ confirmStage: '4' })).toThrow(/stage/);
+  const g = fixture();
+  await expect(runReview({ ...g, evidence: undefined, confirmStage: '9', dryRun: true })).rejects.toThrow(/stage/);
+});
+
+it('CLI takes --confirm-stage', () => {
+  const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--help'], { encoding: 'utf8' });
+  expect(r.stdout).toContain('[--confirm-stage <0-1|2|3>]');
+  const bad = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', '/nonexistent', '--schema', '/nonexistent', '--confirm-stage', '7'], { encoding: 'utf8' });
+  expect(bad.status).toBe(1);
+  expect(bad.stderr).toMatch(/stage/);
 });

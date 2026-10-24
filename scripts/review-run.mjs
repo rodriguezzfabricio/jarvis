@@ -131,12 +131,26 @@ export async function runReview(options) {
   }
 }
 
+/**
+ * The CLI's values and runReview options. parseArgs keeps only an option's last value, so every --confirm-stage token is read
+ * from the raw tokens: a repeat in either spelling, or any bad value, is refused before anything starts
+ * (Codex re-check of decision 94).
+ */
+export function parseCli(args) {
+  const { values, tokens } = parseArgs({ args, tokens: true, options: Object.fromEntries(['round', 'lanes', 'model', 'effort', 'prompts', 'schema', 'repo', 'codex', 'evidence-config', 'confirm-stage'].map(k => [k, { type: 'string' }]).concat([['dry-run', { type: 'boolean' }], ['help', { type: 'boolean' }]])) });
+  const stages = tokens.filter(t => t.kind === 'option' && t.name === 'confirm-stage');
+  if (stages.length > 1) throw Error('--confirm-stage may be given only once');
+  for (const t of stages) if (!STAGES.includes(t.value)) throw Error(`confirm stage must be one of ${STAGES.join(', ')}`);
+  const options = { ...values, lanes: values.lanes?.split(','), dryRun: values['dry-run'], confirmStage: stages[0]?.value };
+  return { values, options };
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const { values } = parseArgs({ options: Object.fromEntries(['round', 'lanes', 'model', 'effort', 'prompts', 'schema', 'repo', 'codex', 'evidence-config', 'confirm-stage'].map(k => [k, { type: 'string' }]).concat([['dry-run', { type: 'boolean' }], ['help', { type: 'boolean' }]])) });
+    const { values, options } = parseCli(process.argv.slice(2));
     if (values.help) console.log('Usage: node scripts/review-run.mjs --round stage0-17 --prompts <dir> --schema <file> [--lanes A,B,D] [--model gpt-6.1-sol] [--effort high] [--repo <dir>] [--codex <absolute-path>] [--dry-run] [--evidence-config <trusted-json>] [--confirm-stage <0-1|2|3>]\nAdvisory only; never grants stage approval. Existing output is never overwritten.');
     else {
-      const result = await runReview({ ...values, lanes: values.lanes?.split(','), dryRun: values['dry-run'], confirmStage: values['confirm-stage'], evidence: values['evidence-config'] ? JSON.parse(readFileSync(resolve(values['evidence-config']), 'utf8')) : undefined });
+      const result = await runReview({ ...options, evidence: values['evidence-config'] ? JSON.parse(readFileSync(resolve(values['evidence-config']), 'utf8')) : undefined });
       console.log(`${values['dry-run'] ? 'Dry run' : 'Completed'}: ${result.revision}\nWorkspace: ${result.workspace}`);
       for (const lane of result.lanes) console.log(`Lane ${lane} verdict: ${join(result.roundDir, `verdict-${lane}.json`)}`);
       process.exitCode = result.exitCode ?? 0;

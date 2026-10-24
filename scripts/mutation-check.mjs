@@ -133,6 +133,7 @@ const mutations = [
   ["review runner parses prompt as flags", RR, "), '--', texts[l]]", "), texts[l]]"],
   ["review runner overwrites lane reservation", RR, "`lanes ${lanes.join(',')}\\n`, { flag: 'wx', mode: 0o600 }", "`lanes ${lanes.join(',')}\\n`, { flag: 'w', mode: 0o600 }"],
   ["review runner hides setup failure", RR, "    appendFileSync(join(roundDir, 'status'), 'runner-error\\n');", ""],
+  ["review runner takes the last of repeated confirm stages", RR, "  if (stages.length > 1) throw Error('--confirm-stage may be given only once');\n", ""],
   ["desktop receipt skipped", DE, "if (!result.sessionStart) result.problems.push('Jarvis SessionStart receipt missing');", ""],
   ["desktop tripwire skipped", DE, "if (!result.tripwire) result.problems.push('linked Jarvis tripwire denial missing');", ""],
   ["desktop exact command ignored", DE, "record(block.input).command === expected.probeCommand", "true"],

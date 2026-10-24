@@ -337,8 +337,8 @@ function sectionBody(text: string, heading: string): string {
   return next < 0 ? rest : rest.slice(0, next);
 }
 
-// Skills whose rules live in their own tests: skills-build.test.ts (build, debug), skills-architect.test.ts.
-const checkedElsewhere = ["build", "debug", "architect"];
+// Skills whose rules live in their own tests: skills-build.test.ts (build, debug), skills-architect.test.ts, review-skill.test.ts.
+const checkedElsewhere = ["build", "debug", "architect", "review"];
 
 describe("skills folder", () => {
   it("has rules here for every skill, so none skips these checks", () => {

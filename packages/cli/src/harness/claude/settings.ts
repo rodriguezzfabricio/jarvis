@@ -62,7 +62,7 @@ export function sessionTmpEnv(sessionTmpDir: string): Record<string, string> {
  * blockReadsOutsideWorkingDirectories leaves them readable to sandboxed shells. Both spellings,
  * because macOS's /tmp and /var are symlinks into /private.
  */
-export const SYSTEM_TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders"] as const;
+export const SYSTEM_TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp"] as const;
 
 function defaultHostTmpDir(): string | undefined {
   const t = tmpdir();

@@ -11,6 +11,7 @@ export const STAGES = ["0-1", "2", "3"];
 const MAP = [
   [/^inline$/, "0-1"],
   [/^packages\/cli\/src\/harness\/claude\/mutations-probe\.json$/, "0-1"],
+  [/^packages\/cli\/src\/harness\/claude\/mutations-settings\.json$/, "0-1"],
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],

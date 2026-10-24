@@ -79,10 +79,13 @@ export function planEntries(plan: Plan): AppendInput[] {
 }
 
 /** Risk tier never changes a bug/refactor into a spec or architecture pipeline (decision 89). */
-export function singleTaskPlan(triage: SingleTaskTriage, request: string): Plan {
+export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks: readonly { name: string }[]): Plan {
   if (triage.type !== "bug" && triage.type !== "refactor") throw new Error("singleTaskPlan requires bug or refactor triage");
+  if (!checks?.some((check) => check.name === "unit")) throw new Error("singleTaskPlan requires an installed unit check");
+  const goal = request.trim().slice(0, 16_000);
+  if (!goal) throw new Error("singleTaskPlan requires a nonempty request");
   return PlanSchema.parse({ tasks: [{
-    id: "T1", title: request.slice(0, 120), goal: request,
+    id: "T1", title: goal.slice(0, 120), goal,
     exitCondition: triage.type === "bug" ? "The reported symptom is reproduced, fixed, and the unit check and code review pass." : "Pinned behavior remains unchanged and the unit check and code review pass.",
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"],
     ...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),

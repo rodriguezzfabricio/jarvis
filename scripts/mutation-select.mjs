@@ -1,7 +1,9 @@
-// Picks the test files that can observe a mutated file, so the mutation check doesn't run the whole
-// suite for every mutation. Sound by construction: a subset only ever keeps a catch; anything else is
-// re-run on the full suite, so a missed test costs time, never a false "caught" (scripts/mutation-check.mjs).
+// Picks the test files that can observe a mutated file, so the mutation check's fast mode doesn't run
+// the whole suite for every mutation. A subset only keeps a catch, and marks it unconfirmed: a test
+// the selection can't see could still error on the full suite. Anything else is re-run on the full
+// suite, and confirm mode, the gate, takes every verdict from it (scripts/mutation-check.mjs).
 import { posix } from "node:path";
+import { classify, testIds } from "./mutation-classify.mjs";
 
 /**
  * Files whose text can make a test depend on another file: code, and JSON that names commands someone
@@ -113,6 +115,29 @@ export function controlCache(run) {
     if (!cache.has(key)) cache.set(key, run(sorted, ...rest));
     return cache.get(key);
   };
+}
+
+/**
+ * The subset controls the runner uses: run(files, clone) once per distinct set. A control is usable
+ * only if it ran clean, collected exactly `files` and produced exactly the full control's test ids
+ * for them; anything else, a malformed report included, is unusable, so its mutations run on the full
+ * suite. Resolves to { ids } or undefined, and reports one line per set through onLine.
+ */
+export function subsetControls({ run, controlIds, onLine = () => {} }) {
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  return controlCache(async (files, clone) => {
+    const r = await run(files, clone);
+    let k = { kind: "error", detail: "malformed report" };
+    let ids;
+    try {
+      k = classify(r.proc, r.report, undefined, r.runEnd);
+      if (k.kind === "clean" && r.proc.status === 0 && same(collectedFiles(r.report, clone), files) && same(testIds(r.report), idsForFiles(controlIds, files))) ids = testIds(r.report);
+    } catch {
+      ids = undefined;
+    }
+    onLine(`control  ${k.detail} [${files.length} test file${files.length === 1 ? "" : "s"}${ids ? "" : ": not usable, their mutations ran on the full suite"}]`);
+    return ids ? { ids } : undefined;
+  });
 }
 
 /**

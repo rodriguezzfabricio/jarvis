@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
-import { buildGraph, collectedFiles, controlCache, idsForFiles, isCandidateTest, judge, relatedTests } from "../../scripts/mutation-select.mjs";
+import { buildGraph, collectedFiles, controlCache, idsForFiles, isCandidateTest, judge, relatedTests, subsetControls } from "../../scripts/mutation-select.mjs";
+// @ts-expect-error plain .mjs script without types
+import { testIds } from "../../scripts/mutation-classify.mjs";
 
 // The mutation check runs each mutation against the test files that can observe the mutated file,
 // then the whole suite whenever that subset doesn't catch it. These pin the parts that keep the
@@ -250,4 +252,59 @@ describe("subset verdict with full-suite fallback", () => {
     await judge({ tests: ["tests/unit/a.test.ts"], control: async () => control, runSubset: (tests: string[], c: unknown) => (seen.push(tests, c), v("caught")), runFull: () => v("error") });
     expect(seen).toEqual([["tests/unit/a.test.ts"], control]);
   });
+});
+
+// Codex review, low: the runner's control validation itself, not just the helpers, must send an
+// unusable subset control to the full suite.
+describe("subset control validation", () => {
+  const clone = "/w/repo";
+  type Test = { title: string; status?: string };
+  const report = (files: Record<string, Test[]>) => ({
+    success: Object.values(files).flat().every((t) => (t.status ?? "passed") === "passed"),
+    testResults: Object.entries(files).map(([f, tests]) => ({
+      name: `${clone}/${f}`,
+      message: "",
+      status: "passed",
+      assertionResults: tests.map((t) => ({ title: t.title, fullName: `s ${t.title}`, status: t.status ?? "passed", failureMessages: t.status === "failed" ? ["AssertionError: x"] : [] })),
+    })),
+  });
+  const full = report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two" }], "tests/unit/b.test.ts": [{ title: "x" }], "tests/unit/c.test.ts": [{ title: "y" }] });
+  const controlIds = testIds(full);
+  const files = ["tests/unit/a.test.ts", "tests/unit/b.test.ts"];
+  const ok = { status: 0, signal: null };
+  const passed = { reason: "passed", unhandled: 0, messages: [] };
+  const check = async (r: { proc: object; report: unknown; runEnd: unknown }) => {
+    const lines: string[] = [];
+    const get = subsetControls({ run: async () => r, controlIds, onLine: (l: string) => lines.push(l) });
+    const fullRuns: string[] = [];
+    const out = await judge({ tests: files, control: (t: string[]) => get(t, clone), runSubset: () => ({ kind: "caught", detail: "subset" }), runFull: () => (fullRuns.push("full"), { kind: "caught", detail: "full" }) });
+    return { out, lines, fullRuns };
+  };
+
+  it("accepts a clean control with exactly the full control's tests for those files", async () => {
+    const { out, lines, fullRuns } = await check({ proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two" }], "tests/unit/b.test.ts": [{ title: "x" }] }), runEnd: passed });
+    expect(out.detail).toBe("subset");
+    expect(fullRuns).toEqual([]);
+    expect(lines).toEqual(["control  3 tests passed [2 test files]"]);
+  });
+
+  const unusable: [string, { proc: object; report: unknown; runEnd: unknown }][] = [
+    ["a different test id", { proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "renamed" }], "tests/unit/b.test.ts": [{ title: "x" }] }), runEnd: passed }],
+    ["a missing test", { proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }], "tests/unit/b.test.ts": [{ title: "x" }] }), runEnd: passed }],
+    ["an extra file", { proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two" }], "tests/unit/b.test.ts": [{ title: "x" }], "tests/unit/c.test.ts": [{ title: "y" }] }), runEnd: passed }],
+    ["an extra file with no tests (same ids)", { proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two" }], "tests/unit/b.test.ts": [{ title: "x" }], "tests/unit/empty.test.ts": [] }), runEnd: passed }],
+    ["a missing file", { proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two" }] }), runEnd: passed }],
+    ["a failing test", { proc: { status: 1, signal: null }, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two", status: "failed" }], "tests/unit/b.test.ts": [{ title: "x" }] }), runEnd: { ...passed, reason: "failed" } }],
+    ["no report", { proc: ok, report: undefined, runEnd: passed }],
+    ["a report without test results", { proc: ok, report: {}, runEnd: passed }],
+    ["a report with malformed entries", { proc: ok, report: { success: true, testResults: [{ name: `${clone}/tests/unit/a.test.ts` }] }, runEnd: passed }],
+  ];
+  for (const [what, r] of unusable) {
+    it(`sends a control with ${what} to the full suite`, async () => {
+      const { out, lines, fullRuns } = await check(r);
+      expect(out).toMatchObject({ detail: "full", confirmed: true, scope: "full suite, the 2 test files' control wasn't clean" });
+      expect(fullRuns).toEqual(["full"]);
+      expect(lines[0]).toMatch(/not usable, their mutations ran on the full suite\]$/);
+    });
+  }
 });

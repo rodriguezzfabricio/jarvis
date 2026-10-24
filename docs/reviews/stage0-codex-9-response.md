@@ -1,0 +1,11 @@
+# Response to stage 0 review 9 (Codex)
+
+Oct 24, 2026. Under decision 74, critical and high findings are fixed and re-reviewed; medium and low findings are fixed when cheap and otherwise go to `docs/backlog.md`.
+
+| # | Severity | Finding | Response |
+|---|---|---|---|
+| 1 | high | Environment-entry inspection still loses credential context | **Fixed:** in an entry like `{name: DB_PASSWORD, value: …}`, the entry's name becomes the key of every one of its `value` pairs, in YAML and JSON. So an aliased value, a repeated `value` and a typed value (`!!binary`) are all judged as `DB_PASSWORD`'s, by the same rules as a directly named field. Names and map keys may themselves be aliases (`name: *n`, `*k : value`), and are resolved within the same per-file alias budget. **Tests:** snapshot-level refusals for an aliased value, an aliased name, duplicate values in YAML and JSON, a binary value and an aliased key. **Mutations:** "env entry name not carried to its values", "YAML alias keys not followed"; "YAML aliases not followed" and "YAML alias limit off" moved to the new alias helper. |
+| 2 | high | Tracked npm Basic-auth credentials pass the snapshot scan | **Fixed:** npm's `_auth`, scoped (`//host/:_auth`) or not, is a credential name although `auth` alone isn't. So are Yarn 2+'s `npmAuthIdent` (`user:password`) and Yarn 1's `.yarnrc`, whose `key value` lines are now read. **Tests:** refusals for scoped and unscoped `_auth`, `npmAuthIdent` and a `.yarnrc` token; the inert snapshot keeps an `.npmrc` with `_auth=${NPM_AUTH}` and `auth-type=legacy`, and a `.yarnrc` with a reference token. **Mutations:** "npm _auth not a credential", "Yarn auth ident not a credential", "yarnrc read as INI". |
+| 3 | medium | Outbox actions can overwrite an earlier successful action | **Fixed (cheap):** each outbox file name carries a random UUID and is created exclusively (`wx`). **Test:** two different actions in the same (fake) millisecond keep two files with both payloads. **Mutation:** "outbox files can collide". Backlog #17. |
+
+FreeHire's real snapshots for tasks 1 and 2 still pass. The refusal test now has about 60 cases, each its own repo, and gets a 120 s limit, so it doesn't time out when the whole suite runs at once.

@@ -20,3 +20,4 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | 14 | Decision 76 | — | Write the golden tasks' acceptance checks as cases plus a verify phase (black-box drivers in `fixtures/`) | Stage 3 |
 | 15 | Codex stage 0 review 7 #3 | medium | An observation file named `__proto__` was dropped from the evidence map. Fix: observations are now fixed per case (`<id>/stdout`, `stderr`, `code`), case ids are validated, and the map has no prototype | Done |
 | 16 | Codex stage 0 review 7 #4 | medium | Doctor skipped a project whose approved `checks.lock` was deleted. Fix: a project that ever approved checks must have its lock | Done |
+| 17 | Codex stage 0 review 9 #3 | medium | Two outbox actions in the same millisecond wrote one file, so the first succeeded action's payload was lost. Fix: unique file names, created exclusively | Done |

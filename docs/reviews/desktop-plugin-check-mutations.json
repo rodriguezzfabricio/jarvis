@@ -1,0 +1,56 @@
+[
+  {
+    "name": "desktop receipt skipped",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "if (!result.sessionStart) result.problems.push('Jarvis SessionStart receipt missing');",
+    "replacement": ""
+  },
+  {
+    "name": "desktop tripwire skipped",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "if (!result.tripwire) result.problems.push('linked Jarvis tripwire denial missing');",
+    "replacement": ""
+  },
+  {
+    "name": "desktop exact command ignored",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "record(block.input).command === expected.probeCommand",
+    "replacement": "true"
+  },
+  {
+    "name": "desktop tool linkage ignored",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "calls.has(block.tool_use_id)",
+    "replacement": "true"
+  },
+  {
+    "name": "desktop hook identity ignored",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "hook.command === `node \"${expected.pluginDir}/hooks/session-start.mjs\"`",
+    "replacement": "true"
+  },
+  {
+    "name": "desktop stale records accepted",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "Date.parse(e.timestamp) < start",
+    "replacement": "false"
+  },
+  {
+    "name": "desktop CLI canary skipped",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "if (!probe.ok) throw new Error('live canary failed; compatibility session was not started');",
+    "replacement": ""
+  },
+  {
+    "name": "desktop plugin hashes ignored",
+    "file": "scripts/desktop-plugin-check.mjs",
+    "anchor": "JSON.stringify(hashes(run.pluginDir)) !== JSON.stringify(run.pluginHashes)",
+    "replacement": "false"
+  },
+  {
+    "name": "desktop process outcome ignored",
+    "file": "scripts/desktop-plugin-check.mjs",
+    "anchor": "probe.ok !== true || outcome.code !== 0 || outcome.timedOut !== false || outcome.overflowed !== false",
+    "replacement": "false"
+  }
+]

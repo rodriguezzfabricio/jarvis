@@ -45,6 +45,25 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     expect(ok.status).toBe(0);
   });
 
+  // Decision 80: with no run header (an interactive desktop session), SessionStart still prints a fixed
+  // receipt, so the desktop check can find it in the hook record Claude Code writes. With a header, the
+  // output is the header alone, as before.
+  it("SessionStart prints a fixed receipt without a run header, and only the header with one", () => {
+    const hook = fileURLToPath(new URL("../../plugin/hooks/session-start.mjs", import.meta.url));
+    const env = { PATH: process.env.PATH! };
+    const bare = spawnSync(process.execPath, [hook], { input: "{}", encoding: "utf8", env });
+    expect(bare.status).toBe(0);
+    expect(bare.stdout).toBe("Jarvis plugin: SessionStart ran (no run header).\n");
+    const header = join(root, "header.md");
+    writeFileSync(header, "Task: build the thing.\n");
+    const withHeader = spawnSync(process.execPath, [hook], { input: "{}", encoding: "utf8", env: { ...env, JARVIS_RUN_HEADER: header } });
+    expect(withHeader.status).toBe(0);
+    expect(withHeader.stdout).toBe("Task: build the thing.\n");
+    const missing = spawnSync(process.execPath, [hook], { input: "{}", encoding: "utf8", env: { ...env, JARVIS_RUN_HEADER: join(root, "absent.md") } });
+    expect(missing.status).toBe(0);
+    expect(missing.stdout).toBe("");
+  });
+
   it("is valid plugin JSON", () => {
     const hooks = JSON.parse(readFileSync(fileURLToPath(new URL("../../plugin/hooks/hooks.json", import.meta.url)), "utf8"));
     expect(Object.keys(hooks.hooks)).toEqual(["PreToolUse", "SessionStart"]);

@@ -146,6 +146,7 @@ const mutations = [
   ["npm tokens not recognized", N, '  ["npm token", /\\bnpm_[A-Za-z0-9]{36}\\b/],', '  ["npm token", /(?!)/],'],
   ["INI text after a closing quote dropped", N, "/^([\"'])([\\s\\S]*?)\\1(\\s+[#;].*)?$/", "/^([\"'])([\\s\\S]*?)\\1/"],
   ["empty broker socket accepted", "packages/cli/src/cli.ts", '    if (socket === "") throw', '    if (false) throw'],
+  ["SessionStart receipt missing", "plugin/hooks/session-start.mjs", 'if (path === undefined) process.stdout.write("Jarvis plugin: SessionStart ran (no run header).\\n");\nelse ', ""],
   ["outbox files can collide", "packages/cli/src/broker/outbox.ts", '-${op}-${randomUUID()}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600, flag: "wx" });', '-${op}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600 });'],
   ["session kills only the parent", X, "      process.kill(-child.pid, sig);", "      child.kill(sig);"],
   ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],

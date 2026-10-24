@@ -905,6 +905,18 @@ Settled by the integrator after a Codex review of the triage lane (decision 81's
 
 *From:* the integrator, Oct 24, after the Codex review of the triage lane.
 
+### 90. Project ids come from the repo; intake polls the phone while it waits (new; Oct 24; changes §3.3)
+An Opus review of the intake commands found that no component defined how a repo maps to its project id, and that nothing read the phone's replies while an intake round was open, so every tap during intake counted as late. The integrator settled (decision 81's thresholds; Fabricio can veto):
+- **The project id is derived, not configured:** `<repo folder name>-<first 8 hex of sha256(realpath of the git top level)>`, lowercase, with anything outside `[a-z0-9-]` replaced by `-`. Every command uses it when neither `--project` nor `JARVIS_PROJECT` is given: intake, steer, status, run, decide's register lookup. One function in `packages/cli/src/config/project.ts` computes it.
+- **`jarvis intake answers --wait` polls the reply topic itself.** It runs in the interactive session, which may use the runner-owned home (§3.3). It routes each round button through the round's handler, sends free text on as steer notes, and keeps its poll cursor in the project folder. Between waits ntfy keeps the messages, so the next poll picks them up.
+- **Lateness is judged by ntfy's message time, not the time Jarvis polled it.** A tap made before the deadline counts even if it's read after it.
+- **The phone message carries the questions:** after the summary, one line per question with its default, as far as the 4 KB limit allows, so "Use defaults" isn't a blind tap.
+- **A failed notification never blocks** (decision 50): the round is recorded and the session is told to answer in the session.
+- **`intake answer` on a closed round says "Not counted" and exits non-zero,** so the skill knows to record a supersession instead.
+- **The taste profile fields** (decision 39): `admired` (3–5 names or links), `aiMade` (the look to avoid), `tone` (`serious|playful`), `dislikedColors`, `dislikedFonts`, `platforms`. Labels are at most 500 characters, and lists hold at most 20 entries. Schema errors name the field.
+
+*From:* the integrator, Oct 24, after the Opus review of the intake commands.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

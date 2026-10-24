@@ -96,7 +96,7 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 
 ### 3.3 Triage and intake (interactive, inside Claude Code)
 Triage, research, the questions, the mockups and the spec happen in your interactive session:
-- **Asking questions:** the round is shown as plain text in the session and sent through the ntfy notifier at the same time (decision 86). You answer in the session or on the phone. The session waits with a bounded `jarvis intake answers <n> --wait`, not by polling, and defaults become "unconfirmed" after 15 minutes.
+- **Asking questions:** the round is shown as plain text in the session and sent through the ntfy notifier at the same time (decision 86). You answer in the session or on the phone. The session waits with a bounded `jarvis intake answers <n> --wait`, which also reads the phone's replies while it waits (decision 90), and defaults become "unconfirmed" after 15 minutes.
 - **Handoff:** once the spec is confirmed (or defaulted), the session runs `jarvis run --detach` and tells you it's safe to close Claude Code.
 
 ### 3.4 The runner

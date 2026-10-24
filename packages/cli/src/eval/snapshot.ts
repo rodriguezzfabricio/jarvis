@@ -125,6 +125,10 @@ const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
   ["Slack token", /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
   ["Stripe live key", /\b[rs]k_live_[0-9A-Za-z]{20,}\b/],
+  // A JSON Web Key with private or symmetric material (d, p, q, dp, dq, qi; k for oct), keys in either
+  // order, in any file (Codex review 14). Public keys (x, y, n, e only) don't match.
+  ["private JWK", /["']?\bkty["']?\s*:[\s\S]{0,1000}?["']?\b(?:d|k|p|q|dp|dq|qi)["']?\s*:\s*["'][A-Za-z0-9_-]{16,}["']/],
+  ["private JWK", /["']?\b(?:d|k|p|q|dp|dq|qi)["']?\s*:\s*["'][A-Za-z0-9_-]{16,}["'][\s\S]{0,1000}?["']?\bkty["']?\s*:/],
 ];
 
 /**
@@ -166,12 +170,12 @@ export function isBase64UserPassword(b64: string): boolean {
 const AUTH_HEADER = /\b(?:Proxy-)?Authorization["']?\s*[:=,]\s*["'`]?\s*(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+([^\s"'`<>${}]+)(?=["'`\s,;)}\]]|$)/gim;
 
 /**
- * An Authorization credential that is a documentation or test placeholder: lowercase words ("token",
- * "the-token", "fhk_whatever"), an elided value ("fhk_…") or an HTML-escaped placeholder ("&lt;key&gt;").
- * A random token is mixed-case or has digits; known limit: an all-lowercase-letters real token passes.
+ * An Authorization credential that is a documentation placeholder, in complete narrow forms only: a short
+ * prefix elided ("fhk_…", "sk_...") or an HTML-escaped placeholder ("&lt;key&gt;"). No character-class
+ * exemptions (Codex review 14): a lowercase token is as real as any other. Fake test values need review.
  */
 export function isPlaceholderAuth(v: string): boolean {
-  return /^[a-z]+(?:[._-][a-z]+)*[._-]?$/.test(v) || /(…|\.\.\.)$/.test(v) || /&(lt|gt|amp|quot);/.test(v);
+  return /^[\w-]{0,8}(…|\.\.\.)$/.test(v) || /^&lt;[\w -]+&gt;?;?$/.test(v);
 }
 
 export function findCredentials(text: string): string[] {
@@ -439,6 +443,10 @@ export function findSecretFields(name: string, text: string): string[] {
     // Docker and Podman registry logins (auths.<registry>.auth): a literal is a credential by structure,
     // whatever its length or characters (Codex review 11). "auth" alone names no credential elsewhere.
     const DOCKER_AUTH = "auths.*.auth";
+    // JSON Web Keys (and JWKS entries) holding private or symmetric material, by structure (Codex review 14).
+    const PRIVATE_JWK = "private JWK";
+    const JWK_PRIVATE = ["d", "p", "q", "dp", "dq", "qi", "k"];
+    const isEmptyNode = (v: unknown) => v === undefined || (isScalar(v) && (v.value === null || v.value === ""));
     const dockerAuth = (v: unknown) => {
       if (v !== null && v !== undefined && (typeof v !== "string" || !isInertString(v))) hits.add(DOCKER_AUTH);
     };
@@ -447,6 +455,7 @@ export function findSecretFields(name: string, text: string): string[] {
       else if (v && typeof v === "object" && !(v instanceof Date)) {
         const o = v as Record<string, unknown>;
         const envName = [o.name, o.key].find((x): x is string => typeof x === "string" && isSecretName(x));
+        if (typeof o.kty === "string" && JWK_PRIVATE.some((k) => o[k] !== undefined && o[k] !== "")) hits.add(PRIVATE_JWK);
         if (key === "auths") for (const r of Object.values(o)) if (r && typeof r === "object") dockerAuth((r as Record<string, unknown>).auth);
         for (const [k, x] of Object.entries(o)) walkPlain(x, keyFor(k, envName));
       } else leaf(v, key, isSecretName(key));
@@ -480,6 +489,7 @@ export function findSecretFields(name: string, text: string): string[] {
       const n = deref(doc, node);
       if (isMap(n)) {
         const pairs = pairsOf(doc, n);
+        if (pairs.some((p) => p.key === "kty") && pairs.some((p) => JWK_PRIVATE.includes(p.key) && !isEmptyNode(deref(doc, p.value)))) hits.add(PRIVATE_JWK);
         const envName = pairs
           .filter((p) => p.key === "name" || p.key === "key")
           .map((p) => deref(doc, p.value))

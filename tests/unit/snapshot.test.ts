@@ -303,6 +303,16 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "embedded-der.json": `{"blob": "${(edKey.privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).toString("base64")}"}\n`,
       "secret.yaml": `kind: Secret\ndata:\n  url: ${Buffer.from("postgres://svc:Synthetic9qvM2@db.prod.acme.net/app").toString("base64")}\n`,
       "creds.ts": 'export const registryLogin = "c3ZjOlN5bnRoZXRpYzlxdk0y";\n',
+      // Codex review 14: lowercase opaque tokens, and private JSON Web Keys.
+      "lower-token.json": '{"headers": {"Authorization": "Bearer qzmtvknpwsrjlfcx"}}\n',
+      "lower-token.ts": 'const h = { Authorization: "Bearer qzmt-vknp_wsrj.lfcx" };\n',
+      "private.jwk.json": `${JSON.stringify(edKey.privateKey.export({ format: "jwk" }))}\n`,
+      "jwks.yaml": `keys:\n  - ${JSON.stringify(edKey.privateKey.export({ format: "jwk" }))}\n`,
+      // Structure alone: block YAML (unquoted values), and kty far from d.
+      "jwk-block.yaml": `${Object.entries(edKey.privateKey.export({ format: "jwk" })).map(([k, v]) => `${k}: ${v}`).join("\n")}\n`,
+      "jwk-gap.json": `${JSON.stringify({ kty: "OKP", crv: "Ed25519", note: "n".repeat(1200), ...edKey.privateKey.export({ format: "jwk" }) })}\n`,
+      "oct.jwk.json": '{"kty": "oct", "k": "GawgguFyGrWKav7AX4VKUg", "alg": "HS256"}\n',
+      "jwk.ts": `export const key = ${JSON.stringify(edKey.privateKey.export({ format: "jwk" }))};\n`,
       "auth-field.yaml": "headers:\n  authorization: Synthetic9qvM2\n",
       "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
@@ -334,7 +344,8 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "app.toml"), 'password = ""\ntoken = "{{ vault_token }}"\n');
     writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
     writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
-    writeFileSync(join(repo, "client.ts"), 'const h = { Authorization: `Bearer ${token}`, "X-Other": "Bearer " + key };\nconst doc = "Send Authorization: Bearer <token>";\nreq.Header.Set("Authorization", "Bearer fhk_whatever")\n// Authorization: Bearer fhk_…\n');
+    writeFileSync(join(repo, "client.ts"), 'const h = { Authorization: `Bearer ${token}`, "X-Other": "Bearer " + key };\nconst doc = "Send Authorization: Bearer <token>";\n// Authorization: Bearer fhk_…\n// Authorization: Bearer &lt;key&gt;\n');
+    writeFileSync(join(repo, "public.jwk.json"), `${JSON.stringify(generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }))}\n`);
     writeFileSync(join(repo, "request.json"), '{"headers": {"Authorization": "Bearer ${API_TOKEN}", "Accept": "application/json"}}\n');
     writeFileSync(join(repo, "kubeconfig.yaml"), `clusters:\n  - cluster:\n      certificate-authority-data: ${Buffer.from(generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }) as string).toString("base64")}\nusers:\n  - name: admin\n    user:\n      exec: {command: aws}\n`);
     writeFileSync(join(repo, "beans.xml"), '<beans><property name="password" value="${DB_PASSWORD}"/><property name="secret" ref="secretBean"/><property name="url" value="jdbc:postgresql://db/app"/><entry key="db.password"></entry></beans>\n');

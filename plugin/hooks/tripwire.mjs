@@ -1,8 +1,12 @@
 // PreToolUse tripwire (decision 12, layer 3). Not a wall: the sandbox and the broker are the walls.
 // This catches obvious mistakes early with a clear message. Exit 2 blocks the tool call; stderr goes
 // back to the model as the reason.
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
+const OFF_LIMITS = "the runner-owned folder is off limits";
+
+// Hard stops, enforced in Jarvis sessions only (see isJarvisSession).
 export const RULES = [
   [/\bgit\s+push\b[^\n;&|]*\s(--force\b|--force-with-lease\b|-f\b)/, "force-push is a hard stop; use `jarvis act git.push_protected` with approval"],
   [/\bgit\s+push\b/, "pushing is the runner's job; commit nothing and let the runner record the revision"],
@@ -13,16 +17,27 @@ export const RULES = [
   [/\bgh\s+(repo\s+create|release\s+create|pr\s+merge)\b/, "remote GitHub changes go through the broker"],
   [/\b(sendmail|mail\s+-s|swaks)\b/, "sending mail goes through the broker (`jarvis act email.send`)"],
   [/\bsecurity\s+(find|dump)-(generic|internet)-password\b/, "reading the Keychain is not allowed"],
-  [/(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/, "the runner-owned folder is off limits"],
 ];
+
+// The runner home holds the ledger, evidence and secrets: off limits in every session, Jarvis or not.
+const RUNNER_HOME_BASH = /(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/;
+const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/;
+
+/** By spelling (~, $HOME, /Users/<u>, /home/<u>), or by the resolved path under this HOME, ".." included. */
+function inRunnerHome(path, cwd, env) {
+  if (RUNNER_HOME.test(path)) return true;
+  if (!env.HOME || !isAbsolute(env.HOME)) return false;
+  const home = join(resolve(env.HOME), ".jarvis");
+  const full = resolve(typeof cwd === "string" ? cwd : "/", path);
+  return full === home || full.startsWith(`${home}/`);
+}
 
 // The files sessions may own under the repo's `.jarvis/`: a task session's notes (architecture §5) and
 // scratch scripts (decision 68: a script instead of a refused compound command), and what the skills
 // write there: intake rounds, answers and the taste draft; design mockups; the planner's plan and
 // check proposals; the onboard and sweep reports and plans. None of them is authority: candidates
 // touching `.jarvis/` are refused and the runner reads its own copies (decisions 87, 91). Every other
-// `.jarvis/` name stays refused. Never under a home folder, never through "..".
-const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/;
+// `.jarvis/` name stays refused. Never through "..".
 const NAME = "[A-Za-z0-9_-][A-Za-z0-9._-]*";
 const SESSION_FILES = [
   `notes\\/${NAME}\\.md`,
@@ -39,14 +54,47 @@ const SESSION_FILES = [
 const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")})$`);
 
 function sessionOwned(path) {
-  return SESSION_OWNED.test(path) && !RUNNER_HOME.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
+  return SESSION_OWNED.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
 }
 
-export function check(input) {
+/** A marker that exists as any kind of entry (a symlink, even a dangling one), or can't be checked. */
+function marked(dir, name) {
+  try {
+    return lstatSync(join(dir, name), { throwIfNoEntry: false }) !== undefined;
+  } catch { return true; } // an unreadable marker counts as present
+}
+
+/**
+ * The plugin installs at user scope, so this hook runs in every Claude Code session. It enforces only in
+ * Jarvis sessions: runner-started ones (JARVIS_SESSION=1), and those whose cwd, or a folder between it and
+ * its git toplevel, holds `.jarvis` or `.jarvis-routing.json`. The toplevel is the nearest folder with a
+ * `.git` entry, found by walking up as config/project.ts does, without running git. Outside a git repo
+ * only the cwd counts, so the runner home's own `.jarvis/` doesn't make every folder under it Jarvis.
+ * Anything it can't read counts as Jarvis: the check fails toward blocking.
+ */
+export function isJarvisSession(input, env) {
+  if (env.JARVIS_SESSION === "1") return true;
+  let dir;
+  try {
+    dir = realpathSync.native(resolve(input?.cwd ?? process.cwd()));
+  } catch { return true; } // an unreadable cwd fails closed
+  const chain = [];
+  for (let d = dir; ; d = dirname(d)) {
+    chain.push(d);
+    if (marked(d, ".git")) break;
+    if (dirname(d) === d) { chain.length = 1; break; }
+  }
+  return chain.some((d) => marked(d, ".jarvis") || marked(d, ".jarvis-routing.json"));
+}
+
+export function check(input, env = process.env) {
   const tool = input?.tool_name;
   const ti = input?.tool_input ?? {};
   const text = tool === "Bash" ? String(ti.command ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
-  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text)) return "the runner-owned folder is off limits";
+  if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
+  if (tool === "Bash" && RUNNER_HOME_BASH.test(text)) return OFF_LIMITS;
+  if (!isJarvisSession(input, env)) return undefined;
+  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text)) return OFF_LIMITS;
   if (tool !== "Bash") return undefined;
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;

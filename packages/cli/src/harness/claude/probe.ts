@@ -325,7 +325,8 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
     const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 30, pluginDir });
     const args = opts.negativeControlArgs ? opts.negativeControlArgs(safeArgs) : safeArgs;
-    const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}) });
+    // A Jarvis session, as the runner's are, so the real tripwire enforces (it allows everything elsewhere).
+    const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}), JARVIS_SESSION: "1" });
     const out = await runSession({ bin: opts.claudeBin, args, cwd: work, env, timeoutMs: opts.timeoutMs ?? 240_000 });
     exitCode = out.code;
     const events = parseStreamJson(out.stdout);

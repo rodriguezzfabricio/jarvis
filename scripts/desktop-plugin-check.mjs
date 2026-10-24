@@ -33,6 +33,9 @@ export function prepareCheck({ home = homedir(), pluginDir = join(repo, 'plugin'
   const run = { schema: 1, runId, directory, workspace, cacheDir, jarvisHome: join(home, '.jarvis'), pluginDir, pluginHashes, notBefore: new Date().toISOString(), probeCommand: compatibilityCommand };
   writeTaskSettings(join(directory, 'settings.json'), { worktree: workspace, jarvisHome: run.jarvisHome, cacheDir, allowedDomains: [] });
   save(join(workspace, 'PROMPT.txt'), compatibilityPrompt + '\n');
+  // A desktop chat has no JARVIS_SESSION, so the workspace marks itself as a Jarvis project; the tripwire
+  // enforces only there, and its denial is what this check looks for.
+  mkdirSync(join(workspace, '.jarvis'), { mode: 0o700 });
   save(join(directory, 'run.json'), JSON.stringify(run, null, 2));
   return run;
 }

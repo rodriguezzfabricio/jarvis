@@ -36,7 +36,7 @@ function preToolUse(tool, input) {
   for (const h of pluginHooks.PreToolUse ?? []) {
     if (h.matcher && !new RegExp(`^(${h.matcher})$`).test(tool)) continue;
     for (const c of h.hooks ?? []) {
-      const r = spawnSync("/bin/sh", ["-c", c.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir)], { input: JSON.stringify({ tool_name: tool, tool_input: input }), env: hookEnv, encoding: "utf8" });
+      const r = spawnSync("/bin/sh", ["-c", c.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir)], { input: JSON.stringify({ tool_name: tool, tool_input: input, cwd: process.cwd() }), env: hookEnv, encoding: "utf8" });
       if (r.status === 2) return `PreToolUse:${tool} hook error: ${r.stderr.trim()}`;
     }
   }
@@ -121,6 +121,9 @@ const linkLine = (key, [src, dst], { make = false, lie = false } = {}) => {
 };
 
 let n = 0;
+// other-first: the model tries .jarvis/other-<nonce> before anything has created .jarvis/, so only the
+// session's JARVIS_SESSION marks it as Jarvis for the tripwire.
+if (mode === "other-first") steps.sort((a, b) => Number(b.file_path?.includes("/.jarvis/other-") ?? false) - Number(a.file_path?.includes("/.jarvis/other-") ?? false));
 for (const st of steps) {
   if (mode === "compose-skip" && st.tool === "Bash" && st.command.includes("compose-redirect")) continue;
   if (mode === "other-skip" && st.tool === "Write" && st.file_path.includes("/.jarvis/other-")) continue;

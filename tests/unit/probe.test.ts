@@ -105,7 +105,7 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
     it("fails as inconclusive when the link steps printed nothing", async () => {
       const r = await probe("link-silent");
       expect(failed(r)).toEqual(["hardlinks_out_refused"]);
-      expect(r.checks.find((c) => c.name === "hardlinks_out_refused")?.detail).toMatch(/no output/);
+      expect(r.checks.find((c) => c.name === "hardlinks_out_refused")?.detail ?? "<missing check>").toMatch(/no output/);
     });
 
     it("fails when the step reports a cache link the disk doesn't show", async () => {
@@ -115,7 +115,7 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
     it("passes whether the session's own cache can be linked or not (readable and writable by policy, decision 69)", async () => {
       expect(failed(await probe("cache-link-refused"))).toEqual([]);
       const r = await probe("safe");
-      expect(r.checks.find((c) => c.name === "hardlinks_out_refused")?.detail).toMatch(/Lc linked/);
+      expect(r.checks.find((c) => c.name === "hardlinks_out_refused")?.detail ?? "<missing check>").toMatch(/Lc linked/);
     });
   });
 
@@ -140,7 +140,7 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
   describe("shell composition", () => {
     it("records which compound forms run and which are refused", async () => {
       const r = await probe("safe");
-      expect(r.checks.find((c) => c.name === "shell_composition_recorded")?.detail).toMatch(/pipe runs.*redirect runs.*and runs.*for refused/);
+      expect(r.checks.find((c) => c.name === "shell_composition_recorded")?.detail ?? "<missing check>").toMatch(/pipe runs.*redirect runs.*and runs.*for refused/);
     });
 
     it("fails when a compound command reports success but nothing ran", async () => {

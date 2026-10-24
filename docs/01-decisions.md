@@ -740,7 +740,7 @@ Supersedes the aliases in architecture §3.9.
 *From:* stage 0 probe, Oct 23.
 
 ### 66. How the Codex reviewer runs (new; stage 0)
-- **By absolute path:** `~/.npm-global/bin/codex`, pinned at codex-cli 0.163.0. Never through `PATH`, because a wrapper owns `codex` there (decision 58).
+- **By absolute path:** `~/.npm-global/bin/codex`, pinned at codex-cli 0.164.0 (moved from 0.163.0 on Oct 23, Fabricio). Never through `PATH`, because a wrapper owns `codex` there (decision 58).
 - **Isolated in two places:**
   - A Jarvis-owned `CODEX_HOME` (`~/.jarvis/codex-home`) that contains only a symlink to the login file `~/.codex/auth.json`, so the credential isn't copied.
   - An empty `HOME` (`~/.jarvis/codex-home/home`). Codex also reads the cross-tool skills folder `~/.agents/skills` (4,193 skills on this Mac, including gstack) from the real home, whatever `CODEX_HOME` says.

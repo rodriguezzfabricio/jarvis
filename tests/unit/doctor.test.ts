@@ -13,7 +13,7 @@ function deps(over: Partial<DoctorDeps> = {}): DoctorDeps {
     platform: "darwin",
     repoPath: "/Users/f/Desktop/jarvis",
     exists: () => true,
-    exec: (bin) => (bin.endsWith("2.1.309") ? "2.1.309 (Claude Code)\n" : bin.endsWith("codex") ? "codex-cli 0.163.0\n" : "0\n"),
+    exec: (bin) => (bin.endsWith("2.1.309") ? "2.1.309 (Claude Code)\n" : bin.endsWith("codex") ? "codex-cli 0.164.0\n" : "0\n"),
     freeBytes: () => 100 * GB,
     live: true,
     probe: okProbe,
@@ -49,7 +49,7 @@ describe("jarvis doctor", () => {
   });
 
   it("fails when iCloud sync covers the repo (decision 64)", async () => {
-    const cs = await runDoctor(deps({ exec: (b) => (b === "/usr/bin/defaults" ? "1" : b.endsWith("codex") ? "codex-cli 0.163.0" : "2.1.309 (Claude Code)") }));
+    const cs = await runDoctor(deps({ exec: (b) => (b === "/usr/bin/defaults" ? "1" : b.endsWith("codex") ? "codex-cli 0.164.0" : "2.1.309 (Claude Code)") }));
     expect(level(cs, "icloud_sync")).toBe("fail");
   });
 

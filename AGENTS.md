@@ -14,7 +14,7 @@ Jarvis is a thin orchestrator around Claude Code: research, one round of questio
 - **Tests first.** Safety, ledger and settings code gets its tests before the code, including fault-injection tests. Check that a new test fails when the code it guards is broken.
 - **Claude-specific code lives only in `packages/cli/src/harness/claude/`.** Everything else talks to interfaces.
 - **No credential where a task session can read it,** not even in a test fixture. Unit tests use `tests/fixtures/fake-claude.mjs`.
-- **Pinned binaries by absolute path** (`packages/cli/src/config/pins.ts`): Claude Code 2.1.309, codex-cli 0.163.0. Never call `claude` or `codex` through `PATH`.
+- **Pinned binaries by absolute path** (`packages/cli/src/config/pins.ts`): Claude Code 2.1.309, codex-cli 0.164.0. Never call `claude` or `codex` through `PATH`.
 - **Full model IDs** (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`), never aliases.
 - **When a doc and reality disagree,** stop, record a new or superseding decision in `docs/01-decisions.md`, then adjust. Don't silently work around it.
 - **Scaffolding that exists because of a model or harness weakness** gets a line in `docs/harness-assumptions.md`.

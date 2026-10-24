@@ -6,7 +6,7 @@ import { join } from "node:path";
  * Binaries are always called by absolute path, never through PATH (decision 58).
  */
 export const CLAUDE_CODE_VERSION = "2.1.309";
-export const CODEX_VERSION = "0.163.0";
+export const CODEX_VERSION = "0.164.0";
 
 export function pinnedClaudeBin(home: string = homedir()): string {
   return join(home, ".local", "share", "claude", "versions", CLAUDE_CODE_VERSION);

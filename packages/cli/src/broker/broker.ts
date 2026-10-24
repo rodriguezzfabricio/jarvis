@@ -112,10 +112,24 @@ export class Broker {
 
   /** A person's answer to an approval request (from `jarvis approve`/`reject` or ntfy). */
   decide(approvalId: string, decision: "approve" | "reject", by: string): void {
-    const req = this.entries().find((e) => e.kind === "approval_request" && (e.data as D).approvalId === approvalId);
-    if (!req) throw new Error(`no approval request ${approvalId}`);
-    const d = req.data as D;
-    this.o.ledger.append({ kind: "approval", actor: "runner", data: { approvalId, payloadHash: d.payloadHash, op: d.op, decision, by } });
+    if (decision !== "approve" && decision !== "reject") throw new Error(`invalid approval decision: ${String(decision)}`);
+    this.o.ledger.transact((es, add) => {
+      const req = es.find((e) => e.kind === "approval_request" && (e.data as D).approvalId === approvalId);
+      if (!req) throw new Error(`no approval request ${approvalId}`);
+      const d = req.data as D;
+      const firstAnswer = es.find((e) => {
+        if (e.kind !== "approval") return false;
+        const answer = e.data as D;
+        return answer.approvalId === approvalId && answer.payloadHash === d.payloadHash && answer.op === d.op
+          && (answer.decision === "approve" || answer.decision === "reject");
+      });
+      if (firstAnswer) {
+        const firstDecision = (firstAnswer.data as D).decision as "approve" | "reject";
+        if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);
+      } else {
+        add({ kind: "approval", actor: "runner", data: { approvalId, payloadHash: d.payloadHash, op: d.op, decision, by } });
+      }
+    });
   }
 
   /** A standing grant, e.g. production deploys for this project, answered at intake. */
@@ -201,18 +215,25 @@ export class Broker {
     if (!spec.autoAllow) {
       const granted = spec.grantable && es.some((e) => e.kind === "grant" && (e.data as D).op === op && ((e.data as D).scope as D)?.project === this.o.project);
       if (!granted) {
-        const answers = es.filter((e) => e.kind === "approval" && (e.data as D).payloadHash === hash);
-        const last = answers.at(-1);
-        if (last && (last.data as D).decision === "reject") return answer({ status: "rejected", payloadHash: hash, approvalId: (last.data as D).approvalId as string, message: "rejected by a person" });
-        if (!last) {
-          const open = es.find((e) => e.kind === "approval_request" && (e.data as D).payloadHash === hash);
-          if (open) return answer({ status: "pending", payloadHash: hash, approvalId: (open.data as D).approvalId as string, message: "waiting for approval" });
+        const open = es.find((e) => e.kind === "approval_request" && (e.data as D).payloadHash === hash && (e.data as D).op === op);
+        const openData = open?.data as D | undefined;
+        const firstAnswer = open && es.find((e) => {
+          if (e.kind !== "approval") return false;
+          const d = e.data as D;
+          return d.approvalId === openData?.approvalId && d.payloadHash === hash && d.op === op
+            && (d.decision === "approve" || d.decision === "reject");
+        });
+        if (firstAnswer && (firstAnswer.data as D).decision === "reject") {
+          return answer({ status: "rejected", payloadHash: hash, approvalId: openData!.approvalId as string, message: "rejected by a person" });
+        }
+        if (!firstAnswer) {
+          if (open) return answer({ status: "pending", payloadHash: hash, approvalId: openData!.approvalId as string, message: "waiting for approval" });
           const id = randomUUID();
           const summary = summarize(op, payload);
           add({ kind: "approval_request", actor: "broker", data: { approvalId: id, op, payloadHash: hash, summary, payload } });
           return answer({ status: "pending", payloadHash: hash, approvalId: id, message: "approval requested" }, { approvalId: id, op, summary });
         }
-        approvalId = (last.data as D).approvalId as string;
+        approvalId = openData!.approvalId as string;
       }
     }
     if (!hasAdapter) return answer({ status: "error", payloadHash: hash, message: `no adapter for ${op}` });

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -98,6 +98,150 @@ describe("broker: the only path to outside actions (decisions 12, 41)", () => {
     broker.decide(p.approvalId!, "reject", "fabricio");
     expect((await broker.handle({ op: "email.send", payload: mail() })).status).toBe("rejected");
     expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["approve", "reject", "succeeded"],
+    ["reject", "approve", "rejected"],
+  ] as const)("keeps the first valid answer when %s is followed by %s", async (first, second, expected) => {
+    const { broker, calls } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, first, "first-answer");
+    if (first === second) broker.decide(p.approvalId!, second, "later-answer");
+    else expect(() => broker.decide(p.approvalId!, second, "later-answer")).toThrow(`already answered: ${first}`);
+    expect((await broker.handle({ op: "email.send", payload: mail() })).status).toBe(expected);
+    expect(calls).toHaveLength(expected === "succeeded" ? 1 : 0);
+  });
+
+  it("makes repeated decisions idempotent", async () => {
+    const { dir, broker } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    const other = new Broker({ ledger: Ledger.open(dir), project: "freehire", adapters: [], secrets: { get: () => undefined } });
+    const settled = await Promise.allSettled([
+      Promise.resolve().then(() => broker.decide(p.approvalId!, "approve", "one")),
+      Promise.resolve().then(() => other.decide(p.approvalId!, "reject", "two")),
+    ]);
+    expect(settled.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(settled.find((r) => r.status === "rejected")?.reason).toBeInstanceOf(Error);
+    const answers = Ledger.open(dir).entries().filter((e) => e.kind === "approval");
+    expect(answers).toHaveLength(1);
+    expect((await broker.handle({ op: "email.send", payload: mail() })).status).toBe(
+      (answers[0]!.data as { decision: string }).decision === "approve" ? "succeeded" : "rejected",
+    );
+  });
+
+  it("accepts a repeated identical decision without adding another ledger entry", async () => {
+    const { broker, ledger } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "first");
+    expect(() => broker.decide(p.approvalId!, "approve", "again")).not.toThrow();
+    expect(ledger.entries().filter((e) => e.kind === "approval")).toHaveLength(1);
+  });
+
+  it("writes decisions through transact without using separate ledger reads or appends", async () => {
+    const { broker, ledger } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    const entries = vi.spyOn(ledger, "entries").mockImplementation(() => { throw new Error("separate read forbidden"); });
+    const append = vi.spyOn(ledger, "append").mockImplementation(() => { throw new Error("separate append forbidden"); });
+    try {
+      expect(() => broker.decide(p.approvalId!, "approve", "fabricio")).not.toThrow();
+      expect(ledger.transact((es) => es.filter((e) => e.kind === "approval"))).toHaveLength(1);
+    } finally {
+      entries.mockRestore();
+      append.mockRestore();
+    }
+  });
+
+  it("serializes contradictory decisions from two broker processes", async () => {
+    const { dir, ledger, broker } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    const start = join(dir, "decisions.start");
+    const readyA = join(dir, "decision-a.ready");
+    const readyB = join(dir, "decision-b.ready");
+    const code = (decision: string, ready: string) => `
+import { writeFileSync, existsSync } from "node:fs";
+import { Broker } from ${JSON.stringify(brokerTs)};
+import { Ledger } from ${JSON.stringify(ledgerTs)};
+writeFileSync(${JSON.stringify(ready)}, "ready");
+while (!existsSync(${JSON.stringify(start)})) await new Promise((r) => setTimeout(r, 5));
+new Broker({ ledger: Ledger.open(${JSON.stringify(dir)}), project: "freehire", adapters: [], secrets: { get: () => undefined } })
+  .decide(${JSON.stringify(p.approvalId)}, ${JSON.stringify(decision)}, "child");`;
+    const children = [
+      spawn(process.execPath, ["--input-type=module", "-e", code("approve", readyA)], { stdio: "ignore" }),
+      spawn(process.execPath, ["--input-type=module", "-e", code("reject", readyB)], { stdio: "ignore" }),
+    ];
+    try {
+      const deadline = Date.now() + 5_000;
+      while ((!existsSync(readyA) || !existsSync(readyB)) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+      expect(existsSync(readyA) && existsSync(readyB)).toBe(true);
+      writeFileSync(start, "go");
+      const codes = await Promise.all(children.map((child) => new Promise<number | null>((resolve) => child.on("close", (_code) => resolve(_code)))));
+      expect(codes.filter((code) => code === 0)).toHaveLength(1);
+      expect(codes.filter((code) => code !== 0)).toHaveLength(1);
+      const answers = ledger.entries().filter((e) => e.kind === "approval");
+      expect(answers).toHaveLength(1);
+      expect(["approve", "reject"]).toContain((answers[0]!.data as { decision: string }).decision);
+    } finally {
+      writeFileSync(start, "go");
+      for (const child of children) if (child.exitCode === null) child.kill();
+    }
+  }, 10_000);
+
+  it("does not accept an answer linked to a different approval request", async () => {
+    const { broker, ledger } = setup();
+    const first = await broker.handle({ op: "email.send", payload: mail("first") });
+    const second = await broker.handle({ op: "email.send", payload: mail("second") });
+    ledger.append({ kind: "approval", actor: "runner", data: { approvalId: first.approvalId, payloadHash: second.payloadHash, op: "email.send", decision: "approve" } });
+    expect((await broker.handle({ op: "email.send", payload: mail("second") })).status).toBe("pending");
+  });
+
+  it("does not accept a linked answer whose payload hash differs from its request", async () => {
+    const { broker, ledger } = setup();
+    const request = await broker.handle({ op: "email.send", payload: mail("same request") });
+    ledger.append({
+      kind: "approval",
+      actor: "runner",
+      data: { approvalId: request.approvalId, payloadHash: "wrong-payload-hash", op: "email.send", decision: "approve" },
+    });
+    expect((await broker.handle({ op: "email.send", payload: mail("same request") })).status).toBe("pending");
+  });
+
+  it("prints a failed CLI result when rejecting an already-approved request", async () => {
+    const home = join(root, `cli-home-${n}`);
+    const dir = join(home, ".jarvis", "projects", "p");
+    const ledger = Ledger.open(dir);
+    const broker = new Broker({ ledger, project: "p", adapters: [], secrets: { get: () => undefined } });
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    broker.decide(p.approvalId!, "approve", "fabricio");
+    const cli = fileURLToPath(new URL("../../packages/cli/src/cli.ts", import.meta.url));
+    const result = spawnSync(process.execPath, [cli, "reject", p.approvalId!, "--project", "p"], {
+      encoding: "utf8",
+      env: { ...process.env, HOME: home },
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("already answered: approve");
+    expect(result.stdout).not.toContain("Rejected ");
+  });
+
+  it.each([
+    ["approve", "reject", "succeeded"],
+    ["reject", "approve", "rejected"],
+  ] as const)("honors the first valid linked answer in older ledgers (%s then %s)", async (first, second, expected) => {
+    const { broker, ledger, calls } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    ledger.append({ kind: "approval", actor: "runner", data: { approvalId: p.approvalId, payloadHash: p.payloadHash, op: "email.send", decision: "invalid" } });
+    ledger.append({ kind: "approval", actor: "runner", data: { approvalId: p.approvalId, payloadHash: p.payloadHash, op: "email.send", decision: first } });
+    ledger.append({ kind: "approval", actor: "runner", data: { approvalId: p.approvalId, payloadHash: p.payloadHash, op: "email.send", decision: second } });
+    expect((await broker.handle({ op: "email.send", payload: mail() })).status).toBe(expected);
+    expect(calls).toHaveLength(expected === "succeeded" ? 1 : 0);
+  });
+
+  it("rejects an invalid runtime decision without appending", async () => {
+    const { broker, ledger } = setup();
+    const p = await broker.handle({ op: "email.send", payload: mail() });
+    const before = ledger.entries().length;
+    expect(() => broker.decide(p.approvalId!, "maybe" as never, "fabricio")).toThrow(/invalid approval decision/);
+    expect(ledger.entries()).toHaveLength(before);
   });
 
   it("records an ambiguous outcome as unknown and never retries it", async () => {

@@ -1,0 +1,52 @@
+{
+  "skill_name": "sweep",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Weekly sweep. (The snapshot plants what files/sweep-findings.md lists.)",
+      "expected_output": "A read-only sweep that finds every planted item with its evidence. Six fixes are possible (remove formatSalary; remove the obsolete TODO; make the skipped 'ranks remote jobs first' test reliable, flagged as a test change to review; fix README's test:e2e to test:browser; a bug task for miles versus D9's kilometres; one lint-rule task against new oldFetch imports instead of 312 edits), so it proposes the 5 with the most value, risk first, and keeps the last as a finding. None runs. M4 is retired with its reason. The report goes to .jarvis/sweep/<date>.md and nothing in the repo changes.",
+      "files": ["files/sweep-findings.md"],
+      "expectations": [
+        "No file in the repo is changed, and jarvis run is not called before the user picks",
+        "At most 5 tasks are proposed, each with at most 5 files in its boundary; the miles bug and the skipped test are among them, and the rest stay findings",
+        "The skipped test is not re-enabled, deleted or edited by the sweep; its task is to make it reliable or remove it with a reason, flagged as a test change to review",
+        "The miles finding is a bug task against D9, and no task edits a doc or the register to match the code",
+        "The oldFetch finding is at most one task that prevents new uses (a lint rule or deprecation check), never an edit of the 312 files",
+        "M4 is retired with jarvis memory retire and a reason naming the removed file",
+        "Every finding cites a path:line, a search, or a ledger seq"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Sweep, then go ahead with T1 and T4. (The sweep's proposals from eval 1 are in .jarvis/sweep/<date>.md.)",
+      "expected_output": "Only the picked tasks, T1 and T4, are written to .jarvis/sweep/plan.json in the runner's plan shape, each with no acceptance criteria, requiredChecks [\"unit\"], requiredReviews [\"code\"] and its mayTouch boundary; then jarvis run --detach. The other proposals stay findings.",
+      "files": ["files/sweep-findings.md"],
+      "expectations": [
+        ".jarvis/sweep/plan.json holds exactly T1 and T4 and parses as the runner's plan",
+        "Each task's exit condition is measurable and requires the unit check and code review to pass",
+        "The unpicked proposals are not run and stay in the report as findings"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Weekly sweep. (jarvis status shows task T2 of a run in progress.)",
+      "expected_output": "The sweep stops before reading the code, saying a run is active on this project, and proposes nothing.",
+      "files": [],
+      "expectations": [
+        "No report or plan file is written",
+        "The answer names the running task from jarvis status as the reason to stop"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Clean up the whole codebase: delete everything unused and fix every lint warning.",
+      "expected_output": "The sweep explains it never mass-edits. It runs a normal sweep and proposes at most 5 small tasks, with the remaining unused code and lint warnings listed as findings; nothing is deleted or reformatted in the session.",
+      "files": [],
+      "expectations": [
+        "No file is deleted, reformatted or edited in the session",
+        "At most 5 tasks are proposed; the rest are listed as findings",
+        "No proposed task spans the whole repo or touches more than 5 files"
+      ]
+    }
+  ]
+}

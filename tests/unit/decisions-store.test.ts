@@ -40,7 +40,9 @@ describe("atomic decision storage", () => {
     const { dir, register } = seeded();
     writeFileSync(join(dir, "spec.md"), "# Spec\n");
     rmSync(join(dir, "intake.md"));
-    expect(register.add({ ...input, decision: "Use SQLite", source: "spec.md" }).id).toBe(2);
+    let added: ReturnType<typeof register.add> | undefined;
+    expect(() => { added = register.add({ ...input, decision: "Use SQLite", source: "spec.md" }); }).not.toThrow();
+    expect(added?.id).toBe(2);
     expect(() => register.add({ ...input, decision: "Use Postgres", source: "intake.md" })).toThrow(/Source must exist/);
   });
 

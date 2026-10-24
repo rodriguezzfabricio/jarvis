@@ -15,7 +15,9 @@ const fresh = () => { const root = realpathSync(mkdtempSync(join(tmpdir(), "jarv
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
 
 function setup() {
-  const home = fresh(); const repo = fresh(); mkdirSync(join(repo, ".git")); mkdirSync(join(repo, "docs"));
+  // The repo sits next to a real file, so "../outside.md" names something that exists.
+  const home = fresh(); const base = fresh(); const repo = join(base, "repo"); mkdirSync(join(repo, ".git"), { recursive: true }); mkdirSync(join(repo, "docs"));
+  writeFileSync(join(base, "outside.md"), "outside\n");
   writeFileSync(join(repo, "docs", "notes.md"), "source\n");
   const ledger = Ledger.open(join(home, ".jarvis", "projects", projectId(repo)));
   ledger.append({ kind: "task_created", actor: "runner", task_id: "T1", data: { title: "Login" } });

@@ -22,6 +22,7 @@ import { register as registerStatus } from "./commands/status.ts";
 import { register as registerReport } from "./commands/report.ts";
 import { register as registerGate } from "./commands/gate.ts";
 import { register as registerMode } from "./commands/mode.ts";
+import { register as registerMemory } from "./commands/memory.ts";
 import * as intake from "./intake/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
@@ -147,6 +148,7 @@ registerStatus(program);
 registerReport(program);
 registerGate(program);
 registerMode(program);
+registerMemory(program);
 intake.register(program);
 
 await program.parseAsync();

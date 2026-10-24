@@ -154,5 +154,125 @@
     "file": "packages/cli/src/runner/prompt.ts",
     "anchor": "...(input.mode === \"explain\" ? [",
     "replacement": "...(false ? ["
+  },
+  {
+    "name": "commands memory skips the planted-instruction scan",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "  const hit = PLANTED.find((p) => p.test(v));",
+    "replacement": "  const hit = undefined as RegExp | undefined;"
+  },
+  {
+    "name": "commands memory misses permission words",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "  /\\b(?:allow|allowed|allows|allowing|permit|permits|permitted|grant|grants|granted|whitelist|allowlist)\\b/i,\n",
+    "replacement": ""
+  },
+  {
+    "name": "commands memory misses safety-off phrasing",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "  /\\b(?:skip|skips|skipping|bypass",
+    "replacement": "  /\\b(?:bypass"
+  },
+  {
+    "name": "commands memory accepts multi-line learnings",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "  if (/[\\r\\n]/.test(v)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "commands memory accepts user notes",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "export const MEMORY_TYPES = [\"feedback\", \"project\", \"reference\"] as const;",
+    "replacement": "export const MEMORY_TYPES = [\"feedback\", \"project\", \"reference\", \"user\"] as const;"
+  },
+  {
+    "name": "commands memory trusts any ledger seq",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "if (!verified.entries.some((e) => e.seq === Number(ledger[1]))) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "commands memory reads a tampered ledger",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "if (!verified.ok) throw new LedgerTamperError(`Cannot check the source:",
+    "replacement": "if (false) throw new LedgerTamperError(`Cannot check the source:"
+  },
+  {
+    "name": "commands memory follows a symlinked source",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "if (!st || st.isSymbolicLink() || (i < parts.length - 1",
+    "replacement": "if (!st || (i < parts.length - 1"
+  },
+  {
+    "name": "commands memory accepts escaping sources",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "parts.some((p) => p === \"\" || p === \".\" || p === \"..\")) throw new Error(\"Bad source",
+    "replacement": "false) throw new Error(\"Bad source"
+  },
+  {
+    "name": "commands memory follows symlinked folders",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "  if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`Memory storage refuses symlinks",
+    "replacement": "  if (false) throw new Error(`Memory storage refuses symlinks"
+  },
+  {
+    "name": "commands memory files readable by others",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "openSync(temp, \"wx\", 0o600)",
+    "replacement": "openSync(temp, \"wx\", 0o644)"
+  },
+  {
+    "name": "commands memory reads symlinked notes",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)",
+    "replacement": "openSync(path, constants.O_RDONLY | constants.O_NONBLOCK)"
+  },
+  {
+    "name": "commands memory indexes retired notes",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "notes.filter((n) => n.type === type && n.status === \"active\")",
+    "replacement": "notes.filter((n) => n.type === type)"
+  },
+  {
+    "name": "commands memory ignores the index limit",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "if (index.trimEnd().split(\"\\n\").length > (seams.indexLimit ?? INDEX_MAX_LINES)) exitWith",
+    "replacement": "if (false) exitWith"
+  },
+  {
+    "name": "commands memory same-as creates a duplicate",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "      if (o.sameAs !== undefined) {",
+    "replacement": "      if (false) {"
+  },
+  {
+    "name": "commands memory retires twice",
+    "file": "packages/cli/src/commands/memory.ts",
+    "anchor": "if (note.status === \"retired\") exitWith",
+    "replacement": "if (false) exitWith"
+  },
+  {
+    "name": "commands status json includes every entry kind",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "entries: result.entries.filter((e) => kinds.includes(e.kind))",
+    "replacement": "entries: result.entries"
+  },
+  {
+    "name": "commands status json omits failure output",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "    if (failure) failures[task.id] = failure;",
+    "replacement": "    void failure;"
+  },
+  {
+    "name": "commands status json trusts edited failure output",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "const failure = failureEvidence(task);",
+    "replacement": "const failure = failureEvidence(task, undefined, () => ({ ok: true, problems: [] }));"
+  },
+  {
+    "name": "commands status json exits 0 when contended",
+    "file": "packages/cli/src/commands/status.ts",
+    "anchor": "        (seams.exit ?? ((code) => { process.exitCode = code; }))(1);",
+    "replacement": "        void seams.exit;"
   }
 ]

@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { createPrivateKey } from "node:crypto";
+import { isUtf8 } from "node:buffer";
+import { createHash, createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments, type YAMLMap } from "yaml";
 import { safeGit } from "./git.ts";
+import { containerMembers, credentialContainer } from "./snapshot-containers.ts";
+import { argumentFields, commandFields, literalFields, sourcePrivateJwk } from "./snapshot-literals.ts";
 
 /**
  * Sanitized snapshots for golden tasks (02-golden-tasks.md, "How every task runs"): the task's
@@ -152,16 +155,20 @@ export function isPlaceholderPassword(raw: string): boolean {
   return template.test(raw) || template.test(pw) || word.test(pw);
 }
 
-/** A base64 run, not part of a longer one. Credentials are short; longer runs (images, hashes) are skipped. */
-const BASE64_RUN = /(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{12,512}={0,2}(?![A-Za-z0-9+/=])/g;
+/** Standard or URL-safe base64, without arbitrary credential-length exemptions. */
+const BASE64_RUN = /(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_-]{4,}={0,2}(?![A-Za-z0-9+/_=-])/g;
 
 /**
  * True if a base64 string decodes to printable user:password text: HTTP Basic credentials, as in
  * npm's _auth, Docker's auths.*.auth and "Authorization: Basic …", wherever they appear (Codex review 10).
  */
 export function isBase64UserPassword(b64: string): boolean {
-  // The user part looks like a user name, so base64-encoded JSON ({"c":1,…}) and other data don't match.
-  const m = /^([\w.@+~!$%&*=#|-]*):([\x21-\x7e]+)$/.exec(Buffer.from(b64, "base64").toString("latin1"));
+  const buf = Buffer.from(b64, "base64");
+  if (!isUtf8(buf)) return false;
+  const decoded = buf.toString("utf8");
+  // Public URI data has a scheme and authority, not a Basic-auth username and password.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(decoded)) return false;
+  const m = /^([\w.@+~!$%&*=#|-]*):([^\s\x00-\x1f\x7f]+)$/u.exec(decoded);
   return m !== null && !isPlaceholderPassword(m[2]!);
 }
 
@@ -195,6 +202,14 @@ export function findCredentials(text: string): string[] {
       break;
     }
   }
+  for (const m of text.matchAll(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>]+/gi)) {
+    try {
+      const url = new URL(m[0]);
+      for (const [key, value] of url.searchParams) if (isSecretName(key) && !isInertString(value)) hits.push("credential URL query");
+    } catch {
+      // Not a complete literal URL.
+    }
+  }
   for (const m of text.matchAll(BASE64_RUN)) {
     if (isBase64UserPassword(m[0])) {
       hits.push("base64 user:password");
@@ -204,21 +219,34 @@ export function findCredentials(text: string): string[] {
   return hits;
 }
 
-/** Base64 runs long enough to hide a key or token, wrapped lines included. */
-const BASE64_BLOB = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/]{24,}(?:\r?\n[ \t]*[A-Za-z0-9+/]{4,})*={0,2}(?![A-Za-z0-9+/=_-])/g;
-
-/**
- * Credentials hidden inside base64, wherever they are (Codex review 13: a kubeconfig's client-key-data):
- * every base64 run is decoded once, checked as a DER private key and scanned as text.
- */
-export function findEncodedCredentials(text: string): string[] {
-  const hits = new Set<string>();
-  for (const m of text.matchAll(BASE64_BLOB)) {
-    const buf = Buffer.from(m[0].replace(/\s+/g, ""), "base64");
-    if (isDerPrivateKey(buf)) hits.add("base64-encoded private key");
-    else for (const h of findCredentials(buf.toString("latin1"))) hits.add(`base64-encoded ${h}`);
+/** Whitespace-wrapped base64 is joined only across complete encoding lines. */
+function* encodedPayloads(text: string): Generator<Buffer> {
+  const matches = [...text.matchAll(BASE64_RUN)];
+  const runs = matches.map((m) => m[0]);
+  let wrapped: string[] = [];
+  const flush = () => {
+    if (wrapped.length > 1) runs.push(wrapped.join(""));
+    wrapped = [];
+  };
+  let end = 0;
+  for (const m of matches) {
+    if (wrapped.length && !/^[ \t]*\r?\n[ \t\r\n]*$/.test(text.slice(end, m.index))) flush();
+    wrapped.push(m[0]);
+    end = m.index + m[0].length;
   }
-  return [...hits];
+  flush();
+  for (const run of new Set(runs)) {
+    const raw = run.replace(/=+$/, "");
+    if (raw.length % 4 === 1) continue;
+    const data = Buffer.from(raw, "base64url");
+    if (data.toString("base64url") !== raw.replaceAll("+", "-").replaceAll("/", "_")) continue;
+    yield data;
+  }
+}
+
+/** The same bounded pipeline applies to every decoded wrapper, not only to its raw text. */
+export function findEncodedCredentials(text: string): string[] {
+  return findSnapshotCredentials("decoded.txt", Buffer.from(text), { encodedOnly: true });
 }
 
 /** Text views of a file for scanning: UTF-8, UTF-16 (BOM or NUL-interleaved ASCII), and raw bytes for binaries. */
@@ -228,41 +256,60 @@ export function scanViews(buf: Buffer): string[] {
     const le = buf[0] === 0xff && buf[1] === 0xfe;
     const be = buf[0] === 0xfe && buf[1] === 0xff;
     if (be) {
-      const swapped = Buffer.from(buf.subarray(2));
+      const swapped = Buffer.from(buf.subarray(2, buf.length - (buf.length % 2)));
       swapped.swap16();
       views.push(swapped.toString("utf16le"));
     } else views.push(buf.subarray(le ? 2 : 0).toString("utf16le"), buf.subarray(1).toString("utf16le"));
     views.push(buf.toString("latin1").replace(/\u0000/g, ""));
   }
+  // cp037 PEM envelopes are identifiable; arbitrary non-UTF-8 assets are not treated as secrets.
+  if (buf.includes(Buffer.from([0x60, 0x60, 0x60, 0x60, 0x60, 0xc2, 0xc5, 0xc7, 0xc9, 0xd5]))) {
+    const table = new Map<number, string>([[0x60, "-"], [0x40, " "], [0x25, "\n"], [0x15, "\n"], [0x61, "/"], [0x4e, "+"], [0x7e, "="]]);
+    for (const [start, letters] of [[0xc1, "ABCDEFGHI"], [0xd1, "JKLMNOPQR"], [0xe2, "STUVWXYZ"], [0x81, "abcdefghi"], [0x91, "jklmnopqr"], [0xa2, "stuvwxyz"], [0xf0, "0123456789"]] as const) {
+      [...letters].forEach((c, i) => table.set(start + i, c));
+    }
+    views.push([...buf].map((b) => table.get(b) ?? "\ufffd").join(""));
+  }
+  const utf7 = views[0]!.replace(/\+([A-Za-z0-9+/]{8,})-/g, (raw, encoded: string) => {
+    const bytes = Buffer.from(encoded, "base64");
+    return bytes.length % 2 === 0 ? bytes.swap16().toString("utf16le") : raw;
+  });
+  if (utf7 !== views[0]) views.push(utf7);
   return views;
 }
 
 /** Decodes one quoted literal's escapes (JSON, YAML double-quoted, TOML basic, JS): \/ \uXXXX \u{…} \UXXXXXXXX \xXX \n … */
 export function decodeEscapes(body: string): string {
-  return body.replace(/\\(u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([\s\S]))/g, (_m, _all, cp: string, u4: string, u8: string, x2: string, ch: string) => {
+  return body.replace(/\\(?:\r?\n|([0-7]{1,3})|u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([\s\S]))/g, (_m, oct: string, cp: string, u4: string, u8: string, x2: string, ch: string) => {
+    if (oct !== undefined) return String.fromCodePoint(Number.parseInt(oct, 8));
     const hex = cp ?? u4 ?? u8 ?? x2;
     if (hex !== undefined) {
       const n = Number.parseInt(hex, 16);
       return n <= 0x10ffff ? String.fromCodePoint(n) : "";
     }
-    return ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "0": "\0" } as Record<string, string>)[ch] ?? ch;
+    if (ch === undefined) return ""; // source line continuation
+    return ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f" } as Record<string, string>)[ch] ?? ch;
   });
 }
 
 /**
  * Text views with the containing format's encoding undone (Codex stage 0 review 6): every quoted
- * literal that has escapes, decoded (so "postgres:\/\/u:p@host" or / reads as a URL), and the
- * whole text percent-decoded when it holds percent-encoded URL syntax.
+ * literal that has escapes, decoded with its field context, plus independently decoded percent runs.
  */
 export function decodedViews(text: string): string[] {
   const views: string[] = [];
-  const lits: string[] = [];
-  for (const m of text.matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'/g)) {
-    const body = m[1] ?? m[2] ?? "";
-    if (body.includes("\\")) lits.push(decodeEscapes(body));
-  }
-  if (lits.length) views.push(lits.join("\n"));
-  if (/%(3a|2f|40)/i.test(text)) views.push(text.replace(/%([0-9a-fA-F]{2})/g, (_m, h: string) => String.fromCharCode(Number.parseInt(h, 16))));
+  const literals: string[] = [];
+  const context = text.replace(/"((?:[^"\\]|\\[\s\S])*)"|'((?:[^'\\]|\\[\s\S])*)'|`((?:[^`\\]|\\[\s\S])*)`/g, (raw, double: string, single: string, template: string) => {
+    const value = double ?? single ?? template ?? "";
+    if (!value.includes("\\")) return raw;
+    const decoded = decodeEscapes(value);
+    literals.push(decoded);
+    return `${raw[0]}${decoded}${raw[0]}`;
+  });
+  if (context !== text) views.push(context, ...literals);
+  if (/%[0-9a-f]{2}/i.test(text)) views.push(text.replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
+    try { return decodeURIComponent(run); } catch { return run; }
+  }));
   return views;
 }
 
@@ -402,6 +449,7 @@ const decodeXml = (v: string) =>
 
 // npm's _auth (scoped or not) is base64 user:password, though "auth" alone names no credential (Codex review 9).
 const isSecretName = (k: string) => SECRET_FIELD.test(fieldName(k)) || /(^|[/:])_auth$/.test(k);
+const FIELD_POLICY = { secret: isSecretName, inert: isInertString, untyped: isInertUntyped };
 
 /** NAME=value inside a string value: Compose and task-definition environment lists, scripts. */
 const ENV_ASSIGNMENT = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)=(.*)$/;
@@ -432,6 +480,7 @@ export function findSecretFields(name: string, text: string): string[] {
     // start afresh: under "password: {type: string, example: …}" in an OpenAPI schema, nothing is a credential.
     const leaf = (v: unknown, key: string, secret: boolean) => {
       if (typeof v === "string") {
+        if (/^(run|command|script|args|entrypoint)$/.test(key)) for (const h of commandFields(v, FIELD_POLICY)) hits.add(h);
         if (secret && !isInertString(v)) hits.add(key);
         for (const line of v.split("\n")) {
           const m = ENV_ASSIGNMENT.exec(line);
@@ -459,8 +508,10 @@ export function findSecretFields(name: string, text: string): string[] {
       if (v !== null && v !== undefined && (typeof v !== "string" || !isInertString(v))) hits.add(DOCKER_AUTH);
     };
     const walkPlain = (v: unknown, key: string): void => {
-      if (Array.isArray(v)) for (const x of v) walkPlain(x, key);
-      else if (v && typeof v === "object" && !(v instanceof Date)) {
+      if (Array.isArray(v)) {
+        if (/^(args|command|entrypoint)$/.test(key)) for (const h of argumentFields(v, FIELD_POLICY)) hits.add(h);
+        for (const x of v) walkPlain(x, key);
+      } else if (v && typeof v === "object" && !(v instanceof Date)) {
         const o = v as Record<string, unknown>;
         const envName = [o.name, o.key].find((x): x is string => typeof x === "string" && isSecretName(x));
         if (typeof o.kty === "string" && JWK_PRIVATE.some((k) => o[k] !== undefined && o[k] !== "")) hits.add(PRIVATE_JWK);
@@ -512,8 +563,13 @@ export function findSecretFields(name: string, text: string): string[] {
             }
           }
         for (const p of pairs) walkYaml(doc, p.value, keyFor(p.key, envName));
-      } else if (isSeq(n)) for (const x of n.items) walkYaml(doc, x, key);
-      else if (isScalar(n)) leaf(n.value, key, isSecretName(key));
+      } else if (isSeq(n)) {
+        if (/^(args|command|entrypoint)$/.test(key)) {
+          const values = n.items.map((x) => deref(doc, x)).map((x) => isScalar(x) ? x.value : undefined);
+          for (const h of argumentFields(values, FIELD_POLICY)) hits.add(h);
+        }
+        for (const x of n.items) walkYaml(doc, x, key);
+      } else if (isScalar(n)) leaf(n.value, key, isSecretName(key));
     };
     if ("plain" in docs) for (const d of docs.plain) walkPlain(d, "");
     else for (const d of docs.yaml) walkYaml(d, d.contents, "");
@@ -586,6 +642,83 @@ export function isDerPrivateKey(buf: Buffer): boolean {
     }
   }
   return false;
+}
+
+export interface SnapshotScanLimits {
+  maxDepth?: number;
+  maxExpandedBytes?: number;
+  /** Used by the legacy encoded-content helper; normal snapshots inspect the original bytes too. */
+  encodedOnly?: boolean;
+}
+
+/** Pure, bounded inspection shared by files, source escapes, encodings and archive members. */
+export function findSnapshotCredentials(name: string, bytes: Buffer, limits: SnapshotScanLimits = {}): string[] {
+  const hits = new Set<string>();
+  const seen = new Set<string>();
+  let remaining = limits.maxExpandedBytes ?? 16 * 1024 * 1024;
+  const maxDepth = limits.maxDepth ?? 6;
+  const visit = (file: string, buf: Buffer, depth: number): void => {
+    const id = `${file}:${createHash("sha256").update(buf).digest("hex")}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (depth > maxDepth) { hits.add("decoding depth limit; needs review"); return; }
+    if (depth > 0) {
+      remaining -= buf.length;
+      if (remaining < 0) { hits.add("expanded byte limit; needs review"); return; }
+    }
+    const inspect = depth > 0 || !limits.encodedOnly;
+    if (inspect && isDerPrivateKey(buf)) { hits.add("binary private key"); return; }
+    if (inspect && credentialContainer(buf)) { hits.add("credential container; needs review"); return; }
+    try {
+      const members = containerMembers(file, buf, remaining);
+      if (members) {
+        for (const member of members) visit(basename(member.name), member.data, depth + 1);
+        return;
+      }
+    } catch (e) {
+      hits.add(`container cannot be inspected (limit or invalid format); needs review: ${(e as Error).message}`);
+      return;
+    }
+    const shellBackticks = CONFIG_FILE.test(file) || /\.(sh|bash|zsh|fish)$/i.test(file) || !file.replace(/^\./, "").includes(".");
+    const views = scanViews(buf);
+    const texts = [...new Set([...views, ...views.flatMap(decodedViews)])];
+    for (const [i, text] of texts.entries()) {
+      if (inspect) {
+        for (const h of findCredentials(text)) hits.add(h);
+        if (depth !== 0 || !/^\.env(\..+)?$/.test(file)) {
+          for (const h of literalFields(text, FIELD_POLICY, shellBackticks)) hits.add(h);
+          if (sourcePrivateJwk(text)) hits.add("private JWK");
+          if (!text.includes("\u0000")) for (const h of findSecretFields(file, text)) if (i === 0 || !h.startsWith("unparseable")) hits.add(h);
+        }
+      }
+      for (const payload of encodedPayloads(text)) visit("decoded.txt", payload, depth + 1);
+      // Hex, RFC 4648 base32 and byte arrays are inspected only as key material, not arbitrary fields.
+      for (const payload of keyPayloads(text)) {
+        if (isDerPrivateKey(payload) || credentialContainer(payload)) hits.add("encoded private key");
+      }
+    }
+  };
+  visit(name, bytes, 0);
+  return [...hits];
+}
+
+function* keyPayloads(text: string): Generator<Buffer> {
+  for (const m of text.matchAll(/(?<![\da-f])[\da-f]{64,}(?![\da-f])/gi)) if (m[0].length % 2 === 0) yield Buffer.from(m[0], "hex");
+  for (const m of text.matchAll(/(?<![A-Z2-7])[A-Z2-7]{32,}={0,6}(?![A-Z2-7=])/g)) {
+    let bits = 0;
+    let value = 0;
+    const bytes: number[] = [];
+    for (const c of m[0].replace(/=+$/, "")) {
+      value = (value << 5) | "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c);
+      bits += 5;
+      if (bits >= 8) { bits -= 8; bytes.push((value >>> bits) & 255); }
+    }
+    yield Buffer.from(bytes);
+  }
+  for (const m of text.matchAll(/(?:Buffer\.from|(?:new\s+)?Uint8Array)\s*\(\s*\[([\d\s,a-fx]+)\]/gi)) {
+    const parts = m[1]!.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length && parts.every((s) => /^(?:0x[\da-f]{1,2}|\d{1,3})$/i.test(s) && Number(s) <= 255)) yield Buffer.from(parts.map(Number));
+  }
 }
 
 function walk(dir: string, root: string, out: string[] = []): string[] {
@@ -676,17 +809,7 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
         throw e;
       }
     }
-    const views = scanViews(readFileSync(p));
-    const all = [...views, ...views.flatMap(decodedViews)];
-    const hits = new Set([...all.flatMap(findCredentials), ...all.flatMap(findEncodedCredentials)]);
-    if (!/^\.env(\..+)?$/.test(name)) {
-      // Every text view (UTF-8, UTF-16), and the percent-decoded text, is inspected as configuration.
-      const texts = [...views, ...views.filter((t) => /%(3a|2f|40)/i.test(t)).map((t) => t.replace(/%([0-9a-fA-F]{2})/g, (_m, h: string) => String.fromCharCode(Number.parseInt(h, 16))))];
-      for (const [i, t] of texts.entries()) {
-        if (i > 0 && t.includes("\u0000")) continue;
-        for (const h of findSecretFields(name, t)) if (i === 0 || !h.startsWith("unparseable")) hits.add(h);
-      }
-    }
+    const hits = new Set(findSnapshotCredentials(name, readFileSync(p)));
     if (hits.size) found.push(`${rel} (${[...hits].join(", ")})`);
   }
   if (found.length) {

@@ -28,6 +28,8 @@ const SR = "packages/cli/src/sandbox/srt.ts";
 const TW = "plugin/hooks/tripwire.mjs";
 const RS = "scripts/review-status.mjs";
 const RR = "scripts/review-run.mjs";
+const DE = "packages/cli/src/harness/claude/desktop-evidence.ts";
+const DK = "scripts/desktop-plugin-check.mjs";
 
 const mutations = [
   ["failIfUnavailable off", S, "      failIfUnavailable: true,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input", "      failIfUnavailable: false,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input"],
@@ -119,6 +121,19 @@ const mutations = [
   ["review runner parses prompt as flags", RR, "), '--', texts[l]]", "), texts[l]]"],
   ["review runner overwrites lane reservation", RR, "`lanes ${lanes.join(',')}\\n`, { flag: 'wx', mode: 0o600 }", "`lanes ${lanes.join(',')}\\n`, { flag: 'w', mode: 0o600 }"],
   ["review runner hides setup failure", RR, "    appendFileSync(join(roundDir, 'status'), 'runner-error\\n');", ""],
+  ["desktop receipt skipped", DE, "if (!result.sessionStart) result.problems.push('Jarvis SessionStart receipt missing');", ""],
+  ["desktop tripwire skipped", DE, "if (!result.tripwire) result.problems.push('linked Jarvis tripwire denial missing');", ""],
+  ["desktop exact command ignored", DE, "record(block.input).command === expected.probeCommand", "true"],
+  ["desktop tool linkage ignored", DE, "calls.has(block.tool_use_id)", "true"],
+  ["desktop hook identity ignored", DE, "hook.command === `node \"${expected.pluginDir}/hooks/session-start.mjs\"`", "true"],
+  ["desktop stale records accepted", DE, "Date.parse(e.timestamp) < start", "false"],
+  ["desktop CLI canary skipped", DE, "if (!probe.ok) throw new Error('live canary failed; compatibility session was not started');", ""],
+  ["desktop plugin hashes ignored", DK, "JSON.stringify(hashes(run.pluginDir)) !== JSON.stringify(run.pluginHashes)", "false"],
+  ["desktop process outcome ignored", DK, "probe.ok !== true || outcome.code !== 0 || outcome.timedOut !== false || outcome.overflowed !== false", "false"],
+  ["desktop terminal provenance accepted", DE, "if (relevant.some(e => e.entrypoint !== 'sdk-cli')) return fail('desktop SDK entrypoint missing');", ""],
+  ["desktop attribution ignored", DE, "block.content.includes(`This hook comes from the jarvis@${format === 'cli' ? 'inline' : 'jarvis'} plugin.`)", "true"],
+  ["desktop manifest changes ignored", DK, "'hooks/hooks.json', '.claude-plugin/plugin.json'", "'hooks/hooks.json'"],
+  ["desktop symlink ancestors followed", DK, "if (existsSync(parent) && realpathSync(parent) !== parent) throw new Error('run ancestors must not use symlinks');", ""],
   // Codex stage 0 review 16, lane D.
   ["sandbox wrapper sees the runner environment", SR, '  const env = { PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),', '  const env = { ...process.env, PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),'],
   ["run TMPDIR not given to the sandbox", SR, "...(r.env.TMPDIR ? { CLAUDE_CODE_TMPDIR: r.env.TMPDIR } : {})", "...{}"],

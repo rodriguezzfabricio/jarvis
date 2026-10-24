@@ -25,7 +25,8 @@ export interface CommandDeps {
   createNotifier?: (config: NtfyOptions) => Notifier;
   setExitCode?: (code: number) => void;
 }
-const configSchema = z.object({ baseUrl: z.string().url(), topic: z.string().min(1), replyTopic: z.string().min(1),
+/** ~/.jarvis/notify.json, as jarvis setup writes it. */
+export const notifyConfigSchema = z.object({ baseUrl: z.string().url(), topic: z.string().min(1), replyTopic: z.string().min(1),
   since: z.string().optional(), timeoutMs: z.number().int().positive().optional() }).strict();
 // A broken notifier config never blocks a round (decision 90): the round is recorded and answered in the session.
 function loadNotifier(home: string, factory: (config: NtfyOptions) => Notifier, ledger: Ledger, now: number, warn: (text: string) => void): Notifier | undefined {
@@ -36,7 +37,7 @@ function loadNotifier(home: string, factory: (config: NtfyOptions) => Notifier, 
     return off();
   }
   try {
-    const config = configSchema.parse(JSON.parse(raw));
+    const config = notifyConfigSchema.parse(JSON.parse(raw));
     const rounds = ledger.entries().filter((e) => e.kind === "notify" && (e.data as { source?: string }).source === "intake");
     const sent = rounds.map((e) => (e.data as { sentAt?: number }).sentAt).filter((time): time is number => typeof time === "number");
     const since = readReplyCursor(ledger) ?? config.since ?? String(Math.floor(Math.min(now, ...sent) / 1000));

@@ -5,7 +5,7 @@
 // errors, never "caught". Every file is restored, even on failure.
 // Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset)
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,6 +66,7 @@ const mutations = [
   ["PEM rule needs a long body", N, '  ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],', '  ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----\\s*[A-Za-z0-9+/=\\s]{100,}-----END/],'],
   ["session waits for pipes, not the leader's exit", X, '    child.on("exit", (c) => resolve(c));', '    child.on("close", (c) => resolve(c));'],
   ["session skips group cleanup", X, "  await cleanupGroup();\n", ""],
+  ["session waits forever on pipes held outside its group", X, "    for (const sink of sinkStreams) sink.end();\n", ""],
   ["ledger ignores the chain", L, '    if (e.prev_hash !== prev) problems.push', '    if (false) problems.push'],
   ["ledger ignores edited entries", L, '    if (entryHash(rest) !== hash) problems.push', '    if (false) problems.push'],
   ["ledger ignores the head", L, '    else problems.push("head.hash does not match', '    else if (false) problems.push("head.hash does not match'],
@@ -117,15 +118,37 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.exit(130);
   });
 }
+/**
+ * Stops processes a run left behind: a mutation that breaks process cleanup leaves the tests'
+ * SIGTERM-resistant descendants running. Only processes whose command line names this run's own
+ * temp folder are stopped (no broad patterns).
+ */
+function reapLeftovers(tmp) {
+  const ps = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+  for (const line of (ps.stdout ?? "").split("\n")) {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (!m || Number(m[1]) === process.pid || !m[2].includes(tmp)) continue;
+    try {
+      process.kill(Number(m[1]), "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+}
+
 function runSuite(tag) {
   const out = join(work, `${tag}.json`);
+  // Short, per run: Unix socket paths in the tests must stay under macOS's 104-byte limit.
+  const tmp = realpathSync(mkdtempSync("/tmp/jmt-"));
   // Vitest directly: pnpm's dependency check rejects the clone's symlinked node_modules.
   const end = join(work, `${tag}.end.json`);
   const proc = spawnSync(
     join(sandboxRepo, "node_modules", ".bin", "vitest"),
     ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
-    { encoding: "utf8", timeout: 900_000, env: { ...process.env, JARVIS_RUN_END_OUT: end } },
+    { encoding: "utf8", timeout: 900_000, env: { ...process.env, JARVIS_RUN_END_OUT: end, JARVIS_TEST_TMP: tmp } },
   );
+  reapLeftovers(tmp);
+  rmSync(tmp, { recursive: true, force: true });
   const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
   const runEnd = existsSync(end) ? JSON.parse(readFileSync(end, "utf8")) : undefined;
   return { proc, report, runEnd };

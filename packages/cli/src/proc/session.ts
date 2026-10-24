@@ -52,6 +52,7 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   let spawnError: Error | undefined;
   let timedOut = false;
   const sinks: Promise<void>[] = [];
+  const sinkStreams: NodeJS.WritableStream[] = [];
   const timers: NodeJS.Timeout[] = [];
 
   const groupAlive = () => {
@@ -94,6 +95,7 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
       shutdown();
     });
     source.pipe(sink);
+    sinkStreams.push(sink);
     sinks.push(finished(sink).catch((e: Error) => void (sinkError ??= e)));
   };
   attach(child.stdout, spec.stdoutPath, (s) => (stdout += s));
@@ -127,6 +129,9 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     await Promise.race([closed, new Promise<void>((res) => setTimeout(res, 5_000).unref())]);
     child.stdout.destroy();
     child.stderr.destroy();
+    // A destroyed source never ends its pipe, so end the files ourselves: a process outside the group
+    // (a setsid daemon) that still holds the pipes must not keep the session waiting forever.
+    for (const sink of sinkStreams) sink.end();
   }
   // Evidence is parsed from these files, so wait until every byte is on disk.
   await Promise.all(sinks);

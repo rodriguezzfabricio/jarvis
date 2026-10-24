@@ -102,6 +102,38 @@ describe("session output capture (Codex review 2, medium)", () => {
     }, 20_000);
   }
 
+  // A process that leaves the session's group (setsid) can't be cleaned up by group, and may hold the
+  // output files' pipes forever: the session must still return, with what was written.
+  it("returns when a process outside its group holds the output pipes, with the output on disk", async () => {
+    const pidFile = join(dir, "setsid.pid");
+    const leader = join(dir, "setsid-leader");
+    const daemon = `import os,time\nos.setsid()\nopen(${JSON.stringify(pidFile)},"w").write(str(os.getpid()))\ntime.sleep(60)\n`;
+    writeFileSync(join(dir, "daemon.py"), daemon);
+    writeFileSync(leader, `#!/bin/sh\n/usr/bin/python3 ${join(dir, "daemon.py")} &\nsleep 0.5\necho leader-done\nexit 0\n`);
+    chmodSync(leader, 0o755);
+    const out = join(dir, "setsid-out.txt");
+    const t0 = Date.now();
+    try {
+      // Raced against a deadline, so a hang fails an assertion rather than the test runner's timeout.
+      const r = await Promise.race([
+        runSession({ ...base, bin: leader, timeoutMs: 8_000, killGraceMs: 300, stdoutPath: out, stderrPath: join(dir, "setsid-err.txt") }),
+        new Promise<"hung">((res) => setTimeout(() => res("hung"), 12_000)),
+      ]);
+      expect(r).not.toBe("hung");
+      expect(Date.now() - t0).toBeLessThan(10_000);
+      expect(r !== "hung" && r.timedOut).toBe(false);
+      expect(readFileSync(out, "utf8")).toContain("leader-done");
+    } finally {
+      if (existsSync(pidFile)) {
+        try {
+          process.kill(Number.parseInt(readFileSync(pidFile, "utf8"), 10), "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
+    }
+  }, 20_000);
+
   // Codex review 3, medium: a session that never started is an error, not an empty run.
   it("rejects when the binary can't be started, and keeps the diagnostic", async () => {
     const errPath = join(dir, "spawn-err.txt");

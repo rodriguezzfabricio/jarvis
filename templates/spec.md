@@ -7,7 +7,7 @@ supersedes: none
 # Spec v1
 
 <!-- The versioned spec (decision 9), saved as docs/spec/vN.md. The spec skill fills it.
-     Format contract (stage 2 lane 3, checked by the spec format checker):
+     Format contract (decision 83; `jarvis spec check` validates it):
      - Front matter exactly as above, with real values: `spec: N` matches the file name vN.md;
        `status` is draft, confirmed or unconfirmed; v1 has `supersedes: none`, vN has `supersedes: N-1`.
      - One optional `# Spec vN` line, then these six `##` headings, exactly, in this order, no others.
@@ -17,7 +17,8 @@ supersedes: none
        every story has at least one.
      - Assumptions: `- **A1 [fixed]:** …` or `- **A1 [delegated]:** …`, or `None.`
      - Open questions may be `None.`
-     Prose and `###` subheadings are allowed inside a section. Delete these comments when filling. -->
+     Prose and `###` subheadings are allowed inside a section.
+     IDs are stable across versions; a removed ID is never reused. Delete these comments when filling. -->
 
 ## Goals
 <!-- What must be true when this is done, from the user's side. Each goal passes the P0 test:

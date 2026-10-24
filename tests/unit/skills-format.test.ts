@@ -165,7 +165,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Write the spec", phrase: "Never edit `docs/decisions.md` directly" }, // decision 83
       { section: "Write the spec", phrase: "jarvis decide" },
       { section: "Versions", phrase: "supersedes its immediate predecessor" }, // decision 83
-      { section: "Versions", phrase: "Never edit a version once it has been sent for confirmation" }, // tasks depend on it (decision 9)
+      { section: "Versions", phrase: "Never edit a version once it's confirmed or unconfirmed" }, // tasks depend on it (decision 9)
       { section: "Versions", phrase: "keeps its ID" }, // the runner diffs versions by ID (decision 40)
       { section: "Versions", phrase: "never reused" },
       { section: "Versions", phrase: "decision 40" },

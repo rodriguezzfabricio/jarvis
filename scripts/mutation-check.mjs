@@ -26,6 +26,7 @@ const GT = "packages/cli/src/checks/gate.ts";
 const BR = "packages/cli/src/broker/broker.ts";
 const SR = "packages/cli/src/sandbox/srt.ts";
 const TW = "plugin/hooks/tripwire.mjs";
+const RS = "scripts/review-status.mjs";
 
 const mutations = [
   ["failIfUnavailable off", S, "      failIfUnavailable: true,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input", "      failIfUnavailable: false,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input"],
@@ -92,6 +93,15 @@ const mutations = [
   ["extensionless files not scanned", N, "  if (!CONFIG_FILE.test(name) && !extensionless) return [];", "  if (!CONFIG_FILE.test(name)) return [];"],
   ["ASIA keys not recognized", N, "(?:AKIA|ASIA)[0-9A-Z]{16}", "(?:AKIA)[0-9A-Z]{16}"],
   ["shell references flagged", N, "  if (/^\\$(\\d+|[@*#?])$/.test(v) ||", "  if (false &&"],
+  // Review-status summarizer (Codex, review-status-opus.md): advisory, but it must never show a false PASS.
+  ["missing required evidence ignored", RS, "\"unit-tests\", \"live-probe\", \"doctor-live\"", "\"unit-tests\", \"doctor-live\""],
+  ["fourth review lane ignored", RS, "[\"A\", \"B\", \"C\", \"D\"] : [\"single\"]", "[\"A\", \"B\", \"C\"] : [\"single\"]"],
+  ["invalid verdict not reported", RS, "if (!valid) problems.push", "if (false) problems.push"],
+  ["revision mismatch ignored", RS, "if (documented && inferred && documented !== inferred)", "if (false)"],
+  ["missing completion marker ignored", RS, "if (exitCode === null) problems.push", "if (false) problems.push"],
+  ["mixed help accepted", RS, "(help && args.length !== 1)", "false"],
+  ["symlink entry point ignored", RS, "realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))", "resolve(process.argv[1]) === fileURLToPath(import.meta.url)"],
+  ["FIFO open blocks", RS, "constants.O_RDONLY | constants.O_NONBLOCK", "\"r\""],
   ["outbox files can collide", "packages/cli/src/broker/outbox.ts", '-${op}-${randomUUID()}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600, flag: "wx" });', '-${op}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600 });'],
   ["session kills only the parent", X, "      process.kill(-child.pid, sig);", "      child.kill(sig);"],
   ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],

@@ -121,7 +121,8 @@ const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
   ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
   ["OpenAI/Anthropic-style key", /\bsk-(ant-)?[A-Za-z0-9_-]{32,}\b/],
-  ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
+  // Long-term (AKIA) and temporary STS (ASIA) access key ids (Codex review 15).
+  ["AWS access key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["Slack token", /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
   ["Stripe live key", /\b[rs]k_live_[0-9A-Za-z]{20,}\b/],
@@ -285,8 +286,10 @@ export function isInertString(raw: string): boolean {
   const v = raw.trim();
   if (v === "") return true;
   // A reference with a default (${DB_PASSWORD:-hunter2}) is only as inert as its default.
-  const ref = /^\$\{[A-Za-z_][\w.]*(?::?[-=](.*))?\}$/.exec(v);
+  const ref = /^\$\{[A-Za-z_\d][\w.]*(?::?[-=](.*))?\}$/.exec(v);
   if (ref) return ref[1] === undefined || isInertString(ref[1]);
+  // Shell arguments and command substitutions in scripts: "$1", "$@", $(cat /run/secrets/db), `…`.
+  if (/^\$(\d+|[@*#?])$/.test(v) || /^\$\(.*\)$/.test(v) || /^`.*`$/.test(v)) return true;
   // An Authorization value is as inert as its credential: "Bearer ${API_TOKEN}".
   const scheme = /^(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+(.+)$/i.exec(v);
   if (scheme) return isInertString(scheme[1]!) || isPlaceholderAuth(scheme[1]!);
@@ -411,7 +414,10 @@ const MAX_YAML_ALIASES = 1000;
  * by line (Yarn 1's .yarnrc as "key value"). A structured file that doesn't parse but names credential fields can't be inspected: refused.
  */
 export function findSecretFields(name: string, text: string): string[] {
-  if (!CONFIG_FILE.test(name)) return [];
+  // A text file with no extension (.aws/credentials, .s3cfg, Dockerfile, scripts) is read as key=value
+  // lines too: credential stores are conventionally extensionless (Codex review 15).
+  const extensionless = !name.replace(/^\./, "").includes(".");
+  if (!CONFIG_FILE.test(name) && !extensionless) return [];
   const hits = new Set<string>();
   const structured = /\.(json|jsonc|json5|ya?ml|toml)$/i.test(name);
   if (structured) {
@@ -539,11 +545,17 @@ export function findSecretFields(name: string, text: string): string[] {
     return [...hits].map((k) => `credential field "${k}"`);
   }
   const yarn = /^\.?yarnrc$/.test(name);
-  for (const line of text.split("\n")) {
+  const lines = text.split("\n");
+  const indent = (l: string) => /^[ \t]*/.exec(l)![0].length;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     const m = yarn ? /^\s*"?([^\s"#][^\s"]*)"?\s+(.*?)\s*$/.exec(line) : /^\s*["']?([^"'=:#;\s[][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*$/.exec(line);
     if (!m) continue;
     let value = m[2] ?? "";
     if (/^[#;]/.test(value)) continue;
+    // INI continuation (Python ConfigParser): following lines indented deeper than the key belong to its
+    // value, even after an empty first line ("password =\n    hunter2") (Codex review 15).
+    while (!yarn && i + 1 < lines.length && lines[i + 1]!.trim() !== "" && indent(lines[i + 1]!) > indent(line) && !/^\s*[#;]/.test(lines[i + 1]!)) value += `\n${lines[++i]!.trim()}`;
     const q = value[0];
     if ((q === '"' || q === "'") && value.lastIndexOf(q) > 0) value = q === '"' ? decodeEscapes(value.slice(1, value.lastIndexOf(q))) : value.slice(1, value.lastIndexOf(q));
     else value = value.replace(/\s+[#;].*$/, "");

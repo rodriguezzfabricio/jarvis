@@ -313,6 +313,13 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "jwk-gap.json": `${JSON.stringify({ kty: "OKP", crv: "Ed25519", note: "n".repeat(1200), ...edKey.privateKey.export({ format: "jwk" }) })}\n`,
       "oct.jwk.json": '{"kty": "oct", "k": "GawgguFyGrWKav7AX4VKUg", "alg": "HS256"}\n',
       "jwk.ts": `export const key = ${JSON.stringify(edKey.privateKey.export({ format: "jwk" }))};\n`,
+      // Codex review 15: INI continuation lines, and extensionless credential stores.
+      "continuation.ini": "[database]\npassword =\n    Synthetic9qvM2\n",
+      "continuation.cfg": "[db]\n  token =\n  \tSynthetic9qvM2\n",
+      ".aws/credentials": "[default]\naws_access_key_id = ASIAQ7ZR2VLM0TXK4PNB\naws_secret_access_key = q8Zr2vLm0Tx/Synthetic9qvM2+abcdefghij\naws_session_token = Synthetic9qvM2\n",
+      "aws-id.ts": 'const id = "ASIAQ7ZR2VLM0TXK4PNB";\n',
+      ".s3cfg": "[default]\nsecret_key = Synthetic9qvM2\n",
+      "Dockerfile": "FROM node:24\nENV API_TOKEN=Synthetic9qvM2\n",
       "auth-field.yaml": "headers:\n  authorization: Synthetic9qvM2\n",
       "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
@@ -345,6 +352,11 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
     writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
     writeFileSync(join(repo, "client.ts"), 'const h = { Authorization: `Bearer ${token}`, "X-Other": "Bearer " + key };\nconst doc = "Send Authorization: Bearer <token>";\n// Authorization: Bearer fhk_…\n// Authorization: Bearer &lt;key&gt;\n');
+    writeFileSync(join(repo, "Makefile"), "test:\n\tgo test ./...\n");
+    writeFileSync(join(repo, ".gitconfig"), "[user]\n\tname = x\n\temail = x@example.com\n");
+    writeFileSync(join(repo, "Dockerfile"), "FROM node:24\nARG NPM_TOKEN\nENV NPM_TOKEN=${NPM_TOKEN}\n");
+    writeFileSync(join(repo, "run"), '#!/bin/sh\nTOKEN="$1"\nPASSWORD=$(cat /run/secrets/db)\nexport API_KEY="${2}"\n');
+    writeFileSync(join(repo, "settings.ini"), "[db]\npassword =\nhost = db.internal\n");
     writeFileSync(join(repo, "public.jwk.json"), `${JSON.stringify(generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }))}\n`);
     writeFileSync(join(repo, "request.json"), '{"headers": {"Authorization": "Bearer ${API_TOKEN}", "Accept": "application/json"}}\n');
     writeFileSync(join(repo, "kubeconfig.yaml"), `clusters:\n  - cluster:\n      certificate-authority-data: ${Buffer.from(generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }) as string).toString("base64")}\nusers:\n  - name: admin\n    user:\n      exec: {command: aws}\n`);

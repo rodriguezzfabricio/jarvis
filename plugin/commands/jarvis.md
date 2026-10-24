@@ -27,7 +27,7 @@ Start the steps whose `dispatch` is true, in order, passing the request, the typ
 - `design`: after spec hands back, run the `design` skill's "after the pick" part to write DESIGN.md (intake already had it make the mockups).
 - `read-only-research` and `answer`: read the code and docs, answer with file citations, change nothing.
 - `decision-archaeology`: the `onboard` skill. When triage's `onboarding` is true, start it at `read-only-research`: it does the reading, the answer and the archaeology together.
-- `review`: the `review` skill (stage 4). Until it exists, review read-only: findings with file references and fixes, no edits.
+- `review`: the `review` skill: read-only findings with file references and fixes, no edits.
 
 When `then` is set, do the steps above first, then treat `then` as the pipeline: its `steps`, `never` and `handoff`. Steps whose `by` is `runner` happen after the hand-off. Don't do them here, even when they look small.
 

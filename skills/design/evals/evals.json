@@ -1,0 +1,77 @@
+{
+  "skill_name": "design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build me a habit tracker. (Golden task 11: called by intake before the round, with PRODUCT.md drafted, the research file's 3–5 habit apps, and a taste profile that admires calm, dense tools and dislikes purple.)",
+      "expected_output": "Three direction plans in .jarvis/mockups/<direction>/direction.md, each grounded in the habit world with 4–6 named colors, 1–2 typefaces, a text wireframe, 2–3 principles and dial settings; the three differ in layout and flow, not just color. Static mockups of the first-value screen, the main list and an empty state per direction, screenshots beside them, a side-by-side comparison page, and a default chosen by fit to the taste profile and domain conventions.",
+      "files": [],
+      "expectations": [
+        "Exactly three directions, whose main screens have different layouts and different ways into adding a habit",
+        "No two directions share all three dial settings",
+        "Each direction's plan records what its self-check changed",
+        "No direction uses purple, Inter or system fonts, the SaaS card kit or emoji icons",
+        "The mockups use the product's own words and made-up sample data, with at least one empty state per direction",
+        "Screenshots and the comparison page are under .jarvis/mockups/",
+        "The default's reason cites fit to the taste profile or the domain conventions, not which looks better"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a contacts screen for the recruiter feature. (Golden task 1, FreeHire: a SvelteKit UI with its own components and theme, and no DESIGN.md.)",
+      "expected_output": "An existing design system: no directions and no mockups. DESIGN.md is written from the code's theme, tokens and components, each traced to its file, in Google's format; inconsistencies are listed, not fixed. The new screen follows it.",
+      "files": [],
+      "expectations": [
+        "No direction plans or mockups are made",
+        "DESIGN.md's tokens match values found in the project's theme or component files, with the source paths in the Overview",
+        "Inconsistencies in the existing system are listed under Do's and Don'ts and not changed",
+        "Any change to the existing system is recorded with jarvis decide --class taste"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The 'Add habit' button is misaligned on the habit list. (Triage: bug; DESIGN.md exists.)",
+      "expected_output": "No directions, no mockups and no design question. The fix follows DESIGN.md's tokens, and the design checks run on that one screen.",
+      "files": [],
+      "expectations": [
+        "No direction plan, mockup or question is produced",
+        "The fix uses existing spacing tokens rather than a raw value",
+        "Only that screen's checks are named: the tells scan, the token lint, accessibility and an interaction test"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Build a synthwave-themed music visualizer for my friends: neon pinks and purples, glowing grids, the full 80s look.",
+      "expected_output": "The brief asks for tells (neon palette, purple, glow), so they're allowed: each direction uses them on purpose and DESIGN.md's Do's and Don'ts lists them under 'Tells the brief asks for', quoting the brief. The other tells (generic copy, emoji icons, the card kit, happy-path-only) stay banned.",
+      "files": [],
+      "expectations": [
+        "Neon and purple appear in the directions and are listed as tells the brief asks for, with the brief's words",
+        "Tells the brief didn't ask for are still absent",
+        "Contrast is still checked: text on the neon backgrounds meets WCAG 2.2 AA"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "(Golden task 11, after intake: the user picked direction 2, 'Ledger', in the session.)",
+      "expected_output": "DESIGN.md is written from templates/DESIGN.md with the Ledger direction's tokens and principles, Overview records 'Picked by: user' and the dials, and the theme plan starts with --*: initial and is generated from DESIGN.md. The pick is not recorded again with jarvis decide.",
+      "files": [],
+      "expectations": [
+        "DESIGN.md's front matter has the colors, typography, rounded, spacing and components groups, with components referring to tokens",
+        "The Overview says the direction is Ledger and it was picked by the user",
+        "The theme plan starts with --*: initial and says it is generated, never edited by hand",
+        "No jarvis decide call records the pick itself; only extra design choices are recorded as Taste decisions"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "(Habit tracker, stage 4.) Here are screenshots of the three revision rounds of the home screen. Which round is best, and should we ship it?",
+      "expected_output": "The skill doesn't pick a winner by looks. It points to the code checks and the design reviewer's rubric scores, reports the best-rated round (not the last), notes the 3-round cap is reached, and leaves the choice of direction to the user.",
+      "files": [],
+      "expectations": [
+        "No claim that one round is more beautiful; any comparison cites check results or the rubric",
+        "The best-rated round is reported, whether or not it is the last",
+        "No fourth revision round is started"
+      ]
+    }
+  ]
+}

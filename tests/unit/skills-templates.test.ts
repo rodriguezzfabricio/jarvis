@@ -133,8 +133,11 @@ describe("templates/DESIGN.md (decisions 51–53)", () => {
     expect(m, "front matter").not.toBeNull();
     const keys = [...m![1]!.matchAll(/^([a-z][a-z-]*):/gm)].map((k) => k[1]);
     expect(keys).toEqual(["name", "colors", "typography", "rounded", "spacing", "components"]);
-    // Components refer to tokens instead of repeating raw values.
-    expect(m![1]).toMatch(/\{colors\.[a-z-]+\}/);
+    // Components refer to tokens instead of repeating raw values: every component property is a token reference.
+    const components = m![1]!.slice(m![1]!.indexOf("\ncomponents:"));
+    const props = [...components.matchAll(/^ {4}[a-zA-Z]+: (.+)$/gm)].map((p) => p[1]!);
+    expect(props.length).toBeGreaterThan(0);
+    for (const v of props) expect(v, v).toMatch(/^"\{[a-z]+\.[a-z-]+\}(?: \{[a-z]+\.[a-z-]+\})*"$/);
   });
 
   it("has the rationale sections in the format's order", () => {

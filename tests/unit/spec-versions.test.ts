@@ -295,6 +295,7 @@ describe("spec filesystem review regressions", () => {
     });
     expect(() => createNextVersion(repo)).toThrow(SpecError);
     expect(fs.existsSync(join(paths!.specDir, "v2.md"))).toBe(false);
+    expect(fs.existsSync(foreignTemp)).toBe(true);
     expect(fs.readFileSync(foreignTemp, "utf8")).toBe("owned by the replacement directory");
     expect(fs.readFileSync(join(paths!.movedSpecDir, "v1.md"), "utf8")).toBe(source);
   });

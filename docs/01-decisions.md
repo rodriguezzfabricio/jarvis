@@ -945,6 +945,13 @@ A full confirm run is mutations × suite time: 575 × about 53 s, roughly 8.5 ho
 - **Stage 7's close** runs `--confirm` over everything, once, overnight.
 *Why:* stage reviews judge that stage's code. Every safeguard is still exercised at every review; only the "confirmed on the full suite" step is scoped.
 
+### 95. Sessions read no system temp folder; each session gets a short private temp folder (new; Oct 24; tightens 69)
+The live probe found sandboxed shells could read files in `/private/tmp` outside their worktree. `blockReadsOutsideWorkingDirectories` covers `/Users` and similar, not the temp folders, so a session could read other processes' scratch files, including other Claude Code sessions' files in `/tmp/claude-<uid>`. Now:
+- `sandbox.filesystem.denyRead` lists `/private/tmp`, `/tmp`, `/private/var/folders`, `/var/folders`, and the runner's own `$TMPDIR` (real path) when it lies outside those. The worktree is reopened with `allowRead` only when it lives under one of them; the toolchain cache stays reopened. The runner-owned folder may not sit inside the worktree or the cache, because `allowRead` outranks `denyRead`.
+- Each session gets a short private temp folder, `mkdtemp /private/tmp/jt-XXXXXX` (0700), passed as `CLAUDE_CODE_TMPDIR`, reopened with `allowRead` and `allowWrite` for exactly that path, and removed after the session. Claude Code 2.1.309 gives sandboxed commands `TMPDIR=<CLAUDE_CODE_TMPDIR>/claude-<uid>` only when that path is at most 44 bytes (an AF_UNIX socket limit); otherwise it falls back to the shared `/tmp/claude-<uid>`, so a folder in the cache is too long. `TMPDIR` for Claude Code itself and its hooks is `<cache>/tmp`.
+- The live probe runs from `~/.jarvis-work/probe-<nonce>`, where production worktrees live. It plants a file in `/private/tmp` and in the runner's `$TMPDIR` and requires both unreadable (`system_temp_not_readable`), judged from what the shell left in the worktree, not from its output. It also requires the sandboxed `TMPDIR` to be the session's own folder (`positive_session_tmpdir_usable`). A live negative control with the temp denials stripped fails exactly that check.
+*From:* the live probe, Oct 24 (2 live runs on 2.1.309).
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

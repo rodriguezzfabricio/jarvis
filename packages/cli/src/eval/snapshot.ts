@@ -202,13 +202,13 @@ export function decodedViews(text: string): string[] {
 }
 
 /** Configuration files whose fields are inspected by name, not only by pattern. */
-const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfvars|plist|xml|npmrc|pypirc|netrc)|^\.?(npmrc|pypirc|netrc|pgpass))$/i;
+const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfvars|plist|xml|npmrc|pypirc|netrc)|^\.?(npmrc|pypirc|netrc|pgpass|yarnrc))$/i;
 /**
  * Field names that hold a credential, after camelCase is split (clientSecret → client_secret). Narrower
  * than the dotenv rule: "author" or "auth: true" are not credentials, but any *_token, *_secret,
  * password or api key holding a literal value is.
  */
-const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|credentials?|connection_string|dsn)$/;
+const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|auth_ident|credentials?|connection_string|dsn)$/;
 
 function fieldName(raw: string): string {
   const last = raw.split(/[/:.[\]]/).filter((x) => x !== "").at(-1) ?? raw;
@@ -330,7 +330,8 @@ const decodeXml = (v: string) =>
     return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as Record<string, string>)[l] ?? "";
   });
 
-const isSecretName = (k: string) => SECRET_FIELD.test(fieldName(k));
+// npm's _auth (scoped or not) is base64 user:password, though "auth" alone names no credential (Codex review 9).
+const isSecretName = (k: string) => SECRET_FIELD.test(fieldName(k)) || /(^|[/:])_auth$/.test(k);
 
 /** NAME=value inside a string value: Compose and task-definition environment lists, scripts. */
 const ENV_ASSIGNMENT = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)=(.*)$/;
@@ -339,10 +340,10 @@ const unquote = (s: string) => /^(["'])([\s\S]*)\1$/.exec(s.trim())?.[2] ?? s;
 const MAX_YAML_ALIASES = 1000;
 
 /**
- * Credential-named fields with literal values in a configuration file (Codex stage 0 reviews 6, 7, 8).
+ * Credential-named fields with literal values in a configuration file (Codex stage 0 reviews 6–9).
  * JSON, JSONC, YAML (block and flow values, anchors, duplicate keys, tags) and TOML are parsed and walked;
  * NAME=value strings and {name, value} entries are checked by NAME. plist and XML elements and attributes are read by structure; INI-like formats line
- * by line. A structured file that doesn't parse but names credential fields can't be inspected: refused.
+ * by line (Yarn 1's .yarnrc as "key value"). A structured file that doesn't parse but names credential fields can't be inspected: refused.
  */
 export function findSecretFields(name: string, text: string): string[] {
   if (!CONFIG_FILE.test(name)) return [];
@@ -371,32 +372,45 @@ export function findSecretFields(name: string, text: string): string[] {
       // !!binary, dates and other typed values under a credential name can't be inspected as text.
       else hits.add(key);
     };
-    // Kubernetes and ECS environment entries: {name: DB_PASSWORD, value: …}.
-    const nameValue = (name: unknown, value: unknown) => {
-      if (typeof name === "string" && isSecretName(name) && typeof value === "string" && !isInertString(value)) hits.add(name);
-    };
+    // Kubernetes and ECS environment entries ({name: DB_PASSWORD, value: …}): the entry's name is the key
+    // of every one of its value pairs, so an aliased, repeated or typed value is judged as DB_PASSWORD's.
+    const keyFor = (k: string, envName: string | undefined) => (k === "value" && envName ? envName : k);
     const walkPlain = (v: unknown, key: string): void => {
       if (Array.isArray(v)) for (const x of v) walkPlain(x, key);
       else if (v && typeof v === "object" && !(v instanceof Date)) {
         const o = v as Record<string, unknown>;
-        nameValue(o.name ?? o.key, o.value);
-        for (const [k, x] of Object.entries(o)) walkPlain(x, k);
+        const envName = [o.name, o.key].find((x): x is string => typeof x === "string" && isSecretName(x));
+        for (const [k, x] of Object.entries(o)) walkPlain(x, keyFor(k, envName));
       } else leaf(v, key, isSecretName(key));
     };
     let aliases = 0;
+    /** The node an alias stands for, within the per-file alias budget (undefined once it's spent). */
+    const deref = (doc: Document.Parsed, n: unknown): unknown => {
+      while (isAlias(n)) {
+        if (++aliases > MAX_YAML_ALIASES) {
+          hits.add("too many YAML aliases to inspect");
+          return undefined;
+        }
+        n = n.resolve(doc);
+      }
+      return n;
+    };
     const walkYaml = (doc: Document.Parsed, node: unknown, key: string): void => {
-      if (isAlias(node)) {
-        if (++aliases > MAX_YAML_ALIASES) hits.add("too many YAML aliases to inspect");
-        else walkYaml(doc, node.resolve(doc), key);
-      } else if (isMap(node)) {
-        const scalar = (k: string) => {
-          const p = node.items.find((x) => isScalar(x.key) && x.key.value === k);
-          return p && isScalar(p.value) ? p.value.value : undefined;
-        };
-        nameValue(scalar("name") ?? scalar("key"), scalar("value"));
-        for (const p of node.items) walkYaml(doc, p.value, isScalar(p.key) ? String(p.key.value) : "");
-      } else if (isSeq(node)) for (const x of node.items) walkYaml(doc, x, key);
-      else if (isScalar(node)) leaf(node.value, key, isSecretName(key));
+      const n = deref(doc, node);
+      if (isMap(n)) {
+        // Keys and names may be aliases too ("*k : value").
+        const pairs = n.items.map((p) => {
+          const k = deref(doc, p.key);
+          return { key: isScalar(k) ? String(k.value) : "", value: p.value };
+        });
+        const envName = pairs
+          .filter((p) => p.key === "name" || p.key === "key")
+          .map((p) => deref(doc, p.value))
+          .map((v) => (isScalar(v) ? String(v.value) : ""))
+          .find(isSecretName);
+        for (const p of pairs) walkYaml(doc, p.value, keyFor(p.key, envName));
+      } else if (isSeq(n)) for (const x of n.items) walkYaml(doc, x, key);
+      else if (isScalar(n)) leaf(n.value, key, isSecretName(key));
     };
     if ("plain" in docs) for (const d of docs.plain) walkPlain(d, "");
     else for (const d of docs.yaml) walkYaml(d, d.contents, "");
@@ -411,8 +425,9 @@ export function findSecretFields(name: string, text: string): string[] {
     for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(array|dict)>/gi)) if (isSecretName(m[1]!)) hits.add(m[1]!);
     return [...hits].map((k) => `credential field "${k}"`);
   }
+  const yarn = /^\.?yarnrc$/.test(name);
   for (const line of text.split("\n")) {
-    const m = /^\s*["']?([^"'=:#;\s[][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*$/.exec(line);
+    const m = yarn ? /^\s*"?([^\s"#][^\s"]*)"?\s+(.*?)\s*$/.exec(line) : /^\s*["']?([^"'=:#;\s[][^"'=]*?)["']?\s*(?:=|:(?=\s|$|["']))\s*(.*?)\s*$/.exec(line);
     if (!m) continue;
     let value = m[2] ?? "";
     if (/^[#;]/.test(value)) continue;

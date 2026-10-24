@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Adapter } from "./broker.ts";
@@ -9,8 +10,9 @@ import type { Adapter } from "./broker.ts";
 export function outboxAdapters(outboxDir: string): Adapter[] {
   mkdirSync(outboxDir, { recursive: true, mode: 0o700 });
   const write = (op: string) => async (payload: unknown) => {
-    const file = join(outboxDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${op}.json`);
-    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\n`, { mode: 0o600 });
+    // A unique name, created exclusively: an earlier action's file is never replaced (Codex review 9).
+    const file = join(outboxDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${op}-${randomUUID()}.json`);
+    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
     return { outcome: "succeeded" as const, detail: { outbox: file, delivered: false } };
   };
   return ["email.send", "deploy.preview", "deploy.promote"].map((op) => ({ op, execute: write(op) }));

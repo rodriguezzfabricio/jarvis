@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createSnapshot, findCredentials, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
 import { shortTmp } from "../helpers.ts";
@@ -259,21 +259,33 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "k8s-env.yaml": "spec:\n  containers:\n    - env:\n        - name: DB_PASSWORD\n          value: Synthetic9qvM2\n",
       "ecs-env.json": '{"environment": [{"name": "STRIPE_SECRET", "value": "Synthetic9qvM2"}]}\n',
       "alias-scalar.yaml": "plain: &p Synthetic9qvM2\npassword: *p\n",
+      // Codex review 9: env entries whose value is an alias, repeated or typed; npm and Yarn auth.
+      "env-alias.yaml": "pw: &p Synthetic9qvM2\nenv:\n  - name: DB_PASSWORD\n    value: *p\n",
+      "env-alias-name.yaml": "n: &n DB_PASSWORD\nenv:\n  - name: *n\n    value: Synthetic9qvM2\n",
+      "env-duplicate.yaml": "env:\n  - name: DB_PASSWORD\n    value: ''\n    value: Synthetic9qvM2\n",
+      "env-duplicate.json": '{"env": [{"name": "DB_PASSWORD", "value": "", "value": "Synthetic9qvM2"}]}\n',
+      "env-binary.yaml": "env:\n  - name: DB_PASSWORD\n    value: !!binary U3ludGhldGljOXF2TTI=\n",
+      "alias-key.yaml": "k: &k password\nconfig:\n  *k : Synthetic9qvM2\n",
+      "auth/.npmrc": "//registry.npmjs.org/:_auth=c3ZjOlN5bnRoZXRpYzlxdk0y\n",
+      "auth-unscoped/.npmrc": "_auth=c3ZjOlN5bnRoZXRpYzlxdk0y\n",
+      ".yarnrc.yml": 'npmAuthIdent: "svc:Synthetic9qvM2"\n',
+      ".yarnrc": '"//registry.npmjs.org/:_authToken" Synthetic9qvM2abc\n',
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
-      const repo = join(root, `srcE-${name}`);
-      mkdirSync(repo, { recursive: true });
+      const slug = name.replaceAll("/", "_");
+      const repo = join(root, `srcE-${slug}`);
+      mkdirSync(dirname(join(repo, name)), { recursive: true });
       git(repo, "init", "-q", "-b", "main");
       git(repo, "config", "user.email", "t@t");
       git(repo, "config", "user.name", "t");
       writeFileSync(join(repo, name), name === "utf16.json" ? Buffer.from(content, "latin1") : content);
       git(repo, "add", "-A");
       git(repo, "commit", "-qm", "c");
-      const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapE-${name}`) }).then(() => "", (e: Error) => e.message);
+      const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapE-${slug}`) }).then(() => "", (e: Error) => e.message);
       expect(err, name).toContain(name);
     }
-  });
+  }, 120_000); // ~60 cases, each its own repo and snapshot
 
   it("keeps configuration whose credential fields are empty, references or placeholders", async () => {
     const repo = join(root, "srcInert");
@@ -291,6 +303,8 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "compose.yml"), 'services:\n  app:\n    environment: ["NODE_ENV=production", "API_KEY=${API_KEY}", "DB_PASSWORD="]\n    command: ["serve", "--port=3000"]\n');
     writeFileSync(join(repo, "repeat.yaml"), "name: a\nname: b\npassword: ''\n");
     writeFileSync(join(repo, "openapi.json"), '{"components": {"schemas": {"Login": {"properties": {"password": {"type": "string", "format": "password", "description": "At least 12 characters"}}}}}}\n');
+    writeFileSync(join(repo, ".npmrc"), "registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_auth=${NPM_AUTH}\nauth-type=legacy\n");
+    writeFileSync(join(repo, ".yarnrc"), '"//registry.npmjs.org/:_authToken" "${NPM_TOKEN}"\nyarn-offline-mirror "./mirror"\n');
     writeFileSync(join(repo, "deploy.yaml"), "env:\n  - name: DB_PASSWORD\n    valueFrom: {secretKeyRef: {name: db, key: password}}\n  - name: LOG_LEVEL\n    value: debug\n");
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");

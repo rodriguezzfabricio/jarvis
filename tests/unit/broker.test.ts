@@ -2,9 +2,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Broker, type Adapter, type AdapterResult } from "../../packages/cli/src/broker/broker.ts";
 import { requestBroker } from "../../packages/cli/src/broker/client.ts";
+import { outboxAdapters } from "../../packages/cli/src/broker/outbox.ts";
 import { startBrokerServer } from "../../packages/cli/src/broker/server.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
@@ -290,6 +291,27 @@ process.stdout.write(r.status);`;
       expect(bad.status).toBe("invalid");
     } finally {
       await server.close();
+    }
+  });
+});
+
+// Codex stage 0 review 9, medium: two actions in the same millisecond shared one outbox file.
+describe("outbox adapter", () => {
+  it("keeps every action in its own file, even within one millisecond", async () => {
+    const dir = join(root, "outbox-same-ms");
+    const [email] = outboxAdapters(dir);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000_000_000);
+    try {
+      const a = await email!.execute({ to: "a@example.com", body: "first" }, { get: () => undefined });
+      const b = await email!.execute({ to: "b@example.com", body: "second" }, { get: () => undefined });
+      const fa = (a.detail as { outbox: string }).outbox;
+      const fb = (b.detail as { outbox: string }).outbox;
+      expect(fa).not.toBe(fb);
+      expect(readFileSync(fa, "utf8")).toContain("first");
+      expect(readFileSync(fb, "utf8")).toContain("second");
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

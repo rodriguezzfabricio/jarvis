@@ -70,5 +70,47 @@
     "file": "packages/cli/src/harness/claude/probe.ts",
     "anchor": "    if (!r) {\n      ok = false;",
     "replacement": "    if (!r) {"
+  },
+  {
+    "name": "probe accepts a temp file copied into the worktree",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    const leaked = fileHas(c.copy, token);",
+    "replacement": "    const leaked = false;"
+  },
+  {
+    "name": "probe accepts temp-read lines that did not run",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    if (rc === undefined) {\n      ok = false;",
+    "replacement": "    if (rc === undefined) {"
+  },
+  {
+    "name": "probe accepts a temp read that exited 0",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    } else if (rc === \"0\") {\n      ok = false;",
+    "replacement": "    } else if (rc === \"0\") {"
+  },
+  {
+    "name": "probe ignores the system temp check",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "add(\"system_temp_not_readable\", tempRead.ok,",
+    "replacement": "add(\"system_temp_not_readable\", true,"
+  },
+  {
+    "name": "probe skips the runner's own TMPDIR",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "[...new Set([\"/private/tmp\", hostTmp])]",
+    "replacement": "[\"/private/tmp\"]"
+  },
+  {
+    "name": "probe accepts a system TMPDIR",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && m === sandboxTmp;",
+    "replacement": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`);"
+  },
+  {
+    "name": "probe accepts an unusable TMPDIR",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && ",
+    "replacement": "const tmpdirOk = "
   }
 ]

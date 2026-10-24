@@ -7,7 +7,7 @@ import { routeTask, validateRouting, type RoutingTable } from "../../runner/rout
 import { assertSafeTaskArgs, buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "./session.ts";
-import { cacheEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
+import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
 import { hitRateLimitError, parseStreamJson, rateLimits, usageWaitUntil } from "./streamjson.ts";
 
 export interface TaskPreflight {
@@ -34,6 +34,8 @@ export interface ClaudeHarnessOptions {
   cleanup?: (path: string) => void;
   /** Required live canary/doctor preflight, called before every session. Tests inject a fake. */
   preflight: (input: TaskInput) => Promise<TaskPreflight>;
+  /** Test seam: production makes a short private folder under /private/tmp (decision 93). */
+  sessionTmpDir?: () => string;
   /** Process seam for tests; production always uses runSession and the absolute pin. */
   session?: (spec: SessionSpec) => Promise<SessionOutcome>;
 }
@@ -109,12 +111,12 @@ function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { workt
   return { worktree, jarvisHome, cacheRoot, home, binary };
 }
 
-function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string): SessionSpec {
+function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string, sessionTmpDir: string): SessionSpec {
   const { worktree, jarvisHome, home, binary } = locations;
   const settingsPath = join(sessionDir, "settings.json");
   const mcpPath = join(sessionDir, "mcp.json");
   const context: TaskSettingsInput = {
-    worktree, jarvisHome, cacheDir, allowedDomains: opts.allowedDomains,
+    worktree, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: opts.allowedDomains,
     ...(opts.brokerSocket ? { brokerSocket: opts.brokerSocket } : {}),
   };
   writeTaskSettings(settingsPath, context);
@@ -130,7 +132,7 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const tmpDir = join(cacheDir, "tmp");
   mkdirSync(tmpDir, { mode: 0o700 });
   const env = buildChildEnv({ ...(opts.parentEnv ?? process.env), HOME: home }, {
-    ...cacheEnv(cacheDir), TMPDIR: tmpDir,
+    ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
   });
   return {
@@ -167,7 +169,8 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions): Harness {
         if (!preflight.ok) throw new Error("live preflight failed; no task session started");
         const cacheDir = mkdtempSync(join(locations.cacheRoot, "task-")); owned.push(cacheDir);
         const sessionDir = mkdtempSync(join(locations.jarvisHome, "task-")); owned.push(sessionDir);
-        const spec = prepareTask(input, opts, routing, locations, cacheDir, sessionDir);
+        const sessionTmpDir = (opts.sessionTmpDir ?? makeSessionTmpDir)(); owned.push(sessionTmpDir);
+        const spec = prepareTask(input, opts, routing, locations, cacheDir, sessionDir, sessionTmpDir);
         dispatched = true;
         outcome = taskOutcome(await (opts.session ?? runSession)(spec), input.logPath);
       } catch (e) {

@@ -131,6 +131,132 @@ const skills: Record<string, SkillRules> = {
       { section: "Take the answers", phrase: "Never edit `docs/decisions.md` directly" },
       { section: "Take the answers", phrase: "templates/PRODUCT.md" }, // decision 51
       { section: "Gotchas", phrase: "Never send anything outside the session and the runner" },
+      { section: "Inputs", phrase: "jarvis taste save" }, // decision 39: sessions can't write the global memory
+      { section: "Write the questions", phrase: "topic `scope`" }, // decision 83 topics: a register conflict is scope
+      { section: "Send the round", phrase: "`.jarvis/mockups/`" }, // architecture §3.5: mockups are throwaway views
+      { section: "Take the answers", phrase: "the spec skill" },
+    ],
+  },
+  spec: {
+    headings: ["When to use", "Inputs", "Write the spec", "Versions", "Check with a fresh reader", "Confirm", "Hand off", "Gotchas"],
+    phrases: [
+      { section: "When to use", phrase: "Tier 0 never gets a spec" }, // decision 37
+      { section: "When to use", phrase: "short spec" }, // tier 1 (decision 37)
+      { section: "Inputs", phrase: "the intake record" },
+      { section: "Write the spec", phrase: "`docs/spec/vN.md`" }, // decision 9
+      { section: "Write the spec", phrase: "`templates/spec.md`" },
+      // Decision 83's grammar, line by line.
+      { section: "Write the spec", phrase: "`---`, `spec: N`, `date: YYYY-MM-DD`, `status: draft`, `supersedes: none` or `supersedes: N-1`, `---`" },
+      { section: "Write the spec", phrase: "`# Spec vN`" },
+      { section: "Write the spec", phrase: "Goals, Non-goals, User stories, Acceptance criteria, Assumptions, Open questions" },
+      { section: "Write the spec", phrase: "no other `##` headings" },
+      { section: "Write the spec", phrase: "`- **S1 (P1):** As …`" },
+      { section: "Write the spec", phrase: "in priority order" },
+      { section: "Write the spec", phrase: "`- **AC1 (S1):** WHEN … THE SYSTEM SHALL …`" }, // EARS (decision 9)
+      { section: "Write the spec", phrase: "at least one per story" },
+      { section: "Write the spec", phrase: "`- **A1 [fixed]:** …`" },
+      { section: "Write the spec", phrase: "`[delegated]`" },
+      { section: "Write the spec", phrase: "say `None.`" },
+      { section: "Write the spec", phrase: "never empty" }, // stories and criteria
+      { section: "Write the spec", phrase: "the first-value budget" }, // decision 55
+      { section: "Write the spec", phrase: "empty, loading, error and offline" }, // decision 53
+      { section: "Write the spec", phrase: "Non-goals" },
+      { section: "Write the spec", phrase: "jarvis spec check" }, // lane 3's checker
+      { section: "Write the spec", phrase: "Never edit `docs/decisions.md` directly" }, // decision 83
+      { section: "Write the spec", phrase: "jarvis decide" },
+      { section: "Versions", phrase: "supersedes its immediate predecessor" }, // decision 83
+      { section: "Versions", phrase: "Never edit a version once it has been sent for confirmation" }, // tasks depend on it (decision 9)
+      { section: "Versions", phrase: "keeps its ID" }, // the runner diffs versions by ID (decision 40)
+      { section: "Versions", phrase: "never reused" },
+      { section: "Versions", phrase: "decision 40" },
+      { section: "Check with a fresh reader", phrase: "fresh context" }, // decision 9
+      { section: "Check with a fresh reader", phrase: "spec-reader" }, // architecture §3.1
+      { section: "Check with a fresh reader", phrase: "never the intake conversation" },
+      { section: "Check with a fresh reader", phrase: "No second round of questions" }, // decision 8
+      { section: "Confirm", phrase: "here's what I'm building, and what I'm not" }, // decision 9
+      { section: "Confirm", phrase: "jarvis intake send" }, // decision 83
+      { section: "Confirm", phrase: "jarvis intake answers" },
+      { section: "Confirm", phrase: "`status: confirmed`" },
+      { section: "Confirm", phrase: "`status: unconfirmed`" }, // decision 10
+      { section: "Confirm", phrase: "top of the morning report" },
+      { section: "Confirm", phrase: "Never run your own timer" },
+      { section: "Confirm", phrase: "as **plain text**" },
+      { section: "Hand off", phrase: "the design skill" },
+      { section: "Gotchas", phrase: "`docs/spec/`" },
+    ],
+  },
+  design: {
+    headings: [
+      "When to use",
+      "Inputs",
+      "An existing design system",
+      "Draft three directions",
+      "Make the mockups",
+      "The AI-tells list",
+      "After the pick",
+      "Checks that code runs",
+      "The UX checklist",
+      "Who judges design",
+      "Gotchas",
+    ],
+    phrases: [
+      { section: "When to use", phrase: "Backend-only work never" }, // architecture §2
+      { section: "When to use", phrase: "a new kind of screen" },
+      { section: "When to use", phrase: "never asks about direction or makes mockups" }, // a UI bug runs checks only
+      { section: "Inputs", phrase: "`PRODUCT.md`" }, // decision 51
+      { section: "Inputs", phrase: "taste profile" }, // decision 39
+      { section: "Inputs", phrase: "product research" }, // decision 52 step 2
+      { section: "An existing design system", phrase: "write `DESIGN.md` from the code" }, // decision 51
+      { section: "An existing design system", phrase: "Taste decision" },
+      { section: "An existing design system", phrase: "no directions and no mockups" },
+      { section: "Draft three directions", phrase: "Ground it in the subject" }, // decision 52
+      { section: "Draft three directions", phrase: "3–5 real products" },
+      { section: "Draft three directions", phrase: "4–6 named colors" },
+      { section: "Draft three directions", phrase: "layout variance, motion and density" },
+      { section: "Draft three directions", phrase: "layout, flow and information hierarchy, not just color" },
+      { section: "Draft three directions", phrase: "Self-check against defaults" },
+      { section: "Draft three directions", phrase: "what changed" },
+      { section: "Make the mockups", phrase: "`.jarvis/mockups/`" },
+      { section: "Make the mockups", phrase: "real wording" },
+      { section: "Make the mockups", phrase: "made-up sample data" },
+      { section: "Make the mockups", phrase: "side by side" },
+      { section: "Make the mockups", phrase: "The default is chosen by fit, not by looks" }, // decision 56
+      { section: "Make the mockups", phrase: "In away mode, the default direction is built first" }, // decisions 39, 52
+      { section: "The AI-tells list", phrase: "unless the brief asks for it" }, // decision 53
+      { section: "The AI-tells list", phrase: "Inter, Roboto, Arial" },
+      { section: "The AI-tells list", phrase: "purple" },
+      { section: "The AI-tells list", phrase: "SaaS card kit" },
+      { section: "The AI-tells list", phrase: "Emoji as icons" },
+      { section: "The AI-tells list", phrase: "Welcome to your dashboard" },
+      { section: "The AI-tells list", phrase: "Only the happy path" },
+      { section: "The AI-tells list", phrase: "cream background with a serif and a terracotta accent" },
+      { section: "After the pick", phrase: "Google's DESIGN.md format" }, // decision 51
+      { section: "After the pick", phrase: "`templates/DESIGN.md`" },
+      { section: "After the pick", phrase: "`--*: initial`" }, // Tailwind v4 theme reset
+      { section: "After the pick", phrase: "never edited by hand" },
+      { section: "After the pick", phrase: "already recorded by intake" }, // the pick is recorded once
+      { section: "After the pick", phrase: "jarvis decide" }, // decision 83
+      { section: "Checks that code runs", phrase: "jarvis gate design" }, // decisions 49, 54
+      { section: "Checks that code runs", phrase: "AI-tells scan" },
+      { section: "Checks that code runs", phrase: "off-palette" },
+      { section: "Checks that code runs", phrase: "zero serious" },
+      { section: "Checks that code runs", phrase: "screenshot baselines" },
+      { section: "Checks that code runs", phrase: "\"Submit\"" },
+      { section: "Checks that code runs", phrase: "never counts as evidence" }, // decision 49
+      { section: "The UX checklist", phrase: "One primary action per screen" }, // decision 55
+      { section: "The UX checklist", phrase: "first-value budget" },
+      { section: "The UX checklist", phrase: "No tours on launch" },
+      { section: "The UX checklist", phrase: "two levels deep" },
+      { section: "The UX checklist", phrase: "\"(optional)\"" },
+      { section: "The UX checklist", phrase: "400 ms" },
+      { section: "The UX checklist", phrase: "WCAG 2.2 AA" },
+      { section: "Who judges design", phrase: "Code first" }, // decision 56
+      { section: "Who judges design", phrase: "fresh context" },
+      { section: "Who judges design", phrase: "does this follow our principles?" },
+      { section: "Who judges design", phrase: "never picks the better of two designs" },
+      { section: "Who judges design", phrase: "At most 3 design revision rounds per screen" },
+      { section: "Who judges design", phrase: "best-rated round" },
+      { section: "Who judges design", phrase: "negative control" },
     ],
   },
 };
@@ -195,9 +321,30 @@ describe("intake round file (decision 83)", () => {
     const q = (round.questions as Record<string, unknown>[])[0]!;
     expect(Object.keys(q).sort()).toEqual(["alternatives", "default", "id", "question", "topic", "why"]);
     expect(Object.keys(q.default as object).sort()).toEqual(["answer", "reason"]);
+    for (const m of round.mockups as unknown[]) expect(String(m)).toMatch(/^\.jarvis\/mockups\//);
     expect(sectionBody(text, "Send the round")).toContain(
       "`topic` is one of scope, security, privacy, legal, ux, technical or design",
     );
+  });
+});
+
+describe("spec confirmation round (decisions 9, 10, 83)", () => {
+  it("reuses the intake round shape with exactly one question, defaulting to build as written", () => {
+    const text = readSkill("spec");
+    const start = text.indexOf("\n## Confirm\n");
+    expect(start).toBeGreaterThan(0);
+    const fence = /^\s*```json\n([\s\S]*?)^\s*```/m.exec(text.slice(start));
+    expect(fence, "a json example in Confirm").not.toBeNull();
+    const round = JSON.parse(fence![1]!) as Record<string, unknown>;
+    expect(Object.keys(round).sort()).toEqual(["mockups", "questions", "round", "spec", "summary"]);
+    expect(round.spec).toMatch(/^docs\/spec\/v\d+\.md$/);
+    const questions = round.questions as Record<string, unknown>[];
+    expect(questions).toHaveLength(1);
+    const q = questions[0]!;
+    expect(Object.keys(q).sort()).toEqual(["alternatives", "default", "id", "question", "topic", "why"]);
+    expect(q.topic).toBe("scope");
+    expect((q.default as { answer: string }).answer.toLowerCase()).toContain("build");
+    expect(round.mockups).toEqual([]);
   });
 });
 

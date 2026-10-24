@@ -221,6 +221,10 @@ function installedFiles(store: ChecksStore): Record<string, string> {
   if (!lstatSync(store.checksDir, { throwIfNoEntry: false })) return {};
   return readTree(store.checksDir);
 }
+/** The installed definitions, read no-follow from the runner's store. Verify the store against the ledger first. */
+export function readInstalledChecks(store: ChecksStore): AuthoredCheck[] {
+  return validateFiles(installedFiles(store)).checks;
+}
 function stageFiles(parent: string, files: Record<string, string>): string {
   const temp = mkdtempSync(join(parent, ".checks-planning-"));
   try {

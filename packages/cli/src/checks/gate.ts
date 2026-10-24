@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
@@ -102,7 +102,32 @@ export async function runGate(g: GateInput): Promise<GateResult> {
   const shape = checkShape(g.check);
   if (shape) return { status: "error", entry: record("error", { problems: [shape] }), evidenceDir };
 
-  const gateDir = join(g.workRoot, "checks", `${g.attemptId}-${g.check.name}-${stamp}`);
+  const outcome = await execute(g, evidenceDir, `${g.attemptId}-${g.check.name}-${stamp}`, v.lockHash, (runDir, checkout) => {
+    // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
+    // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
+    // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
+    // No separate fsck afterwards: index-pack already checked everything it would (decision 75).
+    safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
+    safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
+    const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
+    return head === g.revision ? undefined : `checkout is at ${head}`;
+  });
+  return { status: outcome.status, entry: record(outcome.status, outcome.data), evidenceDir };
+}
+
+/** What running a check needs, whoever keeps the result: the runner records it, feedback doesn't. */
+interface RunInput {
+  store: ChecksStore;
+  jarvisHome: string;
+  workRoot: string;
+  check: GateCheck;
+  extraEnv?: Record<string, string>;
+}
+interface Outcome { status: GateStatus; data: Record<string, unknown> }
+
+/** Runs the cases and the verify phase on a checkout `prepare` fills; returns a problem to stop with error. */
+async function execute(g: RunInput, evidenceDir: string, label: string, lockHash: string | undefined, prepare: (runDir: string, checkout: string) => string | undefined): Promise<Outcome> {
+  const gateDir = join(g.workRoot, "checks", label);
   const runDir = join(gateDir, "run");
   const checkout = join(runDir, "checkout");
   const home = join(runDir, "home");
@@ -113,14 +138,8 @@ export async function runGate(g: GateInput): Promise<GateResult> {
   const fixtures = join(g.store.checksDir, "fixtures");
   for (const d of [home, cache, obsDir, verifyHome]) mkdirSync(d, { recursive: true, mode: 0o700 });
   try {
-    // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
-    // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
-    // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
-    // No separate fsck afterwards: index-pack already checked everything it would (decision 75).
-    safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
-    safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
-    const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
-    if (head !== g.revision) return { status: "error", entry: record("error", { problems: [`checkout is at ${head}`] }), evidenceDir };
+    const problem = prepare(runDir, checkout);
+    if (problem !== undefined) return { status: "error", data: { problems: [problem] } };
 
     const real = (p: string) => realpathSync(p);
     const commonEnv = { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", CI: "1" };
@@ -198,20 +217,95 @@ export async function runGate(g: GateInput): Promise<GateResult> {
     // Pass only if every case finished, every observation was judged, and the assertions exited 0
     // and ran to the end.
     const status: GateStatus = allFinished && withinCap && verifyOk && complete ? "pass" : "fail";
-    const entry = record(status, {
+    return { status, data: {
       caseResults,
       verifyExitCode: ver.code,
       verifyTimedOut: ver.timedOut,
       completed: complete,
       ...(withinCap ? {} : { observationsOverCap: true }),
-      checksLock: v.lockHash,
+      checksLock: lockHash,
       evidence: { dir: evidenceDir, files: { ...files } },
-    });
-    return { status, entry, evidenceDir };
+    } };
   } catch (err) {
-    return { status: "error", entry: record("error", { problems: [String(err)] }), evidenceDir };
+    return { status: "error", data: { problems: [String(err)] } };
   } finally {
     rmSync(gateDir, { recursive: true, force: true });
+  }
+}
+
+export interface FeedbackInput extends RunInput {
+  /** Verified ledger entries, read without a writer. Feedback is never given a ledger to append to. */
+  entries: readonly LedgerEntry[];
+  /** The working tree to judge: edits and untracked files count; ignored files, .git and .jarvis don't. */
+  workTree: string;
+}
+export interface FeedbackCase { id: string; code: number | null; timedOut: boolean; stdoutTail: string; stderrTail: string }
+export interface FeedbackResult { check: string; status: GateStatus; problems: string[]; cases: FeedbackCase[] }
+const TAIL_BYTES = 2000;
+
+function tailOf(path: string): string {
+  if (!existsSync(path)) return "";
+  const bytes = readFileSync(path);
+  // Candidate output reaches a terminal: no control characters besides newlines and tabs.
+  return bytes.subarray(Math.max(0, bytes.length - TAIL_BYTES)).toString("utf8").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "?");
+}
+
+/** Parents must be real directories, so no path is followed through a symlink on either side. */
+function plainParents(root: string, parts: readonly string[]): void {
+  for (let i = 1; i < parts.length; i++) {
+    const st = lstatSync(join(root, ...parts.slice(0, i)), { throwIfNoEntry: false });
+    if (st && (!st.isDirectory() || st.isSymbolicLink())) throw new Error(`working tree path goes through a symlink: ${parts.join("/")}`);
+  }
+}
+
+/** Copies what `git add --all` would take (tracked and untracked, not ignored), without following links. */
+function copyWorkTree(workTree: string, checkout: string): void {
+  mkdirSync(checkout, { mode: 0o700 });
+  const listed = safeGit(workTree, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { home: homedir() }).toString().split("\0").filter(Boolean);
+  for (const path of new Set(listed)) {
+    const parts = path.split("/");
+    if (parts.some((p) => p === "" || p === "." || p === ".." || /^\.git$/i.test(p)) || /^\.jarvis$/i.test(parts[0]!)) continue;
+    const source = join(workTree, path);
+    plainParents(workTree, parts);
+    const st = lstatSync(source, { throwIfNoEntry: false });
+    if (!st || !(st.isFile() || st.isSymbolicLink())) continue; // deleted, or a directory such as a nested repo
+    const target = join(checkout, path);
+    plainParents(checkout, parts);
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+    if (st.isSymbolicLink()) { symlinkSync(readlinkSync(source), target); continue; }
+    const fd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const opened = fstatSync(fd);
+      if (!opened.isFile() || opened.nlink !== 1 || opened.ino !== st.ino) throw new Error(`working tree file is hard-linked or changed during the copy: ${path}`);
+      writeFileSync(target, readFileSync(fd), { flag: "wx", mode: opened.mode & 0o777 });
+    } finally { closeSync(fd); }
+  }
+}
+
+/**
+ * Decision 49: a gate run from inside a session is feedback only. The same cases and verify phase run
+ * on a copy of the working tree; nothing is recorded and nothing is kept. The observations live in a
+ * scratch folder that is removed before this returns. Only the cases' own output is shown: the verify
+ * phase's output can carry the expectations (decision 76).
+ */
+export async function runFeedbackGate(f: FeedbackInput): Promise<FeedbackResult> {
+  const checked = f.store.verify({ entries: () => [...f.entries] });
+  if (!checked.ok) return { check: f.check.name, status: "tampered", problems: checked.problems, cases: [] };
+  const shape = checkShape(f.check);
+  if (shape) return { check: f.check.name, status: "error", problems: [shape], cases: [] };
+  const label = `feedback-${f.check.name}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(4).toString("hex")}`;
+  const scratch = join(f.workRoot, "feedback", label);
+  mkdirSync(scratch, { recursive: true, mode: 0o700 });
+  try {
+    const outcome = await execute(f, scratch, label, checked.lockHash, (_runDir, checkout) => { copyWorkTree(f.workTree, checkout); return undefined; });
+    const results = (outcome.data.caseResults ?? []) as { id: string; code: number | null; timedOut: boolean }[];
+    const tail = (id: string, name: string) => tailOf(join(scratch, "cases", id, name));
+    return {
+      check: f.check.name, status: outcome.status, problems: (outcome.data.problems ?? []) as string[],
+      cases: results.map((c) => ({ id: c.id, code: c.code, timedOut: c.timedOut, stdoutTail: tail(c.id, "stdout"), stderrTail: tail(c.id, "stderr") })),
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 

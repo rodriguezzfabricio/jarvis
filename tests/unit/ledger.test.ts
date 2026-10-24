@@ -237,6 +237,22 @@ describe("verified reads during a concurrent append", () => {
     expect(v.entries).toHaveLength(3);
   });
 
+  // Codex review 12, medium: an append during every attempt exhausted the retries and still reported tampering.
+  it("never reports tampering for reads that never settle; the ledger reads under the writer lock instead", () => {
+    const { dir, ledger } = fresh(2);
+    const unstable = verifyLedger(dir, { afterLedgerRead: () => void ledger.append({ kind: "steer", actor: "runner", data: { note: "busy" } }) });
+    expect(unstable.ok).toBe(false);
+    expect(unstable.contended).toBe(true);
+    expect(unstable.problems.join(" ")).not.toMatch(/forged|deleted|mismatch/);
+    const writer = Ledger.open(dir);
+    const reader = Ledger.open(dir, { afterLedgerRead: () => void writer.append({ kind: "steer", actor: "runner", data: { note: "busy" } }) });
+    const v = reader.verify();
+    expect(v.problems).toEqual([]);
+    expect(v.ok).toBe(true);
+    expect(v.entries.length).toBeGreaterThan(unstable.entries.length + 2);
+    expect(() => reader.entries()).not.toThrow();
+  });
+
   it("still reports a forged head when the reads are stable", () => {
     const { dir } = fresh(2);
     writeFileSync(join(dir, "head.hash"), `${"f".repeat(64)}\n`);

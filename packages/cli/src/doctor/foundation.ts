@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { join } from "node:path";
 import { requestBroker } from "../broker/client.ts";
 import { ChecksStore } from "../checks/store.ts";
-import { verifyLedger } from "../ledger/ledger.ts";
+import { Ledger } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
 import type { DoctorCheck } from "./doctor.ts";
 
@@ -24,7 +24,8 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
   if (ids.length === 0) add("ledgers", "pass", "no projects yet");
   for (const id of ids) {
     const dir = join(projects, id);
-    const v = verifyLedger(dir);
+    // Through Ledger.verify: a ledger that writers keep moving is read under the lock, not called tampered.
+    const v = Ledger.open(dir).verify();
     add(`ledger.${id}`, v.ok ? "pass" : "fail", v.ok ? `${v.entries.length} entries verified${v.repairable.length ? ` (repairable: ${v.repairable.join(", ")})` : ""}` : v.problems.join("; "));
     const store = new ChecksStore(dir);
     // A project that ever approved checks must still have its lock (Codex stage 0 review 7): a missing
@@ -32,7 +33,6 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
     const approved = v.ok && v.entries.some((e) => e.kind === "checks_approved");
     if (v.ok && (approved || existsSync(store.lockPath))) {
       try {
-        const { Ledger } = await import("../ledger/ledger.ts");
         const c = store.verify(Ledger.open(dir));
         add(`checks.${id}`, c.ok ? "pass" : "fail", c.ok ? "protected checks match the approved lock" : c.problems.join("; "));
       } catch (e) {

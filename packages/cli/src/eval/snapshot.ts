@@ -221,7 +221,7 @@ export function decodedViews(text: string): string[] {
 }
 
 /** Configuration files whose fields are inspected by name, not only by pattern. */
-const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfvars|plist|xml|npmrc|pypirc|netrc)|^\.?(npmrc|pypirc|netrc|pgpass|yarnrc))$/i;
+const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfvars|plist|xml|config|npmrc|pypirc|netrc)|^\.?(npmrc|pypirc|netrc|pgpass|yarnrc))$/i;
 /**
  * Field names that hold a credential, after camelCase is split (clientSecret → client_secret). Narrower
  * than the dotenv rule: "author" or "auth: true" are not credentials, but any *_token, *_secret,
@@ -459,11 +459,29 @@ export function findSecretFields(name: string, text: string): string[] {
     else for (const d of docs.yaml) walkYaml(d, d.contents, "");
     return [...hits].map((k) => (k.startsWith("too many") ? k : `credential field "${k}"`));
   }
-  if (/\.(plist|xml)$/i.test(name)) {
+  if (/\.(plist|xml|config)$/i.test(name)) {
     for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(string|data)>([\s\S]*?)<\/\2>/gi)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[3]!))) hits.add(m[1]!);
     for (const m of text.matchAll(/<([A-Za-z_][\w.:-]*)(\s[^>]*)?>([^<]*)<\/\1\s*>/g)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[3]!))) hits.add(m[1]!);
     for (const m of text.matchAll(/<([A-Za-z_][\w.:-]*)(\s[^>]*)?>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/\1\s*>/g)) if (isSecretName(m[1]!) && !isInertString(m[3]!)) hits.add(m[1]!);
     for (const m of text.matchAll(/\s([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[2] ?? m[3] ?? ""))) hits.add(m[1]!);
+    // Name/value structures carry the credential name to the value (Codex review 12): <property name="password"
+    // value="…"/>, <entry key="db.password">…</entry>, .NET <add key="ApiKey" value="…"/>, and Spring's
+    // <property name="password"><value>…</value></property>. A ref="…" attribute is a reference, not a value.
+    for (const m of text.matchAll(/<([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g)) {
+      const attrs = new Map<string, string>();
+      for (const a of m[2]!.matchAll(/([\w.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) attrs.set(a[1]!.toLowerCase(), decodeXml(a[2] ?? a[3] ?? ""));
+      const label = attrs.get("name") ?? attrs.get("key");
+      if (label === undefined || !isSecretName(label)) continue;
+      let value = attrs.get("value");
+      if (value === undefined && m[3] !== "/") {
+        const start = m.index + m[0].length;
+        const close = text.indexOf(`</${m[1]}`, start);
+        // Element text, child elements' text included; CDATA kept literally.
+        const inner = text.slice(start, close === -1 ? text.length : close);
+        value = inner.split(/(<!\[CDATA\[[\s\S]*?\]\]>)/).map((part) => (part.startsWith("<![CDATA[") ? part.slice(9, -3) : decodeXml(part.replace(/<[^>]*>/g, "")))).join("");
+      }
+      if (value !== undefined && !isInertString(value)) hits.add(label);
+    }
     // A plist key whose value isn't a string or data element (e.g. an array of strings) still needs review.
     for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(array|dict)>/gi)) if (isSecretName(m[1]!)) hits.add(m[1]!);
     return [...hits].map((k) => `credential field "${k}"`);

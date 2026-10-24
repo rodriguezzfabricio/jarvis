@@ -282,6 +282,15 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "docker-long/config.json": '{"auths": {"r.example.net": {"auth": "c3ZjOnE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4"}}}\n',
       "docker-utf8/config.json": '{"auths": {"r.example.net": {"auth": "c3ZjOlN5w7F0aGV0aWM5cXZNMg=="}}}\n',
       "podman-auth.yaml": "auths:\n  r.example.net:\n    auth: dTo4azJa\n",
+      // Codex review 12: XML name/value structures, carrying the name to the value.
+      "spring.xml": '<beans><bean id="ds"><property name="password" value="Synthetic9qvM2"/></bean></beans>\n',
+      "spring-reversed.xml": "<bean><property value='Synthetic9qvM2' name='db.password'/></bean>\n",
+      "spring-value.xml": '<bean><property name="password"><value>Synthetic9qvM2</value></property></bean>\n',
+      "props.xml": '<properties><entry key="db.password">Synthetic9qvM2</entry></properties>\n',
+      "escaped-props.xml": '<properties><entry key="db.password">Synth&#101;tic9qvM2</entry></properties>\n',
+      "cdata-param.xml": '<params><param name="secret"><![CDATA[Synthetic9qvM2]]></param></params>\n',
+      "nuget.config": '<configuration><packageSourceCredentials><feed><add key="ClearTextPassword" value="Synthetic9qvM2" /></feed></packageSourceCredentials></configuration>\n',
+      "web.config": '<configuration><appSettings><add key="ApiKey" value="Synthetic9qvM2" /></appSettings></configuration>\n',
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
@@ -311,6 +320,8 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "app.toml"), 'password = ""\ntoken = "{{ vault_token }}"\n');
     writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
     writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
+    writeFileSync(join(repo, "beans.xml"), '<beans><property name="password" value="${DB_PASSWORD}"/><property name="secret" ref="secretBean"/><property name="url" value="jdbc:postgresql://db/app"/><entry key="db.password"></entry></beans>\n');
+    writeFileSync(join(repo, "app.config"), '<configuration><appSettings><add key="ApiKey" value="" /><add key="Theme" value="dark" /></appSettings></configuration>\n');
     writeFileSync(join(repo, "limits.yaml"), "password_min_length: 12\ntoken_ttl: 3600\nauth: true\n");
     writeFileSync(join(repo, "compose.yml"), 'services:\n  app:\n    environment: ["NODE_ENV=production", "API_KEY=${API_KEY}", "DB_PASSWORD="]\n    command: ["serve", "--port=3000"]\n');
     writeFileSync(join(repo, "repeat.yaml"), "name: a\nname: b\npassword: ''\n");

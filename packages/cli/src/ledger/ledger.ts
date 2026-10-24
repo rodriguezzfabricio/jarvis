@@ -76,6 +76,8 @@ export interface VerifyResult {
   problems: string[];
   /** Crash leftovers that the next append repairs (not tampering). */
   repairable: string[];
+  /** Writers moved the head during every read, so nothing was verified (not tampering). */
+  contended?: boolean;
 }
 
 /** Writes every byte or throws: a short write is never acknowledged (Codex stage 0 review 5). */
@@ -105,15 +107,18 @@ const STABLE_READ_ATTEMPTS = 5;
  * Verifies the ledger against its head. A writer may append between the two reads, which would pair an
  * older ledger with a newer head and look like forgery (Codex review 11). So the head is read before and
  * after the ledger, and the read is retried until both match; an append can only move the head forward.
+ * Reads that never settle are "contended", never tampering (review 12): `Ledger.verify` then reads under
+ * the writer lock.
  */
 export function verifyLedger(dir: string, seams: { afterLedgerRead?: () => void } = {}): VerifyResult {
-  for (let attempt = 1; ; attempt++) {
+  for (let attempt = 1; attempt <= STABLE_READ_ATTEMPTS; attempt++) {
     const before = readText(join(dir, HEAD)).trim();
     const text = readText(join(dir, FILE));
     seams.afterLedgerRead?.();
     const head = readText(join(dir, HEAD)).trim();
-    if (head === before || attempt === STABLE_READ_ATTEMPTS) return verifyText(text, head);
+    if (head === before) return verifyText(text, head);
   }
+  return { ok: false, contended: true, entries: [], problems: ["writers kept the ledger moving during every read; not verified"], repairable: [] };
 }
 
 function verifyText(text: string, head: string): VerifyResult {
@@ -175,6 +180,8 @@ export interface LedgerOptions {
   onLockStep?: (step: "reclaim-claimed" | "before-unlink") => void;
   /** How long to wait for the writer lock (default 30 s). */
   lockTimeoutMs?: number;
+  /** Test seam: called between verify's ledger and head reads, outside the lock, to interleave a writer. */
+  afterLedgerRead?: () => void;
 }
 
 export class Ledger {
@@ -190,9 +197,16 @@ export class Ledger {
     return new Ledger(dir, opts);
   }
 
+  /** verifyLedger, read again under the writer lock if writers kept it moving: a consistent result either way. */
+  verify(): VerifyResult {
+    const seams = this.opts.afterLedgerRead ? { afterLedgerRead: this.opts.afterLedgerRead } : {};
+    const v = verifyLedger(this.dir, seams);
+    return v.contended ? this.withLock(() => verifyLedger(this.dir)) : v;
+  }
+
   /** Verified entries; throws on tampering. */
   entries(): LedgerEntry[] {
-    const v = verifyLedger(this.dir);
+    const v = this.verify();
     if (!v.ok) throw new LedgerTamperError(`ledger failed verification: ${v.problems.join("; ")}`);
     return v.entries;
   }

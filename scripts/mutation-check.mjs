@@ -209,7 +209,7 @@ const mutations = [
 ];
 // Lane-owned definitions live next to their code (decision 81: mutations arrive as definitions).
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-for (const file of globSync("packages/cli/src/**/mutations*.json", { cwd: root }).sort()) {
+for (const file of globSync(["packages/cli/src/**/mutations*.json", "tests/unit/*mutations*.json"], { cwd: root }).sort()) {
   for (const m of JSON.parse(readFileSync(join(root, file), "utf8"))) mutations.push([m.name, m.file, m.anchor, m.replacement]);
 }
 const names = mutations.map(([n]) => n);

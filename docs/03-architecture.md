@@ -96,7 +96,7 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 
 ### 3.3 Triage and intake (interactive, inside Claude Code)
 Triage, research, the questions, the mockups and the spec happen in your interactive session:
-- **Asking questions:** Claude Code's question tool when you're at the computer; the ntfy notifier when you're away. The 15-minute default timer runs in the runner, which starts in "intake-wait" mode as soon as questions are sent.
+- **Asking questions:** the round is shown as plain text in the session and sent through the ntfy notifier at the same time (decision 86). You answer in the session or on the phone. The session waits with a bounded `jarvis intake answers <n> --wait`, not by polling, and defaults become "unconfirmed" after 15 minutes.
 - **Handoff:** once the spec is confirmed (or defaulted), the session runs `jarvis run --detach` and tells you it's safe to close Claude Code.
 
 ### 3.4 The runner
@@ -218,7 +218,7 @@ Full model IDs, never aliases (decision 61). Codex review runs `codex exec` read
 
 1. You type `/jarvis build me a habit tracker` in Claude Code.
 2. Triage reports: new product, tier 2. The research skill starts; the explorer and researcher subagents run in parallel, read-only.
-3. Intake gives you a 5-line summary, any decision conflicts, up to 7 questions with defaults, and 3 mockups. It appears in Claude Code's question tool and is also sent via ntfy if you're away. The runner starts in intake-wait and accepts defaults after 15 minutes.
+3. Intake gives you a 5-line summary, any decision conflicts, up to 7 questions with defaults, and 3 mockups. It appears as plain text in the session and is also sent via ntfy (decision 86). Defaults are accepted as unconfirmed after 15 minutes.
 4. The spec is written as `docs/spec/v1.md`, along with `PRODUCT.md` and `DESIGN.md`. The spec-reader checks it. The acceptance tests are generated into `~/.jarvis/projects/<id>/checks/` and their hashes locked.
 5. Handoff: `jarvis run --detach`. You can close Claude Code.
 6. The runner works through the tasks, with sessions, checks, reviews and last-green tags. Overnight it may wait out a usage window.

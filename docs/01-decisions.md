@@ -865,6 +865,17 @@ The register lane's format (decision 11's columns) and decision 83's `jarvis dec
 
 *From:* the integrator, Oct 24, after the Opus review of the register lane.
 
+### 86. Intake rounds are plain text with a bounded wait; confirmation happens once (new; Oct 24; changes architecture §3.3 and §4)
+Settled by the integrator after a Codex review of the stage 2 skills (decision 81's thresholds; Fabricio can veto).
+- **Plain text, not the question tool.** The session can't tell whether you're at the computer, and a waiting question tool blocks the hand-off. The round is printed in the session and sent through the notifier at the same time.
+- **Bounded waiting, no polling.** The session calls `jarvis intake answers <n> --wait 540` at most twice (each call stays under Claude Code's 10-minute Bash limit). The command blocks on the ledger and returns answered, open, or "defaults (unconfirmed)" after the deadline (decision 10, 15 minutes by default). Then the session continues either way.
+- **One submission contract.** `jarvis intake answer <n> <file>` is a complete response: listed ids are overrides, and every unlisted question takes its default as accepted. It closes the round, so a later tap is "Not counted". Phone taps answer only "Use defaults" for the whole round. Free text from the phone is a steer note, never a partial answer. At the deadline, all unanswered questions become "unconfirmed" defaults.
+- **Spec confirmation happens once, at the initial hand-off.** Later changes from steer notes or repairs produce new checked spec versions and targeted replanning (decision 40), never another confirmation round. A choice outside what was delegated goes to decision 40's blocked state.
+- **`jarvis taste save <file>`** stores the taste profile in the runner-owned memory folder, which sessions can't write (decision 39).
+- **Every `jarvis decide` call in a skill carries `--why`** (decision 85).
+
+*From:* the integrator, Oct 24, after the Codex review of the intake, spec and design skills.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

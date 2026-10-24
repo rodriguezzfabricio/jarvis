@@ -1,0 +1,206 @@
+[
+  {
+    "name": "notify text byte cap removed",
+    "file": "packages/cli/src/notify/notifier.ts",
+    "anchor": "if (Buffer.byteLength(text) < 4096) return text;",
+    "replacement": "if (true) return text;"
+  },
+  {
+    "name": "notify UTF-8 boundary split",
+    "file": "packages/cli/src/notify/notifier.ts",
+    "anchor": "return result + suffix;",
+    "replacement": "return Buffer.from(text).subarray(0, budget).toString(\"utf8\") + suffix;"
+  },
+  {
+    "name": "notify four actions allowed",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "if (actions.length > 3)",
+    "replacement": "if (actions.length > 4)"
+  },
+  {
+    "name": "notify button omits request and nonce",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "body: `${a.answer}:${a.requestId}:${a.nonce}`",
+    "replacement": "body: a.answer"
+  },
+  {
+    "name": "notify usage wait threshold inclusive",
+    "file": "packages/cli/src/notify/notifier.ts",
+    "anchor": "message.waitMs > 7_200_000",
+    "replacement": "message.waitMs >= 7_200_000"
+  },
+  {
+    "name": "notify poll cursor not advanced",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "if (last) this.cursor = last.id;",
+    "replacement": "if (false && last) this.cursor = last!.id;"
+  },
+  {
+    "name": "notify bare controls treated as steer",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return { kind: \"invalid\" };",
+    "replacement": "return { kind: \"steer\", text: trimmed };"
+  },
+  {
+    "name": "notify nonce not random",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "randomBytes(32).toString(\"hex\")",
+    "replacement": "Buffer.alloc(32).toString(\"hex\")"
+  },
+  {
+    "name": "notify duplicate replay appends bookkeeping",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return { status: \"ignored\", reason: \"duplicate\" };",
+    "replacement": "return ignore(\"duplicate\");"
+  },
+  {
+    "name": "notify later answer counted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (entries.some((e) => isPhase(e, \"answer\") && data(e).requestId === parsed.requestId)) return ignore(\"already-answered\");\n        if (entries.some((e) => isPhase(e, \"answer\") && data(e).nonce === parsed.nonce)) return ignore(\"reused-nonce\");",
+    "replacement": "/* request and nonce consumption guards removed */"
+  },
+  {
+    "name": "notify reused nonce not reported",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return ignore(\"reused-nonce\");",
+    "replacement": "{ /* reused-nonce guard removed */ }"
+  },
+  {
+    "name": "notify unknown nonce counted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return ignore(\"unknown-nonce\");",
+    "replacement": "{ /* nonce guard removed */ }"
+  },
+  {
+    "name": "notify answer for wrong request kind counted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return ignore(\"wrong-answer\");",
+    "replacement": "{ /* answer kind guard removed */ }"
+  },
+  {
+    "name": "notify forged counted result accepted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (!entry || canonical(result(entry)) !== canonical(answer))",
+    "replacement": "if (!entry)"
+  },
+  {
+    "name": "notify approval bypasses broker",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "broker.decide(answer.requestId, answer.answer, \"ntfy\");",
+    "replacement": "/* broker decision removed */"
+  },
+  {
+    "name": "notify defaults not marked accepted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "acceptedDefaults: true, confirmed: true",
+    "replacement": "acceptedDefaults: false, confirmed: false"
+  },
+  {
+    "name": "notify steer recorded as decision",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "add({ kind: \"steer\", actor: \"runner\", data: { ...common, note: answer.text } });",
+    "replacement": "add({ kind: \"decision\", actor: \"runner\", data: { ...common, note: answer.text } });"
+  },
+  {
+    "name": "notify stalled poll exceeds deadline",
+    "file": "packages/cli/src/notify/intake.ts",
+    "anchor": "return await Promise.race([poll(), expired]);",
+    "replacement": "return await poll();"
+  },
+  {
+    "name": "notify nonce registration not persisted",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "add({ kind: \"notify\", actor: \"runner\", data: request });",
+    "replacement": "/* nonce registration not persisted */"
+  },
+  {
+    "name": "notify timeout reported as confirmed answers",
+    "file": "packages/cli/src/notify/intake.ts",
+    "anchor": "const fallback = { status: \"defaults (unconfirmed)\" as const };",
+    "replacement": "const fallback = { status: \"answers\" as const, answers: [] as T[] };"
+  },
+  {
+    "name": "notify registration uses decision kind",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "add({ kind: \"notify\", actor: \"runner\", data: request });",
+    "replacement": "add({ kind: \"decision\", actor: \"runner\", data: request });"
+  },
+  {
+    "name": "notify intent uses decision kind",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "return result(add({ kind: \"notify\", actor: \"runner\", data: intent }));",
+    "replacement": "return result(add({ kind: \"decision\", actor: \"runner\", data: intent }));"
+  },
+  {
+    "name": "notify ignored log uses decision kind",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "add({ kind: \"notify\", actor: \"runner\", data: { source: \"notify\", phase: \"ignored\", id: message.id, reason } });",
+    "replacement": "add({ kind: \"decision\", actor: \"runner\", data: { source: \"notify\", phase: \"ignored\", id: message.id, reason } });"
+  },
+  {
+    "name": "notify recorded marker uses decision kind",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "const marker = add({ kind: \"notify\", actor: \"runner\", data: { ...common, phase: \"recorded\", ...outcome } });",
+    "replacement": "const marker = add({ kind: \"decision\", actor: \"runner\", data: { ...common, phase: \"recorded\", ...outcome } });"
+  },
+  {
+    "name": "notify steer note uses text field",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "note: answer.text",
+    "replacement": "text: answer.text"
+  },
+  {
+    "name": "notify conflict remains pending",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (!conflict) throw error;",
+    "replacement": "throw error;"
+  },
+  {
+    "name": "notify missing request remains pending",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (!request) return { outcome: \"no-request\" };",
+    "replacement": "if (!request) return undefined;"
+  },
+  {
+    "name": "notify conflict sends approval confirmation",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "text: `Not counted: request ${answer.requestId} was already answered: ${label}`",
+    "replacement": "text: \"Got it: Approve\""
+  },
+  {
+    "name": "notify defaults to retained history",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "this.cursor = options.since ?? String(Math.floor(Date.now() / 1000));",
+    "replacement": "this.cursor = options.since ?? \"all\";"
+  },
+  {
+    "name": "notify unknown events validated as messages",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "if (typeof event === \"object\" && event !== null && \"event\" in event && event.event === \"message\")",
+    "replacement": "if (true)"
+  },
+  {
+    "name": "notify public HTTP allowed",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "if (base.protocol === \"http:\" && !loopback)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "notify intake swallows ledger tampering",
+    "file": "packages/cli/src/notify/intake.ts",
+    "anchor": "if (error instanceof LedgerTamperError) throw error;",
+    "replacement": "/* ledger tampering swallowed */"
+  },
+  {
+    "name": "notify intake polls every second",
+    "file": "packages/cli/src/notify/intake.ts",
+    "anchor": "options.pollMs ?? 5000",
+    "replacement": "options.pollMs ?? 1000"
+  },
+  {
+    "name": "notify business entry duplicated after marker fault",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "outcome.outcome === \"recorded\" && !businessExists",
+    "replacement": "outcome.outcome === \"recorded\""
+  }
+]

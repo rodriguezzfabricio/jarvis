@@ -31,7 +31,7 @@ export const KINDS = [
   "gate_result", "review_result", "state_reached",
   "spec_version", "decision", "steer",
   "approval_request", "approval", "grant", "broker_request", "broker_receipt",
-  "blocked", "reconciled", "checks_approved", "run_started", "run_ended",
+  "blocked", "reconciled", "checks_approved", "run_started", "run_ended", "notify",
 ] as const;
 export type Actor = (typeof ACTORS)[number];
 export type Kind = (typeof KINDS)[number];

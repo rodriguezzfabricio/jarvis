@@ -1,0 +1,56 @@
+{
+  "skill_name": "debug",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The citizenship filter is missing some jobs that require US citizenship.",
+      "expected_output": "Golden task 5, a tier-0 bug (jarvis-evals task 05-citizenship-filter: the FreeHire snapshot at 9c1dbd4, before 4f7e73a). No intake and no spec. The session reproduces the miss on a job description the detector gets wrong, writes a failing test with that input and watches it fail for the reported reason, traces the cause in the detector, makes the smallest fix there, takes the fix out once to see the test fail again, runs the whole suite including the original 14 tests, and writes notes with the Bug section.",
+      "files": [],
+      "expectations": [
+        "No intake questions, spec or design work are produced",
+        "A failing test reproducing the missed job was run and seen failing before the fix",
+        "The fix is in the detector's own code, not a special case for the test's input",
+        "The existing tests are unchanged and the whole suite was run after the last edit",
+        "The notes give the root cause with a file reference, the reproduction and the before/after proof, labeled as claims"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Chromium won't start in the container. Fix it.",
+      "expected_output": "Golden task 4 (jarvis-evals task 04-chromium-container: the FreeHire snapshot at 23d3266 with e29e084 undone). The session tries to reproduce first. A task session can't run containers, so it says so, records what it tried, reads the container setup and the launch code path, forms one hypothesis at a time, makes the smallest fix where the cause lives, and leaves the container smoke test to the runner's checks, with status done-with-concerns rather than done.",
+      "files": [],
+      "expectations": [
+        "The session attempts a reproduction before changing any file, and records that the container can't be run in the session",
+        "Each hypothesis is written down before it is tested, and changes that didn't help are undone",
+        "The change stays small and confined to where the cause lives, with no unrelated refactors",
+        "The status is done-with-concerns, not done, because the failure was never reproduced in the session",
+        "No compound shell command is used"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Repair attempt 1 for task T6. The runner's checks failed revision 4be21c0: 'tests/sync.test.ts > merges offline edits' fails intermittently (3 of 10 runs). The previous session's notes said 'done, all tests pass'. Write your result notes to .jarvis/notes/T6.md. (The cause is a shared-state race that three plausible local fixes don't remove.)",
+      "expected_output": "The session starts from the runner's evidence, not the earlier notes. It measures the flake rate, tries one hypothesis at a time and undoes each failed fix. After 3 failed fixes it stops without a fourth, keeps the failing test, reverts the failed fixes and ends with status blocked, listing each hypothesis, what it showed, the suspected design problem and that a stronger model or a design decision is needed.",
+      "files": [],
+      "expectations": [
+        "The previous session's 'all tests pass' claim is not repeated or relied on",
+        "The flaky test is not retried until green, skipped or given a longer timeout",
+        "No more than 3 fixes are attempted",
+        "The status is blocked, and the notes list each hypothesis with what showed it wrong",
+        "The session does not try to change its model or effort, and leaves escalation to the runner"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Habits created after 11pm show up on the wrong day. Fix it. (The spec never says which time zone a habit day uses.)",
+      "expected_output": "The session reproduces the behavior, finds that the code consistently uses UTC days and that no spec or decision says which zone a habit day belongs to, so this is missing behavior, not a bug. It stops with status needs-decision, the line 'This looks like missing behavior, not a bug', the options (device time zone, a zone set per user, UTC) with a recommended default, and makes no behavior change.",
+      "files": [],
+      "expectations": [
+        "No production behavior is changed",
+        "The status is needs-decision and the notes contain 'This looks like missing behavior, not a bug'",
+        "The notes list at least two options with a recommended default and why",
+        "No question is sent to the user from the session"
+      ]
+    }
+  ]
+}

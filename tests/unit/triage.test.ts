@@ -350,6 +350,7 @@ describe("triage: refactors, questions and releases", () => {
   it("the model's judgment picks the edits' pipeline, or says there are none", () => {
     expect(run(TASK7, { judgment: { then: "feature" } }).then?.type).toBe("feature");
     expect(run(TASK7, { judgment: { then: "none" } }).then).toBeNull();
+    expect(run(TASK7, { override: "ask" }).then).toBeNull();
     expect(run("How does the ledger work?", { judgment: { then: "refactor" } }).then?.type).toBe("refactor");
     expect(run("How does the broker check approvals?").then).toBeNull();
     expect(run("How does the ledger work, and then fix the torn-line repair?").then?.type).toBe("bug");

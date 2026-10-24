@@ -6,7 +6,6 @@ import { leadingOverride, triage, type Judgment, type TriageInput } from "./tria
 interface Opts {
   json?: boolean;
   repo: string;
-  literal?: boolean;
   override?: string;
   attachedError?: boolean;
   touches: string[];
@@ -14,7 +13,10 @@ interface Opts {
   judgmentTier?: string;
   missingBehavior?: boolean;
   newScreen?: boolean;
+  newPlatform?: boolean;
+  platform?: string;
   onboarding?: boolean;
+  then?: string;
   questions?: string;
   reason?: string;
 }
@@ -28,19 +30,21 @@ const integer = (flag: string, v: string): number => {
 export function register(program: Command): void {
   program
     .command("triage")
-    .description("Classify a request (architecture §2, decision 37): type, tier, the pipeline steps that run and the ones that never do")
-    .argument("<request...>", "the request as typed after /jarvis; a leading fix, build, feature or ask is your override")
+    .description("Classify a request (architecture §2, decisions 37, 89): type, tier, the pipeline steps that run and the ones that never do")
+    .argument("<request...>", "the request as typed after /jarvis; a first word with a colon (fix:, build:, feature:, ask:) is your override")
     .option("--json", "print JSON")
     .option("--repo <dir>", "the project folder", ".")
-    .option("--literal", "the first word is part of the sentence, not an override (\"feature flags are broken\")")
     .option("--override <word>", "fix | build | feature | ask (always wins)")
     .option("--attached-error", "an error, stack trace or issue is attached")
     .option("--touches <path>", "a file the change will likely touch, from a quick search (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
-    .option("--judgment <type>", "the model's read: new-product | feature | bug | refactor | question | release")
-    .option("--judgment-tier <n>", "the model's read of the tier (0-2); only raises the tier code reads")
+    .option("--judgment <type>", "the model's read: new-product | feature | bug | refactor | question | review | release")
+    .option("--judgment-tier <n>", "the model's read of the risk tier (0-2); only raises the tier code reads")
     .option("--missing-behavior", "the model's read: a \"bug\" whose right behavior was never specified")
     .option("--new-screen", "the model's read: the change needs a kind of screen the product doesn't have")
+    .option("--new-platform", "the model's read: the change targets a platform or client the repo has no UI for")
+    .option("--platform <name>", "the platform or client the change targets (web, ios, android, macos …)")
     .option("--onboarding", "the model's read: a question about the whole repo")
+    .option("--then <type>", "the model's read: the pipeline for edits a question also asks for (feature | refactor | bug | none)")
     .option("--questions <n>", "product questions the model expects intake to ask (0-7)")
     .option("--reason <text>", "one line on the model's judgment")
     .action((words: string[], opts: Opts) => {
@@ -51,11 +55,14 @@ export function register(program: Command): void {
           ...(opts.judgmentTier !== undefined ? { tier: integer("--judgment-tier", opts.judgmentTier) as NonNullable<Judgment["tier"]> } : {}),
           ...(opts.missingBehavior ? { missingBehavior: true } : {}),
           ...(opts.newScreen ? { newScreen: true } : {}),
+          ...(opts.newPlatform ? { newPlatform: true } : {}),
+          ...(opts.platform !== undefined ? { platform: opts.platform } : {}),
           ...(opts.onboarding ? { onboarding: true } : {}),
+          ...(opts.then !== undefined ? { then: opts.then as NonNullable<Judgment["then"]> } : {}),
           ...(opts.questions !== undefined ? { questions: integer("--questions", opts.questions) } : {}),
           ...(opts.reason !== undefined ? { reason: opts.reason } : {}),
         };
-        const override = opts.override ?? (opts.literal ? undefined : leadingOverride(request));
+        const override = opts.override ?? leadingOverride(request);
         const folder = readFolder(resolve(opts.repo));
         const input: TriageInput = {
           request,

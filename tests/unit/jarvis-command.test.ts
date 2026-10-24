@@ -64,7 +64,7 @@ describe("/jarvis command", () => {
   });
 
   it("never names a skill that a previous skill already chains to, so no skill runs twice (decision 89)", () => {
-    const dispatched = new Set(Object.values(STEPS).flatMap((s) => (s.dispatch && s.skill !== null ? [s.skill] : [])));
+    const dispatched = new Set<string>(Object.values(STEPS).flatMap((s) => (s.dispatch && s.skill !== null ? [s.skill] : [])));
     const chained = Object.values(STEPS).flatMap((s) => (s.by === "session" && !s.dispatch && s.skill !== null && !dispatched.has(s.skill) ? [s.skill] : []));
     expect(chained.length).toBeGreaterThan(0);
     for (const skill of chained) expect(skillRefs.map((r) => r.name), skill).not.toContain(skill);

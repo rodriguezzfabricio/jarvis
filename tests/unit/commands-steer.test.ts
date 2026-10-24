@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { Ledger, LedgerTamperError } from "../../packages/cli/src/ledger/ledger.ts";
 import { register as registerSteer } from "../../packages/cli/src/commands/steer.ts";
+import { projectId } from "../../packages/cli/src/config/project.ts";
 import { readRunStatus, register as registerStatus } from "../../packages/cli/src/commands/status.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
@@ -26,10 +27,15 @@ describe("project-bound steer and read-only status", () => {
     expect(readdirSync(join(jarvisHome, "projects", "demo"))).toEqual(["inbox"]);
   });
 
-  it("requires an explicit project or JARVIS_PROJECT and rejects traversal", async () => {
-    const jarvisHome = fresh();
+  it("derives the project from the repo without a flag (decision 90), refuses outside a repo, and rejects traversal", async () => {
+    const repo = fresh(); mkdirSync(join(repo, "src"), { recursive: true }); mkdirSync(join(repo, ".git"));
+    const home = fresh(); const cli0 = program(); const out: string[] = [];
+    registerSteer(cli0, { jarvisHome: home, env: {}, cwd: join(repo, "src"), output: (s) => out.push(s) });
+    await cli0.parseAsync(["steer", "note"], { from: "user" });
+    expect(readdirSync(join(home, "projects"))).toEqual([projectId(repo)]);
+    const jarvisHome = fresh(); const outside = fresh();
     for (const args of [["steer", "note"], ["steer", "note", "--project", "../bad"]]) {
-      const cli = program(); registerSteer(cli, { jarvisHome, env: {}, output: () => undefined });
+      const cli = program(); registerSteer(cli, { jarvisHome, env: {}, cwd: outside, output: () => undefined });
       await expect(cli.parseAsync(args, { from: "user" })).rejects.toThrow();
     }
     expect(readdirSync(jarvisHome)).toEqual([]);

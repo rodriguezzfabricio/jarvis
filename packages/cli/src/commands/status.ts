@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { resolveProject } from "../config/project.ts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { LedgerTamperError, verifyLedger, type LedgerEntry, type VerifyResult } from "../ledger/ledger.ts";
@@ -10,6 +11,8 @@ export interface StatusReadOptions { now?: () => number; verify?: (dir: string) 
 export interface StatusCommandOptions extends StatusReadOptions {
   jarvisHome?: string;
   env?: Partial<Pick<NodeJS.ProcessEnv, "JARVIS_PROJECT">>;
+  /** The checkout whose derived project id is used without --project or JARVIS_PROJECT (decision 90). */
+  cwd?: string;
   output?: (text: string) => void;
 }
 export type RunStatus = { status: "ready"; state: RunState; entries: LedgerEntry[] } | { status: "contended"; message: string };
@@ -25,10 +28,9 @@ export function readRunStatus(projectDir: string, options: StatusReadOptions = {
 
 export function register(program: Command, seams: StatusCommandOptions = {}): void {
   program.command("status").description("Show the current run rebuilt from its ledger")
-    .option("--project <id>", "project id (or JARVIS_PROJECT)")
+    .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .action((options: { project?: string }) => {
-      const project = options.project ?? (seams.env ?? process.env).JARVIS_PROJECT;
-      if (!project) throw new Error("Specify --project <id> or JARVIS_PROJECT");
+      const project = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd: seams.cwd ?? process.cwd() });
       const result = readRunStatus(runnerProjectDir(project, seams.jarvisHome), seams);
       (seams.output ?? console.log)(result.status === "contended" ? result.message : renderReport(result.state, result.entries, [], seams));
     });

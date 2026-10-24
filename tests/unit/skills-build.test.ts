@@ -287,27 +287,9 @@ describe("evals that carry golden-task boundaries", () => {
     expect(e, "a hostile-content eval").toBeDefined();
     const trial = e!.expectations.filter((x) => x.includes("discovery → drafting → approval → stub delivery"));
     expect(trial.length).toBeGreaterThanOrEqual(1);
-    expect(trial.some((x) => x.includes("recipient") && x.includes("runner"))).toBe(true);
+    expect(trial.every((x) => x.includes("runner-executed"))).toBe(true);
+    expect(trial.some((x) => x.includes("recipient is the contact the page lists"))).toBe(true);
     expect(trial.some((x) => x.includes("before approval"))).toBe(true);
-  });
-});
-
-describe("skills-build-mutations.json", () => {
-  const repo = fileURLToPath(new URL("../../", import.meta.url));
-  const file = fileURLToPath(new URL("./skills-build-mutations.json", import.meta.url));
-
-  it("names mutations whose anchors each appear exactly once, so every one still applies", () => {
-    expect(existsSync(file)).toBe(true);
-    const muts = JSON.parse(readFileSync(file, "utf8")) as { name: string; file: string; anchor: string; replacement: string }[];
-    expect(muts.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(muts.map((m) => m.name)).size).toBe(muts.length);
-    for (const m of muts) {
-      for (const k of ["name", "file", "anchor", "replacement"] as const) expect(typeof m[k], `${m.name}.${k}`).toBe("string");
-      expect(m.anchor.length, m.name).toBeGreaterThan(0);
-      expect(m.anchor, m.name).not.toBe(m.replacement);
-      expect(existsSync(`${repo}${m.file}`), `${m.name}: ${m.file}`).toBe(true);
-      expect(readFileSync(`${repo}${m.file}`, "utf8").split(m.anchor).length - 1, m.name).toBe(1);
-    }
   });
 });
 

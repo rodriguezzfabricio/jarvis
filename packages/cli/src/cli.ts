@@ -103,6 +103,7 @@ program
   .option("--socket <path>", "socket path (default: unique per project and run)")
   .action(async (opts: { project: string; socket?: string }) => {
     const socket = opts.socket ?? process.env.JARVIS_BROKER_SOCKET ?? brokerSocketPath(opts.project);
+    if (socket === "") throw new Error("Broker socket path is empty: unset JARVIS_BROKER_SOCKET or pass a path with --socket (backlog #19).");
     const dir = projectDir(opts.project);
     const secretsPath = join(homedir(), ".jarvis", "secrets", `${opts.project}.env`);
     const broker = new Broker({

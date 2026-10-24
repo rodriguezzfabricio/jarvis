@@ -131,6 +131,7 @@ const mutations = [
   ["D8 SessionStart matcher strictness bypassed", "packages/cli/src/doctor/foundation.ts", "const expectedRegistrationKeys = (matcher === undefined ? [\"hooks\"] : [\"hooks\", \"matcher\"]).sort();\n        if (registrationKeys.join(\"\\0\") !== expectedRegistrationKeys.join(\"\\0\")) return false;\n        if (candidate.matcher !== matcher) return false;", "const onlyHooks = registrationKeys.join(\"\\0\") === \"hooks\";\n        const hooksAndMatcher = registrationKeys.join(\"\\0\") === \"hooks\\0matcher\";\n        if (!onlyHooks && !hooksAndMatcher) return false;\n        if (matcher !== undefined && candidate.matcher !== matcher) return false;"],
   ["npm tokens not recognized", N, '  ["npm token", /\\bnpm_[A-Za-z0-9]{36}\\b/],', '  ["npm token", /(?!)/],'],
   ["INI text after a closing quote dropped", N, "/^([\"'])([\\s\\S]*?)\\1(\\s+[#;].*)?$/", "/^([\"'])([\\s\\S]*?)\\1/"],
+  ["empty broker socket accepted", "packages/cli/src/cli.ts", '    if (socket === "") throw', '    if (false) throw'],
   ["outbox files can collide", "packages/cli/src/broker/outbox.ts", '-${op}-${randomUUID()}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600, flag: "wx" });', '-${op}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600 });'],
   ["session kills only the parent", X, "      process.kill(-child.pid, sig);", "      child.kill(sig);"],
   ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],

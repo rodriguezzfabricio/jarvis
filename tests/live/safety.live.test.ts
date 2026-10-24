@@ -106,9 +106,12 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
       expect(readdirSync(outbox)).toHaveLength(1);
       expect(readFileSync(join(projectDir, "ledger.jsonl"), "utf8")).not.toContain(secret);
     } finally {
-      await server?.close();
-      rmSync(root, { recursive: true, force: true });
-      if (jarvisHome) rmSync(jarvisHome, { recursive: true, force: true });
+      // Folders go even if close rejects; the close error still fails the test (backlog #20).
+      try { await server?.close(); }
+      finally {
+        rmSync(root, { recursive: true, force: true });
+        if (jarvisHome) rmSync(jarvisHome, { recursive: true, force: true });
+      }
     }
   }, 360_000);
 });

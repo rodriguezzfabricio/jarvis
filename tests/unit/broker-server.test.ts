@@ -99,6 +99,20 @@ it("act requires an explicit run socket instead of falling back to a global brok
   expect(result.status).not.toBe(0);
   expect(result.stderr).toMatch(/select.*socket|specify.*socket/i);
 });
+// Backlog #19: an empty socket setting fails closed with a message naming it, not a path error.
+it.each([
+  ["JARVIS_BROKER_SOCKET", [], { JARVIS_BROKER_SOCKET: "" }],
+  ["--socket", ["--socket", ""], {}],
+] as const)("broker refuses an empty %s by name", (_label, extra, env) => {
+  const home = join(root, "home-empty");
+  mkdirSync(home, { recursive: true });
+  const result = spawnSync(process.execPath, [cli, "broker", "--project", "p", ...extra], {
+    env: { HOME: home, PATH: process.env.PATH!, ...env }, encoding: "utf8", timeout: 5000,
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stdout).not.toContain("Broker listening");
+  expect(result.stderr).toMatch(/socket path is empty/i);
+});
 it.skipIf(process.platform !== "darwin")("supports a short public basename near the Unix socket path limit", async () => {
   const dir = join(root, "x".repeat(97 - Buffer.byteLength(root) - 1));
   mkdirSync(dir);

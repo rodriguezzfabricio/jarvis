@@ -218,7 +218,7 @@ The spec is versioned (`spec v1`, `v2`…), and each task records which version 
 If you don't answer within 15 minutes (configurable), Jarvis takes the defaults, marks them "unconfirmed", and keeps going. The spec confirmation works the same way, and the unconfirmed spec goes at the top of the morning report. For new products, mockup-first applies (decision 39). Hard stops still apply.
 
 ### 40. Changing your mind mid-run (new)
-- **`jarvis steer "…"`** (or editing `.jarvis/inbox.md`) leaves a note that the runner reads between tasks.
+- **`jarvis steer "…"`** leaves a note in the runner-owned inbox that the runner reads between tasks (decision 87).
 - **A change to a fixed constraint or a P1 story produces a new spec version.** Jarvis finds the tasks and checks that depended on the old version, marks them stale, and replans only that slice. Finished work that's unaffected stays.
 - **A morning veto works the same way.** Vetoing a Taste decision (decision 11) replans what depended on it.
 - **Out-of-scope choices get a blocked state.** If Jarvis hits a choice outside what you delegated (e.g., a provider turns out to be unavailable and the only alternative costs money), the task waits for you instead of guessing, and the rest of the plan continues.
@@ -875,6 +875,18 @@ Settled by the integrator after a Codex review of the stage 2 skills (decision 8
 - **Every `jarvis decide` call in a skill carries `--why`** (decision 85).
 
 *From:* the integrator, Oct 24, after the Codex review of the intake, spec and design skills.
+
+### 87. The steer inbox is runner-owned; candidates never carry `.jarvis/`; one run-state model (new; Oct 24; supersedes the inbox wording in 40 and §3.5, settles 3's repair budget)
+An Opus review of the runner lanes found a task session could forge a steer note. With Bash it could empty `.gitignore`, write `.jarvis/inbox.md`, pass its gates and get merged into the main checkout. The runner would then record the text as a steer note with user authority. The same review found that the report and status had their own task model, which disagreed with the rebuilt run state. The integrator settled (decision 81's thresholds; Fabricio can veto):
+- **The inbox lives in the runner-owned folder:** `~/.jarvis/projects/<id>/inbox/`, one file per note, written atomically by `jarvis steer`. Task sessions can't reach it (decision 69 and the deny rules). `.jarvis/inbox.md` in the repo is no longer read.
+- **A candidate revision that adds or changes any path under `.jarvis/` is refused** before checks run. The runner reads the session's notes from the workspace before committing, and the candidate never contains them.
+- **One run-state model:** runner core's `rebuildState`. Inbox, repair, report and status all read its `RunState`. Done means a `state_reached passed` with the task's required checks and reviews, each reviewer keyed by name. Evidence is re-verified with `verifyEvidence`.
+- **Repairs are counted from the ledger:** attempts that ended `completed` with a failing gate or review. A crash or a usage wait never uses up a repair. Switching to an alternative is a ledger entry.
+- **The repair budget is 2 repairs, so a task is blocked after 3 failed attempts** (architecture §3.4). This settles decision 3's "twice".
+- **Repair prompts carry a bounded tail of each failing case's output and exit code,** not the gate's JSON. Blocked reasons are one short line.
+- **Bad inbox items are skipped and reported, never thrown,** so one bad note can't wedge the loop. Replans match only explicit ids (T#, S#, AC#).
+
+*From:* the integrator, Oct 24, after the Opus review of the runner-inbox lane.
 
 ## 6. Models, effort and cost
 

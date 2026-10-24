@@ -138,7 +138,7 @@ Ledger entry kinds:
 - `approval_request`, `approval`, `broker_request`, `broker_receipt` (succeeded, failed or unknown)
 - `blocked`, `reconciled`
 
-Inside the repo, `.jarvis/` (gitignored) holds human-readable views rebuilt from the ledger: `plan.md`, `progress.md`, `REPORT.md`, `inbox.md` and `mockups/`. Editing a view changes nothing; only `inbox.md` is read, and only as steer notes.
+Inside the repo, `.jarvis/` (gitignored) holds human-readable views rebuilt from the ledger: `plan.md`, `progress.md`, `REPORT.md` and `mockups/`. Editing a view changes nothing. Steer notes go through `jarvis steer` into the runner-owned inbox (decision 87).
 
 ### 3.6 The broker
 The broker is how Jarvis does anything outside the computer without the agent ever holding a credential. It runs inside the runner process: outside the sandbox, only while a run is active. It listens on a Unix socket in `~/.jarvis/run/broker.sock`, and the sandbox allows exactly that one socket through `sandbox.network.allowUnixSockets`, listed by its real path (verified in stage 0; decision 59). `jarvis act` is a thin client that sends a request over the socket.

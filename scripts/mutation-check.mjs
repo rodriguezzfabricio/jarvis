@@ -260,7 +260,8 @@ function runSuite(tag) {
   const end = join(work, `${tag}.end.json`);
   const proc = spawnSync(
     join(sandboxRepo, "node_modules", ".bin", "vitest"),
-    ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
+    // Anchor-applicability tests (*-mutations.test.ts) fail on every mutation by design, so they never count as catching one.
+    ["run", "tests/unit", "--exclude", "**/*-mutations.test.ts", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
     { encoding: "utf8", timeout: 900_000, env: { ...process.env, JARVIS_RUN_END_OUT: end, JARVIS_TEST_TMP: tmp } },
   );
   reapLeftovers(tmp);

@@ -2,6 +2,12 @@ import { PassThrough } from "node:stream";
 import { expect, it, vi } from "vitest";
 import { InterruptedError, streamTty } from "../../packages/cli/src/setup/tty.ts";
 
+/** The rejection of a promise, or undefined: a mismatch then fails as a plain assertion. */
+async function failure(promise: Promise<unknown>): Promise<unknown> {
+  try { await promise; } catch (error) { return error; }
+  return undefined;
+}
+
 function terminal(isTTY = true) {
   const input = new PassThrough() as PassThrough & { isTTY?: boolean; setRawMode?: (mode: boolean) => unknown };
   const modes: boolean[] = [];
@@ -26,7 +32,7 @@ it("treats Ctrl-C and Ctrl-D in a hidden prompt as an interruption and still res
     const t = terminal();
     const answer = t.tty.askHidden("Token: ");
     setImmediate(() => t.input.write(`abc${key === "\u0004" ? "\u007f\u007f\u007f" : ""}${key}`));
-    await expect(answer).rejects.toBeInstanceOf(InterruptedError);
+    expect(await failure(answer)).toBeInstanceOf(InterruptedError);
     expect(t.modes).toEqual([true, false]);
     expect(t.written()).not.toContain("abc");
     t.tty.close();
@@ -36,7 +42,7 @@ it("treats Ctrl-C and Ctrl-D in a hidden prompt as an interruption and still res
 it("refuses to read a token from anything but a terminal", async () => {
   const t = terminal(false);
   setImmediate(() => t.input.write("piped-token-value\n"));
-  await expect(t.tty.askHidden("Token: ")).rejects.toThrow(/terminal/i);
+  expect(String(await failure(t.tty.askHidden("Token: ")))).toMatch(/terminal/i);
   expect(t.written()).not.toContain("piped-token-value");
   t.tty.close();
 });
@@ -49,6 +55,6 @@ it("reads ordinary answers line by line, keeping input typed ahead", async () =>
   expect(t.written()).toBe("Store it? Which? ");
   expect(t.modes).toEqual([]);
   t.input.end();
-  await expect(t.tty.ask("More? ")).rejects.toBeInstanceOf(InterruptedError);
+  expect(await failure(t.tty.ask("More? "))).toBeInstanceOf(InterruptedError);
   t.tty.close();
 });

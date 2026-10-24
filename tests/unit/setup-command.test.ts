@@ -8,6 +8,12 @@ import type { SecretsWriter } from "../../packages/cli/src/broker/secrets.ts";
 import { register } from "../../packages/cli/src/setup/command.ts";
 import { InterruptedError, type Tty } from "../../packages/cli/src/setup/tty.ts";
 
+/** The rejection of a promise, or undefined: a mismatch then fails as a plain assertion. */
+async function failure(promise: Promise<unknown>): Promise<unknown> {
+  try { await promise; } catch (error) { return error; }
+  return undefined;
+}
+
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 const dirs: string[] = [];
 afterEach(() => { vi.unstubAllGlobals(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -56,7 +62,7 @@ it("an interruption exits 130 and says how to resume; repeated --redo values are
 
 it("refuses to run without a terminal", async () => {
   const c = cli([], [], false);
-  await expect(c.run("setup")).rejects.toThrow(/terminal/i);
+  expect(String(await failure(c.run("setup")))).toMatch(/terminal/i);
   expect(existsSync(join(c.home, ".jarvis"))).toBe(false);
 });
 

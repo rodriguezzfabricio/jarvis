@@ -14,6 +14,12 @@ import { runSetup, type SetupDeps } from "../../packages/cli/src/setup/setup.ts"
 import { STEPS } from "../../packages/cli/src/setup/state.ts";
 import { InterruptedError, type Tty } from "../../packages/cli/src/setup/tty.ts";
 
+/** The rejection of a promise, or undefined: a mismatch then fails as a plain assertion. */
+async function failure(promise: Promise<unknown>): Promise<unknown> {
+  try { await promise; } catch (error) { return error; }
+  return undefined;
+}
+
 const PLUGIN = fileURLToPath(new URL("../../plugin", import.meta.url));
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const SENTINEL = "SENTINEL-c0ffee-TOKEN-0123456789";
@@ -72,7 +78,8 @@ function filesUnder(root: string): string[] {
   }
   return out;
 }
-const state = (home: string) => JSON.parse(readFileSync(join(home, ".jarvis", "setup-state.json"), "utf8")) as { steps: Record<string, { status: string; detail: string; provider?: string; secrets?: { key: string; tier: string; brokerOnly: boolean }[] }> };
+/** The saved state; a missing file reads as no steps, so a wrong count fails as an assertion. */
+const state = (home: string) => (existsSync(join(home, ".jarvis", "setup-state.json")) ? JSON.parse(readFileSync(join(home, ".jarvis", "setup-state.json"), "utf8")) : { steps: {} }) as { steps: Record<string, { status: string; detail: string; provider?: string; secrets?: { key: string; tier: string; brokerOnly: boolean }[] }> };
 
 it("runs every step once: accounts through the secrets backend, ntfy topics, taste, the Claude check and the plugin", async () => {
   const home = makeHome(); const a = fullAnswers(); const t = fakeTty(a.lines, a.hidden); const s = fakeSecrets(); const n = fakeNotifier();
@@ -137,7 +144,7 @@ it("an invalid token is asked again and never echoed", async () => {
   const bad = `${SENTINEL} with spaces`;
   const t = fakeTty(["y", ""], [bad, SENTINEL]); const s = fakeSecrets();
   const r = deps(home, t.tty, { secrets: s.backend });
-  await expect(runSetup(r.d, {})).rejects.toBeInstanceOf(InterruptedError);
+  expect(await failure(runSetup(r.d, {}))).toBeInstanceOf(InterruptedError);
   expect(s.stored.get("GITHUB_TOKEN")?.value).toBe(SENTINEL);
   expect(r.text()).not.toContain(SENTINEL);
   expect(r.text()).toMatch(/doesn't look like a token/i);
@@ -159,7 +166,7 @@ it("an interrupted run resumes at the step it stopped in", async () => {
   const home = makeHome(); const s = fakeSecrets();
   // Ctrl-C at the deploy question: claude, secrets and github are finished.
   const first = fakeTty(["y"], [SENTINEL]);
-  await expect(runSetup(deps(home, first.tty, { secrets: s.backend }).d, {})).rejects.toBeInstanceOf(InterruptedError);
+  expect(await failure(runSetup(deps(home, first.tty, { secrets: s.backend }).d, {}))).toBeInstanceOf(InterruptedError);
   expect(Object.keys(state(home).steps).sort()).toEqual(["accounts.github", "claude", "secrets"]);
   const a = fullAnswers();
   const second = fakeTty(a.lines.slice(1), a.hidden.slice(1));
@@ -174,7 +181,7 @@ it("a crash while saving progress keeps the previous state file intact, and the 
   let saves = 0;
   const rename = vi.fn((from: import("node:fs").PathLike, to: import("node:fs").PathLike) => { if (++saves === 3) throw new Error("rename fault"); renameSync(from, to); });
   const first = fakeTty(["y"], [SENTINEL]);
-  await expect(runSetup(deps(home, first.tty, { secrets: s.backend, rename }).d, {})).rejects.toThrow("rename fault");
+  expect(String(await failure(runSetup(deps(home, first.tty, { secrets: s.backend, rename }).d, {})))).toMatch("rename fault");
   expect(Object.keys(state(home).steps).sort()).toEqual(["claude", "secrets"]);
   expect(readdirSync(join(home, ".jarvis")).filter((x) => x.includes("tmp"))).toEqual([]);
   const a = fullAnswers();
@@ -188,16 +195,16 @@ it("refuses a symlinked state file or runner folder before asking anything", asy
   const outside = join(home, "outside.json"); writeFileSync(outside, "{\"untouched\":true}");
   symlinkSync(outside, join(home, ".jarvis", "setup-state.json"));
   const t = fakeTty(["y"], [SENTINEL]);
-  await expect(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})).rejects.toThrow(/symlink/i);
+  expect(String(await failure(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})))).toMatch(/symlink/i);
   expect(t.calls).toEqual([]);
   expect(readFileSync(outside, "utf8")).toBe("{\"untouched\":true}");
   rmSync(join(home, ".jarvis", "setup-state.json"));
   symlinkSync(join(home, "missing.json"), join(home, ".jarvis", "setup-state.json"));
-  await expect(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})).rejects.toThrow(/symlink/i);
+  expect(String(await failure(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})))).toMatch(/symlink/i);
   expect(existsSync(join(home, "missing.json"))).toBe(false);
 
   const other = makeHome(); mkdirSync(join(other, "real-jarvis"), { mode: 0o700 }); symlinkSync(join(other, "real-jarvis"), join(other, ".jarvis"));
-  await expect(runSetup(deps(other, t.tty, { secrets: fakeSecrets().backend }).d, {})).rejects.toThrow(/symlink/i);
+  expect(String(await failure(runSetup(deps(other, t.tty, { secrets: fakeSecrets().backend }).d, {})))).toMatch(/symlink/i);
   expect(readdirSync(join(other, "real-jarvis"))).toEqual([]);
   expect(t.calls).toEqual([]);
 });
@@ -206,7 +213,7 @@ it("refuses a corrupt state file instead of starting over", async () => {
   const home = makeHome(); mkdirSync(join(home, ".jarvis"), { mode: 0o700 });
   writeFileSync(join(home, ".jarvis", "setup-state.json"), "{\"version\":1,\"steps\":{\"accounts.github\":{\"status\":\"maybe\"}}}", { mode: 0o600 });
   const t = fakeTty([], []);
-  await expect(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})).rejects.toThrow(/setup-state\.json/);
+  expect(String(await failure(runSetup(deps(home, t.tty, { secrets: fakeSecrets().backend }).d, {})))).toMatch(/setup-state\.json/);
   expect(t.calls).toEqual([]);
 });
 
@@ -221,7 +228,7 @@ it("--redo runs a finished step again; 'accounts' means every account; unknown s
   await runSetup(deps(home, all.tty, { secrets: s.backend }).d, { redo: ["accounts"] });
   expect(all.calls).toHaveLength(6);
   for (const step of ["accounts.github", "accounts.deploy", "accounts.neon", "accounts.cloudflare", "accounts.expo", "accounts.oauth"]) expect(state(home).steps[step]?.status).toBe("skipped");
-  await expect(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, { redo: ["acounts"] })).rejects.toThrow(/unknown setup step/i);
+  expect(String(await failure(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, { redo: ["acounts"] })))).toMatch(/unknown setup step/i);
 });
 
 it("records a skipped account as skipped, stores nothing, and says Jarvis develops locally (decision 43)", async () => {
@@ -236,7 +243,7 @@ it("records a skipped account as skipped, stores nothing, and says Jarvis develo
   expect(state(home).steps.taste?.status).toBe("skipped");
   // An empty hidden answer also skips the account without storing anything.
   const empty = fakeTty(["y"], [""]);
-  await expect(runSetup(deps(home, empty.tty, { secrets: s.backend }).d, { redo: ["accounts.github"] })).resolves.toMatchObject({ ok: true });
+  expect(await runSetup(deps(home, empty.tty, { secrets: s.backend }).d, { redo: ["accounts.github"] }).then((r) => r.ok)).toBe(true);
   expect(state(home).steps["accounts.github"]?.status).toBe("skipped");
   expect(s.stored.size).toBe(0);
 });
@@ -373,7 +380,8 @@ it("offers the taste profile once: declining is recorded, and an existing profil
 it("leaves accounts unfinished when the secrets backend can't be prepared", async () => {
   const home = makeHome();
   const backend: SecretsWriter = { location: "broken", prepare: () => { throw new Error("secrets folder must be owner only"); }, set: vi.fn() };
-  const r = deps(home, fakeTty(["n"], []).tty, { secrets: backend });
+  // Enough answers to skip every account, so a run that wrongly asks still finishes and the assertions decide.
+  const r = deps(home, fakeTty(["n", "", "", "", "", "", "n"], []).tty, { secrets: backend });
   const result = await runSetup(r.d, {});
   expect(result.ok).toBe(false);
   expect(state(home).steps.secrets?.status).toBe("failed");

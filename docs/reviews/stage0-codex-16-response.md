@@ -18,3 +18,8 @@ Oct 24, 2026. Under decision 74, critical and high findings are fixed and re-rev
 ## Lanes A, B and C: the snapshot credential scanner
 
 43 high findings and 1 medium, all in `eval/snapshot.ts`. Each round since review 8 found new credential forms, and review 16's dedicated lanes found 41 more of distinct kinds: archives, compression, hex, base32, byte arrays in source, HCL and HOCON, cookies, tuple headers, serialized objects in strings, connection strings and more. The builder's view is that no pattern scanner can be shown complete for arbitrary repositories. Whether the scanner stays a stage-blocking security boundary or becomes best-effort hygiene, with the boundary carried by the sandbox, the network allowlist and the broker, is a decision for Fabricio. These findings are open until he decides.
+
+**Update, Oct 24 (decision 79):** Fabricio decided. The scanner is best-effort hygiene and the boundary is provenance, the sandbox, the network allowlist and the broker. The verdicts above stand as recorded (review 16 failed). Under the new policy:
+- **B7 stays high,** because it hides an npm token in `.npmrc` and `registry.npmjs.org` is the one write-capable host on the eval allowlist. **Fixed:** INI values are unquoted only when the quotes enclose the whole value. **Test:** `suffix/.npmrc` with `_authToken="${TOKEN}"<token>` is refused. **Mutation:** "INI text after a closing quote dropped". npm access tokens (`npm_…`) are now recognized too (mutation "npm tokens not recognized"). Backlog #29, done.
+- **The other 43 scanner findings are medium,** backlog #21–28 and #30–64.
+- **Review 17 runs lanes A, B and D.** Lane B now covers credentials usable against the allowlist; lane C is dropped.

@@ -38,9 +38,22 @@ export interface GoldenTask {
   allowedDomains: string[];
 }
 
+/**
+ * The only hosts an eval session may reach (decision 79). The snapshot scanner is best-effort, so this
+ * list is part of the boundary: a host that accepts authenticated writes (today only the npm registry)
+ * is added only after the scanner covers its credential forms, with tests and mutations.
+ */
+export const EVAL_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
+
+function checkEvalDomains(id: string, domains: readonly string[]): void {
+  const extra = domains.filter((d) => !EVAL_ALLOWED_DOMAINS.includes(d));
+  if (extra.length) throw new Error(`${id}: allowedDomains outside the eval allowlist (decision 79): ${extra.join(", ")}`);
+}
+
 export function loadTask(evalsRepo: string, id: string): GoldenTask {
   const t = JSON.parse(readFileSync(join(evalsRepo, "tasks", id, "task.json"), "utf8")) as GoldenTask & { webResearch?: unknown };
   if ("webResearch" in t) throw new Error(`${id}: webResearch is no longer supported; evals have no live web until fixtures exist (decision 70)`);
+  checkEvalDomains(id, t.allowedDomains);
   const prompt = readFileSync(join(evalsRepo, "tasks", id, "prompt.md"), "utf8").trim();
   const repo = t.source?.repo.replace(/^~(?=\/)/, homedir());
   return { ...t, prompt, ...(t.source && repo ? { source: { ...t.source, repo } } : {}) };
@@ -83,6 +96,7 @@ export interface BaselineOptions {
 const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
 
 export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Promise<BaselineRunResult> {
+  checkEvalDomains(task.id, task.allowedDomains);
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
   const home = homedir();

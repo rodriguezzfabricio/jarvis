@@ -83,4 +83,35 @@ describe("baseline runs (decision 47)", () => {
     writeFileSync(join(evals, "tasks", "x", "task.json"), JSON.stringify({ ...task, id: "x", webResearch: true }));
     expect(() => loadTask(evals, "x")).toThrow(/decision 70/);
   });
+
+  // Decision 79: the eval allowlist is a compensating control for the best-effort scanner, so a task
+  // file can't widen it. A new host needs its credential forms covered first, then a code change here.
+  const evalDomains = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
+  const writeTask = (id: string, allowedDomains: string[]) => {
+    const evals = join(root, "evals-79");
+    mkdirSync(join(evals, "tasks", id), { recursive: true });
+    writeFileSync(join(evals, "tasks", id, "prompt.md"), "p");
+    writeFileSync(join(evals, "tasks", id, "task.json"), JSON.stringify({ ...task, id, allowedDomains }));
+    return evals;
+  };
+
+  it("accepts the decision 79 eval allowlist", () => {
+    expect(loadTask(writeTask("ok", evalDomains), "ok").allowedDomains).toEqual(evalDomains);
+  });
+
+  it("refuses task files whose allowlist adds a host", () => {
+    for (const extra of ["api.github.com", "*.npmjs.org", "registry.npmjs.org:8443", "REGISTRY.NPMJS.ORG.evil.example"]) {
+      expect(() => loadTask(writeTask("wide", [...evalDomains, extra]), "wide")).toThrow(/decision 79/);
+    }
+  });
+
+  it("starts no session when the task's allowlist adds a host", async () => {
+    const marker = join(root, "started-wide");
+    await expect(runBaseline({ ...task, allowedDomains: ["registry.npmjs.org", "api.github.com"] }, {
+      preflight: pass, claudeBin: bin, jarvisHome, workRoot: join(root, "work"), runId: "w1",
+      parentEnv: { HOME: root, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: "baseline", FAKE_CLAUDE_MARKER: marker },
+    })).rejects.toThrow(/decision 79/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(root, "work", "evals", task.id, "w1"))).toBe(false);
+  });
 });

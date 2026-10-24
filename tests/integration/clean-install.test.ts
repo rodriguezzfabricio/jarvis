@@ -35,9 +35,10 @@ const sh = (cmd: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) =
 const install = (args: string[], p = prefix): SpawnSyncReturns<string> =>
   spawnSync("/bin/sh", [join(repo, "scripts", "install.sh"), "--prefix", p, "--offline", ...args], { cwd: root, env, encoding: "utf8", timeout: 120_000 });
 const output = (r: SpawnSyncReturns<string>) => `${r.stdout}\n${r.stderr}`;
-const calls = (): { args: string[]; envKeys: string[] }[] => {
+interface Call { bin: "claude" | "codex"; args: string[]; envKeys: string[] }
+const calls = (): Call[] => {
   const log = join(home, ".fake-claude", "calls.jsonl");
-  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as { args: string[]; envKeys: string[] }) : [];
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Call) : [];
 };
 const changingCalls = () => calls().filter((c) => !(c.args.length === 1 && c.args[0] === "--version") && !c.args.includes("list"));
 
@@ -101,7 +102,24 @@ beforeAll(() => {
   mkdirSync(dirname(pinned), { recursive: true });
   writeFileSync(pinned, `#!/bin/sh\nexec /usr/bin/env -u PWD -u OLDPWD -u SHLVL '${process.execPath}' '${fakePlugin}' "$@"\n`);
   chmodSync(pinned, 0o755);
+  // The pinned codex-cli, the same way.
+  const codex = join(home, ".npm-global", "bin", "codex");
+  mkdirSync(dirname(codex), { recursive: true });
+  writeFileSync(codex, `#!/bin/sh\nexec /usr/bin/env -u PWD -u OLDPWD -u SHLVL '${process.execPath}' '${fakePlugin}' --as-codex "$@"\n`);
+  chmodSync(codex, 0o755);
 }, 120_000);
+
+// The installer runs pinned binaries with exactly these (decision 58); macOS adds __CF_USER_TEXT_ENCODING
+// to every process (decision 66). Doctor's child environment comes from buildChildEnv's allowlist.
+const INSTALLER_ENV = ["HOME", "LANG", "PATH", "SHELL", "TMPDIR", "USER"];
+const CHILD_ALLOWLIST = new Set(["HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SHELL", "TERM", "PATH", "__CF_USER_TEXT_ENCODING"]);
+const keys = (c: { envKeys: string[] }) => c.envKeys.filter((k) => k !== "__CF_USER_TEXT_ENCODING");
+function expectEveryCallClean(): void {
+  expect(calls().length).toBeGreaterThan(0);
+  for (const c of calls()) {
+    expect(c.envKeys.filter((k) => !CHILD_ALLOWLIST.has(k)), `${c.bin} ${c.args.join(" ")}`).toEqual([]);
+  }
+}
 
 // Removing a whole install (node_modules included) can outlast the default hook timeout under a busy full run.
 afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); }, 120_000);
@@ -117,6 +135,12 @@ describe("scripts/install.sh, as written", () => {
     expect(text).not.toMatch(/claude_clean\s+(install|update|login|setup-token)\b/);
   });
 
+  it("calls the pinned binaries only through clean_env", () => {
+    expect(text).not.toMatch(/\$\(\s*"\$(CLAUDE|CODEX)_BIN"/);
+    expect(text).not.toMatch(/^\s*"\$(CLAUDE|CODEX)_BIN"\s/m);
+    expect(text).toMatch(/^clean_env\(\) \{\n {2}env -i /m);
+  });
+
   it("checks the same pins as packages/cli/src/config/pins.ts", () => {
     expect(text).toContain(`CLAUDE_VERSION="${CLAUDE_CODE_VERSION}"`);
     expect(text).toContain(`CODEX_VERSION="${CODEX_VERSION}"`);
@@ -126,6 +150,19 @@ describe("scripts/install.sh, as written", () => {
 });
 
 describe("clean install from git archive HEAD", () => {
+  it("refuses to run as root before writing anything or running any binary", (ctx) => {
+    if (skipReason) ctx.skip(skipReason);
+    const p = join(root, "root-prefix");
+    // JARVIS_INSTALL_TEST_UID can only claim root (0), never hide it: see install.sh.
+    const r = spawnSync("/bin/sh", [join(repo, "scripts", "install.sh"), "--prefix", p], { cwd: root, env: { ...env, JARVIS_INSTALL_TEST_UID: "0" }, encoding: "utf8" });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("don't run the installer as root");
+    expect(r.stdout).not.toContain("==>");
+    expect(calls()).toEqual([]);
+    expect(existsSync(p)).toBe(false);
+    expect(existsSync(join(repo, "node_modules"))).toBe(false);
+  });
+
   it("--dry-run reports every step and changes nothing", (ctx) => {
     if (skipReason) ctx.skip(skipReason);
     const r = install(["--dry-run"]);
@@ -139,6 +176,14 @@ describe("clean install from git archive HEAD", () => {
     expect(existsSync(join(repo, "node_modules"))).toBe(false);
     expect(existsSync(prefix)).toBe(false);
     expect(changingCalls()).toEqual([]);
+    // Even the read-only calls of a dry run get only the allowlisted environment (decision 58).
+    expect(calls().map((c) => [c.bin, ...c.args])).toEqual([
+      ["claude", "--version"],
+      ["codex", "--version"],
+      ["claude", "plugin", "marketplace", "list", "--json"],
+      ["claude", "plugin", "list", "--json"],
+    ]);
+    for (const c of calls()) expect(keys(c), `${c.bin} ${c.args.join(" ")}`).toEqual(INSTALLER_ENV);
   });
 
   it("installs dependencies, the launcher and the plugin, then runs doctor", (ctx) => {
@@ -158,11 +203,11 @@ describe("clean install from git archive HEAD", () => {
       ["plugin", "marketplace", "add", realpathSync(repo), "--scope", "user"],
       ["plugin", "install", "jarvis@jarvis", "--scope", "user"],
     ]);
-    // The pinned Claude Code ran with the allowlisted environment only (decision 58); macOS adds
-    // __CF_USER_TEXT_ENCODING to every process (decision 66).
-    for (const c of calls().filter((x) => x.args[0] === "plugin")) {
-      expect(c.envKeys.filter((k) => k !== "__CF_USER_TEXT_ENCODING")).toEqual(["HOME", "LANG", "PATH", "SHELL", "TMPDIR", "USER"]);
-    }
+    // The installer's plugin calls got exactly its allowlist; every call, the installer's version checks
+    // and doctor's included, got nothing outside the child allowlist (decision 58).
+    for (const c of calls().filter((x) => x.args[0] === "plugin")) expect(keys(c)).toEqual(INSTALLER_ENV);
+    expect(calls().filter((c) => c.args[0] === "--version").map((c) => c.bin).sort()).toEqual(["claude", "claude", "claude", "codex", "codex", "codex"]);
+    expectEveryCallClean();
     // Doctor ran from the installed launcher and found the pinned binary.
     expect(r.stdout).toMatch(/Running jarvis doctor/);
     expect(r.stdout).toMatch(/ok\s+claude_pinned/);
@@ -212,9 +257,10 @@ describe("clean install from git archive HEAD", () => {
     const checks = JSON.parse(doctor.stdout) as { name: string; level: string }[];
     const byName = new Map(checks.map((c) => [c.name, c.level]));
     expect(byName.get("claude_pinned")).toBe("pass");
-    expect(byName.get("codex_pinned")).toBe("warn"); // not installed in the temp HOME
+    expect(byName.get("codex_pinned")).toBe("pass");
     expect(byName.get("plugin")).toBe("pass");
     expect(byName.get("canary_probe")).toBe("warn");
+    expectEveryCallClean();
   }, 60_000);
 
   it("refuses to overwrite a jarvis command it didn't write", (ctx) => {

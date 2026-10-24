@@ -8,8 +8,15 @@ const home = process.env.HOME;
 if (!home) { console.error("fake claude: HOME is not set"); process.exit(9); }
 const dir = join(home, ".fake-claude");
 mkdirSync(dir, { recursive: true });
-const args = process.argv.slice(2);
-appendFileSync(join(dir, "calls.jsonl"), JSON.stringify({ args, envKeys: Object.keys(process.env).sort() }) + "\n");
+// `--as-codex` first: stand in for the pinned codex-cli instead, which only answers --version.
+const asCodex = process.argv[2] === "--as-codex";
+const args = process.argv.slice(asCodex ? 3 : 2);
+appendFileSync(join(dir, "calls.jsonl"), JSON.stringify({ bin: asCodex ? "codex" : "claude", args, envKeys: Object.keys(process.env).sort() }) + "\n");
+if (asCodex) {
+  if (args.length === 1 && args[0] === "--version") { console.log("codex-cli 0.164.0"); process.exit(0); }
+  console.error(`fake codex: unsupported call: ${args.join(" ")}`);
+  process.exit(9);
+}
 
 const statePath = join(dir, "state.json");
 const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : { marketplaces: [], plugins: [] };

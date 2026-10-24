@@ -8,14 +8,14 @@ import { Broker, type Op } from "./broker/broker.ts";
 import { ACT_EXIT, requestBroker } from "./broker/client.ts";
 import { outboxAdapters } from "./broker/outbox.ts";
 import { envFileSecrets } from "./broker/secrets.ts";
-import { startBrokerServer } from "./broker/server.ts";
+import { brokerSocketPath, startBrokerServer } from "./broker/server.ts";
 import { Ledger } from "./ledger/ledger.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts";
 import { loadTask, runBaseline } from "./eval/baseline.ts";
 import { runSchedule } from "./eval/schedule.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
-const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET ?? join(homedir(), ".jarvis", "run", "broker.sock");
+const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET;
 
 const program = new Command().name("jarvis").description("Jarvis: research, ask once, build autonomously, prove it with evidence.");
 
@@ -24,10 +24,11 @@ program
   .description("Preflight checks: pinned binaries, clean environment, disk, iCloud, and (with --live) the canary probe")
   .option("--live", "run the live canary probe with the pinned Claude Code (uses a little plan usage)")
   .option("--json", "print JSON")
-  .action(async (opts: { live?: boolean; json?: boolean }) => {
+  .option("--socket <path>", "broker run socket (or JARVIS_BROKER_SOCKET)", defaultSocket())
+  .action(async (opts: { live?: boolean; json?: boolean; socket?: string }) => {
     const checks = await runDoctor({
       live: opts.live === true,
-      foundation: { jarvisHome: join(homedir(), ".jarvis"), pluginDir: fileURLToPath(new URL("../../../plugin", import.meta.url)), socketPath: defaultSocket() },
+      foundation: { jarvisHome: join(homedir(), ".jarvis"), pluginDir: fileURLToPath(new URL("../../../plugin", import.meta.url)), socketPath: opts.socket ?? "" },
     });
     if (opts.json) console.log(JSON.stringify(checks, null, 2));
     else {
@@ -74,7 +75,8 @@ program
   .option("--json <payload>", "the payload as JSON")
   .option("--payload-file <path>", "read the payload from a JSON file")
   .option("--socket <path>", "broker socket", defaultSocket())
-  .action(async (op: string, opts: { json?: string; payloadFile?: string; socket: string }) => {
+  .action(async (op: string, opts: { json?: string; payloadFile?: string; socket?: string }) => {
+    if (!opts.socket) throw new Error("Specify a run socket with --socket or JARVIS_BROKER_SOCKET; use the path printed by jarvis broker.");
     const raw = opts.payloadFile ? readFileSync(opts.payloadFile, "utf8") : (opts.json ?? "{}");
     const res = await requestBroker(opts.socket, { op: op as Op, payload: JSON.parse(raw) as unknown });
     console.log(JSON.stringify(res, null, 2));
@@ -98,8 +100,9 @@ program
   .command("broker")
   .description("Run the broker in the foreground (the runner hosts it during runs). Stage 1 uses local outbox adapters: nothing leaves the machine")
   .requiredOption("--project <id>", "project id")
-  .option("--socket <path>", "socket path", defaultSocket())
-  .action(async (opts: { project: string; socket: string }) => {
+  .option("--socket <path>", "socket path (default: unique per project and run)")
+  .action(async (opts: { project: string; socket?: string }) => {
+    const socket = opts.socket ?? process.env.JARVIS_BROKER_SOCKET ?? brokerSocketPath(opts.project);
     const dir = projectDir(opts.project);
     const secretsPath = join(homedir(), ".jarvis", "secrets", `${opts.project}.env`);
     const broker = new Broker({
@@ -110,9 +113,18 @@ program
     });
     const reconciled = broker.reconcile();
     if (reconciled) console.log(`Marked ${reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
-    mkdirSync(dirname(opts.socket), { recursive: true, mode: 0o700 });
-    await startBrokerServer(broker, opts.socket);
-    console.log(`Broker listening on ${opts.socket} for project ${opts.project}.`);
+    mkdirSync(dirname(socket), { recursive: true, mode: 0o700 });
+    const server = await startBrokerServer(broker, socket);
+    const shutdown = () => {
+      // A stuck connection must not make a foreground stop hang forever. close unlinks our names.
+      const deadline = setTimeout(() => process.exit(1), 5000);
+      deadline.unref();
+      void server.close().then(() => process.exit(0), error => { console.error(String(error)); process.exit(1); });
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+    process.once("SIGHUP", shutdown);
+    console.log(`Broker listening on ${server.socketPath} for project ${opts.project}. Public alias: ${socket}. Use the bound socket with --socket or JARVIS_BROKER_SOCKET.`);
   });
 
 await program.parseAsync();

@@ -56,7 +56,7 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
     } catch (e) {
       add("broker", "fail", `socket exists but the broker did not answer: ${String(e)}`);
     }
-  } else add("broker", "warn", "not running (it runs only while a run is active)");
+  } else add("broker", "warn", d.socketPath ? "not running (it runs only while a run is active)" : "no run socket selected; use doctor --socket or JARVIS_BROKER_SOCKET");
 
   // The Jarvis plugin is in place with its hooks.
   try {

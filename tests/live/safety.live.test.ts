@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Broker } from "../../packages/cli/src/broker/broker.ts";
@@ -24,29 +25,37 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
   it("blocks every outside route except the broker, and the broker waits for a person", async () => {
     const nonce = randomBytes(5).toString("hex");
     const root = mkdtempSync(join(realpathSync("/tmp"), "jarvis-safety-"));
-    const jarvisHome = join(root, "jhome");
-    const projectDir = join(jarvisHome, "projects", "p");
-    const work = join(root, "work");
-    const cache = join(root, "cache");
-    for (const d of [projectDir, join(jarvisHome, "secrets"), join(jarvisHome, "run"), work, cache]) mkdirSync(d, { recursive: true, mode: 0o700 });
-    execFileSync("git", ["init", "-q"], { cwd: work, env: { PATH: "/usr/bin:/bin", HOME: root } });
-    const secret = `LIVE-SECRET-${nonce}`;
-    const secretsFile = join(jarvisHome, "secrets", "p.env");
-    writeFileSync(secretsFile, `SMTP_PASSWORD=${secret}\n`, { mode: 0o600 });
-    const ledger = Ledger.open(projectDir);
-    const outbox = join(projectDir, "outbox");
-    const broker = new Broker({ ledger, project: "p", adapters: outboxAdapters(outbox), secrets: envFileSecrets(secretsFile) });
-    const sock = join(jarvisHome, "run", "broker.sock");
-    const server = await startBrokerServer(broker, sock);
-    const cli = join(repoRoot, "packages", "cli", "src", "cli.ts");
-    const payload = { to: "jane@example.com", subject: `Intro ${nonce}`, body: "Hi Jane, I applied for the role." };
+    let jarvisHome: string | undefined;
+    let server: Awaited<ReturnType<typeof startBrokerServer>> | undefined;
     try {
+      jarvisHome = mkdtempSync(join(homedir(), ".jarvis-broker-test-"));
+      const projectDir = join(jarvisHome, "projects", "p");
+      const work = join(root, "work");
+      const cache = join(root, "cache");
+      for (const d of [projectDir, join(jarvisHome, "secrets"), join(jarvisHome, "run"), work, cache]) mkdirSync(d, { recursive: true, mode: 0o700 });
+      execFileSync("git", ["init", "-q"], { cwd: work, env: { PATH: "/usr/bin:/bin", HOME: root } });
+      const secret = `LIVE-SECRET-${nonce}`;
+      const secretsFile = join(jarvisHome, "secrets", "p.env");
+      writeFileSync(secretsFile, `SMTP_PASSWORD=${secret}\n`, { mode: 0o600 });
+      const ledger = Ledger.open(projectDir);
+      const outbox = join(projectDir, "outbox");
+      const broker = new Broker({ ledger, project: "p", adapters: outboxAdapters(outbox), secrets: envFileSecrets(secretsFile) });
+      server = await startBrokerServer(broker, join(jarvisHome, "run", "broker.sock"));
+      const sock = server.socketPath;
+      const socketParent = realpathSync(dirname(sock));
+      expect(socketParent.startsWith(`${realpathSync(jarvisHome)}/`)).toBe(true);
+      for (const writable of [work, cache, realpathSync("/tmp")]) expect(socketParent.startsWith(`${writable}/`)).toBe(false);
+      expect(statSync(socketParent).mode & 0o777).toBe(0o700);
+      const socketWrite = join(socketParent, "task-write-must-fail");
+      const cli = join(repoRoot, "packages", "cli", "src", "cli.ts");
+      const payload = { to: "jane@example.com", subject: `Intro ${nonce}`, body: "Hi Jane, I applied for the role." };
       const script = join(work, "selftest.sh");
       writeFileSync(
         script,
         [
           "#!/bin/sh",
           `node ${cli} act email.send --socket ${sock} --json '${JSON.stringify(payload)}' > act.json 2>&1; echo "ACT:$?"`,
+          `touch ${socketWrite} 2>&1; echo "BROKER_WRITE:$?"`,
           `cat ${secretsFile} 2>&1 | sed 's/^/SECRET:/'`,
           ...["smtp.gmail.com", "api.sendgrid.com", "api.vercel.com", "api.stripe.com"].map((h) => `printf 'NET:${h}:%s\\n' "$(curl -s -m 8 -o /dev/null -w '%{http_code}' https://${h}/)"`),
           "",
@@ -77,6 +86,8 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
 
       // The broker route: reachable, but only "pending" (exit 2) until a person approves.
       expect(shell).toMatch(/ACT:2\b/);
+      expect(shell).toMatch(/BROKER_WRITE:[1-9]\d*\b/);
+      expect(existsSync(socketWrite)).toBe(false);
       expect(ledger.entries().some((e) => e.kind === "approval_request")).toBe(true);
       expect(existsSync(outbox) ? readdirSync(outbox) : []).toEqual([]);
       // Direct routes: no secret, no network to mail/deploy/payment APIs, tripwire on publishing.
@@ -95,8 +106,9 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
       expect(readdirSync(outbox)).toHaveLength(1);
       expect(readFileSync(join(projectDir, "ledger.jsonl"), "utf8")).not.toContain(secret);
     } finally {
-      await server.close();
+      await server?.close();
       rmSync(root, { recursive: true, force: true });
+      if (jarvisHome) rmSync(jarvisHome, { recursive: true, force: true });
     }
   }, 360_000);
 });

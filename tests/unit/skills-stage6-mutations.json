@@ -202,5 +202,47 @@
     "file": "skills/CREDITS.md",
     "anchor": "- **Source:** https://github.com/EveryInc/compound-engineering-plugin, by EveryInc.\n",
     "replacement": ""
+  },
+  {
+    "name": "skills stage6 sweep runs the repo's unused-code tool",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "search for each name. An unused-code finder the repo ships is never run here; propose it as a runner task if the searches can't settle it.",
+    "replacement": "Use the project's own unused-code tool if it has one; otherwise search for each name."
+  },
+  {
+    "name": "skills stage6 sweep runs the repo's audit",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "read through `jarvis status`, never from an audit run here.",
+    "replacement": "or from running the project's own audit tool."
+  },
+  {
+    "name": "skills stage6 sweep drops the static-reads rule",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "- **Static reads only.** The sweep runs outside the task sandbox, where a planted script could read the runner home, so it never runs a tool, script, test, build, audit or package command the repo ships.",
+    "replacement": "- **Read mostly.**"
+  },
+  {
+    "name": "skills stage6 onboard lists commands with the repo's own runner",
+    "file": "skills/onboard/SKILL.md",
+    "anchor": "- **Read them from where they're defined,**",
+    "replacement": "- **Use the repo's own task runner to list them,**"
+  },
+  {
+    "name": "skills stage6 sweep task boundary is a whole folder",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "      \"mayTouch\": [\"src/lib/format.ts\", \"src/lib/format.test.ts\"]\n",
+    "replacement": "      \"mayTouch\": [\"src\"]\n"
+  },
+  {
+    "name": "skills stage6 compound works around a missing command",
+    "file": "skills/compound/SKILL.md",
+    "anchor": "report it and stop that step. Without the full entries",
+    "replacement": "work around it. Without the full entries"
+  },
+  {
+    "name": "skills stage6 sweep works around a missing command",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "report it and stop that step. The rest of the sweep goes on",
+    "replacement": "work around it. The rest of the sweep goes on"
   }
 ]

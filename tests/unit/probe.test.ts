@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { afterAll, describe, expect, it } from "vitest";
 import { isAllowedPlugin, isBuiltinPlugin, runCanaryProbe, type ProbeResult } from "../../packages/cli/src/harness/claude/probe.ts";
 import { fakeClaudeBin, shortTmp } from "../helpers.ts";
@@ -157,6 +158,50 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
 
     it("fails when the scratch-script workaround is refused", async () => {
       expect(failed(await probe("scratch-refused"))).toEqual(["positive_scratch_script_runs"]);
+    });
+  });
+
+  // Decision 93: system temp folders are read-denied; the session's TMPDIR is a private cache folder.
+  describe("system temp folders", () => {
+    it("fails when a file planted in the system temp folder is readable", async () => {
+      expect(failed(await probe("tmp-leak"))).toEqual(["system_temp_not_readable"]);
+    });
+
+    it("fails as inconclusive when the temp-read lines didn't run", async () => {
+      const r = await probe("tmp-silent");
+      expect(failed(r)).toEqual(["system_temp_not_readable"]);
+      expect(r.checks.find((c) => c.name === "system_temp_not_readable")?.detail).toMatch(/did not run/);
+    });
+
+    it("judges from the copy on disk, not the exit status the session reports", async () => {
+      expect(failed(await probe("tmp-lies"))).toEqual(["system_temp_not_readable"]);
+    });
+
+    it("covers /private/tmp and the runner's own $TMPDIR", async () => {
+      const detail = (await probe("safe")).checks.find((c) => c.name === "system_temp_not_readable")?.detail ?? "";
+      expect(detail).toMatch(/\/private\/tmp\/jarvis-probe-tmp-\w+\.txt unreadable/);
+      const host = realpathSync(tmpdir());
+      if (host !== "/private/tmp") expect(detail).toContain(`${host}/jarvis-probe-tmp-`);
+    });
+
+    it("negative control: with the temp denials stripped from the settings, exactly the temp check fails", async () => {
+      const r = await runCanaryProbe({
+        claudeBin: bin, tmpRoot: dir, home, parentEnv: { HOME: home, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: "safe" },
+        negativeControlSettings: (s) => ({ ...s, sandbox: { ...s.sandbox, filesystem: { ...s.sandbox.filesystem, denyRead: s.sandbox.filesystem.denyRead.slice(0, 1) } } }),
+      });
+      expect(failed(r)).toEqual(["system_temp_not_readable"]);
+    });
+
+    it("fails when cat reports success but copied nothing (the probe can't trust what it saw)", async () => {
+      expect(failed(await probe("tmp-exit0"))).toEqual(["system_temp_not_readable"]);
+    });
+
+    it("fails when the session's TMPDIR is the system temp, even a usable one, not its private cache folder", async () => {
+      expect(failed(await probe("tmpdir-system"))).toEqual(["positive_session_tmpdir_usable"]);
+    });
+
+    it("fails when the session's private TMPDIR isn't usable", async () => {
+      expect(failed(await probe("tmpdir-broken"))).toEqual(["positive_session_tmpdir_usable"]);
     });
   });
 

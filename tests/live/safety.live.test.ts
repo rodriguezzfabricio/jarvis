@@ -32,7 +32,7 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
       const projectDir = join(jarvisHome, "projects", "p");
       const work = join(root, "work");
       const cache = join(root, "cache");
-      for (const d of [projectDir, join(jarvisHome, "secrets"), join(jarvisHome, "run"), work, cache]) mkdirSync(d, { recursive: true, mode: 0o700 });
+      for (const d of [projectDir, join(jarvisHome, "secrets"), join(jarvisHome, "run"), work, cache, join(cache, "tmp")]) mkdirSync(d, { recursive: true, mode: 0o700 });
       execFileSync("git", ["init", "-q"], { cwd: work, env: { PATH: "/usr/bin:/bin", HOME: root } });
       const secret = `LIVE-SECRET-${nonce}`;
       const secretsFile = join(jarvisHome, "secrets", "p.env");

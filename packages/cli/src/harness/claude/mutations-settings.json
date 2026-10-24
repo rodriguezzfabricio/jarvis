@@ -1,0 +1,50 @@
+[
+  {
+    "name": "settings temp roots not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "        denyRead: [input.jarvisHome, ...denyTemp],",
+    "replacement": "        denyRead: [input.jarvisHome],"
+  },
+  {
+    "name": "settings /private/tmp not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "export const SYSTEM_TEMP_ROOTS = [\"/private/tmp\", \"/tmp\", ",
+    "replacement": "export const SYSTEM_TEMP_ROOTS = [\"/tmp\", "
+  },
+  {
+    "name": "settings /private/var/folders not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "\"/tmp\", \"/private/var/folders\", \"/var/folders\"] as const;",
+    "replacement": "\"/tmp\", \"/var/folders\"] as const;"
+  },
+  {
+    "name": "settings runner TMPDIR not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings worktree always reopened",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "allowRead: [...(worktreeInTemp ? [input.worktree] : []), ",
+    "replacement": "allowRead: [input.worktree, "
+  },
+  {
+    "name": "settings worktree not reopened under a temp root",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "allowRead: [...(worktreeInTemp ? [input.worktree] : []), ",
+    "replacement": "allowRead: ["
+  },
+  {
+    "name": "settings runner folder inside a reopened path",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "  if (under(input.jarvisHome, input.worktree) || under(input.jarvisHome, input.cacheDir)) throw new Error(\"the runner-owned folder must not sit inside the worktree or the cache\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings Claude Code temp root left in the system temp",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "    CLAUDE_CODE_TMPDIR: join(cacheDir, \"tmp\"),\n",
+    "replacement": ""
+  }
+]

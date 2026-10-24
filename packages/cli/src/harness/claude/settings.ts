@@ -1,4 +1,5 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -26,6 +27,27 @@ export interface TaskSettingsInput {
   allowedDomains: readonly string[];
   /** Folders sessions may read but never write: the Jarvis install, so `jarvis act` runs (decision 12). */
   readOnlyDirs?: readonly string[];
+  /** Real path of the runner's own $TMPDIR; defaults to the real path of os.tmpdir(). */
+  hostTmpDir?: string;
+}
+
+/**
+ * System temp folders (decision 93): other processes' scratch files live there, and
+ * blockReadsOutsideWorkingDirectories leaves them readable to sandboxed shells. Both spellings,
+ * because macOS's /tmp and /var are symlinks into /private.
+ */
+export const SYSTEM_TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders"] as const;
+
+function defaultHostTmpDir(): string | undefined {
+  const t = tmpdir();
+  return existsSync(t) ? realpathSync(t) : undefined;
+}
+
+/** The temp roots a session may not read: the system ones plus the runner's $TMPDIR when it lies elsewhere. */
+export function tempRoots(hostTmpDir: string | undefined): string[] {
+  const roots: string[] = [...SYSTEM_TEMP_ROOTS];
+  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);
+  return roots;
 }
 
 /** Permission-rule form of an absolute path: //abs/path (a single leading / is relative to the settings file). */
@@ -84,6 +106,9 @@ function checkContext(input: TaskSettingsInput): void {
   if (under(input.worktree, input.jarvisHome)) throw new Error("the worktree must be outside the runner-owned folder (decision 67)");
   if (under(input.cacheDir, input.jarvisHome)) throw new Error("the cache must be outside the runner-owned folder");
   if (under(input.cacheDir, input.worktree) || under(input.worktree, input.cacheDir)) throw new Error("the cache and the worktree must not contain each other");
+  // allowRead outranks denyRead, so a runner folder inside a reopened path would be readable.
+  if (under(input.jarvisHome, input.worktree) || under(input.jarvisHome, input.cacheDir)) throw new Error("the runner-owned folder must not sit inside the worktree or the cache");
+  if (input.hostTmpDir !== undefined && !isAbsolute(input.hostTmpDir)) throw new Error(`hostTmpDir must be an absolute real path, got ${input.hostTmpDir}`);
   if (input.brokerSocket && !under(input.brokerSocket, input.jarvisHome)) throw new Error("the broker socket must live in the runner-owned folder");
   for (const d of input.readOnlyDirs ?? []) {
     if (!isAbsolute(d) || d.startsWith("/tmp/") || d.startsWith("/var/")) throw new Error(`read-only dir must be an absolute real path: ${d}`);
@@ -95,6 +120,9 @@ function checkContext(input: TaskSettingsInput): void {
 
 export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
   checkContext(input);
+  const denyTemp = tempRoots(input.hostTmpDir ?? defaultHostTmpDir());
+  // The worktree is readable as the working directory, except under a denied temp root: reopen exactly it.
+  const worktreeInTemp = denyTemp.some((r) => under(input.worktree, r));
   const settings: TaskSettings = {
     autoMemoryEnabled: false,
     sandbox: {
@@ -107,9 +135,9 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
         allowUnixSockets: input.brokerSocket ? [input.brokerSocket] : [],
       },
       filesystem: {
-        denyRead: [input.jarvisHome],
+        denyRead: [input.jarvisHome, ...denyTemp],
         // blockReadsOutsideWorkingDirectories closes reads of /Users and similar; the cache is reopened.
-        allowRead: [input.cacheDir, ...(input.readOnlyDirs ?? [])],
+        allowRead: [...(worktreeInTemp ? [input.worktree] : []), input.cacheDir, ...(input.readOnlyDirs ?? [])],
         allowWrite: [input.cacheDir],
         denyWrite: [
           input.jarvisHome,
@@ -157,5 +185,9 @@ export function cacheEnv(cacheDir: string): Record<string, string> {
     npm_config_cache: join(cacheDir, "npm"),
     npm_config_store_dir: join(cacheDir, "pnpm-store"),
     XDG_CACHE_HOME: join(cacheDir, "xdg"),
+    // Decision 93: the system temp folders are read-denied, so the shells' TMPDIR and Claude Code's own
+    // temp root (it hands CLAUDE_CODE_TMPDIR to sandboxed commands as TMPDIR) live in the cache.
+    TMPDIR: join(cacheDir, "tmp"),
+    CLAUDE_CODE_TMPDIR: join(cacheDir, "tmp"),
   };
 }

@@ -170,6 +170,25 @@ for (const st of steps) {
       res.push(linkLine("Ld", ln("Ld"), mode === "link-runner" ? { make: true } : {}));
       res.push(linkLine("Lg", ln("Lg"), mode === "link-gitconfig" ? { make: true } : {}));
     }
+    // Planted temp files: readable unless the settings deny their folder (and don't reopen it).
+    const fsPolicy = settings.sandbox?.filesystem ?? {};
+    const covered = (list, p) => (list ?? []).some((d) => p === d || p.startsWith(`${d}/`));
+    for (const k of ["X1", "X2"]) {
+      if (!line(k) || mode === "tmp-silent") continue;
+      const [, src, copy, err, rc] = line(k).match(/^cat (\S+) > (\S+) 2> (\S+); echo \$\? > (\S+)/);
+      const readable = mode === "tmp-leak" || mode === "tmp-lies" || !covered(fsPolicy.denyRead, src) || covered(fsPolicy.allowRead, src);
+      writeFileSync(copy, readable ? readFileSync(src) : "");
+      writeFileSync(err, readable ? "" : `cat: ${src}: Operation not permitted\n`);
+      writeFileSync(rc, (readable && mode !== "tmp-lies") || mode === "tmp-exit0" ? "0\n" : "1\n");
+    }
+    {
+      // Sandboxed commands get TMPDIR=$CLAUDE_CODE_TMPDIR, or /tmp/claude without it (the pinned binary).
+      // tmpdir-system: the system temp, usable; tmpdir-broken: the right folder, but nothing written.
+      const [, val, copy] = line("M").match(/printf %s (\S+) > "\$TMPDIR\/probe-tmpdir.txt" && cat "\$TMPDIR\/probe-tmpdir.txt" > (\S+);/);
+      const tmp = mode === "tmpdir-system" ? "/tmp/claude" : process.env.CLAUDE_CODE_TMPDIR ?? "/tmp/claude";
+      if (mode !== "tmpdir-broken") writeFileSync(copy, val);
+      res.push(`M:${tmp}`);
+    }
     isError = false; text = res.join("\n");
   }
   else if (st.tool === "Write" && mode === "notes-refused" && st.file_path.includes("/.jarvis/notes/")) text = denied("Write");

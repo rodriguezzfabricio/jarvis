@@ -111,6 +111,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   mkdirSync(cacheRoot, { recursive: true, mode: 0o700 });
   const workspace = join(realpathSync(join(workRoot, "evals", task.id)), runId);
   const cacheDir = realpathSync(cacheRoot);
+  mkdirSync(join(cacheDir, "tmp"), { mode: 0o700 }); // the session's TMPDIR (decision 93)
 
   const snapshot = await createSnapshot({
     dest: workspace,

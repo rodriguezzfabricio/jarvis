@@ -130,7 +130,7 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const tmpDir = join(cacheDir, "tmp");
   mkdirSync(tmpDir, { mode: 0o700 });
   const env = buildChildEnv({ ...(opts.parentEnv ?? process.env), HOME: home }, {
-    ...cacheEnv(cacheDir), TMPDIR: tmpDir,
+    ...cacheEnv(cacheDir),
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
   });
   return {

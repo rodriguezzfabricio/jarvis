@@ -80,7 +80,7 @@ export interface CaptureDependencies {
   session?: typeof import('./session.ts').runSession;
 }
 export async function captureCompatibility(input: CompatibilityContext & { directory: string; jarvisHome: string; cacheDir: string }, dependencies: CaptureDependencies = {}): Promise<void> {
-  const { writeFileSync, existsSync, readFileSync } = await import('node:fs');
+  const { writeFileSync, existsSync, readFileSync, mkdirSync } = await import('node:fs');
   const { join } = await import('node:path');
   const { pinnedClaudeBin, MODELS } = await import('../../config/pins.ts');
   const { runCanaryProbe } = await import('./probe.ts');
@@ -96,6 +96,7 @@ export async function captureCompatibility(input: CompatibilityContext & { direc
   if (!probe.ok) throw new Error('live canary failed; compatibility session was not started');
   const settingsPath = join(input.directory, 'settings.json');
   assertSafeTaskSettings(JSON.parse(readFileSync(settingsPath, 'utf8')), { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
+  mkdirSync(join(input.cacheDir, 'tmp'), { recursive: true, mode: 0o700 }); // TMPDIR (decision 93)
   const mcpConfigPath = join(input.directory, 'mcp.json');
   writeFileSync(mcpConfigPath, '{"mcpServers":{}}', { flag: 'wx', mode: 0o600 });
   const args = buildTaskArgs({ prompt: compatibilityPrompt, settingsPath, mcpConfigPath, model: MODELS.cheap, maxTurns: 4, tools: ['Bash'], pluginDir: input.pluginDir });

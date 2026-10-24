@@ -86,7 +86,7 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 | `jarvis run [--detach]` | The runner: works through the plan, hosts the broker and notifier, writes the report |
 | `jarvis steer "…"` | Adds a note to the runner-owned inbox; the runner reads it between tasks (decisions 40, 87) |
 | `jarvis status` | Current run state from the ledger |
-| `jarvis report [--open]` | Rebuilds and opens the morning report |
+| `jarvis report [--open]` | Rebuilds `.jarvis/REPORT.md` in the project's repo from the verified ledger, without a ledger writer, re-verifying evidence; `--open` opens it with `/usr/bin/open`. Refuses a tampered ledger or another project's repo, and rebuilds nothing while ledger writers are active. Agent claims aren't in it: only the runner's own report carries them |
 | `jarvis why <thing>` | Answers from the decision register, with sources (decision 48) |
 | `jarvis decide …` | Writes one decision register entry; firmness enforced on write (decision 85) |
 | `jarvis triage "…"` | Classifies a request and prints its pipeline; `/jarvis` calls it first (decision 89) |
@@ -94,9 +94,9 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 | `jarvis intake send\|answer\|answers …` | Intake rounds: plain text in the session, mirrored to the phone; `answers --wait` polls the reply topic (decisions 86, 90) |
 | `jarvis taste save <file>` | Saves the taste profile (decision 90) |
 | `jarvis act <operation> …` | Client for the broker. The only path to outside actions (decision 12) |
-| `jarvis gate <name>` | Runs a protected check (`quick`, `test`, `lint`, `security`, `qa`, `design`, `done`). Only runs the runner launches after a session ends are recorded as evidence; runs from inside a session are feedback only (decision 49) |
+| `jarvis gate <name>` | Runs a protected check (`quick`, `test`, `lint`, `security`, `qa`, `design`, `done`). Only runs the runner launches after a session ends are recorded as evidence; runs from inside a session are feedback only (decision 49). `jarvis gate` itself is always feedback: it runs the installed check of that name (`test` falls back to `unit`; `done` runs every installed check) on a copy of the working tree, records nothing, keeps nothing, and prints the cases' own output, never the assertions'. Exit 0 pass, 1 fail, 2 tampered or error |
 | `jarvis approve <id>` / `reject <id>` | Answers a pending approval from the terminal (same as answering through ntfy) |
-| `jarvis mode explain\|quiet` | Teach-me mode on or off |
+| `jarvis mode explain\|quiet` | Teach-me mode on or off (decision 32), kept in the runner-owned `~/.jarvis/projects/<id>/mode.json`; no argument prints it. In explain mode the run header asks for a short "Why" line per choice in the notes |
 | `jarvis eval <task>` | Runs a golden task on a sanitized snapshot, with Jarvis and with the plain-Claude-Code baseline (decisions 35, 47) |
 
 ### 3.3 Triage and intake (interactive, inside Claude Code)

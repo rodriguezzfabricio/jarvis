@@ -741,7 +741,7 @@ Reviews 8–16 each found credential forms the snapshot scanner missed. Review 1
 
 **Compensating controls:**
 - **Credentials for an allowlisted host that accepts authenticated writes stay fully covered, at full severity.** Today that host is `registry.npmjs.org`, through `npm publish` with a token. The scanner covers `.npmrc` and Yarn auth (`_auth`, `_authToken`, `npmAuthIdent`), npm access tokens (`npm_…`, added with this decision) and credential URLs. A miss in this class is still high.
-- **Adding a write-capable host to any allowlist requires covering its credential forms first,** with tests and mutations.
+- **Adding a write-capable host to any allowlist requires covering its credential forms first,** with tests and mutations. For evals this is enforced in code: `EVAL_ALLOWED_DOMAINS` in `eval/baseline.ts` is the whole list, and a task file naming any other host is refused before a session starts. Widening it is a code change, reviewed like one.
 - **Backlog #8,** a read-only package mirror, is the way to remove even that npm write path.
 
 **Reviews:** decision 77's lanes change to:

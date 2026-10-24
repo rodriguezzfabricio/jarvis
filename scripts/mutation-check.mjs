@@ -3,13 +3,19 @@
 // A mutation counts as caught only if: the unmodified control run passed, the mutated run collected
 // the same number of tests, and at least one assertion failed. Crashes and collection errors are
 // errors, never "caught". Every file is restored, even on failure.
-// Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset)
-import { execFileSync, spawnSync } from "node:child_process";
+// Each mutation first runs only the test files that can observe the mutated file (import graph plus
+// files the tests name, scripts/mutation-select.mjs), against that set's own control run. Only a
+// catch is kept from that subset; a survivor or an error is re-run on the full suite, whose verdict
+// is the one reported, so the subset changes the time taken, never what counts as caught.
+// Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset;
+//        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classify, summarize, testIds } from "./mutation-classify.mjs";
+import { buildGraph, collectedFiles, controlCache, idsForFiles, isCandidateTest, judge, relatedTests } from "./mutation-select.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
 const A = "packages/cli/src/harness/claude/args.ts";
@@ -215,21 +221,33 @@ for (const file of globSync(["packages/cli/src/**/mutations*.json", "tests/unit/
 const names = mutations.map(([n]) => n);
 const duplicate = names.find((n, i) => names.indexOf(n) !== i);
 if (duplicate) { console.log(`duplicate mutation name: ${duplicate}`); process.exit(2); }
+// Concurrent suites caused timing failures (decision 81, rule 3), so one job is the default. With more,
+// the jobs split the workers one full-suite run would use, so no test runs under more load than there.
+const jobs = Number(process.env.JARVIS_MUTATION_JOBS ?? "1");
+if (!Number.isInteger(jobs) || jobs < 1) { console.log(`JARVIS_MUTATION_JOBS must be a whole number of at least 1, not "${process.env.JARVIS_MUTATION_JOBS}"`); process.exit(2); }
+const workerFlags = jobs > 1 ? [`--maxWorkers=${Math.max(1, Math.floor((availableParallelism() - 1) / jobs))}`] : [];
+const started = Date.now();
 
-// Mutations run in a disposable clone of the committed revision, never in the working tree, so an
+// Mutations run in disposable clones of the committed revision, never in the working tree, so an
 // interruption can't leave a safeguard disabled in the code under review (Codex stage 0 review 5).
+// One clone per job, so a job's mutated file is never seen by another job's run.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const work = mkdtempSync(join(tmpdir(), "jarvis-mut-"));
-const sandboxRepo = join(work, "repo");
-execFileSync("git", ["clone", "--quiet", "--no-hardlinks", repo, sandboxRepo], { env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } });
-for (const nm of ["node_modules", "packages/cli/node_modules"]) symlinkSync(join(repo, nm), join(sandboxRepo, nm));
+const work = realpathSync(mkdtempSync(join(tmpdir(), "jarvis-mut-")));
+const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
+const clones = Array.from({ length: jobs }, (_, i) => join(work, i === 0 ? "repo" : `repo-${i + 1}`));
+for (const [i, clone] of clones.entries()) {
+  // Later clones copy the first, so every job tests the same revision.
+  execFileSync("git", ["clone", "--quiet", "--no-hardlinks", i === 0 ? repo : clones[0], clone], { env: gitEnv });
+  for (const nm of ["node_modules", "packages/cli/node_modules"]) symlinkSync(join(repo, nm), join(clone, nm));
+}
+const sandboxRepo = clones[0];
 process.chdir(sandboxRepo);
 console.log(`mutating a clone of ${execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: sandboxRepo, encoding: "utf8" }).trim()} (uncommitted changes are not included)`);
-// If the check is interrupted, put back whatever file is currently mutated before exiting.
-let current; // [file, original]
+// If the check is interrupted, put back whatever files are currently mutated before exiting.
+const current = new Map(); // clone -> [path, original]
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
-    if (current) writeFileSync(current[0], current[1]);
+    for (const [path, original] of current.values()) writeFileSync(path, original);
     rmSync(work, { recursive: true, force: true });
     process.exit(130);
   });
@@ -252,57 +270,177 @@ function reapLeftovers(tmp) {
   }
 }
 
-function runSuite(tag) {
-  const out = join(work, `${tag}.json`);
+let runs = 0;
+/** Runs `files` (default: all of tests/unit) in `clone`, with the limits spawnSync used to apply. */
+function runSuite(clone, tag, files) {
+  const id = `${++runs}-${tag}`;
+  const out = join(work, `${id}.json`);
   // Short, per run: Unix socket paths in the tests must stay under macOS's 104-byte limit.
   const tmp = realpathSync(mkdtempSync("/tmp/jmt-"));
-  // Vitest directly: pnpm's dependency check rejects the clone's symlinked node_modules.
-  const end = join(work, `${tag}.end.json`);
-  const proc = spawnSync(
-    join(sandboxRepo, "node_modules", ".bin", "vitest"),
-    // Anchor-applicability tests (*-mutations.test.ts) fail on every mutation by design, so they never count as catching one.
-    ["run", "tests/unit", "--exclude", "**/*-mutations.test.ts", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
-    { encoding: "utf8", timeout: 900_000, env: { ...process.env, JARVIS_RUN_END_OUT: end, JARVIS_TEST_TMP: tmp } },
-  );
-  reapLeftovers(tmp);
-  rmSync(tmp, { recursive: true, force: true });
-  const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
-  const runEnd = existsSync(end) ? JSON.parse(readFileSync(end, "utf8")) : undefined;
-  return { proc, report, runEnd };
+  const end = join(work, `${id}.end.json`);
+  return new Promise((done) => {
+    // Vitest directly: pnpm's dependency check rejects the clone's symlinked node_modules.
+    const child = spawn(
+      join(clone, "node_modules", ".bin", "vitest"),
+      // Anchor-applicability tests (*-mutations.test.ts) fail on every mutation by design, so they never count as catching one.
+      ["run", ...(files ?? ["tests/unit"]), "--exclude", "**/*-mutations.test.ts", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs", ...workerFlags],
+      { cwd: clone, env: { ...process.env, JARVIS_RUN_END_OUT: end, JARVIS_TEST_TMP: tmp } },
+    );
+    const proc = { status: null, signal: null };
+    const stop = (error) => {
+      proc.error ??= error;
+      child.kill("SIGTERM");
+    };
+    // spawnSync's limits: 15 minutes, and 1 MB of output per stream.
+    const timer = setTimeout(() => stop(new Error("spawnSync vitest ETIMEDOUT")), 900_000);
+    for (const stream of [child.stdout, child.stderr]) {
+      let bytes = 0;
+      stream.on("data", (chunk) => {
+        bytes += chunk.length;
+        if (bytes > 1024 * 1024) stop(new Error("spawnSync vitest ENOBUFS"));
+      });
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reapLeftovers(tmp);
+      rmSync(tmp, { recursive: true, force: true });
+      const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
+      const runEnd = existsSync(end) ? JSON.parse(readFileSync(end, "utf8")) : undefined;
+      done({ proc, report, runEnd });
+    };
+    child.on("error", (error) => {
+      proc.error ??= error;
+      finish();
+    });
+    child.on("close", (status, signal) => {
+      proc.status = status;
+      proc.signal = signal;
+      finish();
+    });
+  });
 }
 
+/**
+ * Vitest's own import-graph answer for each file, from its module graph (no test runs). In a child
+ * process, so nothing Vitest sets up leaks into this process or the suites it starts.
+ */
+function vitestRelated(files) {
+  const code = `
+    import { relative } from "node:path";
+    import { createVitest } from "vitest/node";
+    const [root, files] = [process.argv[1], JSON.parse(process.argv[2])];
+    const related = {};
+    for (const file of files) {
+      const v = await createVitest("test", { root, watch: false, run: true, related: [root + "/" + file] });
+      try {
+        related[file] = (await v.getRelevantTestSpecifications(["tests/unit"])).map((s) => relative(root, s.moduleId));
+      } finally {
+        await v.close();
+      }
+    }
+    process.stdout.write(JSON.stringify(related));`;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", code, sandboxRepo, JSON.stringify(files)], { cwd: sandboxRepo, encoding: "utf8", timeout: 300_000, maxBuffer: 16 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`exit ${r.status ?? r.signal}: ${(r.stderr ?? "").trim().split("\n").slice(-3).join(" ")}`);
+  return new Map(Object.entries(JSON.parse(r.stdout)));
+}
+
+const minutes = (ms) => `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const results = [];
+const controls = [];
 let controlIds;
 // JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
 const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
 const selected = mutations.filter(([n]) => !only || only.test(n));
 try {
-  const control = runSuite("control");
+  // Which test files can observe each mutated file: the reference graph, plus Vitest's own.
+  const tracked = execFileSync("git", ["-c", "core.fsmonitor=false", "ls-files", "-z"], { cwd: sandboxRepo, encoding: "utf8", env: gitEnv }).split("\0").filter(Boolean);
+  const graph = buildGraph(tracked, (p) => {
+    try {
+      return readFileSync(join(sandboxRepo, p), "utf8");
+    } catch {
+      return undefined;
+    }
+  });
+  const candidates = tracked.filter(isCandidateTest);
+  let fromVitest;
+  try {
+    fromVitest = vitestRelated([...new Set(selected.map(([, file]) => file))]);
+  } catch (err) {
+    console.log(`could not read Vitest's module graph: ${err?.message ?? err}`);
+    rmSync(work, { recursive: true, force: true });
+    process.exit(2);
+  }
+  const testsFor = new Map([...fromVitest.keys()].map((f) => [f, relatedTests(f, graph, candidates, fromVitest.get(f))]));
+
+  const control = await runSuite(sandboxRepo, "control");
   const c = classify(control.proc, control.report, undefined, control.runEnd);
   if (c.kind !== "clean" || control.proc.status !== 0) {
     console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
+    rmSync(work, { recursive: true, force: true });
     process.exit(2);
   }
   controlIds = testIds(control.report);
-  results.push(`control  ${c.detail}`);
-  for (const [name, file, from, to] of selected) {
-    const orig = readFileSync(file, "utf8");
-    if (!orig.includes(from)) { results.push(`ERROR    ${name}: anchor not found in ${file}`); continue; }
+  controls.push(`control  ${c.detail} [full suite, ${candidates.length} test files]`);
+  // A subset's control must pass on its own and collect exactly the full control's tests for those files.
+  const subsetControl = controlCache(async (files, clone) => {
+    const r = await runSuite(clone, "control-subset", files);
+    const k = classify(r.proc, r.report, undefined, r.runEnd);
+    const usable = k.kind === "clean" && r.proc.status === 0 && same(collectedFiles(r.report, clone), files) && same(testIds(r.report), idsForFiles(controlIds, files));
+    controls.push(`control  ${k.detail} [${files.length} test file${files.length === 1 ? "" : "s"}${usable ? "" : ": not usable, their mutations ran on the full suite"}]`);
+    return usable ? { ids: testIds(r.report) } : undefined;
+  });
+
+  let next = 0;
+  let finished = 0;
+  const mutate = async (clone, [name, file, from, to]) => {
+    const path = join(clone, file);
+    const orig = readFileSync(path, "utf8");
+    if (!orig.includes(from)) return `ERROR    ${name}: anchor not found in ${file}`;
+    const tests = testsFor.get(file);
+    // The subset's control runs before this clone is mutated, so a control only ever sees unmutated code.
+    const ctl = tests.length ? await subsetControl(tests, clone) : undefined;
+    const tag = name.replace(/\W+/g, "-");
     try {
-      current = [file, orig];
-      writeFileSync(file, orig.replace(from, to));
-      const m = runSuite(name.replace(/\W+/g, "-"));
-      const k = classify(m.proc, m.report, controlIds, m.runEnd);
-      results.push(`${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail})`);
+      current.set(clone, [path, orig]);
+      writeFileSync(path, orig.replace(from, to));
+      const k = await judge({
+        tests,
+        control: () => ctl,
+        runSubset: async (t, sc) => {
+          const m = await runSuite(clone, tag, t);
+          return classify(m.proc, m.report, sc.ids, m.runEnd);
+        },
+        runFull: async () => {
+          const m = await runSuite(clone, `${tag}-full`);
+          return classify(m.proc, m.report, controlIds, m.runEnd);
+        },
+      });
+      return `${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail}) [${k.scope}]`;
     } finally {
-      writeFileSync(file, orig);
-      current = undefined;
+      writeFileSync(path, orig);
+      current.delete(clone);
     }
-  }
+  };
+  const lines = new Array(selected.length);
+  await Promise.all(
+    clones.map(async (clone) => {
+      while (next < selected.length) {
+        const i = next++;
+        lines[i] = await mutate(clone, selected[i]);
+        console.error(`[${++finished}/${selected.length}, ${minutes(Date.now() - started)}] ${lines[i]}`);
+      }
+    }),
+  );
+  results.push(...lines);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
-console.log(results.join("\n"));
-const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results: results.filter((l) => !l.startsWith("control")) });
+console.log([...controls, ...results].join("\n"));
+console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s)`);
+const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results });
 console.log(`\n${s.line}`);
 process.exitCode = s.exitCode;

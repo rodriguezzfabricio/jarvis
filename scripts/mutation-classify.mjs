@@ -64,7 +64,8 @@ export function classify(proc, report, controlIds, runEnd) {
 
 /**
  * The run's last line and exit code. "all N mutations caught" only when no filter was set and every
- * declared mutation ran and was caught; a filtered run says it's partial (Codex stage 0 review 16).
+ * declared mutation ran and was caught; a filtered or incomplete run says it's partial (Codex stage 0
+ * review 16) and exits 4, never 0.
  * `unconfirmed` counts catches seen on related tests only, never on the full suite, that the run needed
  * confirmed: such a run is not the gate and exits 3 (Codex review of the subset mutation check). With
  * `scope` (--confirm-stage, decision 94), catches outside the stage may stay in fast mode, and the line
@@ -80,7 +81,10 @@ export function summarize({ total, selected, filtered, results, unconfirmed = 0,
     if (scope) return { line: `${ran}, ${unconfirmed} of stage ${scope.stage}'s mutations caught on related tests only; not confirmed on the full suite`, exitCode: 3 };
     return { line: `${ran}, ${unconfirmed} caught on related tests only; not confirmed on the full suite (not the gate: JARVIS_MUTATION_CONFIRM=1)`, exitCode: 3 };
   }
-  const line = partial ? `partial run: ${selected} of ${total} mutations selected, all ${selected} caught (not a complete proof)` : `all ${total} mutations caught`;
-  if (scope) return { line: `${line}; stage ${scope.stage}: ${scope.confirmed} confirmed, ${scope.fast} caught in fast mode (outside stage ${scope.stage})`, exitCode: 0 };
-  return { line, exitCode: 0 };
+  // A filtered or incomplete run never passes, in any mode: the mutations it skipped were never
+  // checked, let alone confirmed (Codex review of decision 94). Exit 4: partial run, not the gate.
+  const line = partial ? `partial run: ${selected} of ${total} mutations selected, all ${selected} caught (not a complete proof, not the gate)` : `all ${total} mutations caught`;
+  const exitCode = partial ? 4 : 0;
+  if (scope) return { line: `${line}; stage ${scope.stage}: ${scope.confirmed} confirmed, ${scope.fast} caught in fast mode (outside stage ${scope.stage})`, exitCode };
+  return { line, exitCode };
 }

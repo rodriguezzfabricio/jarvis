@@ -52,6 +52,8 @@ function command(bin, args, cwd, env, stdoutPath, stderrPath = stdoutPath) {
 }
 
 export async function runReview(options) {
+  // A filtered mutation check is never review evidence (it exits 4); refuse rather than silently drop it.
+  if (process.env.JARVIS_MUTATIONS !== undefined) throw Error('JARVIS_MUTATIONS is set: a filtered mutation check is not review evidence; unset it');
   const defaults = defaultEvidence({ confirmStage: options.confirmStage });
   const home = realpathSync(options.home ?? homedir());
   const repo = realpathSync(options.repo ?? join(home, 'Desktop/jarvis'));

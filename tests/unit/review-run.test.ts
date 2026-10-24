@@ -170,6 +170,25 @@ it('passes --confirm-stage through to the mutation check, and refuses an unknown
   await expect(runReview({ ...g, evidence: undefined, confirmStage: '9', dryRun: true })).rejects.toThrow(/stage/);
 });
 
+// Codex review of decision 94, critical: a filtered mutation check is not review evidence.
+it('refuses to start while JARVIS_MUTATIONS is set, before creating anything', async () => {
+  const g = fixture();
+  const before = process.env.JARVIS_MUTATIONS;
+  process.env.JARVIS_MUTATIONS = '^tripwire';
+  try {
+    await expect(runReview({ ...g, dryRun: true })).rejects.toThrow(/JARVIS_MUTATIONS/);
+    process.env.JARVIS_MUTATIONS = '';
+    await expect(runReview({ ...g, dryRun: true })).rejects.toThrow(/JARVIS_MUTATIONS/);
+  } finally {
+    if (before === undefined) delete process.env.JARVIS_MUTATIONS; else process.env.JARVIS_MUTATIONS = before;
+  }
+  expect(existsSync(join(g.home, '.jarvis'))).toBe(false);
+  expect(existsSync(join(g.home, '.jarvis-work'))).toBe(false);
+  const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', g.prompts, '--schema', g.schema, '--repo', g.repo, '--dry-run'], { encoding: 'utf8', env: { ...process.env, JARVIS_MUTATIONS: 'x' } });
+  expect(r.status).toBe(1);
+  expect(r.stderr).toMatch(/JARVIS_MUTATIONS/);
+});
+
 it('CLI takes --confirm-stage', () => {
   const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--help'], { encoding: 'utf8' });
   expect(r.stdout).toContain('[--confirm-stage <0-1|2|3>]');

@@ -11,7 +11,7 @@
 // Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
 // definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
 // every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
-// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> to run a subset;
+// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -153,7 +153,8 @@ const mutations = [
   ["session output cap off", X, "        if (captured > spec.maxOutputBytes! && !overflowed) {", "        if (false) {"],
   ["gate ignores the case output cap", GT, "        maxOutputBytes: MAX_OUT_BYTES - captured,\n", ""],
   ["gate verifies over-cap observations", GT, "    if (withinCap) {\n      for (const k of g.check.cases) {", "    if (true) {\n      for (const k of g.check.cases) {"],
-  ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  if (filtered || selected !== total) return", "  if (false) return"],
+  ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  const partial = filtered || selected !== total;", "  const partial = false;"],
+  ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).
   ["public path replacement", "packages/cli/src/broker/server.ts", "    linkSync(privatePath, socketPath);", "    rmSync(socketPath, {force:true}); linkSync(privatePath, socketPath);"],
   ["close removes replacement", "packages/cli/src/broker/server.ts", "if (current?.dev === owned.dev && current.ino === owned.ino)", "if (current)"],

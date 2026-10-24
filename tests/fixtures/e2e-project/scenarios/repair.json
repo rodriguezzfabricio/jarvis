@@ -1,0 +1,37 @@
+{
+  "description": "(b) T1's first attempt fails its protected checks (its own test passes, AC1 doesn't); the repair passes. T2 passes first time.",
+  "sessions": [
+    {
+      "name": "T1-wrong-sum",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["/** Returns the product of two numbers. */", "export function multiply(a, b) {", "  return a + b;", "}"] },
+        { "write": "test/multiply.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { multiply } from \"../src/multiply.mjs\";", "", "test(\"multiply returns the product\", () => {", "  assert.equal(multiply(2, 2), 4);", "});"] },
+        { "bash": "node --test", "output": "# tests 2\n# pass 2\n# fail 0" },
+        { "notes": "Added multiply. Tests pass." },
+        { "result": { "subtype": "success", "text": "Added multiply." } }
+      ]
+    },
+    {
+      "name": "T1-repair-good",
+      "task": "T1",
+      "steps": [
+        { "text": "The recorded failure shows multiply(2,3)=5; it adds instead of multiplying." },
+        { "write": "src/multiply.mjs", "lines": ["/** Returns the product of two numbers. */", "export function multiply(a, b) {", "  return a * b;", "}"] },
+        { "write": "test/multiply.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { multiply } from \"../src/multiply.mjs\";", "", "test(\"multiply returns the product\", () => {", "  assert.equal(multiply(2, 3), 6);", "  assert.equal(multiply(-2, 4), -8);", "});"] },
+        { "notes": "Fixed multiply to return a * b." },
+        { "result": { "subtype": "success", "text": "Fixed multiply." } }
+      ]
+    },
+    {
+      "name": "T2-good",
+      "task": "T2",
+      "steps": [
+        { "write": "src/clamp.mjs", "lines": ["/** Returns x limited to the range [lo, hi]. */", "export function clamp(x, lo, hi) {", "  return Math.min(hi, Math.max(lo, x));", "}"] },
+        { "write": "test/clamp.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { clamp } from \"../src/clamp.mjs\";", "", "test(\"clamp keeps x in range\", () => {", "  assert.equal(clamp(-1, 0, 5), 0);", "  assert.equal(clamp(9, 0, 5), 5);", "});"] },
+        { "notes": "Added clamp." },
+        { "result": { "subtype": "success", "text": "Added clamp." } }
+      ]
+    }
+  ]
+}

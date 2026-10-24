@@ -1,0 +1,33 @@
+{
+  "description": "(d) T1's first session is rejected by the plan's usage limit mid-task (rate_limit_event status rejected, a success result, exit 0, decision 62); after the wait, the resumed session passes. The wait is not a failure. T2 passes first time.",
+  "sessions": [
+    {
+      "name": "T1-limited",
+      "task": "T1",
+      "steps": [
+        { "text": "I'll add multiply in its own module." },
+        { "write": "test/multiply.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { multiply } from \"../src/multiply.mjs\";", "", "test(\"multiply returns the product\", () => {", "  assert.equal(multiply(2, 3), 6);", "});"] },
+        { "rateLimit": { "status": "rejected", "resetsInSec": 2 } },
+        { "result": { "subtype": "success", "num_turns": 1, "text": "" } }
+      ]
+    },
+    {
+      "name": "T1-resumed-good",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["/** Returns the product of two numbers. */", "export function multiply(a, b) {", "  return a * b;", "}"] },
+        { "write": "test/multiply.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { multiply } from \"../src/multiply.mjs\";", "", "test(\"multiply returns the product\", () => {", "  assert.equal(multiply(2, 3), 6);", "});"] },
+        { "notes": "Added multiply after the usage wait." },
+        { "result": { "subtype": "success", "text": "Added multiply." } }
+      ]
+    },
+    {
+      "name": "T2-good",
+      "task": "T2",
+      "steps": [
+        { "write": "src/clamp.mjs", "lines": ["/** Returns x limited to the range [lo, hi]. */", "export function clamp(x, lo, hi) {", "  return Math.min(hi, Math.max(lo, x));", "}"] },
+        { "notes": "Added clamp." }
+      ]
+    }
+  ]
+}

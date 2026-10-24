@@ -1,0 +1,38 @@
+{
+  "description": "(c) T1 fails its protected checks three times (first attempt and two repairs), then is blocked. A fourth T1 session has no match and fails loudly. T2 passes first time.",
+  "sessions": [
+    {
+      "name": "T1-wrong-sum",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["export function multiply(a, b) {", "  return a + b;", "}"] },
+        { "notes": "Added multiply." }
+      ]
+    },
+    {
+      "name": "T1-wrong-abs",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["export function multiply(a, b) {", "  return Math.abs(a * b);", "}"] },
+        { "notes": "Fixed multiply." }
+      ]
+    },
+    {
+      "name": "T1-wrong-missing",
+      "task": "T1",
+      "steps": [
+        { "text": "I'll rename the module." },
+        { "write": "src/product.mjs", "lines": ["export function multiply(a, b) {", "  return a * b;", "}"] },
+        { "notes": "Moved multiply to src/product.mjs." }
+      ]
+    },
+    {
+      "name": "T2-good",
+      "task": "T2",
+      "steps": [
+        { "write": "src/clamp.mjs", "lines": ["/** Returns x limited to the range [lo, hi]. */", "export function clamp(x, lo, hi) {", "  return Math.min(hi, Math.max(lo, x));", "}"] },
+        { "notes": "Added clamp." }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "(extra) T1's first session writes part of the work and then hangs until the harness's timeout stops it; the next attempt passes. T2 passes first time.",
+  "sessions": [
+    {
+      "name": "T1-hang",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["export function multiply(a, b) {", "  return a + b;", "}"] },
+        { "hang": true }
+      ]
+    },
+    {
+      "name": "T1-good",
+      "task": "T1",
+      "steps": [
+        { "write": "src/multiply.mjs", "lines": ["/** Returns the product of two numbers. */", "export function multiply(a, b) {", "  return a * b;", "}"] },
+        { "notes": "Added multiply." }
+      ]
+    },
+    {
+      "name": "T2-good",
+      "task": "T2",
+      "steps": [
+        { "write": "src/clamp.mjs", "lines": ["/** Returns x limited to the range [lo, hi]. */", "export function clamp(x, lo, hi) {", "  return Math.min(hi, Math.max(lo, x));", "}"] },
+        { "notes": "Added clamp." }
+      ]
+    }
+  ]
+}

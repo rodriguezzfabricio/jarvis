@@ -15,7 +15,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /**
  * The run ledger (decisions 41, 49): append-only JSONL, each entry hash-chained to the one before,
@@ -177,7 +177,7 @@ export interface LedgerOptions {
   /** Test seam: the low-level write used for the ledger and head files. */
   write?: WriteFn;
   /** Test seam: called between lock-protocol steps, to interleave competing writers deterministically. */
-  onLockStep?: (step: "reclaim-claimed" | "before-unlink") => void;
+  onLockStep?: (step: "reclaim-claimed" | "before-unlink" | "legacy-observed") => void;
   /** How long to wait for the writer lock (default 30 s). */
   lockTimeoutMs?: number;
   /** Test seam: called between verify's ledger and head reads, outside the lock, to interleave a writer. */
@@ -295,8 +295,9 @@ export class Ledger {
    * A lock whose owner is dead is removed only by whoever wins its exclusive marker
    * (ledger.lock.reclaim.<nonce>), and only while it is still that same instance, so a replacement lock
    * is never removed. A reclaimer that dies holding a marker is a dead owner too, and its marker is
-   * recovered the same way one level down (ledger.lock.reclaim.<nonce>.reclaim.<nonce2>), so a crash at
-   * any step leaves nothing that blocks later writers. The deadline is checked on every path.
+   * recovered the same way using bounded names: the original lock nonce plus a hash of the parent
+   * marker name and owner nonce. Stranded legacy nested names remain recoverable. The same deadline
+   * bounds every descent, without imposing a depth limit on repeated reclaimer crashes.
    */
   private withLock<T>(fn: () => T): T {
     const lock = join(this.dir, LOCK);
@@ -307,7 +308,7 @@ export class Ledger {
       if (Date.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
       if (this.createOwned(lock, nonce)) break;
       const h = readOwner(lock);
-      if (h && !pidAlive(h.pid)) this.reclaim(lock, h, 0);
+      if (h && !pidAlive(h.pid)) this.reclaim(lock, h, deadline);
       else sleepMs(2 + Math.floor(Math.random() * 5));
     }
     try {
@@ -342,24 +343,53 @@ export class Ledger {
   }
 
   /** Removes the instance of `path` that the dead owner `h` holds, at most once (see withLock). */
-  private reclaim(path: string, h: Owner, depth: number): void {
-    if (depth > 16) return;
-    const marker = `${path}.reclaim.${h.nonce}`;
-    const mine = randomBytes(12).toString("hex");
-    if (this.createOwned(marker, mine)) {
-      try {
-        if (depth === 0) this.opts.onLockStep?.("reclaim-claimed");
-        const again = readOwner(path);
-        if (depth === 0) this.opts.onLockStep?.("before-unlink");
-        if (again && again.nonce === h.nonce) rmSync(path, { force: true });
-      } finally {
-        if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
+  private reclaim(path: string, h: Owner, deadline: number): void {
+    const rootNonce = h.nonce;
+    let depth = 0;
+    while (Date.now() <= deadline) {
+      const legacy = `${path}.reclaim.${h.nonce}`;
+      const digest = createHash("sha256").update(`${basename(path)}\0${h.nonce}`).digest("hex");
+      // Existing installations may have stranded nested markers. Observe them without ever
+      // recreating their names: every contender must CREATE the same bounded claim for a parent.
+      // Otherwise a disappearing legacy marker could produce two exclusive claims on that parent.
+      const legacyFits = Buffer.byteLength(basename(legacy)) <= 255;
+      if (depth > 0 && legacyFits && existsSync(legacy)) {
+        this.opts.onLockStep?.("legacy-observed");
+        const previous = readOwner(legacy);
+        if (previous && !pidAlive(previous.pid)) {
+          path = legacy;
+          h = previous;
+          depth++;
+          continue;
+        }
+        sleepMs(2 + Math.floor(Math.random() * 5));
+        return;
       }
-      return;
+      const marker = depth === 0
+        ? legacy
+        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);
+      const mine = randomBytes(12).toString("hex");
+      if (!existsSync(marker) && this.createOwned(marker, mine)) {
+        try {
+          if (depth === 0) this.opts.onLockStep?.("reclaim-claimed");
+          const again = readOwner(path);
+          if (depth === 0) this.opts.onLockStep?.("before-unlink");
+          if (again && again.nonce === h.nonce) rmSync(path, { force: true });
+        } finally {
+          if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
+        }
+        return;
+      }
+      const m = readOwner(marker);
+      if (m && !pidAlive(m.pid)) {
+        path = marker;
+        h = m;
+        depth++;
+      } else {
+        sleepMs(2 + Math.floor(Math.random() * 5));
+        return;
+      }
     }
-    const m = readOwner(marker);
-    if (m && !pidAlive(m.pid)) this.reclaim(marker, m, depth + 1);
-    else sleepMs(2 + Math.floor(Math.random() * 5));
   }
 
   /**

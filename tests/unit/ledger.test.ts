@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
@@ -189,6 +190,127 @@ describe("ledger (decisions 41, 49)", () => {
       expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
       expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
     }
+  });
+
+  // Codex review 16 D5: production nonces make a seven-marker legacy chain reach NAME_MAX.
+  it("recovers a legacy stranded chain at the filesystem filename limit", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    let path = join(dir, "ledger.lock");
+    let owner = "00".repeat(12);
+    writeFileSync(path, `${dead} ${owner}`);
+    for (let d = 1; d <= 7; d++) {
+      path = `${path}.reclaim.${owner}`;
+      owner = d.toString(16).padStart(24, "0");
+      writeFileSync(path, `${dead} ${owner}`);
+    }
+    expect(Buffer.byteLength(path.split("/").at(-1)!)).toBe(242);
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 3000 });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+  });
+
+  it("recovers repeated crashed reclaimers with bounded names and respects a live deepest owner", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    const rootNonce = "ab".repeat(12);
+    let path = join(dir, "ledger.lock");
+    let owner = rootNonce;
+    writeFileSync(path, `${dead} ${owner}`);
+    const markerNames: string[] = [];
+    for (let depth = 0; depth < 40; depth++) {
+      const basename = path.split("/").at(-1)!;
+      const digest = createHash("sha256").update(`${basename}\0${owner}`).digest("hex");
+      path = join(dir, depth === 0 ? `ledger.lock.reclaim.${owner}` : `ledger.lock.reclaim.${rootNonce}.${digest}`);
+      owner = depth.toString(16).padStart(24, "0");
+      writeFileSync(path, `${depth === 39 ? process.pid : dead} ${owner}`);
+      markerNames.push(path.split("/").at(-1)!);
+    }
+    expect(Math.max(...markerNames.map((name) => Buffer.byteLength(name)))).toBeLessThan(256);
+    const quick = Ledger.open(dir, { lockTimeoutMs: 100 });
+    expect(() => quick.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(readFileSync(join(dir, "ledger.lock"), "utf8")).toBe(`${dead} ${rootNonce}`);
+    expect(readFileSync(path, "utf8")).toBe(`${process.pid} ${owner}`);
+    writeFileSync(path, `${dead} ${owner}`);
+    expect(Ledger.open(dir, { lockTimeoutMs: 3000 }).append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+  });
+
+  it("never recreates a legacy descendant after it disappears while a bounded competitor claims the parent", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    const rootNonce = "ab".repeat(12);
+    const owner = "cd".repeat(12);
+    const lock = join(dir, "ledger.lock");
+    const parent = `${lock}.reclaim.${rootNonce}`;
+    const legacy = `${parent}.reclaim.${owner}`;
+    const digest = createHash("sha256").update(`${parent.split("/").at(-1)!}\0${owner}`).digest("hex");
+    const bounded = join(dir, `ledger.lock.reclaim.${rootNonce}.${digest}`);
+    writeFileSync(lock, `${dead} ${rootNonce}`);
+    writeFileSync(parent, `${dead} ${owner}`);
+    writeFileSync(legacy, `${dead} ${"ef".repeat(12)}`);
+    let raced = false;
+    const ledger = Ledger.open(dir, {
+      lockTimeoutMs: 150,
+      onLockStep: (step) => {
+        if (step !== "legacy-observed" || raced) return;
+        raced = true;
+        // X removes the observed legacy child; Z wins the bounded claim before Y continues.
+        rmSync(legacy);
+        writeFileSync(bounded, `${process.pid} ${"12".repeat(12)}`);
+      },
+    });
+    expect(() => ledger.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(raced).toBe(true);
+    expect(existsSync(legacy)).toBe(false);
+    expect(readFileSync(parent, "utf8")).toBe(`${dead} ${owner}`);
+    expect(readFileSync(lock, "utf8")).toBe(`${dead} ${rootNonce}`);
+    expect(readFileSync(bounded, "utf8")).toBe(`${process.pid} ${"12".repeat(12)}`);
+    expect(verifyLedger(dir).entries).toHaveLength(2);
+    rmSync(bounded);
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+  });
+
+  it("respects a live legacy descendant until that owner exits", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    const lock = join(dir, "ledger.lock");
+    const parent = `${lock}.reclaim.${"ab".repeat(12)}`;
+    const legacy = `${parent}.reclaim.${"cd".repeat(12)}`;
+    writeFileSync(lock, `${dead} ${"ab".repeat(12)}`);
+    writeFileSync(parent, `${dead} ${"cd".repeat(12)}`);
+    writeFileSync(legacy, `${process.pid} ${"ef".repeat(12)}`);
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 150 });
+    expect(() => ledger.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(readFileSync(parent, "utf8")).toBe(`${dead} ${"cd".repeat(12)}`);
+    expect(readFileSync(legacy, "utf8")).toBe(`${process.pid} ${"ef".repeat(12)}`);
+    writeFileSync(legacy, `${dead} ${"ef".repeat(12)}`);
+    expect(Ledger.open(dir, { lockTimeoutMs: 3000 }).append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+  });
+
+  it("never removes a replacement lock after winning reclamation of the old instance", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    const lock = join(dir, "ledger.lock");
+    writeFileSync(lock, `${dead} ${"ab".repeat(12)}`);
+    const replacement = `${process.pid} ${"cd".repeat(12)}`;
+    let replaced = false;
+    const ledger = Ledger.open(dir, {
+      lockTimeoutMs: 100,
+      onLockStep: (step) => {
+        if (step !== "reclaim-claimed") return;
+        replaced = true;
+        writeFileSync(lock, replacement);
+      },
+    });
+    expect(() => ledger.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(replaced).toBe(true);
+    expect(readFileSync(lock, "utf8")).toBe(replacement);
+    expect(verifyLedger(dir).entries).toHaveLength(2);
+    rmSync(lock);
   });
 
   it("keeps one writer at a time: transact's read and append are atomic", () => {

@@ -5,7 +5,7 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | # | From | Severity | Item | Status |
 |---|---|---|---|---|
 | 1 | Decision 71 | — | ntfy typed replies from the iPhone (the iOS app can't publish; try the Safari web app or an iOS Shortcut) | Stage 2 |
-| 2 | Decision 71 | — | The desktop app loads the Jarvis plugin, settings and hooks like the CLI; needs Fabricio at the Mac | Stage 1 proof |
+| 2 | Decision 71 | — | The desktop app loads the Jarvis plugin, settings and hooks like the CLI. Checked Oct 23 with the app bundled Claude Code (2.1.308) in a scratch project (`~/jarvis-desktop-check`) whose `.claude/settings.json` adds the Jarvis marketplace and enables the plugin: the plugin loaded, its tripwire blocked `npm publish`, and a project `Read` deny held. The app UI itself was not driven (computer use cannot control the Claude app) | Done (engine) |
 | 3 | Decision 71 | — | Maestro on an Expo development build in the iOS simulator | Stage 4 |
 | 4 | Decision 71 | — | Impeccable on a real Next.js app (task 11) | Stage 4 |
 | 5 | Decision 71 | — | `jarvis setup` account creation (GitHub, Vercel, Neon, …) | Stage 5 |

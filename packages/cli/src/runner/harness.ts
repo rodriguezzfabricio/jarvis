@@ -13,6 +13,10 @@ export interface TaskInput {
   timeoutMs: number;
   logPath: string;
   failure?: EscalationReason;
+  /** Passed to the process runner (proc/session.ts): called at spawn while the group is held stopped; false stops it. */
+  onSpawn?: (groupId: number) => boolean;
+  /** Called only once every process in the session's group is gone. */
+  onGroupExit?: (groupId: number) => void;
 }
 
 export interface UsageWindow {
@@ -49,6 +53,8 @@ export interface TaskResult {
   usage: readonly UsageSample[];
   /** A proactive wait can also be needed after a finished session. */
   usageWaitUntil: number | undefined;
+  /** The session's last `result` text: an untrusted claim, used only when it wrote no notes. */
+  finalMessage?: string;
 }
 
 export type TaskOutcome = TaskResult & (

@@ -9,6 +9,7 @@ import { buildChildEnv } from "./env.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "./session.ts";
 import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
 import { hitRateLimitError, parseStreamJson, rateLimits, usageWaitUntil } from "./streamjson.ts";
+import { sessionUsage } from "./usage.ts";
 
 export interface TaskPreflight {
   ok: boolean;
@@ -65,9 +66,13 @@ function taskOutcome(result: SessionOutcome, logPath: string): TaskOutcome {
   const waits = [usageWaitUntil(infos, { limitedByError }), ...rejected.map((i) => usageWaitUntil([i]))]
     .filter((at): at is number => at !== undefined);
   const waitUntil = waits.length ? Math.max(...waits) : undefined;
+  // The builder's own last words: a claim for the report when it wrote no notes, never evidence.
+  const finalMessage = events.filter((e) => e.type === "result").at(-1)?.result;
   const base: TaskResult = {
     exitCode: result.code, durationMs: result.durationMs,
     usage: infos.map((i) => ({ windows: i.windows })), usageWaitUntil: waitUntil,
+    sessionUsage: sessionUsage(events),
+    ...(typeof finalMessage === "string" ? { finalMessage } : {}),
   };
   if (result.overflowed) return { ...base, status: "error", message: "task output exceeded its capture limit" };
   if (limited) {
@@ -138,6 +143,8 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   return {
     bin: binary, args, cwd: worktree, env, timeoutMs: input.timeoutMs,
     stdoutPath: input.logPath, stderrPath: `${input.logPath}.stderr`, maxOutputBytes: 16 * 1024 * 1024,
+    ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}),
+    ...(input.onGroupExit ? { onGroupExit: input.onGroupExit } : {}),
   };
 }
 

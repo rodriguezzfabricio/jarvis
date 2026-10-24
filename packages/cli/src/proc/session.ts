@@ -19,6 +19,14 @@ export interface SessionSpec {
   killGraceMs?: number;
   /** Combined stdout and stderr bytes captured before the session is stopped (Codex stage 0 review 16). */
   maxOutputBytes?: number;
+  /**
+   * Called synchronously at spawn with the session's process group ID, while the group is stopped
+   * (SIGSTOP): nothing in it runs until this returns true. False or a throw kills the group before it
+   * runs; a throw is rethrown once the group is gone. The runner records the group's identity here.
+   */
+  onSpawn?: (groupId: number) => boolean;
+  /** Called once, and only once every process in the group is gone; never while any of it is alive. */
+  onGroupExit?: (groupId: number) => void;
 }
 
 export interface SessionOutcome {
@@ -36,12 +44,23 @@ export class EvidenceCaptureError extends Error {}
 /** The session process could not be started at all (missing binary, EAGAIN, permissions). */
 export class SessionStartError extends Error {}
 
+function signalGroup(groupId: number, sig: NodeJS.Signals): boolean {
+  try {
+    process.kill(-groupId, sig);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   const started = Date.now();
   const grace = spec.killGraceMs ?? 10_000;
   const open = spec.openSink ?? ((p: string) => createWriteStream(p, { mode: 0o600 }));
   // Its own process group, so shutdown reaches everything the session started (Bash children too).
   const child = spawn(spec.bin, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  // spawn returns after exec, so the group exists: hold it still until onSpawn has accepted it.
+  const held = spec.onSpawn !== undefined && child.pid !== undefined && signalGroup(child.pid, "SIGSTOP");
   const killGroup = (sig: NodeJS.Signals) => {
     if (child.pid === undefined) return;
     try {
@@ -125,6 +144,21 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     }, spec.timeoutMs),
   );
 
+  let observerError: unknown;
+  if (spec.onSpawn && child.pid !== undefined) {
+    let accepted = false;
+    try {
+      accepted = spec.onSpawn(child.pid) === true;
+    } catch (e) {
+      observerError = e;
+    }
+    // A refused group never ran: SIGKILL works on a stopped process, and there is nothing to let finish.
+    if (!accepted) {
+      shuttingDown = true;
+      killGroup("SIGKILL");
+    } else if (held) killGroup("SIGCONT");
+  }
+
   // React to the leader's *exit*, not to its pipes closing: a background descendant can hold the
   // inherited stdout/stderr open indefinitely (backlog #10, Codex stage 0 review 5).
   // Registered at spawn, so a close that happens before we look is never missed.
@@ -141,6 +175,14 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   // ignores SIGTERM) gets the same bounded TERM -> KILL, and we wait until the group is empty
   // before returning, so nothing outlives the session (Codex review 4).
   await cleanupGroup();
+  // Only an empty group counts as exited; one still alive past cleanup stays recoverable by the runner.
+  if (child.pid !== undefined && spec.onGroupExit && !groupAlive()) {
+    try {
+      spec.onGroupExit(child.pid);
+    } catch (e) {
+      observerError ??= e; // reported after the output files are complete
+    }
+  }
   // The group is gone, so the pipes close; wait briefly for the last bytes, then stop waiting.
   if (!spawnError) {
     await Promise.race([closed, new Promise<void>((res) => setTimeout(res, 5_000).unref())]);
@@ -163,6 +205,7 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     }
     throw new SessionStartError(msg);
   }
+  if (observerError !== undefined) throw observerError;
   if (sinkError) throw new EvidenceCaptureError(`could not capture session output: ${sinkError.message}`);
   return { code, timedOut, overflowed, durationMs: Date.now() - started, stdout, stderr };
 }

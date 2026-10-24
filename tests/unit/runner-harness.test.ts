@@ -339,3 +339,54 @@ describe("review regressions", () => {
     expect(s.specs).toEqual([]);
   });
 });
+
+describe("task lifecycle and session reports for the loop", () => {
+  const scripted = (events: readonly object[], seen: SessionSpec[] = []) => async (spec: SessionSpec): Promise<SessionOutcome> => {
+    seen.push(spec);
+    writeFileSync(spec.stdoutPath!, events.map((e) => JSON.stringify(e)).join("\n"));
+    return { code: 0, timedOut: false, overflowed: false, durationMs: 7, stdout: "", stderr: "" };
+  };
+
+  it("forwards onSpawn and onGroupExit to the session spec unchanged", async () => {
+    const s = setup();
+    const seen: SessionSpec[] = [];
+    const onSpawn = (_id: number) => true;
+    const onGroupExit = (_id: number) => {};
+    await createClaudeHarness({ ...s.options, session: scripted([{ type: "result", subtype: "success" }], seen) }).runTask({ ...s.input, onSpawn, onGroupExit });
+    expect(seen[0]!.onSpawn).toBe(onSpawn);
+    expect(seen[0]!.onGroupExit).toBe(onGroupExit);
+  });
+
+  it("passes no lifecycle hooks when the caller gives none", async () => {
+    const s = setup();
+    const seen: SessionSpec[] = [];
+    await createClaudeHarness({ ...s.options, session: scripted([{ type: "result", subtype: "success" }], seen) }).runTask(s.input);
+    expect("onSpawn" in seen[0]!).toBe(false);
+    expect("onGroupExit" in seen[0]!).toBe(false);
+  });
+
+  it("reports the last result's text as finalMessage, and none without a string result", async () => {
+    const s = setup();
+    const events = [{ type: "result", subtype: "success", result: "first" }, { type: "result", subtype: "success", result: "Built the parser." }];
+    expect(await createClaudeHarness({ ...s.options, session: scripted(events) }).runTask(s.input)).toMatchObject({ status: "finished", finalMessage: "Built the parser." });
+    const t = setup();
+    const none = await createClaudeHarness({ ...t.options, session: scripted([{ type: "result", subtype: "success", result: 7 }]) }).runTask(t.input);
+    expect(none).not.toHaveProperty("finalMessage");
+  });
+
+  it("reports what the stream says the session used, for the usage log", async () => {
+    const s = setup();
+    const events = [
+      { type: "system", subtype: "init", model: "claude-sonnet-5-5" },
+      { type: "result", subtype: "success", result: "ok", num_turns: 3, total_cost_usd: 0.25, usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30, cache_creation_input_tokens: 40 } },
+    ];
+    const outcome = await createClaudeHarness({ ...s.options, session: scripted(events) }).runTask(s.input);
+    expect(outcome.sessionUsage).toEqual({ reportedModel: "claude-sonnet-5-5", inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, cacheWriteTokens: 40, costUsd: 0.25, turns: 3, complete: true });
+  });
+
+  it("reports no session usage when no session started", async () => {
+    const s = setup();
+    s.preflight.mockResolvedValueOnce({ ok: false });
+    expect(await createClaudeHarness(s.options).runTask(s.input)).not.toHaveProperty("sessionUsage");
+  });
+});

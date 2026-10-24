@@ -151,3 +151,99 @@ describe("session output capture (Codex review 2, medium)", () => {
     await expect(runSession({ ...base, stdoutPath: join(dir, "x.txt"), openSink })).rejects.toThrow(/ENOSPC/);
   });
 });
+
+// The runner records a session's process group before anything in it runs (runner/loop.ts), and
+// marks it exited only once every process in it is gone.
+describe("session lifecycle hooks: onSpawn and onGroupExit (stage 3 runner loop)", () => {
+  const groupGone = (id: number) => {
+    try { process.kill(-id, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
+  };
+  // A Node child that writes a marker as soon as it runs, then leaves a SIGTERM-resistant descendant.
+  const writer = (name: string) => {
+    const marker = join(dir, `${name}.ran`);
+    const pidFile = join(dir, `${name}.desc`);
+    const script = join(dir, `${name}.mjs`);
+    writeFileSync(script, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n`);
+    const leader = join(dir, name);
+    writeFileSync(leader, `#!/bin/sh\n"${process.execPath}" ${script}\nsh -c 'trap "" TERM; echo $$ > ${pidFile}; while :; do sleep 1; done' > /dev/null 2>&1 &\nsleep 0.3\necho leader-done\n`);
+    chmodSync(leader, 0o755);
+    return { leader, marker, pidFile };
+  };
+  const busyWait = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end) { /* hold the event loop, as a slow ledger write would */ } };
+
+  it("calls onSpawn with the group ID before anything in the group runs, then runs the session", async () => {
+    const { leader, marker } = writer("accept");
+    const seen: { id: number; ranBefore: boolean }[] = [];
+    const out = await runSession({ ...base, bin: leader, killGraceMs: 300, onSpawn: (id) => {
+      busyWait(1_500); // long enough for an unstopped child to have written its marker
+      seen.push({ id, ranBefore: existsSync(marker) });
+      return true;
+    } });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.id).toBeGreaterThan(1);
+    expect(seen[0]!.ranBefore).toBe(false);
+    expect(existsSync(marker)).toBe(true);
+    expect(out.code).toBe(0);
+    expect(out.stdout).toContain("leader-done");
+  }, 20_000);
+
+  it("calls onGroupExit once, with the same ID, only after the whole group (descendants too) is gone", async () => {
+    const { leader, pidFile } = writer("exit");
+    let spawned = 0;
+    const exits: { id: number; groupGone: boolean; descendantGone: boolean }[] = [];
+    await runSession({ ...base, bin: leader, killGraceMs: 300,
+      onSpawn: (id) => { spawned = id; return true; },
+      onGroupExit: (id) => {
+        const desc = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
+        let descendantGone = false;
+        try { process.kill(desc, 0); } catch { descendantGone = true; }
+        exits.push({ id, groupGone: groupGone(id), descendantGone });
+      } });
+    expect(exits).toEqual([{ id: spawned, groupGone: true, descendantGone: true }]);
+  }, 20_000);
+
+  it("shuts the group down and runs nothing when onSpawn returns false", async () => {
+    const { leader, marker } = writer("refuse");
+    let spawned = 0;
+    const exits: number[] = [];
+    const t0 = Date.now();
+    const out = await runSession({ ...base, bin: leader, onSpawn: (id) => { spawned = id; return false; }, onGroupExit: (id) => exits.push(id) });
+    expect(Date.now() - t0).toBeLessThan(5_000); // no SIGTERM grace for a group that never ran
+    expect(out.code).toBeNull();
+    expect(out.stdout).not.toContain("leader-done");
+    await new Promise((res) => setTimeout(res, 1_000));
+    expect(existsSync(marker)).toBe(false);
+    expect(groupGone(spawned)).toBe(true);
+    expect(exits).toEqual([spawned]);
+  }, 20_000);
+
+  it("shuts the group down, runs nothing, and rethrows once the group is gone when onSpawn throws", async () => {
+    const { leader, marker } = writer("throw");
+    let spawned = 0;
+    const exits: number[] = [];
+    await expect(runSession({ ...base, bin: leader, onSpawn: (id) => { spawned = id; throw new Error("ledger write failed"); }, onGroupExit: (id) => exits.push(id) }))
+      .rejects.toThrow("ledger write failed");
+    await new Promise((res) => setTimeout(res, 1_000));
+    expect(existsSync(marker)).toBe(false);
+    expect(groupGone(spawned)).toBe(true);
+    expect(exits).toEqual([spawned]);
+  }, 20_000);
+
+  it("never calls onGroupExit while something in the group is still alive", async () => {
+    const { leader } = writer("alive");
+    const exits: number[] = [];
+    // The group is reported alive past cleanup's deadline (a stand-in for an unkillable process).
+    const realKill = process.kill.bind(process);
+    let id = 0;
+    const kill = (pid: number, sig?: NodeJS.Signals | number) => {
+      if (pid === -id && sig === 0) return true;
+      return realKill(pid, sig);
+    };
+    process.kill = kill as typeof process.kill;
+    try {
+      await runSession({ ...base, bin: leader, killGraceMs: 100, onSpawn: (g) => { id = g; return true; }, onGroupExit: (g) => exits.push(g) });
+    } finally { process.kill = realKill; }
+    expect(id).toBeGreaterThan(1);
+    expect(exits).toEqual([]);
+  }, 30_000);
+});

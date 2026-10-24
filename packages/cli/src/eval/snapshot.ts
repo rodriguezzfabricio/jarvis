@@ -394,11 +394,18 @@ export function findSecretFields(name: string, text: string): string[] {
     // Kubernetes and ECS environment entries ({name: DB_PASSWORD, value: …}): the entry's name is the key
     // of every one of its value pairs, so an aliased, repeated or typed value is judged as DB_PASSWORD's.
     const keyFor = (k: string, envName: string | undefined) => (k === "value" && envName ? envName : k);
+    // Docker and Podman registry logins (auths.<registry>.auth): a literal is a credential by structure,
+    // whatever its length or characters (Codex review 11). "auth" alone names no credential elsewhere.
+    const DOCKER_AUTH = "auths.*.auth";
+    const dockerAuth = (v: unknown) => {
+      if (v !== null && v !== undefined && (typeof v !== "string" || !isInertString(v))) hits.add(DOCKER_AUTH);
+    };
     const walkPlain = (v: unknown, key: string): void => {
       if (Array.isArray(v)) for (const x of v) walkPlain(x, key);
       else if (v && typeof v === "object" && !(v instanceof Date)) {
         const o = v as Record<string, unknown>;
         const envName = [o.name, o.key].find((x): x is string => typeof x === "string" && isSecretName(x));
+        if (key === "auths") for (const r of Object.values(o)) if (r && typeof r === "object") dockerAuth((r as Record<string, unknown>).auth);
         for (const [k, x] of Object.entries(o)) walkPlain(x, keyFor(k, envName));
       } else leaf(v, key, isSecretName(key));
     };
@@ -436,6 +443,14 @@ export function findSecretFields(name: string, text: string): string[] {
           .map((p) => deref(doc, p.value))
           .map((v) => (isScalar(v) ? String(v.value) : ""))
           .find(isSecretName);
+        if (key === "auths")
+          for (const r of pairs) {
+            const m = deref(doc, r.value);
+            if (isMap(m)) for (const a of pairsOf(doc, m)) if (a.key === "auth") {
+              const v = deref(doc, a.value);
+              dockerAuth(isScalar(v) ? v.value : v);
+            }
+          }
         for (const p of pairs) walkYaml(doc, p.value, keyFor(p.key, envName));
       } else if (isSeq(n)) for (const x of n.items) walkYaml(doc, x, key);
       else if (isScalar(n)) leaf(n.value, key, isSecretName(key));

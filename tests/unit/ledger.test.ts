@@ -218,3 +218,28 @@ describe("ledger (decisions 41, 49)", () => {
     expect(ledger.entries().map((e) => e.data)).toEqual([{ note: "n0" }, { note: "n1" }]);
   });
 });
+
+// Codex stage 0 review 11, medium: an append between reading the ledger and reading the head looked like tampering.
+describe("verified reads during a concurrent append", () => {
+  it("see a consistent ledger and head when an append lands between the two reads", () => {
+    const { dir, ledger } = fresh(2);
+    let raced = false;
+    const v = verifyLedger(dir, {
+      afterLedgerRead: () => {
+        if (raced) return;
+        raced = true;
+        ledger.append({ kind: "steer", actor: "runner", data: { note: "racing" } });
+      },
+    });
+    expect(raced).toBe(true);
+    expect(v.problems).toEqual([]);
+    expect(v.ok).toBe(true);
+    expect(v.entries).toHaveLength(3);
+  });
+
+  it("still reports a forged head when the reads are stable", () => {
+    const { dir } = fresh(2);
+    writeFileSync(join(dir, "head.hash"), `${"f".repeat(64)}\n`);
+    expect(verifyLedger(dir, { afterLedgerRead: () => {} }).problems.join(" ")).toMatch(/head.hash does not match/);
+  });
+});

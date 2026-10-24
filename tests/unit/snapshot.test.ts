@@ -277,6 +277,11 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "merge-name.yaml": "base: &base\n  name: DB_PASSWORD\nenv:\n  - <<: *base\n    value: Synthetic9qvM2\n",
       "merge-value.yaml": "v: &v\n  value: Synthetic9qvM2\nenv:\n  - name: DB_PASSWORD\n    <<: *v\n",
       "merge-seq.yaml": "a: &a {x: 1}\nb: &b {name: DB_PASSWORD}\nenv:\n  - <<: [*a, *b]\n    value: Synthetic9qvM2\n",
+      // Codex review 11: Docker auths.*.auth by structure, whatever the credential's length or characters.
+      "docker-short/config.json": '{"auths": {"r.example.net": {"auth": "dTo4azJa"}}}\n',
+      "docker-long/config.json": '{"auths": {"r.example.net": {"auth": "c3ZjOnE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4cThacjJ2TG0wVHhxOFpyMnZMbTBUeHE4WnIydkxtMFR4"}}}\n',
+      "docker-utf8/config.json": '{"auths": {"r.example.net": {"auth": "c3ZjOlN5w7F0aGV0aWM5cXZNMg=="}}}\n',
+      "podman-auth.yaml": "auths:\n  r.example.net:\n    auth: dTo4azJa\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
@@ -313,7 +318,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, ".npmrc"), "registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_auth=${NPM_AUTH}\nauth-type=legacy\n");
     writeFileSync(join(repo, ".yarnrc"), '"//registry.npmjs.org/:_authToken" "${NPM_TOKEN}"\nyarn-offline-mirror "./mirror"\n');
     mkdirSync(join(repo, ".docker"), { recursive: true });
-    writeFileSync(join(repo, ".docker", "config.json"), '{"auths": {"ghcr.io": {}}, "credsStore": "desktop", "credHelpers": {"gcr.io": "gcloud"}}\n');
+    writeFileSync(join(repo, ".docker", "config.json"), '{"auths": {"ghcr.io": {}, "quay.io": {"auth": ""}}, "credsStore": "desktop", "credHelpers": {"gcr.io": "gcloud"}}\n');
     writeFileSync(join(repo, "preview.html"), '<div data-view="eyJjIjotMTQ2NDQ3NzE0MywicCI6MzkxLCJ0IjoxNzgxMjY5Mjg4LCJoIjoiYmY5ZDM1N2MxZWVhM2M5YWNkIn0"></div>\n');
     writeFileSync(join(repo, "integrity.json"), '{"integrity": "sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==", "id": "AbCdEfGhIjKlMnOp"}\n');
     writeFileSync(join(repo, "deploy.yaml"), "env:\n  - name: DB_PASSWORD\n    valueFrom: {secretKeyRef: {name: db, key: password}}\n  - name: LOG_LEVEL\n    value: debug\n");

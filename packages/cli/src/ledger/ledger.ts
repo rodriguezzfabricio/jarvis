@@ -98,8 +98,25 @@ function readText(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-export function verifyLedger(dir: string): VerifyResult {
-  const text = readText(join(dir, FILE));
+/** Attempts at a stable read before verifying whatever was read last. */
+const STABLE_READ_ATTEMPTS = 5;
+
+/**
+ * Verifies the ledger against its head. A writer may append between the two reads, which would pair an
+ * older ledger with a newer head and look like forgery (Codex review 11). So the head is read before and
+ * after the ledger, and the read is retried until both match; an append can only move the head forward.
+ */
+export function verifyLedger(dir: string, seams: { afterLedgerRead?: () => void } = {}): VerifyResult {
+  for (let attempt = 1; ; attempt++) {
+    const before = readText(join(dir, HEAD)).trim();
+    const text = readText(join(dir, FILE));
+    seams.afterLedgerRead?.();
+    const head = readText(join(dir, HEAD)).trim();
+    if (head === before || attempt === STABLE_READ_ATTEMPTS) return verifyText(text, head);
+  }
+}
+
+function verifyText(text: string, head: string): VerifyResult {
   const problems: string[] = [];
   const repairable: string[] = [];
   let body = text;
@@ -127,7 +144,6 @@ export function verifyLedger(dir: string): VerifyResult {
     entries.push(e);
     prev = hash;
   });
-  const head = readText(join(dir, HEAD)).trim();
   const last = entries.at(-1);
   if (!last) {
     if (head && head !== GENESIS) problems.push("head.hash is set but the ledger is empty (entries deleted?)");

@@ -11,6 +11,9 @@ import { posix } from "node:path";
 const REFERRER = /\.(ts|mts|cts|js|mjs|cjs|json|sh)$/;
 const LEAF = /(^|\/)package\.json$/;
 const IMPORT = /\b(?:from|import|require)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g;
+// import( or require( whose argument isn't one plain string literal: the file it loads can't be known,
+// so the file that does it is related to everything (fail closed; Codex review, critical).
+const OPAQUE = /\b(?:import|require)\s*\(\s*(?!(["'])[^"'`]*\1\s*[,)])/;
 // Text that can't make code depend on a file: whole-line comments, and type-only imports, which Node's
 // type stripping erases. Only line-leading comments, so a "//" inside a string (a URL) is left alone.
 const INERT = [/^\s*(\/\/.*|\/?\*(?!.*\*\/\s*\S).*)$/gm, /^\s*(import|export)\s+type\s+(\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s*["'][^"']+["'];?/gm];
@@ -51,6 +54,10 @@ export function buildGraph(files, read) {
     const raw = read(f);
     if (typeof raw !== "string") continue;
     const out = graph.get(f);
+    if (OPAQUE.test(liveText(raw))) {
+      for (const g of files) if (g !== f) out.add(g);
+      continue;
+    }
     // A relative import that resolves names exactly one file; take it out of the text so its basename
     // doesn't also match every other file of that name ("./store.ts" is not decisions/store.ts).
     const text = liveText(raw).replace(IMPORT, (whole, spec) => {

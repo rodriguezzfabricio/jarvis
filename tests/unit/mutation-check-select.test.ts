@@ -122,6 +122,24 @@ describe("mutation test selection", () => {
     expect(relatedTests("packages/cli/src/a.ts", r.graph, tests, ["tests/unit/a.test.ts"])).toEqual(["tests/unit/a.test.ts", "tests/unit/cli.test.ts"]);
   });
 
+  // Codex review, critical: a computed import hides its target from both graphs, so fail closed.
+  it("relates a file that loads code by a computed name to every file, and whatever imports it", () => {
+    const g = repo({
+      "packages/cli/src/guard.ts": "export const on = true;",
+      "packages/cli/src/other.ts": "export const x = 1;",
+      "tests/helpers.ts": "export const load = (name: string) => require(name);",
+      "tests/unit/static.test.ts": 'import { on } from "../../packages/cli/src/guard.ts";',
+      "tests/unit/computed.test.ts": 'const m = await import(["../../packages/cli/src", "guard"].join("/") + ".ts");',
+      "tests/unit/template.test.ts": "const m = await import(`../../packages/cli/src/${name}.ts`);",
+      "tests/unit/via-helper.test.ts": 'import { load } from "../helpers.ts";',
+      "tests/unit/literal.test.ts": 'const m = await import("node:child_process", { with: {} });\nconst n = await import("../../packages/cli/src/other.ts");',
+      "tests/unit/prose.test.ts": 'expect(msg).toBe("blank import() calls");',
+    });
+    const t = g.paths.filter(isCandidateTest);
+    expect(relatedTests("packages/cli/src/guard.ts", g.graph, t)).toEqual(["tests/unit/computed.test.ts", "tests/unit/prose.test.ts", "tests/unit/static.test.ts", "tests/unit/template.test.ts", "tests/unit/via-helper.test.ts"]);
+    expect(relatedTests("packages/cli/src/other.ts", g.graph, t)).toEqual(["tests/unit/computed.test.ts", "tests/unit/literal.test.ts", "tests/unit/prose.test.ts", "tests/unit/template.test.ts", "tests/unit/via-helper.test.ts"]);
+  });
+
   it("selects a mutated test file itself", () => {
     expect(related("tests/unit/a.test.ts")).toEqual(["tests/unit/a.test.ts"]);
   });

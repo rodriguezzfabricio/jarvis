@@ -347,7 +347,7 @@ function vitestRelated(files) {
   return new Map(Object.entries(JSON.parse(r.stdout)));
 }
 
-const minutes = (ms) => `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+const minutes = (ms) => `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const results = [];
 const controls = [];
@@ -384,7 +384,7 @@ try {
     process.exit(2);
   }
   controlIds = testIds(control.report);
-  controls.push(`control  ${c.detail} [full suite, ${candidates.length} test files]`);
+  controls.push(`control  ${c.detail} [full suite, ${collectedFiles(control.report, sandboxRepo).length} test files]`);
   // A subset's control must pass on its own and collect exactly the full control's tests for those files.
   const subsetControl = controlCache(async (files, clone) => {
     const r = await runSuite(clone, "control-subset", files);

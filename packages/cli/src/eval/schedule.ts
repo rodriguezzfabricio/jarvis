@@ -21,9 +21,14 @@ export class PreflightError extends Error {
   }
 }
 
+/** What the scheduler reads from a run, for either arm (decision 47: baseline and Jarvis). */
+export type ScheduledRun = Pick<BaselineRunResult, "started" | "usageLimited" | "usageWaitUntil" | "exitCode" | "timedOut" | "resultSubtype" | "numTurns" | "durationMs" | "diffStat">;
+
 export interface ScheduleDeps {
   loadTask: (id: string) => GoldenTask;
-  runOne: (task: GoldenTask, runId: string) => Promise<BaselineRunResult>;
+  runOne: (task: GoldenTask, runId: string) => Promise<ScheduledRun>;
+  /** Run ids start with this (default "baseline"); the Jarvis arm uses "jarvis". */
+  prefix?: string;
   sleepUntil: (unixSeconds: number) => Promise<void>;
   nowMs: () => number;
   log: (m: string) => void;
@@ -64,8 +69,8 @@ export async function runSchedule(ids: readonly string[], repeat: number, label:
       }
       let usageRetries = 0;
       for (let attempt = 1; ; attempt++) {
-        const runId = `baseline-${new Date(deps.nowMs()).toISOString().replace(/[:.]/g, "-")}${label ? `-${label}` : ""}-r${i}-a${attempt}`;
-        let r: BaselineRunResult;
+        const runId = `${deps.prefix ?? "baseline"}-${new Date(deps.nowMs()).toISOString().replace(/[:.]/g, "-")}${label ? `-${label}` : ""}-r${i}-a${attempt}`;
+        let r: ScheduledRun;
         try {
           r = await deps.runOne(task, runId);
         } catch (e) {

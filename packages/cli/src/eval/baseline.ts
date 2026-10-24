@@ -47,7 +47,7 @@ export interface GoldenTask {
  */
 export const EVAL_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
 
-function checkEvalDomains(id: string, domains: readonly string[]): void {
+export function checkEvalDomains(id: string, domains: readonly string[]): void {
   const extra = domains.filter((d) => !EVAL_ALLOWED_DOMAINS.includes(d));
   if (extra.length) throw new Error(`${id}: allowedDomains outside the eval allowlist (decision 79): ${extra.join(", ")}`);
 }
@@ -95,7 +95,8 @@ export interface BaselineOptions {
   extraEnv?: Readonly<Record<string, string>>;
 }
 
-const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
+/** Build output and tool folders kept out of candidate commits (both arms). */
+export const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
 
 export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Promise<BaselineRunResult> {
   checkEvalDomains(task.id, task.allowedDomains);

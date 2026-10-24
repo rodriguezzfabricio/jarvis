@@ -58,6 +58,81 @@ const skills: Record<string, SkillRules> = {
       { section: "Output", phrase: "Don't ask the user anything" }, // questions go out once, from intake (decision 8)
     ],
   },
+  intake: {
+    headings: [
+      "When to use",
+      "Inputs",
+      "Check the decision register",
+      "Frame the job",
+      "List assumptions first",
+      "Sort product from engineering",
+      "Write the questions",
+      "Send the round",
+      "Take the answers",
+      "Output",
+      "Gotchas",
+    ],
+    phrases: [
+      { section: "When to use", phrase: "Bugs go straight to" }, // tier 0 skips intake (decision 37)
+      { section: "Inputs", phrase: "offer it once, before the round" }, // decision 39 taste profile
+      { section: "When to use", phrase: "No mockups when a `DESIGN.md` exists" }, // architecture §2
+      { section: "Check the decision register", phrase: "An explicit new request beats an older decision" }, // decision 48
+      { section: "Check the decision register", phrase: "Silence never overrides an old decision" },
+      { section: "Check the decision register", phrase: "Jarvis's own ideas never override the user's" },
+      { section: "Check the decision register", phrase: "Default: keep the old decision" },
+      { section: "Check the decision register", phrase: "names the very behavior the old decision rules out" },
+      { section: "Check the decision register", phrase: "Confirm it with the user once" }, // decision 48 firmness
+      { section: "Check the decision register", phrase: "Revisit it without a question" },
+      { section: "Check the decision register", phrase: "the outside action still needs the broker's approval" },
+      { section: "Frame the job", phrase: "job story" }, // decision 6
+      { section: "Frame the job", phrase: "The day after launch" },
+      { section: "Frame the job", phrase: "top 3 reasons it could fail" },
+      { section: "Frame the job", phrase: "story map" },
+      { section: "Frame the job", phrase: "walking skeleton" },
+      { section: "Frame the job", phrase: "Activities a fixed constraint rules out don't appear on the map" }, // decision 38
+      { section: "Frame the job", phrase: "the first-value budget" }, // decision 55
+      { section: "Frame the job", phrase: "draft `PRODUCT.md`" }, // decision 51: grounding for the design skill
+      { section: "List assumptions first", phrase: "confidence level" }, // decision 8, assumptions mode
+      { section: "Sort product from engineering", phrase: "decision 7" },
+      { section: "Sort product from engineering", phrase: "Never ask what the code, the register, the backlog or research already answers" },
+      { section: "Write the questions", phrase: "scope first, then security, privacy and legal, then UX, then technical" }, // decision 8
+      { section: "Write the questions", phrase: "at most 7 questions" },
+      { section: "Write the questions", phrase: "always keep their place" },
+      { section: "Write the questions", phrase: "The design direction** (decision 39) is one of the questions when the work adds a UI" },
+      { section: "Write the questions", phrase: "Backend-only work never gets one" }, // architecture §2
+      { section: "Write the questions", phrase: "the design skill writes `DESIGN.md` from the existing system" }, // decision 51
+      { section: "Write the questions", phrase: "Default: no, stop at preview-ready" }, // decision 12 production grant
+      { section: "Write the questions", phrase: "a default never does" },
+      { section: "Write the questions", phrase: "beyond 7 become logged assumptions" },
+      { section: "Write the questions", phrase: "why it matters" },
+      { section: "Write the questions", phrase: "recommended default" },
+      { section: "Write the questions", phrase: "2–3 **alternatives**" },
+      { section: "Write the questions", phrase: "A default never spends money, never contacts a real person without approval" },
+      { section: "Write the questions", phrase: "made-up sample data" },
+      { section: "Send the round", phrase: "One round, all at once" },
+      { section: "Send the round", phrase: "Reply 'defaults' to accept all" },
+      { section: "Send the round", phrase: "No questions, no round" },
+      { section: "Send the round", phrase: "Every round goes to the runner, whether or not the user seems to be at the computer" }, // decision 10
+      { section: "Send the round", phrase: "Never reuse a number" },
+      { section: "Send the round", phrase: "jarvis intake send" }, // decision 83
+      { section: "Send the round", phrase: "Never send questions or mockups through any other channel" },
+      { section: "Send the round", phrase: "as **plain text**. Never put it in a tool that waits for the user" },
+      { section: "Send the round", phrase: "never put code, secrets or personal data in them" }, // decision 50
+      { section: "Take the answers", phrase: "jarvis intake answer <n>" },
+      { section: "Take the answers", phrase: "jarvis intake answers" }, // decision 83
+      { section: "Take the answers", phrase: "a steer note" }, // decision 50: no typed replies
+      { section: "Take the answers", phrase: "never grants or widens anything" }, // the publish box is unauthenticated
+      { section: "Take the answers", phrase: "a default can't authorize spending or an outside action" },
+      { section: "Take the answers", phrase: "15 minutes" }, // decision 10
+      { section: "Take the answers", phrase: "unconfirmed" },
+      { section: "Take the answers", phrase: "Never run your own timer" },
+      { section: "Take the answers", phrase: "Hard stops still apply" },
+      { section: "Take the answers", phrase: "jarvis decide" }, // decision 83
+      { section: "Take the answers", phrase: "Never edit `docs/decisions.md` directly" },
+      { section: "Take the answers", phrase: "templates/PRODUCT.md" }, // decision 51
+      { section: "Gotchas", phrase: "Never send anything outside the session and the runner" },
+    ],
+  },
 };
 
 function readSkill(name: string): string {
@@ -106,6 +181,23 @@ describe("skills folder", () => {
   it("keeps the descriptions within decision 30's total budget", () => {
     const total = Object.keys(skills).reduce((n, name) => n + (frontmatter(readSkill(name))?.get("description")?.length ?? 0), 0);
     expect(total).toBeLessThanOrEqual(MAX_TOTAL_DESCRIPTION_CHARS);
+  });
+});
+
+describe("intake round file (decision 83)", () => {
+  it("shows the exact round shape the notifier reads", () => {
+    const text = readSkill("intake");
+    const start = text.indexOf("\n## Send the round\n");
+    const fence = /^\s*```json\n([\s\S]*?)^\s*```/m.exec(text.slice(start));
+    expect(fence, "a json example in Send the round").not.toBeNull();
+    const round = JSON.parse(fence![1]!) as Record<string, unknown>;
+    expect(Object.keys(round).sort()).toEqual(["mockups", "questions", "round", "spec", "summary"]);
+    const q = (round.questions as Record<string, unknown>[])[0]!;
+    expect(Object.keys(q).sort()).toEqual(["alternatives", "default", "id", "question", "topic", "why"]);
+    expect(Object.keys(q.default as object).sort()).toEqual(["answer", "reason"]);
+    expect(sectionBody(text, "Send the round")).toContain(
+      "`topic` is one of scope, security, privacy, legal, ux, technical or design",
+    );
   });
 });
 

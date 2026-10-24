@@ -1,10 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 // @ts-expect-error standalone script
-import { runReview, codexEnvironment } from '../../scripts/review-run.mjs';
+import { runReview, codexEnvironment, reserveLaneManifest } from '../../scripts/review-run.mjs';
 // @ts-expect-error standalone script
 import { inspectReviews } from '../../scripts/review-status.mjs';
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'review-run-')));
@@ -49,6 +49,7 @@ it('captures committed evidence, isolated parallel lanes and null stdin, readabl
       expect(lane.stdinCharacterDevice).toBe(true);
       expect(lane.argv).toContain('read-only');
       expect(lane.argv).toContain('--ephemeral');
+      expect(lane.argv.at(-2)).toBe('--');
       expect(lane.argv).toContain('model_reasoning_effort="high"');
     }
     expect(Math.max(...lanes.map(x => x.started)) < Math.min(...lanes.map(x => x.finished))).toBe(true);
@@ -121,4 +122,32 @@ it('CLI prints every verdict path with the approved defaults', () => {
   const cli = spawnSync(process.execPath, [resolve('scripts/review-run.mjs'), '--round', f.round, '--repo', f.repo, '--prompts', f.prompts, '--schema', f.schema, '--codex', f.codex, '--evidence-config', config], { env: { HOME: f.home, PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, encoding: 'utf8' });
   expect(cli.status).toBe(0);
   for (const lane of ['A', 'B', 'D']) expect(cli.stdout).toContain(`Lane ${lane} verdict: ${join(f.home, '.jarvis/codex-review', f.round, `verdict-${lane}.json`)}`);
+});
+
+it('dry run never refreshes the source index', async () => {
+  const f = fixture();
+  const before = readFileSync(join(f.repo, '.git/index'));
+  utimesSync(join(f.repo, 'source.txt'), 1, 1);
+  await runReview({ ...f, dryRun: true });
+  expect(readFileSync(join(f.repo, '.git/index'))).toEqual(before);
+});
+it('reserves the manifest exclusively even without workspace or status', () => {
+  const f = fixture(); const dir = join(f.home, 'reservation'); mkdirSync(dir);
+  reserveLaneManifest(dir, ['A', 'B', 'D']);
+  expect(() => reserveLaneManifest(dir, ['C'])).toThrow(/EEXIST/);
+  expect(readFileSync(join(dir, 'lanes'), 'utf8')).toBe('lanes A,B,D\n');
+});
+it('records setup failure and refuses a symlinked response directory', async () => {
+  const f = fixture();
+  mkdirSync(join(f.repo, '.review-evidence')); writeFileSync(join(f.repo, '.review-evidence/existing'), 'x');
+  f.git('add', '.'); f.git('commit', '-qm', 'reserved directory');
+  await expect(runReview(f)).rejects.toThrow(/EEXIST/);
+  const rd = join(f.home, '.jarvis/codex-review', f.round);
+  expect(readFileSync(join(rd, 'status'), 'utf8')).toContain('runner-error');
+  expect(inspectReviews(join(f.home, '.jarvis/codex-review')).rounds[0].result).toBe('FAIL');
+  const g = fixture();
+  g.git('mv', 'docs/reviews', 'docs/real-reviews'); symlinkSync('real-reviews', join(g.repo, 'docs/reviews'));
+  g.git('add', '.'); g.git('commit', '-qm', 'symlink');
+  await expect(runReview(g)).rejects.toThrow(/symlink/);
+  expect(readFileSync(join(g.repo, 'docs/real-reviews/old-response.md'), 'utf8')).toBe('builder narrative');
 });

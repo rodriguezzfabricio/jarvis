@@ -15,6 +15,9 @@ const CHECKS = ['install', 'typecheck', 'unit-tests', 'live-probe', 'doctor-live
 export function codexEnvironment(home) {
   return { HOME: join(home, '.jarvis/codex-home/home'), USER: userInfo().username, PATH, CODEX_HOME: join(home, '.jarvis/codex-home') };
 }
+export function reserveLaneManifest(roundDir, lanes) {
+  writeFileSync(join(roundDir, 'lanes'), `lanes ${lanes.join(',')}\n`, { flag: 'wx', mode: 0o600 });
+}
 export const DEFAULT_EVIDENCE = [
   { name: 'install', bin: '/opt/homebrew/bin/pnpm', args: ['-s', 'install', '--frozen-lockfile'] },
   { name: 'typecheck', bin: '/opt/homebrew/bin/pnpm', args: ['-s', 'typecheck'] },
@@ -58,7 +61,7 @@ export async function runReview(options) {
   const evidence = options.evidence ?? DEFAULT_EVIDENCE;
   if (!Array.isArray(evidence) || evidence.length !== CHECKS.length || evidence.some((c, i) => c.name !== CHECKS[i] || !isAbsolute(c.bin) || !Array.isArray(c.args) || c.args.some(a => typeof a !== 'string'))) throw Error('evidence must contain the six ordered named commands, absolute binaries and string args');
   const git = (cwd, args) => safeGit(cwd, args, { home }).toString().trim();
-  if (git(repo, ['status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');
+  if (git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');
   const revision = git(repo, ['rev-parse', '--verify', 'HEAD']);
   const reviewRoot = join(home, '.jarvis/codex-review');
   const roundDir = join(reviewRoot, round);
@@ -74,41 +77,46 @@ export async function runReview(options) {
   if (options.dryRun) return plan;
   mkdirSync(roundDir, { recursive: true, mode: 0o700 });
   // Exclusive manifest creation is also the reservation: concurrent starters cannot both win.
-  writeFileSync(join(roundDir, 'lanes'), `lanes ${lanes.join(',')}\n`, { flag: 'wx', mode: 0o600 });
+  reserveLaneManifest(roundDir, lanes);
   writeFileSync(join(roundDir, 'status'), '', { flag: 'wx', mode: 0o600 });
-  mkdirSync(join(home, '.jarvis-work/reviews'), { recursive: true, mode: 0o700 });
-  // safeGit normally forbids file transports; only this explicit local clone permits one.
-  git(home, ['-c', 'protocol.file.allow=always', 'clone', '--no-hardlinks', '--no-checkout', '--', repo, workspace]);
-  git(workspace, ['remote', 'remove', 'origin']);
-  git(workspace, ['checkout', '--detach', revision]);
-  if (git(workspace, ['rev-parse', 'HEAD']) !== revision) throw Error('cloned revision mismatch');
-  const responses = join(workspace, 'docs/reviews');
-  if (exists(responses)) {
-    if (realpathSync(responses) !== responses) throw Error('review responses directory is a symlink');
-    for (const name of readdirSync(responses)) if (name.endsWith('-response.md')) unlinkSync(join(responses, name));
+  try {
+    mkdirSync(join(home, '.jarvis-work/reviews'), { recursive: true, mode: 0o700 });
+    // safeGit normally forbids file transports; only this explicit local clone permits one.
+    git(home, ['-c', 'protocol.file.allow=always', 'clone', '--no-hardlinks', '--no-checkout', '--', repo, workspace]);
+    git(workspace, ['remote', 'remove', 'origin']);
+    git(workspace, ['checkout', '--detach', revision]);
+    if (git(workspace, ['rev-parse', 'HEAD']) !== revision) throw Error('cloned revision mismatch');
+    const responses = join(workspace, 'docs/reviews');
+    if (exists(responses)) {
+      if (realpathSync(responses) !== responses) throw Error('review responses directory is a symlink');
+      for (const name of readdirSync(responses)) if (name.endsWith('-response.md')) unlinkSync(join(responses, name));
+    }
+    const eDir = join(workspace, '.review-evidence');
+    mkdirSync(eDir, { mode: 0o700 });
+    writeFileSync(join(eDir, 'README.txt'), `revision ${revision}\n${new Date().toISOString()}\n`);
+    const evidenceEnv = { HOME: home, USER: userInfo().username, PATH };
+    let failed = false;
+    for (const check of evidence) {
+      const log = join(eDir, `${check.name}.log`);
+      const code = await command(check.bin, check.args, workspace, evidenceEnv, log);
+      writeFileSync(log, `${stripVTControlCharacters(readFileSync(log, 'utf8')).replace(/\n?$/, '\n')}exit ${code}\n`);
+      failed ||= code !== 0;
+    }
+    writeFileSync(join(roundDir, 'workspace.txt'), `${workspace}\n`, { flag: 'wx' });
+    appendFileSync(join(roundDir, 'status'), 'evidence-done\n');
+    const env = codexEnvironment(home);
+    await Promise.all(lanes.map(async l => {
+      const code = await command(codex, ['exec', '-C', workspace, '-m', model, '--sandbox', 'read-only', '--ephemeral', '--json', '-c', `model_reasoning_effort="${effort}"`, '--output-schema', schema, '-o', join(roundDir, `verdict-${l}.json`), '--', texts[l]], workspace, env, join(roundDir, `events-${l}.jsonl`), join(roundDir, `stderr-${l}.txt`));
+      appendFileSync(join(roundDir, 'status'), `lane ${l} exit ${code}\n`);
+      failed ||= code !== 0;
+    }));
+    appendFileSync(join(roundDir, 'status'), 'codex-done\n');
+    const report = inspectReviews(reviewRoot).rounds.find(r => r.name === round);
+    return { ...plan, exitCode: failed || report?.result !== 'PASS' ? 1 : 0 };
+  } catch (error) {
+    appendFileSync(join(roundDir, 'status'), 'runner-error\n');
+    throw error;
   }
-  const eDir = join(workspace, '.review-evidence');
-  mkdirSync(eDir, { mode: 0o700 });
-  writeFileSync(join(eDir, 'README.txt'), `revision ${revision}\n${new Date().toISOString()}\n`);
-  const evidenceEnv = { HOME: home, USER: userInfo().username, PATH };
-  let failed = false;
-  for (const check of evidence) {
-    const log = join(eDir, `${check.name}.log`);
-    const code = await command(check.bin, check.args, workspace, evidenceEnv, log);
-    writeFileSync(log, `${stripVTControlCharacters(readFileSync(log, 'utf8')).replace(/\n?$/, '\n')}exit ${code}\n`);
-    failed ||= code !== 0;
-  }
-  writeFileSync(join(roundDir, 'workspace.txt'), `${workspace}\n`, { flag: 'wx' });
-  appendFileSync(join(roundDir, 'status'), 'evidence-done\n');
-  const env = codexEnvironment(home);
-  await Promise.all(lanes.map(async l => {
-    const code = await command(codex, ['exec', '-C', workspace, '-m', model, '--sandbox', 'read-only', '--ephemeral', '--json', '-c', `model_reasoning_effort="${effort}"`, '--output-schema', schema, '-o', join(roundDir, `verdict-${l}.json`), texts[l]], workspace, env, join(roundDir, `events-${l}.jsonl`), join(roundDir, `stderr-${l}.txt`));
-    appendFileSync(join(roundDir, 'status'), `lane ${l} exit ${code}\n`);
-    failed ||= code !== 0;
-  }));
-  appendFileSync(join(roundDir, 'status'), 'codex-done\n');
-  const report = inspectReviews(reviewRoot).rounds.find(r => r.name === round);
-  return { ...plan, exitCode: failed || report?.result !== 'PASS' ? 1 : 0 };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {

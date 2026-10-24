@@ -21,6 +21,8 @@ interface SkillRules {
   headings: string[];
   /** Phrases that must appear (case-insensitive) in the prose of a given section, each tied to a decision. */
   phrases: { section: string; phrase: string }[];
+  /** Phrases that must not appear anywhere in the prose (case-insensitive): contracts that were replaced. */
+  forbidden?: string[];
 }
 
 const skills: Record<string, SkillRules> = {
@@ -42,6 +44,13 @@ const skills: Record<string, SkillRules> = {
       { section: "Product research", phrase: "3–5 real products" }, // decision 5
       { section: "Product research", phrase: "a new product" }, // product research only for new products or screens
       { section: "Build-vs-buy spike", phrase: "manual / do nothing" }, // decision 5
+      // The search step itself (decision 5 step 1): every place an existing option can come from.
+      { section: "Build-vs-buy spike", phrase: "**Search, in parallel:**" },
+      { section: "Build-vs-buy spike", phrase: "the existing repo and its dependencies" },
+      { section: "Build-vs-buy spike", phrase: "package registries" },
+      { section: "Build-vs-buy spike", phrase: "GitHub topics and curated lists" },
+      { section: "Build-vs-buy spike", phrase: "vendor APIs, with pricing pages read live" },
+      { section: "Build-vs-buy spike", phrase: "MCP servers and existing skills" },
       { section: "Build-vs-buy spike", phrase: "terms of service" },
       { section: "Build-vs-buy spike", phrase: "lock-in" },
       { section: "Build-vs-buy spike", phrase: "no outbound network calls" }, // quick tests stay offline (decisions 12, 70)
@@ -135,6 +144,22 @@ const skills: Record<string, SkillRules> = {
       { section: "Write the questions", phrase: "topic `scope`" }, // decision 83 topics: a register conflict is scope
       { section: "Send the round", phrase: "`.jarvis/mockups/`" }, // architecture §3.5: mockups are throwaway views
       { section: "Take the answers", phrase: "the spec skill" },
+      // Decision 86: bounded waiting and one submission contract.
+      { section: "Send the round", phrase: "decision 86" },
+      { section: "Take the answers", phrase: "`jarvis intake answers <n> --wait 540`" },
+      { section: "Take the answers", phrase: "at most twice" },
+      { section: "Take the answers", phrase: "continue with whatever it returns" },
+      { section: "Take the answers", phrase: "listed ids are overrides" },
+      { section: "Take the answers", phrase: "every unlisted question takes its default as accepted" },
+      { section: "Take the answers", phrase: "\"Not counted\"" },
+      { section: "Take the answers", phrase: "\"Use defaults\" for the whole round" },
+      { section: "Take the answers", phrase: "never a partial answer" },
+      { section: "Take the answers", phrase: "all unanswered questions become \"unconfirmed\" defaults" },
+    ],
+    forbidden: [
+      "call it again", // repeated polling (decision 86)
+      "answers to the ordinary product questions it names", // phone free text is a steer, never an answer
+      "answer any subset", // a submission is complete: there is no partial reply
     ],
   },
   spec: {
@@ -183,7 +208,14 @@ const skills: Record<string, SkillRules> = {
       { section: "Confirm", phrase: "as **plain text**" },
       { section: "Hand off", phrase: "the design skill" },
       { section: "Gotchas", phrase: "`docs/spec/`" },
+      // Decision 86: one confirmation, at the initial hand-off; bounded waiting.
+      { section: "When to use", phrase: "never another confirmation round" },
+      { section: "When to use", phrase: "blocked state" }, // decision 40
+      { section: "Confirm", phrase: "Confirmation happens once, at the initial hand-off" },
+      { section: "Confirm", phrase: "`jarvis intake answers <n> --wait 540`" },
+      { section: "Confirm", phrase: "at most twice" },
     ],
+    forbidden: ["call it again", "calling it again"],
   },
   design: {
     headings: [
@@ -257,6 +289,11 @@ const skills: Record<string, SkillRules> = {
       { section: "Who judges design", phrase: "At most 3 design revision rounds per screen" },
       { section: "Who judges design", phrase: "best-rated round" },
       { section: "Who judges design", phrase: "negative control" },
+      // An existing design system keeps what it has; the bans and checks cover what's new.
+      { section: "An existing design system", phrase: "Inherited choices are preserved" },
+      { section: "An existing design system", phrase: "the changed UI" },
+      { section: "The AI-tells list", phrase: "apply to new design only" },
+      { section: "Checks that code runs", phrase: "the changed UI" },
     ],
   },
 };
@@ -266,6 +303,8 @@ function readSkill(name: string): string {
 }
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
+/** A fenced code block, also when indented under a list item. Group 2 is its content. */
+const FENCE = /^[ \t]*(```|~~~)[^\n]*\n([\s\S]*?)^[ \t]*\1[ \t]*$/gm;
 
 /** Parses the `---` frontmatter block. Skills use only single-line `key: value` pairs. */
 function frontmatter(text: string): Map<string, string> | undefined {
@@ -282,7 +321,7 @@ function frontmatter(text: string): Map<string, string> | undefined {
 
 /** The body outside the frontmatter and fenced code blocks, so a description or an example inside a fence never counts. */
 function prose(text: string): string {
-  return text.replace(FRONTMATTER, "").replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, "");
+  return text.replace(FRONTMATTER, "").replace(FENCE, "");
 }
 
 function headings(text: string): string[] {
@@ -298,15 +337,78 @@ function sectionBody(text: string, heading: string): string {
   return next < 0 ? rest : rest.slice(0, next);
 }
 
+// Skills whose rules live in tests/unit/skills-build.test.ts.
+const checkedElsewhere = ["build", "debug"];
+
 describe("skills folder", () => {
   it("has rules here for every skill, so none skips these checks", () => {
     const dirs = readdirSync(skillsDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
-    expect(dirs.sort()).toEqual(Object.keys(skills).sort());
+    expect(dirs.sort()).toEqual([...Object.keys(skills), ...checkedElsewhere].sort());
   });
 
   it("keeps the descriptions within decision 30's total budget", () => {
-    const total = Object.keys(skills).reduce((n, name) => n + (frontmatter(readSkill(name))?.get("description")?.length ?? 0), 0);
+    const total = [...Object.keys(skills), ...checkedElsewhere].reduce(
+      (n, name) => n + (frontmatter(readSkill(name))?.get("description")?.length ?? 0),
+      0,
+    );
     expect(total).toBeLessThanOrEqual(MAX_TOTAL_DESCRIPTION_CHARS);
+  });
+});
+
+// Decision 85: the flags `jarvis decide` accepts, and the values each one takes.
+const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason"];
+const DECIDE_BY = ["user", "default-accepted", "default-unconfirmed", "jarvis"];
+const DECIDE_CLASS = ["mechanical", "taste", "challenge"];
+
+/** Every `jarvis decide …` with arguments: inline code in the prose, and lines in fenced blocks. A bare `jarvis decide` is a reference. */
+function decideCalls(text: string): string[] {
+  const inline = [...prose(text).matchAll(/`(jarvis decide\b[^`]*)`/g)].map((m) => m[1]!.trim());
+  const fenced = [...text.matchAll(FENCE)].flatMap((m) =>
+    m[2]!.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("jarvis decide")),
+  );
+  return [...inline, ...fenced].filter((c) => c !== "jarvis decide");
+}
+
+/** Parses `jarvis decide --flag value … "<decision>"`; every flag takes one value. */
+function parseDecide(call: string): { flags: Map<string, string>; positional: string[]; problems: string[] } {
+  const tokens = call.replace(/^jarvis decide/, "").match(/"[^"]*"|\S+/g) ?? [];
+  const flags = new Map<string, string>();
+  const positional: string[] = [];
+  const problems: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (!t.startsWith("--")) { positional.push(t); continue; }
+    const name = t.slice(2);
+    const value = tokens[i + 1];
+    if (!DECIDE_FLAGS.includes(name)) problems.push(`unknown flag --${name}`);
+    if (value === undefined || value.startsWith("--")) problems.push(`--${name} has no value`);
+    else { flags.set(name, value.replace(/^"(.*)"$/, "$1")); i++; }
+  }
+  return { flags, positional, problems };
+}
+
+describe("jarvis decide calls in every skill (decision 85)", () => {
+  const names = Object.keys(skills);
+
+  it.each(names)("%s: every call has valid --by and --class values, --why, a repo-relative --source and a decision", (name) => {
+    for (const call of decideCalls(readSkill(name))) {
+      const { flags, positional, problems } = parseDecide(call);
+      expect(problems, call).toEqual([]);
+      for (const by of (flags.get("by") ?? "").split("|")) expect(DECIDE_BY, `${call}: --by ${by}`).toContain(by);
+      for (const c of (flags.get("class") ?? "").split("|")) expect(DECIDE_CLASS, `${call}: --class ${c}`).toContain(c);
+      expect(flags.get("why")?.trim(), `${call}: --why`).toBeTruthy();
+      const source = flags.get("source") ?? "";
+      expect(source, `${call}: --source`).toMatch(/^[^/\s]/);
+      expect(source, `${call}: --source`).not.toContain("..");
+      expect(positional.length, `${call}: the decision text`).toBeGreaterThan(0);
+      if (flags.get("class")!.split("|").includes("taste")) expect(flags.has("depends-on"), `${call}: --depends-on for Taste`).toBe(true);
+      if (flags.get("by")!.split("|").includes("jarvis")) expect(flags.has("alternatives"), `${call}: --alternatives`).toBe(true);
+      if (flags.has("supersedes")) expect(flags.has("reason"), `${call}: --reason`).toBe(true);
+    }
+  });
+
+  it.each(["intake", "spec", "design"])("%s shows at least one complete call", (name) => {
+    expect(decideCalls(readSkill(name)).length).toBeGreaterThan(0);
   });
 });
 
@@ -379,6 +481,11 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
     for (const { section, phrase } of rules.phrases) {
       expect(sectionBody(text, section).toLowerCase(), `${section}: ${phrase}`).toContain(phrase.toLowerCase());
     }
+  });
+
+  it("drops the contracts that were replaced", () => {
+    const text = prose(readSkill(name)).toLowerCase();
+    for (const phrase of rules.forbidden ?? []) expect(text, phrase).not.toContain(phrase.toLowerCase());
   });
 
   it("has a gotchas section with at least 3 items", () => {

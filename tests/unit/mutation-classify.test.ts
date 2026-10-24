@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
-import { classify, isAssertionFailure, testIds } from "../../scripts/mutation-classify.mjs";
+import { classify, isAssertionFailure, summarize, testIds } from "../../scripts/mutation-classify.mjs";
 
 const file = (assertions: object[], message = "") => ({ name: "/r/tests/unit/x.test.ts", message, status: "failed", assertionResults: assertions });
 const t = (title: string, status: string, failureMessages: string[] = []) => ({ title, fullName: `s ${title}`, status, failureMessages });
@@ -107,5 +107,26 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     const r = report([t("a", "passed"), t("b", "passed")], { success: true });
     expect(classify(ok, r, control, ended("passed")).kind).toBe("survived");
     expect(classify(ok, r, undefined, ended("passed")).kind).toBe("clean");
+  });
+});
+
+// Codex stage 0 review 16, lane D: a filtered run printed "all N mutations caught" for N it never ran.
+describe("mutation run summary", () => {
+  const caught = (n: number) => Array.from({ length: n }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
+  it("claims complete coverage only when every declared mutation ran and was caught", () => {
+    expect(summarize({ total: 3, selected: 3, filtered: false, results: caught(3) })).toEqual({ line: "all 3 mutations caught", exitCode: 0 });
+  });
+  it("marks a filtered run as partial, never as complete", () => {
+    const s = summarize({ total: 10, selected: 3, filtered: true, results: caught(3) });
+    expect(s.line).not.toMatch(/^all \d+ mutations caught/);
+    expect(s.line).toBe("partial run: 3 of 10 mutations selected, all 3 caught (not a complete proof)");
+    expect(s.exitCode).toBe(0);
+  });
+  it("refuses a filter that selects nothing", () => {
+    expect(summarize({ total: 10, selected: 0, filtered: true, results: [] })).toEqual({ line: "no mutation matches the filter", exitCode: 2 });
+  });
+  it("counts errors and survivors as not caught", () => {
+    const s = summarize({ total: 3, selected: 3, filtered: false, results: [...caught(1), "SURVIVED m1 (all tests passed)", "ERROR    m2: anchor not found in f"] });
+    expect(s).toEqual({ line: "2 mutation(s) not caught", exitCode: 1 });
   });
 });

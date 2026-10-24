@@ -61,3 +61,15 @@ export function classify(proc, report, controlIds, runEnd) {
   if (unattributed.length) return { kind: "error", detail: `${unattributed.length} failure(s) neither assertions nor thrown by Jarvis code: ${(unattributed[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
   return { kind: "caught", detail: `${assertions.length} failing assertion(s)${others.length ? ` + ${others.length} refused by Jarvis guards` : ""}: ${assertions.slice(0, 2).map((a) => a.title).join("; ")}` };
 }
+
+/**
+ * The run's last line and exit code. "all N mutations caught" only when no filter was set and every
+ * declared mutation ran and was caught; a filtered run says it's partial (Codex stage 0 review 16).
+ */
+export function summarize({ total, selected, filtered, results }) {
+  if (selected === 0) return { line: "no mutation matches the filter", exitCode: 2 };
+  const bad = results.filter((l) => !l.startsWith("caught")).length;
+  if (bad) return { line: `${bad} mutation(s) not caught`, exitCode: 1 };
+  if (filtered || selected !== total) return { line: `partial run: ${selected} of ${total} mutations selected, all ${selected} caught (not a complete proof)`, exitCode: 0 };
+  return { line: `all ${total} mutations caught`, exitCode: 0 };
+}

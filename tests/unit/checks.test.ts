@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runGate, verifyEvidence } from "../../packages/cli/src/checks/gate.ts";
@@ -190,6 +190,42 @@ describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120
       expect(r.status, verify).toBe(want);
       expect((r.entry.data as { completed: boolean }).completed).toBe(want === "pass" || verify.startsWith(COMPLETE + "exit"));
     }
+  });
+
+  // Codex stage 0 review 16, lane D: a daemon that escapes the case's process group (setsid) must not reach
+  // the verifier's scratch files, through the library's shared temp folder or anywhere else.
+  it("doesn't let a surviving candidate daemon rewrite the verifier's scratch files", async () => {
+    const made = !existsSync("/private/tmp/claude");
+    if (made) mkdirSync("/private/tmp/claude", { recursive: true });
+    try {
+      const daemon = `/usr/bin/perl -e 'use POSIX qw(setsid); exit if fork; setsid(); open STDIN, "</dev/null"; open STDOUT, ">/dev/null"; open STDERR, ">/dev/null"; for (1..200) { for my $f (glob("/tmp/claude/assert.* /private/tmp/claude/assert.*")) { if (open my $h, ">", $f) { print $h "value=42\\n"; close $h } } select(undef, undef, undef, 0.05) }'\n`;
+      const verify = `t=$(mktemp "$TMPDIR/assert.XXXXXXXX") || exit 1\ncp main/stdout "$t"\nsleep 1\ngrep -qx value=42 "$t" || exit 1\n${COMPLETE}`;
+      for (const [candidate, want] of [
+        ["echo value=42\n", "pass"],
+        [`echo value=41\n${daemon}`, "fail"],
+      ] as const) {
+        const p = project();
+        const c = check("daemon", candidate, p, verify);
+        p.store.approve(p.ledger, "v1");
+        expect((await gate(p, c)).status, candidate).toBe(want);
+      }
+    } finally {
+      if (made) rmSync("/private/tmp/claude", { recursive: true, force: true });
+    }
+  });
+
+  // Codex stage 0 review 16, lane D: the observation cap was checked only after unbounded capture.
+  it("stops a case as soon as its output passes the observation cap, and fails without running verify", async () => {
+    const p = project();
+    const c = check("flood", "head -c 40000000 /dev/zero\nsleep 20\n", p, COMPLETE);
+    p.store.approve(p.ledger, "v1");
+    const started = Date.now();
+    const r = await gate(p, c);
+    expect(r.status).toBe("fail");
+    expect((r.entry.data as { observationsOverCap?: boolean }).observationsOverCap).toBe(true);
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(statSync(join(r.evidenceDir, "cases", "main", "stdout")).size).toBeLessThanOrEqual(17 * 1024 * 1024);
+    expect(existsSync(join(r.evidenceDir, "verify-stdout.log")) ? readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8") : "").toBe("");
   });
 
   it("doesn't let candidate output forge the completion line", async () => {

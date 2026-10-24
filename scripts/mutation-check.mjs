@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classify, testIds } from "./mutation-classify.mjs";
+import { classify, summarize, testIds } from "./mutation-classify.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
 const A = "packages/cli/src/harness/claude/args.ts";
@@ -102,6 +102,14 @@ const mutations = [
   ["mixed help accepted", RS, "(help && args.length !== 1)", "false"],
   ["symlink entry point ignored", RS, "realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))", "resolve(process.argv[1]) === fileURLToPath(import.meta.url)"],
   ["FIFO open blocks", RS, "constants.O_RDONLY | constants.O_NONBLOCK", "\"r\""],
+  // Codex stage 0 review 16, lane D.
+  ["sandbox wrapper sees the runner environment", SR, '  const env = { PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),', '  const env = { ...process.env, PATH: r.env.PATH ?? "/usr/bin:/bin", HOME: homedir(),'],
+  ["run TMPDIR not given to the sandbox", SR, "...(r.env.TMPDIR ? { CLAUDE_CODE_TMPDIR: r.env.TMPDIR } : {})", "...{}"],
+  ["shared temp folder writable", SR, "denyWrite: SHARED_TMP", "denyWrite: []"],
+  ["session output cap off", X, "        if (captured > spec.maxOutputBytes! && !overflowed) {", "        if (false) {"],
+  ["gate ignores the case output cap", GT, "        maxOutputBytes: MAX_OUT_BYTES - captured,\n", ""],
+  ["gate verifies over-cap observations", GT, "    if (withinCap) {\n      for (const k of g.check.cases) {", "    if (true) {\n      for (const k of g.check.cases) {"],
+  ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  if (filtered || selected !== total) return", "  if (false) return"],
   ["outbox files can collide", "packages/cli/src/broker/outbox.ts", '-${op}-${randomUUID()}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600, flag: "wx" });', '-${op}.json`);\n    writeFileSync(file, `${JSON.stringify({ op, payload }, null, 2)}\\n`, { mode: 0o600 });'],
   ["session kills only the parent", X, "      process.kill(-child.pid, sig);", "      child.kill(sig);"],
   ["session hides spawn failures", X, "  if (spawnError) {", "  if (false) {"],
@@ -118,7 +126,7 @@ const mutations = [
   ["ledger ignores the head", L, '    else problems.push("head.hash does not match', '    else if (false) problems.push("head.hash does not match'],
   ["checks lock not tied to the ledger", K, "    if (!approved || (approved.data", "    if (false && (approved.data"],
   ["gate skips check verification", GT, "  if (!v.ok) return { status: \"tampered\"", "  if (false) return { status: \"tampered\""],
-  ["gate runs checks unsandboxed", SR, "      const wrapped = await SandboxManager.wrapWithSandbox(r.command);", "      const wrapped = r.command;"],
+  ["gate runs checks unsandboxed", SR, "  const wrapped = await wrap(r);", "  const wrapped = r.command;"],
   ["gate lets checks read the runner folder", GT, "          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir)],", "          denyRead: [real(homedir()), real(verifyDir)],"],
   ["candidate can read the verify folder", GT, "          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir)],", "          denyRead: [real(g.jarvisHome), real(homedir())],"],
   ["candidate can read the expectations", GT, "          allowRead: [real(runDir), ...(hasFixtures ? [real(fixtures)] : [])],", "          allowRead: [real(runDir), real(g.store.checksDir)],"],
@@ -202,6 +210,9 @@ function runSuite(tag) {
 
 const results = [];
 let controlIds;
+// JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
+const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
+const selected = mutations.filter(([n]) => !only || only.test(n));
 try {
   const control = runSuite("control");
   const c = classify(control.proc, control.report, undefined, control.runEnd);
@@ -211,9 +222,7 @@ try {
   }
   controlIds = testIds(control.report);
   results.push(`control  ${c.detail}`);
-  // JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
-  const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
-  for (const [name, file, from, to] of mutations.filter(([n]) => !only || only.test(n))) {
+  for (const [name, file, from, to] of selected) {
     const orig = readFileSync(file, "utf8");
     if (!orig.includes(from)) { results.push(`ERROR    ${name}: anchor not found in ${file}`); continue; }
     try {
@@ -231,6 +240,6 @@ try {
   rmSync(work, { recursive: true, force: true });
 }
 console.log(results.join("\n"));
-const bad = results.filter((l) => !l.startsWith("caught") && !l.startsWith("control"));
-console.log(bad.length ? `\n${bad.length} mutation(s) not caught` : `\nall ${mutations.length} mutations caught`);
-process.exitCode = bad.length ? 1 : 0;
+const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results: results.filter((l) => !l.startsWith("control")) });
+console.log(`\n${s.line}`);
+process.exitCode = s.exitCode;

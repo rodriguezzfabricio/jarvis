@@ -17,11 +17,15 @@ export interface SessionSpec {
   openSink?: (path: string) => Writable;
   /** How long a child gets after SIGTERM before SIGKILL (default 10 s). */
   killGraceMs?: number;
+  /** Combined stdout and stderr bytes captured before the session is stopped (Codex stage 0 review 16). */
+  maxOutputBytes?: number;
 }
 
 export interface SessionOutcome {
   code: number | null;
   timedOut: boolean;
+  /** Output passed `maxOutputBytes`: capture stopped there and the session was stopped. */
+  overflowed: boolean;
   durationMs: number;
   stdout: string;
   stderr: string;
@@ -51,6 +55,8 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   let sinkError: Error | undefined;
   let spawnError: Error | undefined;
   let timedOut = false;
+  let overflowed = false;
+  let captured = 0;
   const sinks: Promise<void>[] = [];
   const sinkStreams: NodeJS.WritableStream[] = [];
   const timers: NodeJS.Timeout[] = [];
@@ -84,6 +90,17 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   };
 
   const attach = (source: NodeJS.ReadableStream, path: string | undefined, keep: (s: string) => void) => {
+    // Counted as it arrives: past the cap, stop capturing and stop the session, rather than store
+    // whatever a case prints before its timeout.
+    if (spec.maxOutputBytes !== undefined)
+      source.on("data", (d: Buffer) => {
+        captured += d.length;
+        if (captured > spec.maxOutputBytes! && !overflowed) {
+          overflowed = true;
+          for (const s of [child.stdout, child.stderr]) s.unpipe();
+          shutdown(); // the files are ended with the session, as usual
+        }
+      });
     if (!path) {
       source.on("data", (d: Buffer) => keep(d.toString()));
       return;
@@ -147,5 +164,5 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     throw new SessionStartError(msg);
   }
   if (sinkError) throw new EvidenceCaptureError(`could not capture session output: ${sinkError.message}`);
-  return { code, timedOut, durationMs: Date.now() - started, stdout, stderr };
+  return { code, timedOut, overflowed, durationMs: Date.now() - started, stdout, stderr };
 }

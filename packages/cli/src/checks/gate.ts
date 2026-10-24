@@ -130,6 +130,10 @@ export async function runGate(g: GateInput): Promise<GateResult> {
     // expectations (the rest of the checks folder), the verify folder or the recorded observations.
     const files: Record<string, string> = Object.create(null) as Record<string, string>;
     const caseResults: { id: string; code: number | null; timedOut: boolean; durationMs: number }[] = [];
+    // The observation cap is enforced while capturing: each case gets what's left of it, and a case
+    // that passes it is stopped there; no later case and no verify phase run (Codex stage 0 review 16).
+    let captured = 0;
+    let overCap = false;
     for (const k of g.check.cases) {
       const caseEvidence = join(evidenceDir, "cases", k.id);
       mkdirSync(caseEvidence, { recursive: true, mode: 0o700 });
@@ -147,49 +151,53 @@ export async function runGate(g: GateInput): Promise<GateResult> {
         stdoutPath: join(caseEvidence, "stdout"),
         stderrPath: join(caseEvidence, "stderr"),
         killGraceMs: 5_000,
+        maxOutputBytes: MAX_OUT_BYTES - captured,
       });
+      captured += lstatSync(join(caseEvidence, "stdout")).size + lstatSync(join(caseEvidence, "stderr")).size;
+      overCap ||= r.overflowed;
       // Written by the runner from the process's own outcome.
       writeFileSync(join(caseEvidence, "code"), r.code === null ? "signal\n" : `${r.code}\n`);
       caseResults.push({ id: k.id, code: r.code, timedOut: r.timedOut, durationMs: r.durationMs });
       for (const f of ["stdout", "stderr", "code"]) files[`cases/${k.id}/${f}`] = sha(join(caseEvidence, f));
+      if (overCap) break;
     }
-    const allFinished = caseResults.every((c) => !c.timedOut);
+    const allFinished = caseResults.length === g.check.cases.length && caseResults.every((c) => !c.timedOut);
+    const withinCap = !overCap && captured <= MAX_OUT_BYTES;
 
     // The assertions: no candidate code and no checkout, only the checks and a copy of the observations.
-    let total = 0;
-    for (const k of g.check.cases) {
-      mkdirSync(join(obsDir, k.id), { recursive: true, mode: 0o700 });
-      for (const f of ["stdout", "stderr", "code"]) {
-        const src = join(evidenceDir, "cases", k.id, f);
-        total += lstatSync(src).size;
-        copyFileSync(src, join(obsDir, k.id, f));
+    // Skipped once the cap is passed: oversized observations are never copied or judged.
+    let ver: { code: number | null; timedOut: boolean } = { code: null, timedOut: false };
+    let complete = false;
+    if (withinCap) {
+      for (const k of g.check.cases) {
+        mkdirSync(join(obsDir, k.id), { recursive: true, mode: 0o700 });
+        for (const f of ["stdout", "stderr", "code"]) copyFileSync(join(evidenceDir, "cases", k.id, f), join(obsDir, k.id, f));
       }
+      const nonce = randomBytes(24).toString("hex");
+      const completionFile = join(verifyDir, "completion");
+      writeFileSync(completionFile, nonce, { mode: 0o600 });
+      const verifyStdout = join(evidenceDir, "verify-stdout.log");
+      ver = await runSandboxed({
+        policy: {
+          denyRead: [real(g.jarvisHome), real(homedir()), real(runDir)],
+          allowRead: [real(verifyDir), real(g.store.checksDir)],
+          allowWrite: [real(verifyHome)],
+        },
+        command: g.check.verify,
+        cwd: real(obsDir),
+        env: { ...commonEnv, JARVIS_CHECKS: real(g.store.checksDir), JARVIS_OUT: real(obsDir), HOME: real(verifyHome), TMPDIR: real(verifyHome), JARVIS_COMPLETION_FILE: real(completionFile), ...(g.extraEnv ?? {}) },
+        timeoutMs: g.check.timeoutMs,
+        stdoutPath: verifyStdout,
+        stderrPath: join(evidenceDir, "verify-stderr.log"),
+        killGraceMs: 5_000,
+      });
+      complete = completed(readFileSync(verifyStdout, "utf8"), nonce);
+      for (const f of ["verify-stdout.log", "verify-stderr.log"]) files[f] = sha(join(evidenceDir, f));
     }
-    const withinCap = total <= MAX_OUT_BYTES;
-    const nonce = randomBytes(24).toString("hex");
-    const completionFile = join(verifyDir, "completion");
-    writeFileSync(completionFile, nonce, { mode: 0o600 });
-    const verifyStdout = join(evidenceDir, "verify-stdout.log");
-    const ver = await runSandboxed({
-      policy: {
-        denyRead: [real(g.jarvisHome), real(homedir()), real(runDir)],
-        allowRead: [real(verifyDir), real(g.store.checksDir)],
-        allowWrite: [real(verifyHome)],
-      },
-      command: g.check.verify,
-      cwd: real(obsDir),
-      env: { ...commonEnv, JARVIS_CHECKS: real(g.store.checksDir), JARVIS_OUT: real(obsDir), HOME: real(verifyHome), TMPDIR: real(verifyHome), JARVIS_COMPLETION_FILE: real(completionFile), ...(g.extraEnv ?? {}) },
-      timeoutMs: g.check.timeoutMs,
-      stdoutPath: verifyStdout,
-      stderrPath: join(evidenceDir, "verify-stderr.log"),
-      killGraceMs: 5_000,
-    });
     const verifyOk = !ver.timedOut && ver.code === 0;
-    const complete = completed(readFileSync(verifyStdout, "utf8"), nonce);
     // Pass only if every case finished, every observation was judged, and the assertions exited 0
     // and ran to the end.
     const status: GateStatus = allFinished && withinCap && verifyOk && complete ? "pass" : "fail";
-    for (const f of ["verify-stdout.log", "verify-stderr.log"]) files[f] = sha(join(evidenceDir, f));
     const entry = record(status, {
       caseResults,
       verifyExitCode: ver.code,

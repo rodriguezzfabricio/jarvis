@@ -9,7 +9,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'desktop-kit-')); roots.push(home);
-  const pluginDir = join(home, 'repo/plugin'); mkdirSync(join(pluginDir, 'hooks'), { recursive: true }); mkdirSync(join(pluginDir, '.claude-plugin')); 
+  const pluginDir = join(home, 'repo/plugin'); mkdirSync(join(pluginDir, 'hooks'), { recursive: true }); mkdirSync(join(pluginDir, '.claude-plugin'));
   for (const name of ['hooks/session-start.mjs', 'hooks/tripwire.mjs', 'hooks/hooks.json', '.claude-plugin/plugin.json']) writeFileSync(join(pluginDir, name), 'synthetic');
   return { home, pluginDir, runId: 'run-1' };
 }

@@ -26,7 +26,7 @@ These are the results of the eight checks in `03-architecture.md` §9, run on Fa
 On 2.1.309, every flag in architecture §5 exists. `--max-turns`, `--append-system-prompt-file`, `--system-prompt-file` and `--permission-prompt-tool` are hidden from `--help` but accepted.
 
 - The non-interactive permission setting is `--permission-mode dontAsk` together with `--permission-prompts none`.
-- Also useful: `--setting-sources`, `--no-session-persistence`, `--effort`, `--json-schema`, `--tools`, `--restricted`. `--restricted` is unsuitable for builders, because it removes Bash.
+- Also useful: `--setting-sources`, `--no-session-persistence`, `--effort`, `--json-schema`, `--tools`, `--restricted`. `--restricted` is unsuitable for builders, because it removes Bash. (Superseded Oct 23 by decision 68: `--restricted` plus an explicit `--tools` list keeps Bash.)
 - The `--model` aliases changed meaning across versions (decision 61).
 
 ## 2. Usage-limit reporting (partly verified)

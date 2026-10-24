@@ -33,7 +33,7 @@ Every task session must run with all of these. Each has a test; don't weaken the
 Rules that go with these:
 - Settings reach disk only through `writeTaskSettings`, which refuses anything but the exact policy for the context. Claude Code silently drops an invalid settings file.
 - The runner's git calls in agent-writable folders go through `eval/git.ts` (no hooks, no fsmonitor, no global config).
-- `node scripts/mutation-check.mjs` must report every mutation caught.
+- `node scripts/mutation-check.mjs --confirm` must report every mutation caught (exit 0). Without `--confirm` it is a fast run on related tests only, for iterating; it exits 3 even when everything is caught (decision 92).
 
 ## Layout
 ```

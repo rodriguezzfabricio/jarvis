@@ -927,6 +927,14 @@ Settled while merging the runner inbox, planning and intake lanes:
 - **A broken notifier config never blocks a round:** the round is recorded, the command prints that the notification wasn't delivered, and a warning names the config without its contents (decision 90).
 - **Project ids use the filesystem's own spelling** (`realpathSync.native`), so a path typed in the wrong letter case gives the same id.
 
+### 92. The mutation check has a fast mode for iterating and a confirm mode that is the gate (new; Oct 24; tightens the AGENTS.md rule)
+Running every mutation on the full suite took about 6 hours at the old pace, so the check now has two modes:
+- **Fast (the default):** each mutation runs first on the test files that can observe the mutated file (relative imports, file mentions and Vitest's module graph; a file with a computed `import(`/`require(` argument links to everything). A per-set control must collect exactly the full control's test ids. Survived, error, no related test or an unusable control falls back to the full suite. Subset catches are reported as "not confirmed" and the run exits 3, never 0. `JARVIS_MUTATION_JOBS=n` runs n clones at once, capped at cpus−1.
+- **Confirm (`--confirm`, the gate):** every verdict comes from the full suite with the unchanged classifier, so it can't differ from the old script. Exit 0 means every mutation was caught and confirmed. `scripts/review-run.mjs` runs this mode, and the full-check-before-review rule means this mode.
+- **Why not keep only fast mode:** a Codex review showed a subset catch can hide a full-suite error (a test file that loads the module through a computed path errors under the mutation; neither graph sees it).
+- **Cost:** confirm mode takes about 29 s per mutation, set by the longest test files; splitting them is the lever.
+*From:* Codex mutation-check review, round 1 (FAIL, critical) and round 2 (RESOLVED), Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

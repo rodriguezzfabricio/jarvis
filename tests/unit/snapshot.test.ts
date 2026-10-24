@@ -248,6 +248,18 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "cdata.xml": "<cfg><secret><![CDATA[Synthetic9qvM2]]></secret></cfg>\n",
       "broken.yaml": "database:\n  password: Synthetic9qvM2\n bad: [unclosed\n",
       "utf16.json": Buffer.from('\ufeff{"password": "Synthetic9qvM2"}', "utf16le").toString("latin1"),
+      // Codex review 8: assignments in environment lists, duplicate fields, binary scalars, nesting.
+      "compose.yml": 'services:\n  app:\n    environment: ["API_KEY=Synthetic9qvM2"]\n',
+      "compose-list.yaml": "services:\n  app:\n    environment:\n      - DB_PASSWORD=Synthetic9qvM2\n",
+      "env-array.json": '{"containerDefinitions": [{"command": ["run"], "env": ["GITHUB_TOKEN=Synthetic9qvM2"]}]}\n',
+      "duplicate.json": '{"password":"Synthetic9qvM2","password":""}\n',
+      "duplicate-parent.json": '{"db": {"password": "Synthetic9qvM2"}, "db": {}}\n',
+      "duplicate.yaml": "password: Synthetic9qvM2\npassword: ''\n",
+      "binary.yaml": "password: !!binary U3ludGhldGljOXF2TTI=\n",
+      "k8s-env.yaml": "spec:\n  containers:\n    - env:\n        - name: DB_PASSWORD\n          value: Synthetic9qvM2\n",
+      "ecs-env.json": '{"environment": [{"name": "STRIPE_SECRET", "value": "Synthetic9qvM2"}]}\n',
+      "alias-scalar.yaml": "plain: &p Synthetic9qvM2\npassword: *p\n",
+      "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
       const repo = join(root, `srcE-${name}`);
@@ -276,6 +288,10 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
     writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
     writeFileSync(join(repo, "limits.yaml"), "password_min_length: 12\ntoken_ttl: 3600\nauth: true\n");
+    writeFileSync(join(repo, "compose.yml"), 'services:\n  app:\n    environment: ["NODE_ENV=production", "API_KEY=${API_KEY}", "DB_PASSWORD="]\n    command: ["serve", "--port=3000"]\n');
+    writeFileSync(join(repo, "repeat.yaml"), "name: a\nname: b\npassword: ''\n");
+    writeFileSync(join(repo, "openapi.json"), '{"components": {"schemas": {"Login": {"properties": {"password": {"type": "string", "format": "password", "description": "At least 12 characters"}}}}}}\n');
+    writeFileSync(join(repo, "deploy.yaml"), "env:\n  - name: DB_PASSWORD\n    valueFrom: {secretKeyRef: {name: db, key: password}}\n  - name: LOG_LEVEL\n    value: debug\n");
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");
     await expect(createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapInert") })).resolves.toMatchObject({ redactions: [] });

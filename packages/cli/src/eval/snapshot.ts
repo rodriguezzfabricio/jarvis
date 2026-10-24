@@ -3,7 +3,7 @@ import { createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { parseAllDocuments } from "yaml";
+import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
 import { safeGit } from "./git.ts";
 
 /**
@@ -258,21 +258,54 @@ export function stripJsonc(text: string): string {
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
-/** Typed values from a structured config, or undefined if it doesn't parse. */
-function parseStructured(name: string, text: string): unknown[] | undefined {
-  const tryJson = (t: string): unknown[] | undefined => {
+/**
+ * True if a JSON object repeats a key. JSON.parse keeps only the last one, so an earlier password
+ * would be exported unseen (Codex review 8). Such files are walked as YAML, which keeps every pair.
+ */
+export function hasDuplicateJsonKeys(text: string): boolean {
+  const stack: (Set<string> | undefined)[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === "{") stack.push(new Set());
+    else if (c === "[") stack.push(undefined);
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === '"') {
+      const close = closingQuote(text, '"', i + 1);
+      if (close === -1) return false;
+      let j = close;
+      while (j < text.length && /\s/.test(text[j]!)) j++;
+      const keys = stack.at(-1);
+      if (keys && text[j] === ":") {
+        const k = JSON.parse(text.slice(i, close)) as string;
+        if (keys.has(k)) return true;
+        keys.add(k);
+      }
+      i = close - 1;
+    }
+  }
+  return false;
+}
+
+/** A parsed structured config: plain values (JSON, TOML) or YAML documents walked node by node. */
+type Parsed = { plain: unknown[] } | { yaml: Document.Parsed[] };
+
+/** A structured config, parsed, or undefined if it doesn't parse. */
+function parseStructured(name: string, text: string): Parsed | undefined {
+  const tryJson = (t: string): Parsed | undefined => {
     try {
-      return [JSON.parse(t)];
+      const v: unknown = JSON.parse(t);
+      return hasDuplicateJsonKeys(t) ? undefined : { plain: [v] };
     } catch {
       return undefined;
     }
   };
-  const tryYaml = (t: string): unknown[] | undefined => {
+  const tryYaml = (t: string): Parsed | undefined => {
     try {
+      // Nodes, not toJS(): duplicate keys keep every pair and tagged scalars keep their key (Codex review 8).
       const docs = parseAllDocuments(t, { uniqueKeys: false });
       const list = Array.isArray(docs) ? docs : [docs];
       if (list.some((d) => d.errors.length > 0)) return undefined;
-      return list.map((d) => d.toJS({ maxAliasCount: 100 }) as unknown);
+      return { yaml: list };
     } catch {
       return undefined;
     }
@@ -281,7 +314,7 @@ function parseStructured(name: string, text: string): unknown[] | undefined {
   if (/\.ya?ml$/i.test(name)) return tryYaml(text);
   if (/\.toml$/i.test(name)) {
     try {
-      return [parseToml(text)];
+      return { plain: [parseToml(text)] }; // TOML refuses duplicate keys itself
     } catch {
       return undefined;
     }
@@ -299,11 +332,17 @@ const decodeXml = (v: string) =>
 
 const isSecretName = (k: string) => SECRET_FIELD.test(fieldName(k));
 
+/** NAME=value inside a string value: Compose and task-definition environment lists, scripts. */
+const ENV_ASSIGNMENT = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)=(.*)$/;
+const unquote = (s: string) => /^(["'])([\s\S]*)\1$/.exec(s.trim())?.[2] ?? s;
+/** Alias resolutions allowed per file before it counts as uninspectable (alias bombs, cycles). */
+const MAX_YAML_ALIASES = 1000;
+
 /**
- * Credential-named fields with literal values in a configuration file (Codex stage 0 reviews 6, 7).
- * JSON, JSONC, YAML (block and flow values, anchors) and TOML are parsed into typed values and walked;
- * plist and XML elements and attributes are read by structure; INI-like formats line by line. A
- * structured file that doesn't parse but names credential fields can't be inspected safely: refused.
+ * Credential-named fields with literal values in a configuration file (Codex stage 0 reviews 6, 7, 8).
+ * JSON, JSONC, YAML (block and flow values, anchors, duplicate keys, tags) and TOML are parsed and walked;
+ * NAME=value strings and {name, value} entries are checked by NAME. plist and XML elements and attributes are read by structure; INI-like formats line
+ * by line. A structured file that doesn't parse but names credential fields can't be inspected: refused.
  */
 export function findSecretFields(name: string, text: string): string[] {
   if (!CONFIG_FILE.test(name)) return [];
@@ -315,18 +354,53 @@ export function findSecretFields(name: string, text: string): string[] {
       const named = [...text.matchAll(/[A-Za-z_][A-Za-z0-9_-]*/g)].some((m) => isSecretName(m[0]));
       return named ? ["unparseable configuration with credential-named fields"] : [];
     }
-    const walk = (v: unknown, key: string) => {
-      if (Array.isArray(v)) v.forEach((x) => walk(x, key));
-      else if (v instanceof Map) for (const [k, x] of v) walk(x, String(k));
-      else if (v && typeof v === "object" && !(v instanceof Date)) for (const [k, x] of Object.entries(v)) walk(x, k);
-      else if (isSecretName(key)) {
-        if (typeof v === "string" && !isInertString(v)) hits.add(key);
-        // A long number under a credential name is a PIN or numeric secret, not a setting.
-        else if ((typeof v === "number" || typeof v === "bigint") && String(v).replace(/\D/g, "").length >= 4) hits.add(key);
+    // secret: the value's own key names a credential (a list keeps its key for its items). Nested maps
+    // start afresh: under "password: {type: string, example: …}" in an OpenAPI schema, nothing is a credential.
+    const leaf = (v: unknown, key: string, secret: boolean) => {
+      if (typeof v === "string") {
+        if (secret && !isInertString(v)) hits.add(key);
+        for (const line of v.split("\n")) {
+          const m = ENV_ASSIGNMENT.exec(line);
+          if (m && isSecretName(m[1]!) && !isInertString(unquote(m[2]!))) hits.add(m[1]!);
+        }
+      } else if (!secret || v === null || v === undefined || typeof v === "boolean") return;
+      // A long number under a credential name is a PIN or numeric secret, not a setting.
+      else if (typeof v === "number" || typeof v === "bigint") {
+        if (String(v).replace(/\D/g, "").length >= 4) hits.add(key);
       }
+      // !!binary, dates and other typed values under a credential name can't be inspected as text.
+      else hits.add(key);
     };
-    for (const d of docs) walk(d, "");
-    return [...hits].map((k) => `credential field "${k}"`);
+    // Kubernetes and ECS environment entries: {name: DB_PASSWORD, value: …}.
+    const nameValue = (name: unknown, value: unknown) => {
+      if (typeof name === "string" && isSecretName(name) && typeof value === "string" && !isInertString(value)) hits.add(name);
+    };
+    const walkPlain = (v: unknown, key: string): void => {
+      if (Array.isArray(v)) for (const x of v) walkPlain(x, key);
+      else if (v && typeof v === "object" && !(v instanceof Date)) {
+        const o = v as Record<string, unknown>;
+        nameValue(o.name ?? o.key, o.value);
+        for (const [k, x] of Object.entries(o)) walkPlain(x, k);
+      } else leaf(v, key, isSecretName(key));
+    };
+    let aliases = 0;
+    const walkYaml = (doc: Document.Parsed, node: unknown, key: string): void => {
+      if (isAlias(node)) {
+        if (++aliases > MAX_YAML_ALIASES) hits.add("too many YAML aliases to inspect");
+        else walkYaml(doc, node.resolve(doc), key);
+      } else if (isMap(node)) {
+        const scalar = (k: string) => {
+          const p = node.items.find((x) => isScalar(x.key) && x.key.value === k);
+          return p && isScalar(p.value) ? p.value.value : undefined;
+        };
+        nameValue(scalar("name") ?? scalar("key"), scalar("value"));
+        for (const p of node.items) walkYaml(doc, p.value, isScalar(p.key) ? String(p.key.value) : "");
+      } else if (isSeq(node)) for (const x of node.items) walkYaml(doc, x, key);
+      else if (isScalar(node)) leaf(node.value, key, isSecretName(key));
+    };
+    if ("plain" in docs) for (const d of docs.plain) walkPlain(d, "");
+    else for (const d of docs.yaml) walkYaml(d, d.contents, "");
+    return [...hits].map((k) => (k.startsWith("too many") ? k : `credential field "${k}"`));
   }
   if (/\.(plist|xml)$/i.test(name)) {
     for (const m of text.matchAll(/<key>\s*([^<]+?)\s*<\/key>\s*<(string|data)>([\s\S]*?)<\/\2>/gi)) if (isSecretName(m[1]!) && !isInertString(decodeXml(m[3]!))) hits.add(m[1]!);

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -217,6 +218,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
 
   // Codex review 6, high: credentials encoded by their containing format, and credential-named fields.
   it("refuses credentials hidden by JSON, YAML or percent encoding, and literal credential fields", async () => {
+    const edKey = generateKeyPairSync("ed25519");
     const cases: Record<string, string> = {
       "slash-escaped.json": '{"db": "postgres:\\/\\/svc:Synthetic9qvM2@db.prod.acme.net\\/app"}\n',
       "unicode-escaped.json": '{"db": "postgres:\\u002F\\u002Fsvc:Synthetic9qvM2\\u0040db.prod.acme.net/app"}\n',
@@ -291,6 +293,17 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "cdata-param.xml": '<params><param name="secret"><![CDATA[Synthetic9qvM2]]></param></params>\n',
       "nuget.config": '<configuration><packageSourceCredentials><feed><add key="ClearTextPassword" value="Synthetic9qvM2" /></feed></packageSourceCredentials></configuration>\n',
       "web.config": '<configuration><appSettings><add key="ApiKey" value="Synthetic9qvM2" /></appSettings></configuration>\n',
+      // Codex review 13: Authorization headers by structure, and credentials hidden inside base64.
+      "request.json": '{"headers": {"Authorization": "Bearer Synthetic9qvM2"}}\n',
+      "api.ts": 'fetch(u, { headers: { Authorization: "Basic dTo4azJa" } });\n',
+      "proxy.ts": `const h = { "Proxy-Authorization": "Basic ${Buffer.from("svc:Syñthetic9qvM2").toString("base64")}" };\n`,
+      "long-basic.ts": `const h = { Authorization: "Basic ${Buffer.from(`svc:${"q8Zr2vLm0Tx".repeat(37)}`).toString("base64")}" };\n`,
+      "req.http": "GET https://api.acme.net/v1/me\nAuthorization: Bearer Synthetic9qvM2\n",
+      "kubeconfig.yaml": `users:\n  - name: admin\n    user:\n      client-key-data: ${Buffer.from(edKey.privateKey.export({ type: "pkcs8", format: "pem" }) as string).toString("base64")}\n`,
+      "embedded-der.json": `{"blob": "${(edKey.privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).toString("base64")}"}\n`,
+      "secret.yaml": `kind: Secret\ndata:\n  url: ${Buffer.from("postgres://svc:Synthetic9qvM2@db.prod.acme.net/app").toString("base64")}\n`,
+      "auth-field.yaml": "headers:\n  authorization: Synthetic9qvM2\n",
+      "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
@@ -320,6 +333,9 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "app.toml"), 'password = ""\ntoken = "{{ vault_token }}"\n');
     writeFileSync(join(repo, "tsconfig.json"), '{\n  // comments are fine\n  "compilerOptions": { "strict": true, },\n}\n');
     writeFileSync(join(repo, "settings.xml"), "<settings><server><password>${env.REPO_PASSWORD}</password></server></settings>\n");
+    writeFileSync(join(repo, "client.ts"), 'const h = { Authorization: `Bearer ${token}`, "X-Other": "Bearer " + key };\nconst doc = "Send Authorization: Bearer <token>";\nreq.Header.Set("Authorization", "Bearer fhk_whatever")\n// Authorization: Bearer fhk_…\n');
+    writeFileSync(join(repo, "request.json"), '{"headers": {"Authorization": "Bearer ${API_TOKEN}", "Accept": "application/json"}}\n');
+    writeFileSync(join(repo, "kubeconfig.yaml"), `clusters:\n  - cluster:\n      certificate-authority-data: ${Buffer.from(generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }) as string).toString("base64")}\nusers:\n  - name: admin\n    user:\n      exec: {command: aws}\n`);
     writeFileSync(join(repo, "beans.xml"), '<beans><property name="password" value="${DB_PASSWORD}"/><property name="secret" ref="secretBean"/><property name="url" value="jdbc:postgresql://db/app"/><entry key="db.password"></entry></beans>\n');
     writeFileSync(join(repo, "app.config"), '<configuration><appSettings><add key="ApiKey" value="" /><add key="Theme" value="dark" /></appSettings></configuration>\n');
     writeFileSync(join(repo, "limits.yaml"), "password_min_length: 12\ntoken_ttl: 3600\nauth: true\n");

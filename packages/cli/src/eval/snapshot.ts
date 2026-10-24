@@ -158,8 +158,30 @@ export function isBase64UserPassword(b64: string): boolean {
   return m !== null && !isPlaceholderPassword(m[2]!);
 }
 
+/**
+ * A literal Authorization or Proxy-Authorization credential, in any file, by header and scheme, whatever
+ * the credential's length or characters (Codex review 13). Interpolations ("Bearer ${token}", "Bearer " +
+ * key) and placeholders ("<token>") can't match the value's characters.
+ */
+const AUTH_HEADER = /\b(?:Proxy-)?Authorization["']?\s*[:=,]\s*["'`]?\s*(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+([^\s"'`<>${}]+)(?=["'`\s,;)}\]]|$)/gim;
+
+/**
+ * An Authorization credential that is a documentation or test placeholder: lowercase words ("token",
+ * "the-token", "fhk_whatever"), an elided value ("fhk_…") or an HTML-escaped placeholder ("&lt;key&gt;").
+ * A random token is mixed-case or has digits; known limit: an all-lowercase-letters real token passes.
+ */
+export function isPlaceholderAuth(v: string): boolean {
+  return /^[a-z]+(?:[._-][a-z]+)*[._-]?$/.test(v) || /(…|\.\.\.)$/.test(v) || /&(lt|gt|amp|quot);/.test(v);
+}
+
 export function findCredentials(text: string): string[] {
   const hits = CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+  for (const m of text.matchAll(AUTH_HEADER)) {
+    if (!isInertString(m[1]!) && !isPlaceholderAuth(m[1]!)) {
+      hits.push("Authorization header");
+      break;
+    }
+  }
   for (const m of text.matchAll(CRED_URL)) {
     if (!isPlaceholderPassword(m[3] ?? "") && !LOCAL_HOSTS.test(m[4] ?? "")) {
       hits.push("credential URL");
@@ -173,6 +195,23 @@ export function findCredentials(text: string): string[] {
     }
   }
   return hits;
+}
+
+/** Base64 runs long enough to hide a key or token, wrapped lines included. */
+const BASE64_BLOB = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/]{24,}(?:\r?\n[ \t]*[A-Za-z0-9+/]{4,})*={0,2}(?![A-Za-z0-9+/=_-])/g;
+
+/**
+ * Credentials hidden inside base64, wherever they are (Codex review 13: a kubeconfig's client-key-data):
+ * every base64 run is decoded once, checked as a DER private key and scanned as text.
+ */
+export function findEncodedCredentials(text: string): string[] {
+  const hits = new Set<string>();
+  for (const m of text.matchAll(BASE64_BLOB)) {
+    const buf = Buffer.from(m[0].replace(/\s+/g, ""), "base64");
+    if (isDerPrivateKey(buf)) hits.add("base64-encoded private key");
+    else for (const h of findCredentials(buf.toString("latin1"))) hits.add(`base64-encoded ${h}`);
+  }
+  return [...hits];
 }
 
 /** Text views of a file for scanning: UTF-8, UTF-16 (BOM or NUL-interleaved ASCII), and raw bytes for binaries. */
@@ -227,7 +266,7 @@ const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfv
  * than the dotenv rule: "author" or "auth: true" are not credentials, but any *_token, *_secret,
  * password or api key holding a literal value is.
  */
-const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|auth_ident|identitytoken|registrytoken|credentials?|connection_string|dsn)$/;
+const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|auth_ident|identitytoken|registrytoken|authorization|key_data|credentials?|connection_string|dsn)$/;
 
 function fieldName(raw: string): string {
   const last = raw.split(/[/:.[\]]/).filter((x) => x !== "").at(-1) ?? raw;
@@ -244,6 +283,9 @@ export function isInertString(raw: string): boolean {
   // A reference with a default (${DB_PASSWORD:-hunter2}) is only as inert as its default.
   const ref = /^\$\{[A-Za-z_][\w.]*(?::?[-=](.*))?\}$/.exec(v);
   if (ref) return ref[1] === undefined || isInertString(ref[1]);
+  // An Authorization value is as inert as its credential: "Bearer ${API_TOKEN}".
+  const scheme = /^(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+(.+)$/i.exec(v);
+  if (scheme) return isInertString(scheme[1]!) || isPlaceholderAuth(scheme[1]!);
   if (/^\$\{\{.*\}\}$/.test(v) || /^\{\{.*\}\}$/.test(v) || /^%\([A-Za-z_]\w*\)s$/.test(v)) return true;
   if (/^(env|ENV)\(|^process\.env\.|^os\.environ|^!(env|Ref|Sub|GetAtt|ImportValue)\b|^(secretref|vault|op|aws-sm|gcp-sm):/.test(v)) return true;
   if (/^(password|passwd|pass|secret|token|api[ _-]?key|changeme|example|test|testing|dummy|placeholder|redacted|your[_-][\w-]*|x{3,})$/i.test(v)) return true;
@@ -609,7 +651,8 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
       }
     }
     const views = scanViews(readFileSync(p));
-    const hits = new Set([...views, ...views.flatMap(decodedViews)].flatMap(findCredentials));
+    const all = [...views, ...views.flatMap(decodedViews)];
+    const hits = new Set([...all.flatMap(findCredentials), ...all.flatMap(findEncodedCredentials)]);
     if (!/^\.env(\..+)?$/.test(name)) {
       // Every text view (UTF-8, UTF-16), and the percent-decoded text, is inspected as configuration.
       const texts = [...views, ...views.filter((t) => /%(3a|2f|40)/i.test(t)).map((t) => t.replace(/%([0-9a-fA-F]{2})/g, (_m, h: string) => String.fromCharCode(Number.parseInt(h, 16))))];

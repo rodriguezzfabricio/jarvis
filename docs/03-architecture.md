@@ -54,7 +54,7 @@ The first thing `/jarvis` does is classify the request. That classification pick
 **How triage decides:**
 - **Signals code can read:** whether the folder is empty (new product); whether an issue, error or stack trace is attached; whether the request says "fix", "broken", "doesn't" (bug); which files the change will likely touch (from a quick search); whether `DESIGN.md` exists.
 - **The model's judgment** on the request text.
-- **Your override, which always wins:** `/jarvis fix …`, `/jarvis build …`, `/jarvis feature …`, `/jarvis ask …`.
+- **Your override, which always wins:** `/jarvis fix: …`, `/jarvis build: …`, `/jarvis feature: …`, `/jarvis ask: …`. The colon makes it an override, so "Build fails on CI" stays prose (decision 89).
 - **Upgrades are announced, never silent.** If a "bug" turns out to need product decisions (the right behavior was never specified), triage upgrades the tier and says so in its first message: "This looks like missing behavior, not a bug. Treating it as a small feature: 2 questions."
 
 **Lanes run only on what a change touches.** A bug fix in a Go handler runs the tests plus the security and API lanes, and no UI checks. A bug fix on a misaligned button runs the UI checks on that one screen: the AI-tells scan, token lint, accessibility and an interaction test. It never asks about direction or makes mockups.

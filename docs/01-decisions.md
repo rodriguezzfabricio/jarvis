@@ -896,6 +896,15 @@ Open questions from the end-to-end harness, settled by the integrator (decision 
 
 *From:* the integrator, Oct 24, after the end-to-end harness.
 
+### 89. Triage overrides need a colon; risk tier and pipeline type are separate (new; Oct 24; changes architecture §2)
+Settled by the integrator after a Codex review of the triage lane (decision 81's thresholds; Fabricio can veto):
+- **An override is explicit syntax:** the first word followed by a colon (`fix:`, `build:`, `feature:`, `ask:`), or `jarvis triage --override <word>`. A bare first word is prose: "Build fails on CI" and "Feature flags are broken" are bugs, not overrides.
+- **The tier comes from risk** (decision 37: auth, money, data, several modules, acting on other people), not from the pipeline type. A bug or refactor can be tier 2. What stays fixed by type is which steps never run: a bug never gets intake, mockups or the design stage, whatever its tier.
+- **Mixed requests keep both parts:** onboarding followed by requested edits (golden task 7) runs read-only archaeology first, then a refactor or feature pipeline for the edits. A review request is a review, even when it mentions shipping (golden task 3). A new platform or client gets the design stage even when the repo has a `DESIGN.md` for another platform (golden task 9).
+- **Skills chain themselves once:** `/jarvis` starts the first skill of the pipeline, and each skill hands off to the next. The dispatcher never names a skill a previous skill already ran, so intake and confirmation happen once (decisions 8 and 86).
+
+*From:* the integrator, Oct 24, after the Codex review of the triage lane.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

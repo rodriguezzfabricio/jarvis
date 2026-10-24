@@ -244,5 +244,11 @@
     "file": "skills/sweep/SKILL.md",
     "anchor": "report it and stop that step. The rest of the sweep goes on",
     "replacement": "work around it. The rest of the sweep goes on"
+  },
+  {
+    "name": "skills stage6 dispatcher still marks onboard as unbuilt",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "the `onboard` skill. When triage's",
+    "replacement": "the `onboard` skill (stage 6). When triage's"
   }
 ]

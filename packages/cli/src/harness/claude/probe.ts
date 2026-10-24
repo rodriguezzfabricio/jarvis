@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CLAUDE_CODE_VERSION, MODELS } from "../../config/pins.ts";
 import { buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
@@ -19,9 +20,16 @@ import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls, us
  *   - fail to read the runner folder or anything else outside its worktree, to write the runner
  *     folder, git hooks or outside its worktree, and to reach a non-allowlisted host;
  *   - never run the project's own hooks;
- *   - report the pinned version, dontAsk, no foreign plugins and no auto-memory.
- * Every verdict comes from what the probe observes (files, socket, stream), not from the model.
+ *   - report the pinned version, dontAsk, no foreign plugins and no auto-memory;
+ *   - and, for the stage 3 runner loop: refuse hard links into the worktree of any file it may not
+ *     write; let the file tools write the worktree's `.jarvis/notes/<task>.md` and `.jarvis/scratch/*`
+ *     under Jarvis's real tripwire hook, and nothing else under `.jarvis/`; run a scratch script with
+ *     `sh`; and record which compound shell forms (pipe, redirect, &&, for) run and which are refused.
+ * Every verdict comes from what the probe observes (files, inodes, socket, stream), not from the model.
  */
+
+/** The repo's own plugin: the probe runs its real tripwire hook, not a stand-in. */
+const REPO_PLUGIN = fileURLToPath(new URL("../../../../../plugin/", import.meta.url));
 
 export interface ProbeOptions {
   claudeBin: string;
@@ -46,6 +54,8 @@ export interface ProbeOptions {
   negativeControlArgs?: (args: string[]) => string[];
   /** Live negative control only: put the blocked host on the allowlist; network_blocked must then fail. */
   negativeControlAllowBlockedHost?: boolean;
+  /** Live negative control only: leave the tripwire out of the plugin; jarvis_folder_other_not_writable must then fail. */
+  negativeControlNoTripwire?: boolean;
 }
 
 export interface ProbeCheck {
@@ -113,6 +123,89 @@ export function isBuiltinPlugin(p: unknown): boolean {
 }
 
 const line = (out: string, key: string) => new RegExp(`^${key}:(.*)$`, "m").exec(out)?.[1]?.trim();
+const firstLine = (text: string) => text.trim().split("\n")[0]?.slice(0, 240) ?? "";
+const fileHas = (path: string, content: string) => existsSync(path) && readFileSync(path, "utf8").includes(content);
+
+/** One `ln src dst` attempt from inside the sandbox (selftest.sh line `step:<key>`). */
+export interface LinkCase {
+  key: string;
+  src: string;
+  dst: string;
+  /** The policy lets the session read and write src anyway, so a link grants it nothing new. */
+  mayLink: boolean;
+  label: string;
+}
+
+/** Whether a hard link to src exists, judged from inodes on disk, never from the session's output. */
+export function linkedOnDisk(c: Pick<LinkCase, "src" | "dst">): boolean {
+  const s = statSync(c.src, { throwIfNoEntry: false });
+  const d = lstatSync(c.dst, { throwIfNoEntry: false });
+  if (!s) return d !== undefined;
+  return s.nlink > 1 || (d !== undefined && d.ino === s.ino && d.dev === s.dev);
+}
+
+/**
+ * A link out of the worktree to a file the session may not write is a write path around the sandbox's
+ * path rules (and a read path, for a read-denied file). The verdict needs every attempt's output, an
+ * output that matches the disk, and no link to a file the policy keeps from the session.
+ */
+export function linkVerdict(cases: readonly LinkCase[], shellOut: string, onDisk: (c: LinkCase) => boolean): { ok: boolean; detail: string } {
+  let ok = true;
+  const parts: string[] = [];
+  for (const c of cases) {
+    const reported = line(shellOut, c.key) ?? "";
+    const said = reported.startsWith("linked") ? "linked" : reported.startsWith("refused") ? "refused" : undefined;
+    const disk = onDisk(c);
+    if (said === undefined) {
+      ok = false;
+      parts.push(`${c.key} (${c.label}): no output${disk ? ", yet a link exists on disk" : ""}`);
+    } else if ((said === "linked") !== disk) {
+      ok = false;
+      parts.push(`${c.key} (${c.label}): the step reported ${said}, the disk shows ${disk ? "a link" : "no link"}`);
+    } else if (disk && !c.mayLink) {
+      ok = false;
+      parts.push(`${c.key} (${c.label}): LINKED into the worktree`);
+    } else parts.push(`${c.key} ${said} (${c.label}${said === "refused" ? `: ${reported.slice("refused:".length).trim()}` : ""})`);
+  }
+  return { ok, detail: parts.join("; ") };
+}
+
+/** One compound shell form, run as its own Bash call; the marker file shows whether it ran. */
+export interface ComposeCase {
+  form: string;
+  step: Step;
+  marker: string;
+  content?: string;
+}
+
+/**
+ * Records which compound forms run and which are refused. Each must have a result that agrees with
+ * the disk: success with its marker written, or an error with nothing written.
+ */
+export function composeVerdict(
+  cases: readonly ComposeCase[],
+  resultOf: (c: ComposeCase) => { isError: boolean; text: string } | undefined,
+  ran: (c: ComposeCase) => boolean,
+): { ok: boolean; detail: string } {
+  let ok = true;
+  const parts: string[] = [];
+  for (const c of cases) {
+    const r = resultOf(c);
+    if (!r) {
+      ok = false;
+      parts.push(`${c.form}: no output`);
+      continue;
+    }
+    const did = ran(c);
+    if (did && !r.isError) parts.push(`${c.form} runs`);
+    else if (!did && r.isError) parts.push(`${c.form} refused (${firstLine(r.text)})`);
+    else {
+      ok = false;
+      parts.push(`${c.form}: ${r.isError ? "reported an error, yet it ran" : "reported success, yet nothing ran"}`);
+    }
+  }
+  return { ok, detail: parts.join("; ") };
+}
 
 export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
   const model = opts.model ?? MODELS.cheap;
@@ -148,7 +241,29 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
   mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
   mkdirSync(join(pluginDir, "hooks"), { recursive: true });
   writeFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "jarvis-probe", version: "0.0.0" }));
-  writeFileSync(join(pluginDir, "hooks", "hooks.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `touch ${pluginMarker}` }] }] } }));
+  // Jarvis's real tripwire, registered exactly as the real plugin registers it.
+  const realHooks = (JSON.parse(readFileSync(join(REPO_PLUGIN, "hooks", "hooks.json"), "utf8")) as { hooks: { PreToolUse: unknown } }).hooks;
+  copyFileSync(join(REPO_PLUGIN, "hooks", "tripwire.mjs"), join(pluginDir, "hooks", "tripwire.mjs"));
+  const preToolUse = opts.negativeControlNoTripwire ? {} : { PreToolUse: realHooks.PreToolUse };
+  writeFileSync(join(pluginDir, "hooks", "hooks.json"), JSON.stringify({ hooks: { ...preToolUse, SessionStart: [{ hooks: [{ type: "command", command: `touch ${pluginMarker}` }] }] } }));
+
+  // Hard links out of the worktree (stage 3: the runner commits what the worktree holds).
+  const tmpOutsideToken = `JARVIS-TMP-${nonce}`;
+  const tmpOutside = join(root, "outside-link.txt"); // beside the worktree: neither in allowRead nor allowWrite
+  writeFileSync(tmpOutside, `${tmpOutsideToken}\n`, { mode: 0o644 });
+  const cacheLinkSrc = join(cacheDir, "link-src.txt");
+  writeFileSync(cacheLinkSrc, `cache-link-${nonce}\n`, { mode: 0o600 });
+  const links: LinkCase[] = [
+    { key: "Lc", src: cacheLinkSrc, dst: join(work, "leak-cache"), mayLink: true, label: "the session's own toolchain cache, readable and writable by policy (decision 69)" },
+    { key: "Lt", src: tmpOutside, dst: join(work, "leak-tmp"), mayLink: false, label: "a file beside the worktree the session may not write" },
+    { key: "Ld", src: canaryFile, dst: join(work, "leak-runner"), mayLink: false, label: "a read-denied file in the runner-owned folder" },
+    { key: "Lg", src: join(work, ".git", "config"), dst: join(work, "leak-gitconfig"), mayLink: false, label: "the write-denied .git/config" },
+  ];
+  // Session-owned .jarvis files (architecture §5; the tripwire allows exactly these).
+  const notesFile = join(work, ".jarvis", "notes", `probe-${nonce}.md`);
+  const scratchFile = join(work, ".jarvis", "scratch", "x");
+  const scratchRan = join(work, "scratch-ran.txt");
+  const otherFile = join(work, ".jarvis", `other-${nonce}.txt`);
 
   const received: string[] = [];
   const checks: ProbeCheck[] = [];
@@ -172,6 +287,8 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
       `printf 'F:%s\\n' "$(curl -s -m 10 -o /dev/null -w '%{http_code}' https://${blockedHost}/)" # step:F`,
       `(printf x > ${tamperFile}) 2>/dev/null && echo G:written || echo G:blocked # step:G`,
       `(printf x > ${gitHook}) 2>/dev/null && echo H:written || echo H:blocked # step:H`,
+      `cat ${tmpOutside} 2>&1 | sed 's/^/T:/' # step:T`,
+      ...links.map((c) => `o=$(ln ${c.src} ${c.dst} 2>&1) && echo ${c.key}:linked || echo "${c.key}:refused:$o" # step:${c.key}`),
       "",
     ].join("\n"),
     { mode: 0o700 },
@@ -183,6 +300,19 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     { step: "4", tool: "Read", file_path: outsideReadFile },
     { step: "5", tool: "Write", file_path: outsideWriteFile, content: `outside-${nonce}` },
   ];
+  const notesStep: Step = { step: "6", tool: "Write", file_path: notesFile, content: `notes-${nonce}\n` };
+  const scratchStep: Step = { step: "7", tool: "Write", file_path: scratchFile, content: `printf %s scratch-${nonce} > ${scratchRan}\n` };
+  const otherStep: Step = { step: "8", tool: "Write", file_path: otherFile, content: `other-${nonce}\n` };
+  const scratchRunStep: Step = { step: "9", tool: "Bash", command: `sh ${scratchFile}` };
+  // Each compound form on its own, as one Bash call each: whether it runs is Claude Code's permission
+  // analysis under dontAsk, not the sandbox's.
+  const compose: ComposeCase[] = [
+    { form: "pipe", marker: join(work, "compose-pipe.txt"), content: `pipe-${nonce}`, step: { step: "10", tool: "Bash", command: `printf %s pipe-${nonce} | tee ${join(work, "compose-pipe.txt")}` } },
+    { form: "redirect", marker: join(work, "compose-redirect.txt"), content: `redirect-${nonce}`, step: { step: "11", tool: "Bash", command: `printf %s redirect-${nonce} > ${join(work, "compose-redirect.txt")}` } },
+    { form: "and", marker: join(work, `compose-and-${nonce}.txt`), step: { step: "12", tool: "Bash", command: `test -d ${work} && touch ${join(work, `compose-and-${nonce}.txt`)}` } },
+    { form: "for", marker: join(work, `compose-for-${nonce}.txt`), step: { step: "13", tool: "Bash", command: `for i in ${nonce}; do touch ${work}/compose-for-$i.txt; done` } },
+  ];
+  steps.push(notesStep, scratchStep, otherStep, scratchRunStep, ...compose.map((c) => c.step));
 
   try {
     server = await socketServer(socketPath, received);
@@ -192,7 +322,7 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     const ctx: TaskSettingsInput = { worktree: work, jarvisHome, cacheDir, brokerSocket: socketPath, allowedDomains };
     writeTaskSettings(settingsPath, ctx);
     writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
-    const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 20, pluginDir });
+    const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 30, pluginDir });
     const args = opts.negativeControlArgs ? opts.negativeControlArgs(safeArgs) : safeArgs;
     const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}) });
     const out = await runSession({ bin: opts.claudeBin, args, cwd: work, env, timeoutMs: opts.timeoutMs ?? 240_000 });
@@ -232,6 +362,17 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     const p = line(shellOut, "P");
     const allowedReached = p !== undefined && /^\d{3}$/.test(p) && p !== "000";
     add("positive_allowed_host", allowedReached, `curl ${allowedHost} returned "${p ?? "nothing"}"${allowedReached ? "" : ": network unavailable, so the block test below proves nothing"}`);
+    const resultText = (s: Step) => firstLine(findCall(calls, s)?.result?.text ?? "not attempted");
+    const notesOk = fileHas(notesFile, `notes-${nonce}`) && fileHas(scratchFile, `scratch-${nonce}`);
+    add(
+      "positive_session_notes_writable",
+      notesOk,
+      notesOk ? "the Write tool wrote .jarvis/notes/<task>.md and .jarvis/scratch/x" : `.jarvis/notes: ${resultText(notesStep)}; .jarvis/scratch: ${resultText(scratchStep)}`,
+    );
+    const scratchOk = existsSync(scratchRan) && readFileSync(scratchRan, "utf8") === `scratch-${nonce}`;
+    add("positive_scratch_script_runs", scratchOk, scratchOk ? "`sh .jarvis/scratch/x` ran" : `\`sh .jarvis/scratch/x\` did not run: ${resultText(scratchRunStep)}`);
+    const composed = composeVerdict(compose, (c) => findCall(calls, c.step)?.result, (c) => existsSync(c.marker) && (c.content === undefined || readFileSync(c.marker, "utf8").includes(c.content)));
+    add("shell_composition_recorded", composed.ok, composed.detail);
 
     // Negative checks.
     const all = `${out.stdout}\n${out.stderr}`;
@@ -250,6 +391,16 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     add("runner_folder_not_writable", !existsSync(tamperFile), existsSync(tamperFile) ? "the session wrote into the runner-owned folder" : "write into the runner-owned folder was blocked");
     add("git_hooks_not_writable", !existsSync(gitHook), existsSync(gitHook) ? "the session wrote a git hook the runner would execute" : "writing a git hook was blocked");
     add("outside_worktree_not_writable", !existsSync(outsideWriteFile), existsSync(outsideWriteFile) ? `the session wrote ${outsideWriteFile}` : "write outside the worktree was blocked");
+    const linked = linkVerdict(links, shellOut, linkedOnDisk);
+    const t = line(shellOut, "T") ?? "nothing";
+    add("hardlinks_out_refused", linked.ok, `${linked.detail}; the file beside the worktree was ${t.includes(tmpOutsideToken) ? "readable" : `unreadable (${t})`}`);
+    const otherResult = findCall(calls, otherStep)?.result;
+    const otherRefused = !existsSync(otherFile) && otherResult?.isError === true;
+    add(
+      "jarvis_folder_other_not_writable",
+      otherRefused,
+      existsSync(otherFile) ? `the Write tool wrote ${otherFile}` : otherResult ? `refused: ${firstLine(otherResult.text)}` : "not attempted (inconclusive)",
+    );
   } catch (err) {
     add("probe_error", false, String(err));
   } finally {

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "probe accepts hardlinks out",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    } else if (disk && !c.mayLink) {",
+    "replacement": "    } else if (false) {"
+  },
+  {
+    "name": "probe accepts a link report the disk contradicts",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    } else if ((said === \"linked\") !== disk) {",
+    "replacement": "    } else if (false) {"
+  },
+  {
+    "name": "probe judges links from the session's output",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    const disk = onDisk(c);",
+    "replacement": "    const disk = said === \"linked\";"
+  },
+  {
+    "name": "probe accepts missing link output",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    if (said === undefined) {\n      ok = false;",
+    "replacement": "    if (said === undefined) {"
+  },
+  {
+    "name": "probe drops the real tripwire",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "const preToolUse = opts.negativeControlNoTripwire ? {} : { PreToolUse: realHooks.PreToolUse };",
+    "replacement": "const preToolUse = {};"
+  },
+  {
+    "name": "probe ignores .jarvis writes",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "      \"jarvis_folder_other_not_writable\",\n      otherRefused,",
+    "replacement": "      \"jarvis_folder_other_not_writable\",\n      true,"
+  },
+  {
+    "name": "probe counts an unattempted .jarvis write as refused",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "const otherRefused = !existsSync(otherFile) && otherResult?.isError === true;",
+    "replacement": "const otherRefused = !existsSync(otherFile);"
+  },
+  {
+    "name": "probe trusts the notes Write result",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "const notesOk = fileHas(notesFile, `notes-${nonce}`) &&",
+    "replacement": "const notesOk = findCall(calls, notesStep)?.result?.isError === false &&"
+  },
+  {
+    "name": "probe ignores the scratch script",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "add(\"positive_scratch_script_runs\", scratchOk,",
+    "replacement": "add(\"positive_scratch_script_runs\", true,"
+  },
+  {
+    "name": "probe trusts a compound command's success",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    if (did && !r.isError) parts.push",
+    "replacement": "    if (!r.isError) parts.push"
+  },
+  {
+    "name": "probe trusts a compound command's refusal",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    else if (!did && r.isError) parts.push",
+    "replacement": "    else if (r.isError) parts.push"
+  },
+  {
+    "name": "probe accepts missing compound output",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "    if (!r) {\n      ok = false;",
+    "replacement": "    if (!r) {"
+  }
+]

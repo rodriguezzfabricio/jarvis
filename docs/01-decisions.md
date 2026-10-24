@@ -699,6 +699,19 @@ Codex review 6 showed that a gate trusting exit 0 can be passed by candidate cod
 *Why:* only the runner makes evidence (decision 49), and evidence the candidate can write isn't evidence.
 *From:* Codex stage 0 review 6, high finding 3; review 7, high finding 1.
 
+### 77. Stage reviews run as parallel Codex lanes on `gpt-6.1-sol` at high effort (new; Oct 24)
+Reviews 8–15 each found one or two new credential forms the snapshot scanner missed, one round at a time (about 40 minutes a round). Fabricio, Oct 24: run the review work in parallel, on GPT-6.1-Sol at medium or high effort.
+- **Evidence is captured once** per revision, as before. Then four `codex exec` runs, `-m gpt-6.1-sol` with `model_reasoning_effort="high"`, read the same read-only checkout at the same time, each with its own verdict:
+  - **A, full review:** the standard prompt (prior findings, new problems, the stage proof).
+  - **B, structured configuration:** every config format, nesting and parser feature that can carry a literal credential past the snapshot scan.
+  - **C, encodings and other files:** encodings, binaries, base64 and other wrappers, source code, docs and fixtures.
+  - **D, safety boundary:** broker, gate, ledger, check store, plugin, `jarvis act`, the sandbox settings.
+- **Lanes B–D are told to report every finding they can establish,** not the first one, so one round of fixes covers what used to take several.
+- **The stage passes only when every lane passes.** Decision 74's severity policy is unchanged.
+- High effort, not medium: these are security reviews, and depth matters more than speed. Each lane uses about as much ChatGPT plan as one earlier review.
+
+*From:* Fabricio, Oct 24.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

@@ -120,6 +120,8 @@ const CREDENTIAL_PATTERNS: readonly [string, RegExp][] = [
   // encrypted (Proc-Type/DEK-Info) RSA keys included. Dummy fixtures need explicit review (Codex review 4).
   ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/],
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
+  // npm access tokens: registry.npmjs.org is the one write-capable host on the eval allowlist (decision 79).
+  ["npm token", /\bnpm_[A-Za-z0-9]{36}\b/],
   ["OpenAI/Anthropic-style key", /\bsk-(ant-)?[A-Za-z0-9_-]{32,}\b/],
   // Long-term (AKIA) and temporary STS (ASIA) access key ids (Codex review 15).
   ["AWS access key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
@@ -556,8 +558,10 @@ export function findSecretFields(name: string, text: string): string[] {
     // INI continuation (Python ConfigParser): following lines indented deeper than the key belong to its
     // value, even after an empty first line ("password =\n    hunter2") (Codex review 15).
     while (!yarn && i + 1 < lines.length && lines[i + 1]!.trim() !== "" && indent(lines[i + 1]!) > indent(line) && !/^\s*[#;]/.test(lines[i + 1]!)) value += `\n${lines[++i]!.trim()}`;
-    const q = value[0];
-    if ((q === '"' || q === "'") && value.lastIndexOf(q) > 0) value = q === '"' ? decodeEscapes(value.slice(1, value.lastIndexOf(q))) : value.slice(1, value.lastIndexOf(q));
+    // Unquoted only when the quotes enclose the whole value (an inline comment may follow). Text after a
+    // closing quote stays part of the value: '"${TOKEN}"hunter2' is not a reference (review 16 B7).
+    const quoted = /^(["'])([\s\S]*?)\1(\s+[#;].*)?$/.exec(value);
+    if (quoted) value = quoted[1] === '"' ? decodeEscapes(quoted[2]!) : quoted[2]!;
     else value = value.replace(/\s+[#;].*$/, "");
     if (isSecretName(m[1] ?? "") && !isInertUntyped(value)) hits.add(m[1] ?? "");
   }

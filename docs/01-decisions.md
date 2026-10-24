@@ -726,6 +726,33 @@ So:
 
 *From:* Codex review 16, lane D findings 3 and 5; Codex's implementation and live test, Oct 24.
 
+### 79. The snapshot credential scanner is best-effort hygiene; the boundary is the sandbox, the network allowlist and the broker (new; Oct 24, after Codex review 16)
+Reviews 8–16 each found credential forms the snapshot scanner missed. Review 16's dedicated lanes found 43 more high findings of distinct kinds (archives, compression, hex, base32, byte arrays in source, HCL and HOCON, cookies, serialized objects in strings, …). No pattern scanner can be shown complete for arbitrary repositories, so treating it as a stage-blocking security boundary meant reviews could never pass. Fabricio, Oct 24: make the scanner best-effort hygiene, keep it and its tests, move its findings to the backlog as medium, and rely on the sandbox, the network allowlist and the broker as the boundary, with compensating controls.
+
+**What the scanner is now:**
+- **Hygiene, still fail-closed for everything it recognizes.** It keeps every rule and test from reviews 1–15, keeps refusing what it detects, and keeps `allowSecretsIn` for reviewed fixtures.
+- **Missed credential forms are medium findings** (backlog), fixed when cheap. The 44 open scanner findings from review 16 are backlog #21–64.
+
+**What the boundary is** for eval snapshots and task sessions:
+1. **Provenance:** snapshots come only from Fabricio's own repositories, named in jarvis-evals task files. Their contents are already visible to any Claude session he runs in them.
+2. **The sandbox:** no reads outside the worktree and the toolchain cache, no secrets file, no project hooks, and each run's own temp folder (decisions 59, 60, 68, 69; review 16 D1 and D2).
+3. **The network allowlist:** a credential is only useful against a host the session can reach. The eval allowlist is `registry.npmjs.org`, `proxy.golang.org`, `sum.golang.org`, Google Fonts and localhost.
+4. **The broker:** every outside action (send, deploy, spend) goes through exact-payload approval (decisions 12, 13, 73).
+
+**Compensating controls:**
+- **Credentials for an allowlisted host that accepts authenticated writes stay fully covered, at full severity.** Today that host is `registry.npmjs.org`, through `npm publish` with a token. The scanner covers `.npmrc` and Yarn auth (`_auth`, `_authToken`, `npmAuthIdent`), npm access tokens (`npm_…`, added with this decision) and credential URLs. A miss in this class is still high.
+- **Adding a write-capable host to any allowlist requires covering its credential forms first,** with tests and mutations.
+- **Backlog #8,** a read-only package mirror, is the way to remove even that npm write path.
+
+**Reviews:** decision 77's lanes change to:
+- **A, full review;**
+- **B, credentials usable against the allowlist:** the npm and registry credential forms above, and whether any reachable host accepts a credential a snapshot could hold;
+- **D, safety boundary.**
+
+Lane C (encodings and other files) is dropped, since its findings are now medium by definition. The stage still passes only when every lane passes.
+
+*From:* Fabricio, Oct 24; Codex review 16.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

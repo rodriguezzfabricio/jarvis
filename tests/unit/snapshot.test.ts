@@ -320,6 +320,10 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "aws-id.ts": 'const id = "ASIAQ7ZR2VLM0TXK4PNB";\n',
       ".s3cfg": "[default]\nsecret_key = Synthetic9qvM2\n",
       "Dockerfile": "FROM node:24\nENV API_TOKEN=Synthetic9qvM2\n",
+      // Decision 79: credentials for the eval allowlist's one write-capable host stay fully covered.
+      // Review 16 B7 (still high under decision 79: npm is on the eval allowlist): text after a closing quote.
+      "suffix/.npmrc": '//registry.npmjs.org/:_authToken="${TOKEN}"Synthetic9qvM2\n',
+      "npm-token.ts": 'const token = "npm_q8Zr2vLm0TxSynthetic9qvM2abcdefghijZ";\n',
       "auth-field.yaml": "headers:\n  authorization: Synthetic9qvM2\n",
       "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,

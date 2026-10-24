@@ -47,6 +47,13 @@ const init = {
 if (settings.autoMemoryEnabled !== false || mode === "memory-on") init.memory_paths = { auto: "/fake/.claude/projects/x/memory/" };
 out(init);
 
+// Scenario mode (end-to-end tests): a scripted task session, see fake-claude-scenario.mjs. Off unless
+// the variable is set, so every mode below behaves as before.
+if (process.env.FAKE_CLAUDE_SCENARIO) {
+  const { runScenario } = await import("./fake-claude-scenario.mjs");
+  await runScenario({ scenarioPath: process.env.FAKE_CLAUDE_SCENARIO, argv, flag, settings, out });
+}
+
 const rl = (status, u, at) => out({ type: "rate_limit_event", rate_limit_info: { status, resetsAt: at, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: u, resetsAt: at }, seven_day: { utilization: 0.2, resetsAt: at + 86400 } } } });
 
 if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy") {

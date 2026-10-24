@@ -753,6 +753,20 @@ Lane C (encodings and other files) is dropped, since its findings are now medium
 
 *From:* Fabricio, Oct 24; Codex review 16.
 
+### 80. Stage 1's desktop check proves plugin compatibility, not the task-session envelope (new; Oct 24)
+Decision 71 moved "the desktop app loads the Jarvis plugin, settings and hooks the same way as the CLI" into stage 1's proof. Decision 57 already says the desktop app bundles its own Claude Code (unpinnable), `dontAsk` is CLI-only, and the desktop app is used only for interactive intake: every task session runs the pinned CLI. So the desktop app can't carry the restricted task envelope, and claiming it does would be false. Codex found this while scoping the check kit.
+
+The stage 1 desktop check is therefore:
+- **The Jarvis plugin loads** in a desktop Code tab session, and **both hooks run there:** the tripwire blocks a known-forbidden call, and SessionStart runs.
+- **Evidence comes from records Claude Code writes,** such as the session transcript's blocked tool result and hook records, never from the model's own text, which a session could forge.
+- **The same check runs through the pinned CLI** with the same plugin, and the two results are compared.
+- **The safety envelope** (sandbox, allowlist, `--restricted`, `dontAsk`, the broker) **is proven only on the pinned CLI,** by the live probe and the live safety test, as today.
+
+Fabricio runs the interactive half (opening the folder and typing one prompt), and the kit reads the evidence.
+
+Narrows decision 71's stage 1 item to match decision 57.
+*From:* Codex, Oct 24; decisions 57 and 71.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

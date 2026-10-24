@@ -100,9 +100,10 @@ beforeAll(() => {
   mkdirSync(dirname(pinned), { recursive: true });
   writeFileSync(pinned, `#!/bin/sh\nexec /usr/bin/env -u PWD -u OLDPWD -u SHLVL '${process.execPath}' '${fakePlugin}' "$@"\n`);
   chmodSync(pinned, 0o755);
-}, 60_000);
+}, 120_000);
 
-afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); });
+// Removing a whole install (node_modules included) can outlast the default hook timeout under a busy full run.
+afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); }, 120_000);
 
 describe("scripts/install.sh, as written", () => {
   const text = readFileSync(installScript, "utf8");

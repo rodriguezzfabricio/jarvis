@@ -36,6 +36,19 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     expect(check({ tool_name: "Read", tool_input: { file_path: "/Users/f/repo/src/a.ts" } })).toBeUndefined();
   });
 
+  it("lets file tools write the session's own notes and scratch files, nothing else under .jarvis", () => {
+    const write = (file_path: string) => check({ tool_name: "Write", tool_input: { file_path } });
+    for (const p of [
+      ".jarvis/notes/T1.md", "/Users/x/.jarvis-work/worktrees/a/.jarvis/notes/T1.md",
+      ".jarvis/scratch/run-tests.sh", "/Users/x/.jarvis-work/worktrees/a/.jarvis/scratch/list_1.sh",
+    ]) expect(write(p), p).toBeUndefined();
+    for (const p of [
+      "/Users/f/.jarvis/notes/x.md", "~/.jarvis/scratch/x.sh", "$HOME/.jarvis/notes/x.md", "/home/f/.jarvis/notes/x.md",
+      ".jarvis/ledger.jsonl", ".jarvis/notes/sub/x.md", ".jarvis/notes/x.txt", ".jarvis/scratch/..", ".jarvis/scratch/.hidden",
+      "/tmp/.jarvis/../../Users/f/.jarvis/notes/x.md", "a/.jarvis/notes/../ledger/x.md",
+    ]) expect(write(p), p).toBeTruthy();
+  });
+
   it("blocks through the hook protocol (exit 2, reason on stderr)", () => {
     const hook = fileURLToPath(new URL("../../plugin/hooks/tripwire.mjs", import.meta.url));
     const r = spawnSync(process.execPath, [hook], { input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "npm publish" } }), encoding: "utf8" });

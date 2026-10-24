@@ -16,11 +16,20 @@ export const RULES = [
   [/(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/, "the runner-owned folder is off limits"],
 ];
 
+// A task session owns only its worktree's notes (architecture §5) and scratch scripts (decision 68:
+// a script instead of a refused compound command). Never under a home folder, never through "..".
+const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/;
+const SESSION_OWNED = /(^|\/)\.jarvis\/(notes\/[A-Za-z0-9_-][A-Za-z0-9._-]*\.md|scratch\/[A-Za-z0-9_-][A-Za-z0-9._-]*)$/;
+
+function sessionOwned(path) {
+  return SESSION_OWNED.test(path) && !RUNNER_HOME.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
+}
+
 export function check(input) {
   const tool = input?.tool_name;
   const ti = input?.tool_input ?? {};
   const text = tool === "Bash" ? String(ti.command ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
-  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text)) return "the runner-owned folder is off limits";
+  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text)) return "the runner-owned folder is off limits";
   if (tool !== "Bash") return undefined;
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;

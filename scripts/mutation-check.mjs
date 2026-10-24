@@ -201,6 +201,8 @@ const mutations = [
   ["broker treats adapter crashes as failures", BR, '        result = { outcome: "unknown", detail: { reason: `adapter error', '        result = { outcome: "failed", detail: { reason: `adapter error'],
   ["broker auto-allows everything", BR, "    if (!spec.autoAllow) {", "    if (false) {"],
   ["broker ignores ledger tampering", BR, '      if (err instanceof LedgerTamperError) return { status: "error"', '      if (err instanceof LedgerTamperError) return { status: "succeeded"'],
+  ["tripwire lets file tools write runner-home notes", TW, "SESSION_OWNED.test(path) && !RUNNER_HOME.test(path) && ", "SESSION_OWNED.test(path) && "],
+  ["tripwire lets file tools climb out with ..", TW, " && !/(^|\\/)\\.\\.(\\/|$)/.test(path)", ""],
   ["tripwire misses publishing", TW, '  [/\\b(npm|pnpm|yarn)\\s+publish\\b/, "publishing packages is a hard stop"],\n', ""],
   ["read-only dirs writable", S, "          ...(input.readOnlyDirs ?? []),\n        ],", "        ],"],
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],

@@ -859,7 +859,7 @@ Fabricio, Oct 24 (in the "finish Jarvis" session): the finish line is **full v1,
 ### 85. `jarvis decide` keeps decision 83's spellings and enforces decision 48's firmness on write (new; Oct 24; extends 83)
 The register lane's format (decision 11's columns) and decision 83's `jarvis decide` flags didn't match, and an Opus review found that nothing stopped Jarvis from superseding one of Fabricio's decisions. The integrator settled both (decision 81's thresholds, so Fabricio can veto):
 - **The CLI keeps decision 83's spellings and maps them to the format:** `--by user` → `fabricio`, `default-accepted` → `accepted-default`, `default-unconfirmed` → a new maker `unconfirmed-default` (decision 10's timeout defaults; firmness confirm-once), `jarvis` → `jarvis`. `inferred` stays in the format but isn't a `--by` value. `--class mechanical|taste|challenge` maps to the capitalized classes.
-- **Decision 11's other columns get flags:** `--why` is required. `--reversibility` defaults to `reversible`. `--alternatives` and `--depends-on` default to `-`.
+- **Decision 11's other columns get flags:** `--why` is required. `--reversibility` is one of `easy|moderate|hard|irreversible|reversible` and defaults to `reversible`. `--alternatives` and `--depends-on` default to `-`.
 - **Firmness is enforced on every write, not only advised:** superseding a `firm` entry needs `--by user`. Superseding a `confirm-once` or `challenge` entry needs `--by user` too. Jarvis revising its own call needs `--reason`.
 - **`--source` is a repo-relative path** (no leading `/`, no `..`, optional `#anchor`) that must exist under the repo's real path. A symlinked `docs/` or `decisions.md` is refused. The lock records pid, host and time.
 

@@ -1,0 +1,11 @@
+# Response to stage 0 review 14 (Codex)
+
+Oct 24, 2026. Under decision 74, critical and high findings are fixed and re-reviewed; medium and low findings are fixed when cheap and otherwise go to `docs/backlog.md`.
+
+| # | Severity | Finding | Response |
+|---|---|---|---|
+| 1 | high | Authorization placeholder exemption admits arbitrary lowercase credentials | **Fixed:** the character-class exemption is gone. Only two complete, narrow placeholder forms stay: a short prefix (up to 8 characters) elided with `…` or `...` (`fhk_…`), and an HTML-escaped placeholder (`&lt;key&gt;`), besides the existing references and placeholder words. Fake test values now need explicit review: FreeHire's 19 test files with fake Bearer values (`fhk_whatever`, `fhk_test`, `the-token`, `nope`) and one FAQ sentence are listed in jarvis-evals; each had passed every other rule. **Tests:** refusals for a lowercase opaque token in JSON and a punctuated one in code; the inert snapshot keeps an elided and an HTML-escaped placeholder. **Mutation:** "auth placeholders flagged". |
+| 2 | high | Private JSON Web Keys survive snapshot sanitization | **Fixed by structure and by pattern:** an object with `kty` and any private or symmetric parameter (`d`, `p`, `q`, `dp`, `dq`, `qi`, or `k` for `oct`) is refused, in JSON, YAML (merges and aliases included) and TOML, including JWKS `keys` entries. In any other file, a quoted `kty` within 1000 characters of a quoted private parameter, in either order, is refused. Public keys (`x`, `y`, `n`, `e` only) stay. **Tests:** refusals for a generated Ed25519 private JWK as JSON, inside a YAML JWKS, as block YAML, with `kty` 1200 characters from `d`, in a `.ts` file, and an `oct` key; the inert snapshot keeps a generated public JWK. **Mutations:** "private JWK text patterns off", "private JWK structure ignored (JSON)", "private JWK structure ignored (YAML)", each with a case only that layer catches. |
+| 3 | medium | Stale mutation anchor leaves format-decoding protection untested | **Fixed:** "snapshot ignores format encoding" now removes the current decoded-view line. The builder ran only the mutations it touched before review 14; the complete mutation check now runs before every review request. |
+
+FreeHire's real snapshots for tasks 1 and 2 still pass.

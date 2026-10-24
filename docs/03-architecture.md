@@ -192,7 +192,7 @@ An adapter with `send(message, actions)` and `poll()`. ntfy is the default, with
 The `SessionStart` hook injects only the index lines and the decisions relevant to the task, never whole files.
 
 ### 3.9 Routing table
-`~/.jarvis/routing.yaml` holds the defaults; a project can override them in `.jarvis-routing.yaml`.
+`~/.jarvis/routing.yaml` holds the defaults; a project can override them in `.jarvis-routing.json` (JSON until YAML is an approved dependency; read once per run from the main checkout, and a candidate that changes it is refused).
 
 ```yaml
 tiers:

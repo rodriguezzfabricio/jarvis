@@ -7,16 +7,18 @@ import { runGate, verifyEvidence, type GateCheck, type GateInput, type GateResul
 import { ChecksStore } from "../checks/store.ts";
 import { safeGit } from "../eval/git.ts";
 import { atomicWrite, Ledger, type LedgerEntry } from "../ledger/ledger.ts";
-import type { Harness, TaskInput, TaskOutcome } from "./harness.ts";
-import { captureProcessGroup, cleanupLeftovers, type ProcessStartTimeReader } from "./cleanup.ts";
+import type { EscalationReason, Harness, TaskInput, TaskOutcome } from "./harness.ts";
+import { captureProcessGroup, cleanupLeftovers, readProcessStartTime, type ProcessStartTimeReader } from "./cleanup.ts";
+import { buildFootprintEntry, createFootprintLog, type FootprintLog } from "./footprint.ts";
 import { ingestSteerNotes, loadInboxCursor, readInbox, saveInboxCursor, type InboxAction } from "./inbox.ts";
 import { buildRunHeader, buildTaskPrompt } from "./prompt.ts";
 import { decideRepair } from "./repair.ts";
 import { writeReport, type ReportClaim } from "./report.ts";
-import { loadRouting, type RoutingTable } from "./routing.ts";
+import { loadRouting, routeTask, type RoutingTable } from "./routing.ts";
 import { buildLease, isDone, rebuildState, type EvidenceVerifier, type ProcessGroupRecord, type RunState, type TaskCreatedData, type TaskState } from "./state.ts";
 import { activeUsageWait, waitForUsage, type UsageWaitNotice } from "./usage-wait.ts";
-import { commitCandidate, createWorkspace, deleteCandidateBranches, promoteCandidate, readTaskNotes, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
+import { recordSessionUsage } from "./usage-log.ts";
+import { commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
 
 /** The process adapter calls these synchronously at spawn, and only after the entire group exits. */
 export interface LoopTaskInput extends TaskInput {
@@ -36,6 +38,12 @@ export interface ReviewInput {
   /** Runner-authored, revision-bound gate records; builder notes are deliberately absent. */
   evidence: readonly LedgerEntry[];
 }
+/**
+ * A review verdict. A plain string is recorded by the loop as a review_result; a recorded verdict was
+ * already appended by the review service (review/service.ts). "investigate" blocks the task for a
+ * person; "error" is an infrastructure failure: the review is retried once, never charged as a repair.
+ */
+export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true };
 export interface RunLoopOptions {
   projectId: string;
   projectDir: string;
@@ -47,7 +55,7 @@ export interface RunLoopOptions {
   harness?: LoopHarness;
   createHarness?: (routing: RoutingTable) => LoopHarness;
   checks: Readonly<Record<string, GateCheck>>;
-  review: (input: ReviewInput) => Promise<"pass" | "fail">;
+  review: (input: ReviewInput) => Promise<ReviewVerdict>;
   taskTimeoutMs?: number;
   maxTurns?: number;
   maxConcurrent?: number;
@@ -68,7 +76,10 @@ export interface RunLoopOptions {
   recoverIntake?: (ledger: Ledger) => void | Promise<void>;
   /** Handlers must be idempotent by action seq; cursor acknowledgment follows durable effects. */
   applyInbox?: (action: InboxAction, ledger: Ledger) => void | Promise<void>;
+  /** "passed" is after every gate and review passed, before promotion. */
   onCheckpoint?: (name: "spawned" | "candidate-committed" | "passed", taskId: string) => void;
+  /** Disk and concurrency log for the report (runner/footprint.ts); false turns it off. */
+  footprint?: FootprintLog | false;
 }
 export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[] }
 
@@ -97,6 +108,9 @@ class Loop {
   readonly concurrency: number;
   readonly pidFile: string;
   harness!: LoopHarness;
+  routing!: RoutingTable;
+  readonly footprint: FootprintLog | undefined;
+  readonly readStart: ProcessStartTimeReader;
   private promotion: Promise<void> = Promise.resolve();
   private fatal: unknown;
   private failed = false;
@@ -115,6 +129,9 @@ class Loop {
     this.concurrency = positive(opts.maxConcurrent ?? 2, "concurrency");
     this.ledger = Ledger.open(opts.projectDir);
     this.pidFile = join(opts.projectDir, "runner.pid");
+    this.readStart = opts.readProcessStartTime ?? readProcessStartTime;
+    this.footprint = opts.footprint === false ? undefined
+      : opts.footprint ?? createFootprintLog({ worktrees: this.opts.worktreeRoot, caches: [], evidence: join(opts.projectDir, "evidence") }, { now: this.now });
   }
 
   private git(args: readonly string[]): string {
@@ -138,10 +155,17 @@ class Loop {
       const unreleased = entries.filter((e) => e.actor === "runner" && e.kind === "reconciled" && dataOf(e).type === "run_lease_acquired"
         && !entries.some((r) => r.actor === "runner" && r.kind === "reconciled" && dataOf(r).type === "run_lease_released" && dataOf(r).runId === dataOf(e).runId));
       const runs = rebuildState(entries, { now: this.now(), verifyEvidence: this.verify }).runs;
-      if (unreleased.some((e) => this.pidAlive(Number(dataOf(e).pid))) || runs.some((r) => !r.ended && this.pidAlive(r.pid))) throw new Error("run lease held by an active runner");
-      add({ kind: "reconciled", actor: "runner", data: { type: "run_lease_acquired", runId: this.runId, pid: process.pid } });
+      // A PID alone can be reused: a holder counts only if it is the same process (start time, as cleanup.ts does).
+      const startedAt = (runId: unknown) => entries.find((e) => e.actor === "runner" && e.kind === "reconciled" && dataOf(e).type === "run_lease_acquired" && dataOf(e).runId === runId)?.data as Data | undefined;
+      const holds = (pid: number, lease: Data | undefined) => this.pidAlive(pid) && (typeof lease?.startedAt !== "string" || this.startTime(pid) === lease.startedAt);
+      if (unreleased.some((e) => holds(Number(dataOf(e).pid), dataOf(e))) || runs.some((r) => !r.ended && holds(r.pid, startedAt(r.runId)))) throw new Error("run lease held by an active runner");
+      const own = this.startTime(process.pid);
+      add({ kind: "reconciled", actor: "runner", data: { type: "run_lease_acquired", runId: this.runId, pid: process.pid, ...(own ? { startedAt: own } : {}) } });
     });
     liveLoops.add(key);
+  }
+  private startTime(pid: number): string | null {
+    try { return this.readStart(pid)?.trim().replace(/\s+/g, " ") ?? null; } catch { return null; }
   }
   release(): void {
     try { this.record("run_lease_released"); } finally { liveLoops.delete(resolve(this.opts.projectDir)); }
@@ -160,6 +184,8 @@ class Loop {
     if (cleaned.errors.length || cleaned.refused.length) throw new Error(`leftover cleanup refused: ${[...cleaned.errors, ...cleaned.refused].join("; ")}`);
     for (const runId of cleaned.deadRunIds) this.ledger.append({ kind: "run_ended", actor: "runner", data: { runId, status: "crashed" } });
     const routing = loadRouting(this.opts.repoPath);
+    this.routing = routing;
+    this.excludeReportFolder();
     const harness = this.opts.createHarness?.(routing) ?? this.opts.harness;
     if (!harness) throw new Error("a task harness is required");
     this.harness = harness;
@@ -169,6 +195,14 @@ class Loop {
     this.seedPlan();
     await this.pauseUsage();
     await this.recoverCandidates();
+  }
+  /** REPORT.md lives in the main checkout's .jarvis/; untracked, it would make the next promotion refuse a dirty tree (Opus review M2). */
+  private excludeReportFolder(): void {
+    const path = resolve(this.opts.repoPath, this.git(["rev-parse", "--git-path", "info/exclude"]));
+    const current = existsSync(path) ? readFileSync(path, "utf8") : "";
+    if (current.split("\n").some((line) => line.trim() === "/.jarvis/")) return;
+    mkdirSync(join(path, ".."), { recursive: true });
+    appendFileSync(path, `${current && !current.endsWith("\n") ? "\n" : ""}/.jarvis/\n`);
   }
   private seedPlan(): void {
     if (!this.opts.plan) return;
@@ -268,7 +302,9 @@ class Loop {
   private async dispatch(task: TaskState): Promise<void> {
     const missing = task.definition.requiredChecks.find((name) => !Object.hasOwn(this.opts.checks, name));
     if (missing) return this.block(task, `required check unavailable: ${missing}`);
-    const repair = decideRepair(task, { kind: "failure" }, { verifyEvidence: this.verify });
+    // Decide from the last attempt that finished: a repair that crashed keeps its prompt (Opus review L1).
+    const view = this.repairView(task);
+    const repair = decideRepair(view, { kind: "failure" }, { verifyEvidence: this.verify });
     if (repair.kind === "blocked") {
       this.ledger.append(repair.entry);
       if (repair.alternative) this.ledger.append(repair.alternative);
@@ -293,7 +329,16 @@ class Loop {
         appendFileSync(join(workspace.path, ".git/info/exclude"), "\n/.jarvis/\n");
       }
     } catch (e) { return this.block(this.state().tasks[task.id]!, `workspace refused: ${short(e)}`); }
-    await this.attempt(task, workspace, repair.kind === "repair" ? repair.prompt : "");
+    const failure: EscalationReason | undefined = repair.kind !== "repair" ? undefined
+      : view.evidence.some((e) => e.kind === "review_result" && dataOf(e).revision === view.candidateRevision && dataOf(e).status === "fail") ? "review_fail" : "gate_fail";
+    const stale = !resuming && task.attemptId !== null && this.records("stale_base", task.id, task.attemptId).length > 0
+      ? "The run branch moved while your previous attempt was being checked, and its changes conflict with work merged since. Redo the task on the current run branch; your workspace starts from it." : "";
+    await this.attempt(task, workspace, [repair.kind === "repair" ? repair.prompt : "", stale].filter(Boolean).join("\n\n"), failure);
+  }
+  private repairView(task: TaskState): TaskState {
+    const last = [...task.attempts].reverse().find((a) => a.outcome === "completed" && a.candidateRevision !== null);
+    if (!last || last.id === task.attemptId) return task;
+    return { ...task, attemptId: last.id, candidateRevision: last.candidateRevision, evidence: last.evidence };
   }
 
   private prompt(task: TaskState) {
@@ -312,6 +357,8 @@ class Loop {
     let checkpointError: unknown;
     let timedOut = false;
     const timers: NodeJS.Timeout[] = [];
+    let killTimer: NodeJS.Timeout | undefined;
+    // Disposing the attempt never disarms SIGKILL: only the group's exit does (Opus review L3).
     const dispose = () => { for (const timer of timers) clearTimeout(timer); };
     const onSpawn = (groupId: number): boolean => {
       try {
@@ -325,7 +372,7 @@ class Loop {
           stopping = true;
           this.record("shutdown_intent", { groupId }, task.id, workspace.attemptId);
           this.signal(groupId, "SIGTERM");
-          timers.push(setTimeout(() => { if (!groupExited) this.signal(groupId, "SIGKILL"); }, 1000));
+          killTimer = setTimeout(() => { if (!groupExited) this.signal(groupId, "SIGKILL"); }, 1000);
         };
         this.groups.set(groupId, shutdown);
         timers.push(setTimeout(() => { timedOut = true; shutdown(); }, this.timeout));
@@ -337,6 +384,7 @@ class Loop {
       if (group?.groupId !== groupId) return;
       groupExited = true;
       this.groups.delete(groupId);
+      if (killTimer) clearTimeout(killTimer);
       dispose();
     };
     const result = (outcome: TaskOutcome & { finalMessage?: string }) => {
@@ -347,7 +395,7 @@ class Loop {
     };
     return { onSpawn, onGroupExit, result, dispose };
   }
-  private async session(task: TaskState, workspace: TaskWorkspace, repair: string) {
+  private async session(task: TaskState, workspace: TaskWorkspace, repair: string, failure: EscalationReason | undefined) {
     const input = this.prompt(task);
     const sessionDir = join(this.opts.projectDir, "sessions", randomUUID());
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
@@ -356,20 +404,27 @@ class Loop {
     const observer = this.observeGroup(task, workspace);
     try {
       await this.pauseUsage();
-      const outcome = await this.harness.runTask({
+      this.footprint?.sessionStarted();
+      let outcome: TaskOutcome & { finalMessage?: string };
+      try { outcome = await this.harness.runTask({
         workspace: workspace.path, prompt: `${buildTaskPrompt(input)}${repair ? `\n\n${repair}` : ""}${task.definition.mayTouch ? `\nMay touch only: ${task.definition.mayTouch.join(", ")}` : ""}`,
         runHeaderPath: headerPath, role: "build", tier: 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
-        ...(repair ? { failure: task.evidence.some((e) => e.kind === "review_result" && dataOf(e).status === "fail") ? "review_fail" as const : "gate_fail" as const } : {}),
+        ...(failure ? { failure } : {}),
         onSpawn: observer.onSpawn, onGroupExit: observer.onGroupExit,
-      });
+      }); } finally { this.footprint?.sessionEnded(); }
+      // A usage-log failure never fails the run (runner/usage-log.ts); a refused session isn't logged.
+      recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: 1,
+        route: routeTask("build", 1, failure, this.routing), ...(failure ? { failure } : {}), outcome });
       return observer.result(outcome);
     } finally { observer.dispose(); }
   }
-  private async attempt(task: TaskState, workspace: TaskWorkspace, repair: string): Promise<void> {
+  private async attempt(task: TaskState, workspace: TaskWorkspace, repair: string, failure?: EscalationReason): Promise<void> {
     let backoff = 0;
     for (;;) {
-      const { outcome, group, endedGroup, identityMissing } = await this.session(task, workspace, repair);
-      if (outcome.status === "refused" || identityMissing || (outcome.status !== "usage-limited" && !group)) {
+      const { outcome, group, endedGroup, identityMissing } = await this.session(task, workspace, repair, failure);
+      // Only a limit reported before any session started may come without a captured group (Opus review L2).
+      const noSession = outcome.status === "usage-limited" && outcome.sessionUsage === undefined && outcome.exitCode === null;
+      if (outcome.status === "refused" || identityMissing || (!group && !noSession)) {
         this.end(workspace, "failed", undefined, endedGroup);
         return this.block(this.state().tasks[task.id]!, outcome.status === "refused" ? outcome.reason : "process group identity unavailable");
       }
@@ -384,6 +439,7 @@ class Loop {
         continue;
       }
       this.record("session_finished", { outcome: outcome.status, ...(endedGroup ? { processGroupRecord: endedGroup } : {}) }, task.id, workspace.attemptId);
+      this.footprint?.sample();
       if (this.failed) { this.end(workspace, "failed", undefined, endedGroup); return; }
       await this.candidate(task, workspace, outcome, endedGroup);
       return;
@@ -442,47 +498,111 @@ class Loop {
     for (const reviewer of task.definition.requiredReviews) {
       const old = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
       if (old) { if (dataOf(old).status === "pass") continue; return; }
-      await this.pauseUsage();
-      this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
-      const status = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
-        evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
-      if (status !== "pass" && status !== "fail") return this.block(task, "reviewer returned an invalid verdict");
-      this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status } });
+      let status: "pass" | "fail" | "investigate" | "error" | undefined;
+      for (let tries = 0; tries < 2 && (status === undefined || status === "error"); tries++) status = await this.reviewOnce(taskId, attemptId, candidate, reviewer);
       if (status === "fail") return;
+      task = this.state().tasks[taskId]!;
+      if (status === "investigate") return this.block(task, `review ${reviewer} needs investigation`);
+      if (status !== "pass") return this.block(task, status === "error" ? `review ${reviewer} failed twice to produce a verdict` : "reviewer returned an invalid verdict");
     }
-    this.ledger.append({ kind: "state_reached", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { state: "passed", revision: candidate.revision } });
-    task = this.state().tasks[taskId]!;
-    if (!isDone(task, this.verify)) return this.block(task, "completion evidence changed");
     this.opts.onCheckpoint?.("passed", taskId);
-    await this.promote(task, candidate);
+    await this.promote(taskId, attemptId, candidate);
   }
-  private async promote(task: TaskState, candidate: CandidateRevision): Promise<void> {
-    const work = this.promotion.then(() => {
-      if (!isDone(this.state().tasks[task.id]!, this.verify)) throw new Error("promotion evidence changed");
-      const expectedHead = this.git(["rev-parse", "--verify", `refs/heads/${this.opts.runBranch}^{commit}`]);
-      this.record("promotion_intent", { candidate, expectedHead }, task.id, task.attemptId!);
-      const mergedRevision = promoteCandidate({ repoPath: this.opts.repoPath, candidate, runBranch: this.opts.runBranch, expectedHead,
-        ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
-      this.record("promoted", { revision: candidate.revision, mergedRevision }, task.id, task.attemptId!);
-      this.ledger.append({ kind: "state_reached", actor: "runner", task_id: task.id, attempt_id: task.attemptId, data: { state: "passed", revision: candidate.revision, mergedRevision } });
-    });
-    this.promotion = work.catch(() => {});
-    await work;
+  private async reviewOnce(taskId: string, attemptId: string, candidate: CandidateRevision, reviewer: string): Promise<"pass" | "fail" | "investigate" | "error" | undefined> {
+    const task = this.state().tasks[taskId]!;
+    await this.pauseUsage();
+    this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
+    const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
+      evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
+    if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
+      const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).revision === candidate.revision).at(-1);
+      // The service records its own verdict; trust only what reached the ledger for this revision.
+      return recorded && dataOf(recorded).status === verdict.status && ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
+    }
+    if (verdict !== "pass" && verdict !== "fail") return undefined;
+    this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status: verdict } });
+    return verdict;
+  }
+  /** Every required gate and review passed at the task's current candidate revision. */
+  private verdictsPass(task: TaskState): boolean {
+    const latest = (kind: string, key: string, name: string) => task.evidence.filter((e) => e.actor === "runner" && e.kind === kind && dataOf(e)[key] === name && dataOf(e).revision === task.candidateRevision).at(-1);
+    return task.candidateRevision !== null
+      && task.definition.requiredChecks.every((name) => { const e = latest("gate_result", "check", name); return e !== undefined && dataOf(e).status === "pass" && this.verify(e).ok; })
+      && task.definition.requiredReviews.every((name) => dataOf(latest("review_result", "reviewer", name) ?? { data: {} } as LedgerEntry).status === "pass");
+  }
+  private ancestor(a: string, b: string): boolean {
+    try { this.git(["merge-base", "--is-ancestor", a, b]); return true; } catch (e) { if ((e as { status?: number }).status === 1) return false; throw e; }
+  }
+  /**
+   * Promotion is serialized and only ever a fast-forward to a revision that was gated and reviewed as
+   * itself (Opus review H1). A candidate built on a head the branch has moved past is merged by the
+   * runner onto the new head and verified again; a conflict ends the attempt uncharged, and the task is
+   * redone from the new head. The task is passed only once promoted (M1); failures block, never throw.
+   */
+  private async promote(taskId: string, attemptId: string, candidate: CandidateRevision): Promise<void> {
+    const work = this.promotion.then(() => this.promoteNow(taskId, attemptId, candidate));
+    this.promotion = work.then(() => {}, () => {});
+    const merged = await work;
+    if (merged) await this.verifyCandidate(taskId, attemptId, merged);
+  }
+  private async promoteNow(taskId: string, attemptId: string, candidate: CandidateRevision): Promise<CandidateRevision | undefined> {
+    if (this.failed) return undefined;
+    let task = this.state().tasks[taskId]!;
+    if (task.attemptId !== attemptId || task.candidateRevision !== candidate.revision || !this.verdictsPass(task)) { await this.block(task, "promotion evidence changed"); return undefined; }
+    const home = this.opts.gitHome ? { home: this.opts.gitHome } : {};
+    const git = this.opts.git ? { git: this.opts.git } : {};
+    try {
+      const head = this.git(["rev-parse", "--verify", `refs/heads/${this.opts.runBranch}^{commit}`]);
+      let mergedRevision: string;
+      if (this.ancestor(candidate.revision, head)) {
+        mergedRevision = head; // promoted before a crash, recorded now
+      } else if (this.ancestor(head, candidate.revision)) {
+        this.record("promotion_intent", { candidate, expectedHead: head }, taskId, attemptId);
+        mergedRevision = promoteCandidate({ repoPath: this.opts.repoPath, candidate, runBranch: this.opts.runBranch, expectedHead: head, ...home, ...git });
+      } else {
+        this.record("merge_intent", { candidate, head }, taskId, attemptId);
+        const merged = mergeCandidate({ repoPath: this.opts.repoPath, candidate, head, ...home, ...git });
+        if (!merged) {
+          this.record("stale_base", { revision: candidate.revision, head, reason: "conflicts with the moved run branch" }, taskId, attemptId);
+          this.ledger.append({ kind: "attempt_ended", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { status: "failed" } });
+          return undefined;
+        }
+        this.record("merge_candidate", { revision: merged.revision, from: candidate.revision, head }, taskId, attemptId);
+        this.ledger.append({ kind: "attempt_ended", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { status: "completed", candidateRevision: merged.revision } });
+        return merged;
+      }
+      this.record("promoted", { revision: candidate.revision, mergedRevision }, taskId, attemptId);
+      this.ledger.append({ kind: "state_reached", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { state: "passed", revision: candidate.revision, mergedRevision } });
+    } catch (e) {
+      this.record("promotion_failed", { revision: candidate.revision, message: short(e) }, taskId, attemptId);
+      await this.block(this.state().tasks[taskId]!, `promotion refused: ${short(e)}`);
+      return undefined;
+    }
+    task = this.state().tasks[taskId]!;
+    if (!isDone(task, this.verify)) await this.block(task, "completion evidence changed");
+    return undefined;
   }
 
   private async recoverCandidates(): Promise<void> {
     for (let task of Object.values(this.state().tasks)) {
-      if (!task.attemptId || task.status === "blocked") continue;
+      if (!task.attemptId || task.status === "blocked" || isDone(task, this.verify)) continue;
+      const attempt = task.attempts.find((a) => a.id === task.attemptId);
+      // An attempt the runner ended (refused, stale, failed) or parked for usage is not a candidate to recover.
+      if (attempt?.outcome === "failed" || attempt?.outcome === "usage_wait") continue;
       const ref = `refs/heads/jarvis/candidates/${task.id}/${task.attemptId}`;
-      const alreadyPromoted = this.records("promoted", task.id, task.attemptId).length > 0;
-      if (isDone(task, this.verify) && alreadyPromoted) continue;
+      let refRevision: string | undefined;
+      try { refRevision = this.git(["rev-parse", "--verify", `${ref}^{commit}`]); } catch { refRevision = undefined; }
       let revision: string;
-      try { revision = this.git(["rev-parse", "--verify", `${ref}^{commit}`]); } catch { continue; }
+      if (task.candidateRevision) {
+        // The ledger's candidate is the truth: a crash between a runner merge and its record left the ref ahead.
+        revision = task.candidateRevision;
+        if (refRevision !== revision) { try { this.git(["update-ref", ref, revision]); } catch { continue; } }
+      } else if (refRevision) revision = refRevision;
+      else continue;
       const candidate = { revision, ref };
-      if (isDone(task, this.verify)) { await this.promote(task, candidate); continue; }
       const session = this.records("session_finished", task.id, task.attemptId).at(-1);
       if (!session) continue;
-      if (task.attempts.at(-1)?.outcome !== "completed") {
+      if (attempt?.outcome !== "completed") {
         this.ledger.append({ kind: "attempt_ended", actor: "runner", task_id: task.id, attempt_id: task.attemptId,
           data: { status: "completed", candidateRevision: revision, ...(dataOf(session).processGroupRecord ? { processGroupRecord: dataOf(session).processGroupRecord } : {}) } });
       }
@@ -494,7 +614,7 @@ class Loop {
         }
         continue;
       }
-      if (task.evidence.some((e) => ["fail", "tampered", "error"].includes(String(dataOf(e).status)))) continue;
+      if (task.evidence.some((e) => dataOf(e).revision === revision && ["fail", "tampered", "error", "investigate"].includes(String(dataOf(e).status)))) continue;
       await this.verifyCandidate(task.id, task.attemptId!, candidate);
     }
   }
@@ -505,6 +625,9 @@ class Loop {
     const status = blocked.length ? "blocked" : "complete";
     this.record("candidate_cleanup_intent");
     deleteCandidateBranches(this.opts.repoPath, { ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
+    if (this.footprint) {
+      try { this.ledger.append(buildFootprintEntry(this.runId, this.footprint.finish())); } catch { /* A footprint failure never fails the run. */ }
+    }
     this.ledger.append({ kind: "run_ended", actor: "runner", data: { runId: this.runId, status, done, blocked } });
     const claims: ReportClaim[] = this.records("agent_claim").map((e) => ({ taskId: e.task_id!, text: String(dataOf(e).text), source: String(dataOf(e).source) }));
     writeReport(join(this.opts.repoPath, ".jarvis"), this.state(), this.ledger.entries(), claims, { now: this.now, verifyEvidence: this.verify });

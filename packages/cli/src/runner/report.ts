@@ -2,7 +2,9 @@ import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { verifyEvidence } from "../checks/gate.ts";
 import { atomicWrite, GENESIS, type LedgerEntry } from "../ledger/ledger.ts";
+import { footprintReportLines } from "./footprint.ts";
 import { inboxIssues } from "./inbox.ts";
+import { usageReportLines } from "./usage-log.ts";
 import { isDone, type EvidenceVerifier, type RunState, type TaskState } from "./state.ts";
 
 export interface ReportClaim { taskId: string; source: string; text: string }
@@ -116,6 +118,7 @@ export function renderReport(state: RunState, entries: readonly LedgerEntry[], c
   lines.push("", "## Blocked / reconciliation", "", ...orNone([...tasks.blocked, ...outsideUnknowns(entries)]));
   lines.push("", "## Skipped inbox items", "", ...orNone(inboxIssues(entries).map((issue) => `- ${line(issue.id)}: ${line(issue.reason)}`)));
   lines.push("", "## Usage waits", "", ...orNone(usageWaits(entries, options)), "", "## Left", "", ...orNone(tasks.left));
+  lines.push("", ...usageReportLines(entries), "", ...footprintReportLines(entries));
   if (claims.length) lines.push("", "## Agent claims", "", ...claims.map((claim) => `- Claim (unverified), ${line(claim.taskId)}, ${line(claim.source)}: ${line(claim.text.slice(0, 2000))}`));
   lines.push("", 'Reply here to steer, or run jarvis steer --project <id> "<note>".', "");
   return lines.join("\n");

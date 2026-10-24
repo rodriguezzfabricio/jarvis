@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
@@ -39,9 +39,12 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1" || !existsSync(pinnedClaudeBin()
     expect(plugin).toBeDefined();
     const skills = [...new Set([...namedSkills(repo), ...repoSkills(repo)])];
     expect(skills.length).toBeGreaterThan(0);
+    // Real files inside the install copy: a link back into the checkout would break when it moves.
+    const inside = `${realpathSync(plugin!.installPath)}/`;
+    expect(lstatSync(join(plugin!.installPath, "skills")).isSymbolicLink()).toBe(false);
     for (const s of skills) {
       const file = join(plugin!.installPath, "skills", s, "SKILL.md");
-      expect(existsSync(file) && lstatSync(file).isFile(), file).toBe(true);
+      expect(existsSync(file) && lstatSync(file).isFile() && realpathSync(file).startsWith(inside), file).toBe(true);
     }
     const details = claude("plugin", "details", "jarvis@jarvis");
     const listed = /Skills \(\d+\)\s+(.*)/.exec(details)?.[1]?.split(/,\s*/) ?? [];

@@ -178,9 +178,12 @@ describe("clean install from git archive HEAD", () => {
     expect(plugin).toBeDefined();
     const skills = [...new Set([...namedSkills(repo), ...repoSkills(repo)])];
     expect(namedSkills(repo).length).toBeGreaterThan(0);
+    // Real files inside the install copy: a link back into the checkout would break when it moves.
+    const inside = `${realpathSync(plugin!.installPath)}/`;
+    expect(lstatSync(join(plugin!.installPath, "skills")).isSymbolicLink()).toBe(false);
     for (const s of skills) {
       const file = join(plugin!.installPath, "skills", s, "SKILL.md");
-      expect(existsSync(file) && lstatSync(file).isFile(), file).toBe(true);
+      expect(existsSync(file) && lstatSync(file).isFile() && realpathSync(file).startsWith(inside), file).toBe(true);
     }
   });
 

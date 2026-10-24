@@ -1,0 +1,5 @@
+multiply(2,3)=6
+multiply(-4,5)=-20
+multiply(0,9)=0
+multiply(1.5,2)=3
+multiply(7,-1)=-7

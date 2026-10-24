@@ -1,0 +1,7 @@
+{
+  "name": "ac1",
+  "criteria": ["AC1"],
+  "cases": [{ "id": "ac1", "command": "node \"$JARVIS_FIXTURES/drive.mjs\" ac1" }],
+  "verify": "sh \"$JARVIS_CHECKS/verify.sh\" ac1",
+  "timeoutMs": 60000
+}

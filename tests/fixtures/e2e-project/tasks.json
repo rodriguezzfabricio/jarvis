@@ -1,0 +1,30 @@
+{
+  "specPath": "docs/spec/v1.md",
+  "specVersion": 1,
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "multiply(a, b)",
+      "story": "S1",
+      "criteria": ["AC1"],
+      "goal": "Add multiply(a, b) in src/multiply.mjs, with a test.",
+      "exitCondition": "src/multiply.mjs exports multiply and its tests pass",
+      "dependencies": [],
+      "priority": 2,
+      "requiredChecks": ["unit", "ac1"],
+      "requiredReviews": ["code"]
+    },
+    {
+      "id": "T2",
+      "title": "clamp(x, lo, hi)",
+      "story": "S2",
+      "criteria": ["AC2", "AC3"],
+      "goal": "Add clamp(x, lo, hi) in src/clamp.mjs, with a test.",
+      "exitCondition": "src/clamp.mjs exports clamp and its tests pass",
+      "dependencies": [],
+      "priority": 1,
+      "requiredChecks": ["unit", "ac2", "ac3"],
+      "requiredReviews": ["code"]
+    }
+  ]
+}

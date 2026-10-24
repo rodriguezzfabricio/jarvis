@@ -1,0 +1,7 @@
+{
+  "name": "unit",
+  "criteria": [],
+  "cases": [{ "id": "unit", "command": "node --test" }],
+  "verify": "sh \"$JARVIS_CHECKS/verify.sh\" unit exit-only",
+  "timeoutMs": 60000
+}

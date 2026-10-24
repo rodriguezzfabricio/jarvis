@@ -104,12 +104,11 @@ describe("Claude task safety envelope", () => {
     const cache = settings.sandbox.filesystem.allowRead[1]!;
     expect(dirname(cache)).toBe(options.cacheRoot);
     // Claude Code's own temp root: short and private, or it falls back to the shared /tmp/claude-<uid>.
-    const sessionTmp = settings.sandbox.filesystem.allowRead[2]!;
-    expect(sessionTmp.startsWith("/private/tmp/jt-")).toBe(true);
-    expect(Buffer.byteLength(claudeUidTmp(sessionTmp))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
+    const sessionTmp = String(spec.env.CLAUDE_CODE_TMPDIR);
     expect(settings.sandbox.filesystem.allowRead).toEqual([input.workspace, cache, sessionTmp]);
     expect(settings.sandbox.filesystem.allowWrite).toEqual([cache, sessionTmp]);
-    expect(spec.env.CLAUDE_CODE_TMPDIR).toBe(sessionTmp);
+    expect(sessionTmp).toMatch(/^\/private\/tmp\/jt-/);
+    expect(Buffer.byteLength(claudeUidTmp(sessionTmp))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
     expect(existsSync(sessionTmp)).toBe(false);
     expect(settings.sandbox.filesystem.denyWrite).toEqual([options.jarvisHome, join(input.workspace, ".git/hooks"), join(input.workspace, ".git/config"), join(input.workspace, ".claude")]);
     expect(settings.permissions.deny).toContain(`Read(/${options.jarvisHome}/**)`);

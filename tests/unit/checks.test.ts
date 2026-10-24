@@ -90,7 +90,9 @@ describe("protected checks (decisions 15, 49)", () => {
   });
 });
 
-describe("gates: evidence made by the runner (decisions 49, 76)", () => {
+// Generous limits: a gate runs several sandboxed processes, and a broken process cleanup (a mutation)
+// must fail these tests by assertion after its bounded waits, not by the test runner's timeout.
+describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120_000 }, () => {
   it("runs the check on a fresh checkout of the revision and records hashed evidence", async () => {
     const p = project();
     const c = check("value", 'test "$(cat value.txt)" = 42 && echo "value ok"\n', p);
@@ -144,7 +146,7 @@ describe("gates: evidence made by the runner (decisions 49, 76)", () => {
     const r = await gate(p, c);
     expect(r.status).toBe("fail");
     expect((r.entry.data as { completed: boolean }).completed).toBe(true);
-  }, 30_000);
+  });
 
   // Codex reviews 6 and 7, high: early exits and fabricated observations must never earn a pass.
   it("judges a candidate only by its own output: early exits and planted observations fail", async () => {

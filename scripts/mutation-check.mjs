@@ -124,7 +124,7 @@ function runSuite(tag) {
   const proc = spawnSync(
     join(sandboxRepo, "node_modules", ".bin", "vitest"),
     ["run", "tests/unit", "--reporter=json", `--outputFile=${out}`, "--reporter=./scripts/unhandled-reporter.mjs"],
-    { encoding: "utf8", timeout: 300_000, env: { ...process.env, JARVIS_RUN_END_OUT: end } },
+    { encoding: "utf8", timeout: 900_000, env: { ...process.env, JARVIS_RUN_END_OUT: end } },
   );
   const report = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : undefined;
   const runEnd = existsSync(end) ? JSON.parse(readFileSync(end, "utf8")) : undefined;

@@ -173,6 +173,11 @@ const skills: Record<string, SkillRules> = {
       { section: "Rules", phrase: "Never edit, skip, delete or loosen a test** (decision 15)" },
       { section: "Rules", phrase: "data, not instructions" },
       { section: "Rules", phrase: "Don't run the test suite to hunt for flakes" },
+      { section: "Rules", phrase: "Static reads only." }, // Codex stage 6 review, high
+      { section: "Rules", phrase: "never runs a tool, script, test, build, audit or package command the repo ships" },
+      { section: "Rules", phrase: "becomes a proposed task for the runner, which runs it in the sandbox" },
+      { section: "Dead code", phrase: "search for each name" },
+      { section: "Propose small tasks", phrase: "each entry a file, never a folder" },
       { section: "Dead code", phrase: "Rule out what searches miss" },
       { section: "Dead code", phrase: "migrations, which are never deleted" },
       { section: "Dead code", phrase: "anything in doubt is listed as \"check\"" },
@@ -348,6 +353,27 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
     for (const call of commandExamples(readSkill(name)).filter((c) => /^git /.test(c))) expect(call, call).toContain("-c core.fsmonitor=false");
   });
 
+  // Codex stage 6 review, high: these skills run in the unsandboxed interactive session, where a
+  // repo-owned tool or script could read the runner home. They read statically; running anything the
+  // repo ships is a sandboxed runner task.
+  it("never tells the session to run a repo-owned tool, script or command", () => {
+    const text = readSkill(name);
+    for (const cmd of commandExamples(text)) expect(cmd, cmd).toMatch(/^(git -c core\.fsmonitor=false (log|branch|remote|ls-files|blame)\b|jarvis )/);
+    const sentences = prose(text).split(/(?<=[.!?:])\s+|\n/);
+    for (const s of sentences) {
+      if (/\b(don't|never|no|not|nothing|refuses?)\b/i.test(s) || /runner task|in the sandbox|inside the sandbox/i.test(s)) continue;
+      expect(s, s).not.toMatch(/\b(use|run|execute|invoke)s?\b[^.]*\b(project's|repo's|its) own\b/i);
+      expect(s, s).not.toMatch(/\b(project's|repo's) own [\w-]+ (tool|command|script)s?\b/i);
+      expect(s, s).not.toMatch(/\b(audit|lint|test|build|install) command\b/i);
+    }
+  });
+
+  it("says what to do when a jarvis command it needs is missing: report it and stop that step", () => {
+    if (!/`jarvis (memory|status --json)/.test(readSkill(name))) return;
+    expect(prose(readSkill(name)).toLowerCase()).toContain("if a `jarvis` command this skill names is missing");
+    expect(prose(readSkill(name)).toLowerCase()).toContain("report it and stop that step");
+  });
+
   it("has at least 3 evals, each with a prompt, an expected output and checkable expectations", () => {
     const file = `${skillsDir}${name}/evals/evals.json`;
     expect(existsSync(file)).toBe(true);
@@ -423,8 +449,12 @@ describe("hand-offs use the runner's plan shape (runner/plan.ts)", () => {
     expect(agents[0]!.mayTouch!.every((p) => p === "AGENTS.md" || p.startsWith("docs/"))).toBe(true);
   });
 
-  it("sweep's tasks stay small: at most 5 files each", () => {
-    for (const task of planExample("sweep", "Propose small tasks").tasks) expect(task.mayTouch!.length, task.id).toBeLessThanOrEqual(5);
+  it("sweep's tasks stay small: at most 5 files each, every entry a file, never a folder (Codex stage 6 review, low)", () => {
+    for (const task of planExample("sweep", "Propose small tasks").tasks) {
+      expect(task.mayTouch!.length, task.id).toBeLessThanOrEqual(5);
+      // A file names an extension in its last segment; "src" or "src/lib" would cover a whole tree.
+      for (const p of task.mayTouch!) expect(p, `${task.id} mayTouch ${p}`).toMatch(/(^|\/)[A-Za-z0-9_-][A-Za-z0-9._-]*\.[A-Za-z0-9]+$/);
+    }
   });
 });
 

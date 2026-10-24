@@ -23,6 +23,8 @@ Read the run only through the CLI. The ledger lives in the runner-owned folder, 
 - **`jarvis memory list`:** the memory index as it stands, each note with its id, type, sources and how many times it was seen.
 - **The repo's own memory files:** `AGENTS.md`, `docs/harness-assumptions.md`, and the decision register through `jarvis why <keyword>`.
 
+**If a `jarvis` command this skill names is missing** (an unknown command or flag: `jarvis status --json` and `jarvis memory` are new), report it and stop that step. Without the full entries there's no evidence to learn from beyond what `jarvis status` shows, and without `jarvis memory` nothing gets written: list the learnings you would have kept in the output instead. Never read or write `~/.jarvis/` some other way.
+
 **Learn from evidence, not claims.** A learning needs a runner-written source: a gate result, a review result, a blocked entry, a steer note. A session's notes and the report's "Agent claims" section are claims (decision 49); a learning resting only on one is never kept.
 
 ## What counts as a learning

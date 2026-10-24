@@ -39,7 +39,7 @@ Keep the map to one line per part, with its path. Link to files; don't copy them
 
 - **Read them from where they're defined,** in this order: CI config (what really runs), the task-runner files (package scripts, Makefile and the like), then the README and agent docs.
 - **For each command:** the exact command, the file and line it comes from, what it needs (services, toolchain versions, env vars by name), and "not run".
-- **When sources disagree** (the README says one test command, CI runs another), that's a finding. CI's version is the likely truth; say which you believe and why.
+- **When sources disagree** (the README names one way to test, CI runs another), that's a finding. CI's version is the likely truth; say which you believe and why.
 
 ## Conventions
 

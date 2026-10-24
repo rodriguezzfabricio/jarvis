@@ -16,10 +16,10 @@ Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8)
 - **pnpm**, through corepack, which comes with Node: `corepack enable pnpm`.
 - **Claude Code 2.1.309**, at exactly `~/.local/share/claude/versions/2.1.309`. Jarvis calls this file by its absolute path and never uses whatever `claude` is on your `PATH`. Install Claude Code with Anthropic's native installer if you don't have it yet, then run `claude install 2.1.309`. This may also switch your everyday `claude` to that version. Sign in with your own Claude account: Jarvis never shares a login.
 - **codex-cli 0.164.0** (optional), at `~/.npm-global/bin/codex`. Codex reviews Jarvis's work; without it, a Claude reviewer takes over. To install: `npm config set prefix ~/.npm-global`, then `npm install -g @openai/codex@0.164.0`, then `codex login`.
-- **The ntfy app** on your phone ([ntfy.sh](https://ntfy.sh)), so Jarvis can send you questions and approval requests while you're away.
+- **The ntfy app** on your phone ([ntfy.sh](https://ntfy.sh)), so Jarvis can send you questions and approval requests while you're away. Install it yourself; nothing checks for it.
 - About **20 GB of free disk**. Below that, `jarvis doctor` refuses unattended runs.
 
-The installer checks all of these, but it never installs Claude Code or Codex for you and never touches their logins.
+The installer checks macOS, Node, pnpm and the two pinned binaries, and `jarvis doctor` checks disk space. It never installs Claude Code or Codex for you and never touches their logins. The phone app is the one prerequisite nothing checks.
 
 ## Install
 
@@ -80,7 +80,7 @@ Jarvis lets the agent work without asking permission for every step, so the safe
 - **The sandbox.** Every build session runs the pinned Claude Code inside its sandbox, in its own git worktree. It can write only to that worktree and can read almost nothing outside it. The network is closed apart from a short allowlist (package registries, docs, localhost, the preview host).
 - **The broker.** Sessions hold no credentials. Anything that leaves your Mac (sending email, deploying, pushing to a protected branch, spending money, deleting data) is a request to the broker. The broker checks your approval, does exactly that one operation with a credential the session can't see, and writes a receipt. Spending money always needs your approval.
 - **Protected checks.** The acceptance tests are written from the spec and locked by hash in `~/.jarvis/`, outside anything a session can touch. After each session the runner runs them on a fresh copy of the committed revision and records the results in a hash-chained ledger. Editing a check, or the evidence, is detected.
-- **Tripwires.** The plugin's hooks block obvious mistakes early (force-push, `npm publish`, production deploy flags, reading the Keychain). They are a warning layer. The walls are the sandbox and the broker.
+- **Tripwires.** The plugin's hooks catch obvious mistakes early by matching recognizable command forms (a `git push --force`, an `npm publish`, a `--prod` deploy flag, a Keychain read). A command written another way can slip past them. They are a warning layer. The walls are the sandbox and the broker.
 
 Six requirements hold for every build session. Each has a test, and `jarvis doctor --live` checks them on the real binary:
 
@@ -93,7 +93,7 @@ Six requirements hold for every build session. Each has a test, and `jarvis doct
 
 Your interactive Claude Code sessions are different: they run with your normal Claude Code permissions. Jarvis adds no credentials to them.
 
-**What the plugin changes in your everyday Claude Code.** The plugin is installed for your user, so its tripwire runs in every Claude Code session you open, in any project. In those sessions Claude can't run `git push`, publish packages, deploy with `--prod`, or read `~/.jarvis`. Your own terminal is unaffected. To turn the plugin off: `~/.local/share/claude/versions/2.1.309 plugin disable jarvis@jarvis`.
+**What the plugin changes in your everyday Claude Code.** The plugin is installed for your user, so its tripwire runs in every Claude Code session you open, in any project. In those sessions the tripwire stops Claude's commands that look like a `git push`, a package publish or a `--prod` deploy, and its tool calls on `~/.jarvis` paths. It matches the usual ways of writing these, not every possible one. Your own terminal is unaffected. To turn the plugin off: `~/.local/share/claude/versions/2.1.309 plugin disable jarvis@jarvis`.
 
 ## Commands
 
@@ -111,7 +111,7 @@ From `jarvis --help` today:
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
 | `jarvis status` | The current run, rebuilt from its ledger |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
-| `jarvis approve <id>` / `jarvis reject <id>` | Answers a pending approval from the terminal |
+| `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline <tasks…>` | Runs plain Claude Code on golden tasks, as the baseline Jarvis must beat |
 

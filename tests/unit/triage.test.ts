@@ -52,6 +52,7 @@ describe("triage: your override always wins (architecture §2)", () => {
           expect(t.upgrade).toBeNull();
           expect(signal(t, "override")?.detail).toContain(word);
           expect(t.headline).toContain(`your override: ${word}`);
+          expect(t.then).toBeNull();
         }
       }
     });
@@ -64,14 +65,29 @@ describe("triage: your override always wins (architecture §2)", () => {
     expect(signal(t, "missing-behavior")?.detail).toMatch(/override/);
   });
 
-  it("reads the override from the first word, as typed after /jarvis", () => {
-    expect(leadingOverride("fix the login")).toBe("fix");
+  it("an override is the first word followed by a colon (decision 89); a bare first word is prose", () => {
+    expect(leadingOverride("fix: the login button")).toBe("fix");
     expect(leadingOverride("  Feature: dark mode toggle")).toBe("feature");
-    expect(leadingOverride("ASK why the gate failed")).toBe("ask");
-    expect(leadingOverride("build me a habit tracker")).toBe("build");
-    for (const s of ["fixture loading is slow", "fix", "fix:", "builders page", "please fix the login", "rebuild the index"]) {
+    expect(leadingOverride("ASK: why the gate failed")).toBe("ask");
+    expect(leadingOverride("build:me a habit tracker")).toBe("build");
+    for (const s of [
+      "Build fails on CI", "Feature flags are broken", "Ask the API for retries", "fix the login", "build me a habit tracker",
+      "fixture: loading is slow", "fix:", "fix:   ", "builders page", "please fix: the login", "rebuild: the index",
+    ]) {
       expect(leadingOverride(s), s).toBeUndefined();
     }
+  });
+
+  it("override-looking prose isn't an override: 'Build fails on CI' is a bug, with no mockups or design", () => {
+    for (const judgment of [undefined, { type: "bug" as const }]) {
+      const t = run("Build fails on CI", judgment ? { judgment } : {});
+      expect(t.type).toBe("bug");
+      expect(t.decidedBy).not.toBe("override");
+      expect(t.mockups).toBe(false);
+      expect(ids(t)).not.toContain("design");
+    }
+    expect(run("Feature flags are broken").type).toBe("bug");
+    expect(run("Ask the API for retries").type).not.toBe("question");
   });
 });
 
@@ -147,14 +163,24 @@ describe("triage: bugs never run intake, mockups, design or architecture", () =>
     }
   });
 
-  it("several sentences, a risky area or several modules make it tier 1, never 2", () => {
-    expect(run("Login is broken. Users see a blank page after the password step.").tier).toBe(1);
+  it("several sentences make it tier 1; risk makes it tier 2 (decision 89: the tier comes from risk, not the type)", () => {
     expect(run("The date label is wrong. It shows yesterday instead of today.").tier).toBe(1);
     expect(signal(run("The date label is wrong. It shows yesterday instead of today."), "one-sentence")).toBeUndefined();
-    expect(run("The password reset email is broken").tier).toBe(1);
-    expect(run("The date label is wrong", { touches: ["web/a.ts", "api/b.go", "worker/c.ts"] }).tier).toBe(1);
+    expect(run("Login is broken. Users see a blank page after the password step.").tier).toBe(2);
+    expect(run("The password reset email is broken").tier).toBe(2);
+    expect(run("The date label is wrong", { touches: ["web/a.ts", "api/b.go", "worker/c.ts"] }).tier).toBe(2);
     expect(signal(run("The date label is wrong", { touches: ["web/a.ts", "api/b.go", "worker/c.ts"] }), "several-modules")).toBeDefined();
     expect(run("The date label is wrong", { touches: ["web/a.ts", "web/b.ts"] }).tier).toBe(0);
+    const risky = run("The password reset email is broken");
+    expect(risky.type).toBe("bug");
+    for (const s of ["intake", "mockups", "design", "architecture"]) expect(risky.never).toContain(s);
+  });
+
+  it("'App crashes on launch' is a bug on the crash word alone", () => {
+    const t = run("App crashes on launch");
+    expect(t.type).toBe("bug");
+    expect(t.decidedBy).toBe("text");
+    expect(signal(t, "bug-words")?.detail).toBe('"crashes"');
   });
 
   it("an attached error or a pasted stack trace reads as a bug, and the trace doesn't count as sentences", () => {
@@ -242,14 +268,38 @@ describe("triage: features", () => {
     expect(run("Add a weekly report screen").mockups).toBe(false);
   });
 
-  it("the model's tier only raises, within the type's range; code signals are a floor", () => {
+  it("the model's tier only raises; code's risk signals are a floor; the type never caps it (decision 89)", () => {
     expect(run("Add a CSV export", { judgment: { tier: 2 } }).tier).toBe(2);
     expect(signal(run("Add a CSV export", { judgment: { tier: 2 } }), "tier-raised")).toBeDefined();
     expect(run("Add Google login", { judgment: { tier: 1 } }).tier).toBe(2);
-    expect(run(TASK5, { judgment: { tier: 2 } }).tier).toBe(1);
-    expect(signal(run(TASK5, { judgment: { tier: 2 } }), "tier-clamped")).toBeDefined();
+    expect(run(TASK5, { judgment: { tier: 2 } }).tier).toBe(2);
+    expect(run(TASK5, { judgment: { tier: 1 } }).tier).toBe(1);
     expect(run("Add a CSV export", { judgment: { tier: 0 } }).tier).toBe(1);
-    expect(run("Rename the ledger module", { judgment: { tier: 2 } }).tier).toBe(1);
+    expect(run("Rename the ledger module", { judgment: { tier: 2 } }).tier).toBe(2);
+    expect(run("The date label is wrong. It shows yesterday instead of today.", { judgment: { tier: 0 } }).tier).toBe(1);
+  });
+
+  it("'Refactor auth across the app' is a tier-2 refactor: risk sets the tier, the type sets what never runs", () => {
+    for (const judgment of [undefined, { tier: 2 as const }, { type: "refactor" as const, tier: 2 as const }]) {
+      const t = run("Refactor auth across the app", judgment ? { judgment } : {});
+      expect(t.type).toBe("refactor");
+      expect(t.tier).toBe(2);
+      expect(t.never).toEqual(["intake", "design"]);
+    }
+    expect(run("Rename the ledger module").tier).toBe(1);
+  });
+
+  it("golden task 9: a new platform gets the design stage even when DESIGN.md covers another one", () => {
+    const task9 = "I want to approve my outreach drafts from my phone.";
+    const designed: FolderState = { empty: false, designMd: true };
+    const phone = triage({ request: task9, folder: designed, judgment: { type: "feature", newScreen: true, newPlatform: true, platform: "ios" } });
+    expect(phone.mockups).toBe(true);
+    expect(ids(phone)).toContain("design");
+    expect(phone.never).toEqual([]);
+    expect(signal(phone, "new-platform")?.detail).toContain("ios");
+    const same = triage({ request: task9, folder: designed, judgment: { type: "feature", newScreen: true, platform: "web" } });
+    expect(same.mockups).toBe(false);
+    expect(ids(same)).not.toContain("design");
   });
 
   it("with no keyword and no judgment, a request in an existing repo is a feature by default", () => {
@@ -280,20 +330,48 @@ describe("triage: refactors, questions and releases", () => {
     expect(run("Can you add a logout button?").type).toBe("feature");
   });
 
-  it("golden task 7 is onboarding: decision archaeology runs too", () => {
+  it("golden task 7 is onboarding with edits: read-only archaeology first, then a pipeline for the edits (decision 89)", () => {
     const t = run(TASK7);
     expect(t.type).toBe("question");
     expect(t.onboarding).toBe(true);
     expect(t.label).toBe("Onboarding");
     expect(ids(t)).toEqual(["read-only-research", "answer", "decision-archaeology"]);
+    expect(t.never).toEqual(["any edit"]);
     expect(signal(t, "onboarding-words")).toBeDefined();
+    expect(signal(t, "edit-words")?.detail).toContain("make");
+    expect(t.then?.type).toBe("refactor");
+    expect(t.then?.steps.map((s) => s.id)).toEqual(["pin-behavior", "small-steps", "same-tests-pass", "architecture-lane"]);
+    expect(t.then?.never).toEqual(["intake", "design"]);
+    expect(t.then?.handoff).toBe("now");
+    expect(t.headline).toMatch(/Then: Refactor, tier 1/);
     expect(run("Explain the ledger", { judgment: { type: "question", onboarding: true } }).onboarding).toBe(true);
+  });
+
+  it("the model's judgment picks the edits' pipeline, or says there are none", () => {
+    expect(run(TASK7, { judgment: { then: "feature" } }).then?.type).toBe("feature");
+    expect(run(TASK7, { judgment: { then: "none" } }).then).toBeNull();
+    expect(run("How does the ledger work?", { judgment: { then: "refactor" } }).then?.type).toBe("refactor");
+    expect(run("How does the broker check approvals?").then).toBeNull();
+    expect(run("How does the ledger work, and then fix the torn-line repair?").then?.type).toBe("bug");
+  });
+
+  it("golden task 3 is a review, not a release: read-only findings, no edits", () => {
+    const t = run("Review the outreach code before I ship it.");
+    expect(t.type).toBe("review");
+    expect(t.decidedBy).toBe("text");
+    expect(ids(t)).toEqual(["review"]);
+    expect(t.never).toEqual(["any edit"]);
+    expect(t.handoff).toBe("none");
+    expect(t.tier).toBe(2);
+    expect(signal(t, "review-words")).toBeDefined();
+    expect(run("Can you review the deploy script before we release?").type).toBe("review");
+    expect(run("Ship it once the review passes").type).not.toBe("review");
   });
 
   it("a release runs the manifest, rehearsals, the broker-gated deploy and a smoke test, and never builds", () => {
     const t = run("Deploy the preview to production");
     expect(t.type).toBe("release");
-    expect(t.tier).toBeNull();
+    expect(t.tier).toBe(2);
     expect(ids(t)).toEqual(["release-manifest", "rehearsals", "broker-deploy", "smoke-test"]);
     expect(t.never).toEqual(["building"]);
     expect(t.handoff).toBe("now");
@@ -307,26 +385,32 @@ describe("triage: the result is consistent", () => {
     for (const newScreen of [true, false]) inputs.push({ request: TASK1, folder, judgment: { type, newScreen, onboarding: newScreen } });
   }
   for (const o of Object.keys(OVERRIDES)) inputs.push({ request: TASK6, folder: repo, override: o as keyof typeof OVERRIDES });
+  for (const then of ["feature", "refactor", "bug", "none"] as const) inputs.push({ request: TASK7, folder: repo, judgment: { then, newScreen: true, newPlatform: true } });
+  inputs.push({ request: "Review the outreach code before I ship it.", folder: repo });
+  const pipelines = (t: Triage) => (t.then ? [t, t.then] : [t]);
 
   it("no step that runs is also listed as never running; steps name a known skill at its stage", () => {
     for (const i of inputs) {
       const t = triage(i);
-      for (const s of t.steps) {
-        expect(t.never, `${t.type} ${s.id}`).not.toContain(s.id);
-        if (s.skill !== null) expect(SKILL_STAGES[s.skill], s.skill).toBe(s.stage);
+      for (const p of pipelines(t)) {
+        for (const s of p.steps) {
+          expect(p.never, `${p.type} ${s.id}`).not.toContain(s.id);
+          if (s.skill !== null) expect(SKILL_STAGES[s.skill], s.skill).toBe(s.stage);
+        }
+        if (p.never.includes("mockups")) expect(p.mockups).toBe(false);
+        if (p.type === "question" || p.type === "review") expect(p.steps.some((s) => s.by === "runner")).toBe(false);
+        if (p.handoff === "after-spec") expect(p.steps.map((s) => s.id)).toContain("spec");
+        if (p.type === "bug") for (const s of ["intake", "mockups", "design"]) expect(p.never).toContain(s);
+        expect(t.headline).toContain(p.label);
       }
-      if (t.never.includes("mockups")) expect(t.mockups).toBe(false);
-      if (t.type === "question") expect(t.steps.some((s) => s.by === "runner")).toBe(false);
-      if (t.handoff === "after-spec") expect(ids(t)).toContain("spec");
+      if (t.then) expect(["question"]).toContain(t.type);
       expect(t.signals.length, t.type).toBeGreaterThan(0);
-      expect(t.headline).toContain(t.label);
     }
   });
 
   it("every session step comes before every runner step: the hand-off is one line", () => {
     for (const i of inputs) {
-      const by = triage(i).steps.map((s) => s.by);
-      expect(by.join(" ")).toMatch(/^(session ?)*(runner ?)*$/);
+      for (const p of pipelines(triage(i))) expect(p.steps.map((s) => s.by).join(" ")).toMatch(/^(session ?)*(runner ?)*$/);
     }
   });
 
@@ -368,15 +452,19 @@ describe("folder state", () => {
 
 describe("jarvis triage", () => {
   async function cli(args: string[]): Promise<{ out: string; code: number | undefined }> {
-    const program = new Command().exitOverride();
-    register(program);
     const lines: string[] = [];
+    const program = new Command().exitOverride().configureOutput({ writeErr: (s: string) => void lines.push(s), writeOut: (s: string) => void lines.push(s) });
+    register(program);
     const log = vi.spyOn(console, "log").mockImplementation((m: unknown) => void lines.push(String(m)));
     const err = vi.spyOn(console, "error").mockImplementation((m: unknown) => void lines.push(String(m)));
     const before = process.exitCode;
     process.exitCode = undefined;
     try {
-      await program.parseAsync(["triage", ...args], { from: "user" });
+      try {
+        await program.parseAsync(["triage", ...args], { from: "user" });
+      } catch (error) {
+        return { out: lines.join("\n"), code: (error as { exitCode?: number }).exitCode ?? 1 };
+      }
       return { out: lines.join("\n"), code: process.exitCode as number | undefined };
     } finally {
       process.exitCode = before;
@@ -394,17 +482,20 @@ describe("jarvis triage", () => {
     expect(r.code ?? 0).toBe(0);
   });
 
-  it("reads a leading override word unless --literal says it's part of the sentence", async () => {
+  it("reads an override only from a colon after the first word, or from --override", async () => {
     const d = dir("src/");
-    expect(JSON.parse((await cli(["--json", "--repo", d, "fix", "the export"])).out).type).toBe("bug");
-    const word = JSON.parse((await cli(["--json", "--repo", d, "feature flags are broken"])).out);
-    expect([word.type, word.decidedBy]).toEqual(["feature", "override"]);
-    expect(JSON.parse((await cli(["--json", "--repo", d, "build", "a CSV export"])).out).type).toBe("new-product");
-    expect(JSON.parse((await cli(["--json", "--repo", d, "--literal", "feature flags are broken"])).out).type).toBe("bug");
-    const lit = JSON.parse((await cli(["--json", "--repo", d, "--literal", "ask users for their email at signup"])).out);
-    expect(lit.type).toBe("feature");
-    expect(lit.request).toBe("ask users for their email at signup");
+    const colon = JSON.parse((await cli(["--json", "--repo", d, "fix: the login button"])).out);
+    expect([colon.type, colon.decidedBy, colon.request]).toEqual(["bug", "override", "fix: the login button"]);
+    expect(JSON.parse((await cli(["--json", "--repo", d, "build:", "a CSV export"])).out).type).toBe("new-product");
+    for (const prose of ["Build fails on CI", "Feature flags are broken", "Ask the API for retries"]) {
+      const t = JSON.parse((await cli(["--json", "--repo", d, prose])).out);
+      expect(t.decidedBy, prose).not.toBe("override");
+      expect(t.mockups, prose).toBe(false);
+    }
+    const ci = JSON.parse((await cli(["--json", "--repo", d, "--judgment", "bug", "Build fails on CI"])).out);
+    expect([ci.type, ci.mockups]).toEqual(["bug", false]);
     expect(JSON.parse((await cli(["--json", "--repo", d, "--override", "ask", "the ledger"])).out).type).toBe("question");
+    expect((await cli(["--json", "--repo", d, "--literal", "x"])).code).not.toBe(0);
   });
 
   it("passes the model's judgment and the attachments through", async () => {
@@ -416,6 +507,10 @@ describe("jarvis triage", () => {
     expect(f.tier).toBe(2);
     expect(f.mockups).toBe(true);
     expect(JSON.parse((await cli(["--json", "--repo", d, "--attached-error", "The import page"])).out).type).toBe("bug");
+    const designed = dir("src/", "DESIGN.md");
+    const phone = JSON.parse((await cli(["--json", "--repo", designed, "--judgment", "feature", "--new-screen", "--new-platform", "--platform", "ios", "Approve drafts from my phone"])).out) as Triage;
+    expect(phone.mockups).toBe(true);
+    expect(JSON.parse((await cli(["--json", "--repo", d, "--then", "feature", TASK7])).out).then.type).toBe("feature");
   });
 
   it("prints the headline and the signals without --json", async () => {
@@ -426,7 +521,7 @@ describe("jarvis triage", () => {
 
   it("refuses an unknown judgment, tier or override with a non-zero exit", async () => {
     const d = dir("src/");
-    for (const bad of [["--judgment", "sweep"], ["--judgment-tier", "3"], ["--judgment-tier", "one"], ["--override", "ship"], ["--questions", "9"], ["--questions", "two"]]) {
+    for (const bad of [["--judgment", "sweep"], ["--judgment-tier", "3"], ["--judgment-tier", "one"], ["--override", "ship"], ["--questions", "9"], ["--questions", "two"], ["--then", "sweep"]]) {
       const r = await cli(["--json", "--repo", d, ...bad, "x"]);
       expect(r.code, bad.join(" ")).toBe(2);
     }

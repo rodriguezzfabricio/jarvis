@@ -37,8 +37,14 @@ describe("/jarvis command", () => {
   it("starts with triage on the user's words, and adds the model's judgment as input", () => {
     expect(body).toContain("$ARGUMENTS");
     expect(body).toContain('`jarvis triage --json "$ARGUMENTS"`');
-    for (const flag of ["--literal", "--judgment", "--missing-behavior", "--questions", "--new-screen", "--attached-error", "--touches"]) expect(body, flag).toContain(flag);
+    for (const flag of ["--judgment", "--missing-behavior", "--questions", "--new-screen", "--new-platform", "--platform", "--then", "--attached-error", "--touches", "--override"]) expect(body, flag).toContain(flag);
+    expect(body).not.toContain("--literal");
     expect(body.indexOf("jarvis triage")).toBeLessThan(skillRefs[0]?.at ?? Infinity);
+  });
+
+  it("explains the override syntax: the first word and a colon (decision 89)", () => {
+    for (const word of Object.keys(OVERRIDES)) expect(body, word).toContain(`\`${word}:\``);
+    expect(body).toContain("Build fails on CI");
   });
 
   it("announces the classification and any upgrade word for word", () => {
@@ -47,12 +53,22 @@ describe("/jarvis command", () => {
     expect(body).toMatch(/never upgrade silently/i);
   });
 
-  it("names every step the session runs, and none of the runner's as its own work", () => {
+  it("starts every step it dispatches, and none of the runner's as its own work", () => {
     for (const [id, step] of Object.entries(STEPS)) {
-      if (step.by === "session") expect(body, id).toContain(`\`${id}\``);
+      if (step.dispatch) expect(step.by, id).toBe("session");
+      if (step.dispatch) expect(body, id).toContain(`\`${id}\``);
     }
     expect(body).toContain("`never`");
+    expect(body).toContain("`then`");
     expect(body).toMatch(/`by` is `runner`/);
+  });
+
+  it("never names a skill that a previous skill already chains to, so no skill runs twice (decision 89)", () => {
+    const dispatched = new Set(Object.values(STEPS).flatMap((s) => (s.dispatch && s.skill !== null ? [s.skill] : [])));
+    const chained = Object.values(STEPS).flatMap((s) => (s.by === "session" && !s.dispatch && s.skill !== null && !dispatched.has(s.skill) ? [s.skill] : []));
+    expect(chained.length).toBeGreaterThan(0);
+    for (const skill of chained) expect(skillRefs.map((r) => r.name), skill).not.toContain(skill);
+    for (const skill of dispatched) expect(skillRefs.filter((r) => r.name === skill).length, skill).toBe(1);
   });
 
   it("every skill it names exists, or is marked with the later stage that brings it", () => {
@@ -69,9 +85,9 @@ describe("/jarvis command", () => {
     }
   });
 
-  it("names the skill behind every session step, and every skill built by now exists", () => {
+  it("names the skill behind every step it dispatches, and every skill built by now exists", () => {
     const named = new Set(skillRefs.map((r) => r.name));
-    for (const step of Object.values(STEPS)) if (step.by === "session" && step.skill !== null) expect([...named], step.skill).toContain(step.skill);
+    for (const step of Object.values(STEPS)) if (step.dispatch && step.skill !== null) expect([...named], step.skill).toContain(step.skill);
     for (const [skill, stage] of Object.entries(SKILL_STAGES)) {
       if (stage <= CURRENT_STAGE) expect(existsSync(`${repoRoot}skills/${skill}/SKILL.md`), `skills/${skill}/SKILL.md`).toBe(true);
     }

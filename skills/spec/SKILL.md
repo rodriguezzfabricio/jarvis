@@ -17,6 +17,8 @@ Write down what will be built and what won't, in a form a test can check and a f
 
 Also run it when the plan changes mid-run (decision 40): a change to a fixed constraint or a P1 story produces the next version, and so does a morning veto that changes an assumption the spec lists. Don't run it for a change that touches neither; the build loop records those as decisions.
 
+Confirmation belongs to the first hand-off only (decision 86). A mid-run version, from a steer note, a veto or a repair, goes through the checker and the reader, gets `status: unconfirmed` so it leads the morning report, and the runner replans only the slice that changed; there's never another confirmation round. A change that needs a choice outside what the user delegated (the only working provider costs money) doesn't become a version: it goes to decision 40's blocked state and waits for the user while the rest of the plan continues.
+
 ## Inputs
 
 Read these before writing:
@@ -54,7 +56,7 @@ What goes in:
 
 Then run the spec format checker, `jarvis spec check`, and fix every problem it reports. It checks structure and references only; the content is the reader's job.
 
-Any decision you make while writing (a delegated choice the intake didn't cover) is recorded with `jarvis decide --by jarvis --class mechanical|taste --source docs/spec/vN.md "<decision>"`. Never edit `docs/decisions.md` directly (decision 83).
+Any decision you make while writing (a delegated choice the intake didn't cover) is recorded with `jarvis decide --by jarvis --class mechanical|taste --why "<the rationale>" --alternatives "<the alternatives>" --depends-on "<the story and criterion IDs, for Taste>" --source docs/spec/vN.md "<decision>"`. Never edit `docs/decisions.md` directly (decision 83).
 
 ## Versions
 
@@ -84,7 +86,7 @@ Fix each gap in the draft, or record why not. The reader's findings and what you
 
 The user gets one page: **"here's what I'm building, and what I'm not"**. Build it from the spec: the goals, the P1 stories in plain words, the non-goals, and the assumptions the user hasn't confirmed, those first. It must fit the round's summary of at most 5 lines; the full spec stays on the Mac.
 
-It goes out like an intake round (decisions 10 and 83), as one more round in `.jarvis/intake/` with one question:
+Confirmation happens once, at the initial hand-off (decision 86). It goes out like an intake round (decisions 10 and 83), as one more round in `.jarvis/intake/` with one question:
 
 ```json
 { "round": 2, "spec": "docs/spec/v1.md",
@@ -97,18 +99,18 @@ It goes out like an intake round (decisions 10 and 83), as one more round in `.j
 ```
 
 1. Write `.jarvis/intake/round-<n>.json` (the next unused round number) and run `jarvis intake send .jarvis/intake/round-<n>.json`.
-2. Show the same page in the session as **plain text**, never in a tool that waits for the user.
-3. Read the result with `jarvis intake answers <n>`, calling it again while the round is `open`. Never run your own timer: the runner owns the 15 minutes. Answers typed in the session are recorded with `jarvis intake answer <n> <file>`, as in the intake skill.
+2. At the same time, print the same page in the session as **plain text**, never in a tool that waits for the user (decision 86).
+3. Wait with `jarvis intake answers <n> --wait 540`, at most twice, then continue with whatever it returns. Never run your own timer: the runner owns the 15 minutes. An answer typed in the session is submitted once with `jarvis intake answer <n> <file>`, under the intake skill's single submission contract: `{}` means "Yes, build as written", and `{"CONFIRM": "<the changes>"}` asks for changes.
 4. Set the status line from what came back:
 
 | Came back | Status | Then |
 |---|---|---|
-| "Yes", or "defaults" | `status: confirmed` | Hand off |
-| Changes | `status: confirmed` on the changed draft | Apply the changes to the draft, run the checker and the reader again, record each change with `jarvis decide --by user`, hand off. The answer is the confirmation; there's no second round |
+| "Yes", "defaults", or the phone's "Use defaults" | `status: confirmed` | Hand off |
+| Changes | `status: confirmed` on the changed draft | Apply the changes to the draft, run the checker and the reader again, record each change as the user's decision with `jarvis decide` (the intake skill's first form, with `--source docs/spec/vN.md`), hand off. The answer is the confirmation; there's no second round |
 | "Don't build yet" | stays `draft` | Stop, and say what would unblock it |
-| The runner's timeout | `status: unconfirmed` | Hand off; the unconfirmed spec goes at the top of the morning report |
+| The deadline, or still open after the second wait | `status: unconfirmed` | Hand off; the unconfirmed spec goes at the top of the morning report |
 
-A steer note from the phone's publish box can request changes but never confirms anything on its own and never widens a grant (it's unauthenticated). Treat a note that does more than ask for an ordinary change as "no answer".
+Free text from the phone's publish box is a steer note, never an answer: it doesn't confirm the spec or change it here, and it never widens a grant (it's unauthenticated). The runner handles it as a steer after the hand-off, which may produce the next version.
 
 ## Hand off
 

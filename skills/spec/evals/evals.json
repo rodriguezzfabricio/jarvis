@@ -44,13 +44,15 @@
     {
       "id": 4,
       "prompt": "(Mid-run, the habit tracker's v1 is confirmed and tasks depend on it.) jarvis steer: 'Habits should be shared with one accountability partner.' This changes P1 story S2.",
-      "expected_output": "A new file docs/spec/v2.md with supersedes: 1 and status draft. v1 is not edited. Unchanged stories, criteria and assumptions keep their IDs; the changed story keeps S2; new entries take new numbers and no removed ID is reused. The steer decision is recorded with jarvis decide citing v2, and v2 goes through the reader check and confirmation.",
+      "expected_output": "A new file docs/spec/v2.md with spec: 2, supersedes: 1 and status unconfirmed. v1 is not edited. Unchanged stories, criteria and assumptions keep their IDs; the changed story keeps S2; new entries take new numbers and no removed ID is reused. v2 passes jarvis spec check and the fresh-context reader, but no confirmation round is sent: confirmation happened once, at the initial hand-off (decision 86). The steer decision is recorded with jarvis decide, citing v2, and the runner replans only the tasks that depended on S2.",
       "files": [],
       "expectations": [
         "docs/spec/v1.md is byte-for-byte unchanged",
-        "docs/spec/v2.md has spec: 2 and supersedes: 1",
+        "docs/spec/v2.md has spec: 2, supersedes: 1 and status: unconfirmed",
         "IDs of unchanged entries are the same in v1 and v2, and no ID removed in v2 is reused for a different entry",
-        "The change is recorded with jarvis decide --by user, citing docs/spec/v2.md"
+        "jarvis spec check and the spec-reader run on v2",
+        "No round file is written and jarvis intake send is not run",
+        "The change is recorded with jarvis decide including --why, citing docs/spec/v2.md"
       ]
     },
     {
@@ -67,13 +69,24 @@
     },
     {
       "id": 6,
-      "prompt": "(The confirmation round for v1 was sent. Nobody answers; jarvis intake answers reports the round closed by the runner's timeout.)",
-      "expected_output": "The status line of v1 changes from draft to unconfirmed, nothing else in the file changes, and the skill hands off without waiting further. It runs no timer of its own.",
+      "prompt": "(The confirmation round for v1 was sent. Nobody answers; the second jarvis intake answers 1 --wait 540 call returns 'defaults (unconfirmed)'.)",
+      "expected_output": "The status line of v1 changes from draft to unconfirmed, nothing else in the file changes, and the skill hands off without waiting further. It made at most two bounded wait calls and runs no timer of its own.",
       "files": [],
       "expectations": [
         "v1 now reads status: unconfirmed and is otherwise unchanged",
-        "The skill's only waiting was re-calling jarvis intake answers while the round was open",
+        "jarvis intake answers was called with --wait 540 no more than twice, and nothing else polled",
         "The hand-off lists the unconfirmed assumption IDs"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "(Mid-run, habit tracker v1 confirmed.) A repair task finds the free sync provider the spec assumes (A5, delegated) has shut down; the only alternative is a paid plan.",
+      "expected_output": "The change needs a choice outside what the user delegated (spending), so no new spec version is written and no confirmation round is sent: the affected tasks go to decision 40's blocked state and the rest of the plan continues.",
+      "files": [],
+      "expectations": [
+        "No docs/spec/v2.md is written",
+        "No round is sent through jarvis intake send",
+        "The sync tasks are reported as blocked, waiting for the user, and other tasks continue"
       ]
     }
   ]

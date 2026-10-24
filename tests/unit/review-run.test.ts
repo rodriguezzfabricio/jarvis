@@ -172,7 +172,8 @@ it('passes --confirm-stage through to the mutation check, and refuses an unknown
   const m = defaultEvidence({ confirmStage: '0-1' }).find((c: { name: string }) => c.name === 'mutation-check');
   expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm-stage', '0-1']);
   expect(defaultEvidence({ confirmStage: '0-1' }).filter((c: { name: string }) => c.name !== 'mutation-check')).toEqual(DEFAULT_EVIDENCE.filter((c: { name: string }) => c.name !== 'mutation-check'));
-  expect(() => defaultEvidence({ confirmStage: '4' })).toThrow(/stage/);
+  expect(() => defaultEvidence({ confirmStage: '7' })).toThrow(/stage/);
+  expect(defaultEvidence({ confirmStage: '6' }).find((c: { name: string }) => c.name === 'mutation-check').args).toEqual(['scripts/mutation-check.mjs', '--confirm-stage', '6']);
   const g = fixture();
   await expect(runReview({ ...g, evidence: undefined, confirmStage: '9', dryRun: true })).rejects.toThrow(/stage/);
 });
@@ -227,7 +228,7 @@ it('CLI reads every --confirm-stage token: a repeat in either spelling or any ba
 
 it('CLI takes --confirm-stage', () => {
   const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--help'], { encoding: 'utf8', env: cliEnv() });
-  expect(r.stdout).toContain('[--confirm-stage <0-1|2|3>]');
+  expect(r.stdout).toContain('[--confirm-stage <0-1|2|3|4|5|6>]');
   const bad = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', '/nonexistent', '--schema', '/nonexistent', '--confirm-stage', '7'], { encoding: 'utf8', env: cliEnv() });
   expect(bad.status).toBe(1);
   expect(bad.stderr).toMatch(/stage/);

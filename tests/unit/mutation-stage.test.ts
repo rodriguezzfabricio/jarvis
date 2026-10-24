@@ -20,6 +20,25 @@ describe("mutation stage map", () => {
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");
   });
 
+  // The integrator's mapping for the lanes landing now and next (stages 0-1 to 6).
+  it("maps the lanes of stages 3 to 6, including files that haven't landed yet", () => {
+    expect(STAGES).toEqual(["0-1", "2", "3", "4", "5", "6"]);
+    expect(stageOf("packages/cli/src/harness/claude/mutations-settings.json")).toBe("0-1");
+    expect(stageOf("packages/cli/src/commands/mutations-commands.json")).toBe("3");
+    expect(stageOf("packages/cli/src/runner/mutations-loop.json")).toBe("3");
+    for (const lane of ["review", "security", "lanes"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("4");
+    for (const lane of ["release", "setup"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("5");
+    expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");
+    expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
+    expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");
+  });
+
+  it("lets an exact path beat a folder rule", () => {
+    expect(stageOf("packages/cli/src/runner/mutations-usage.json")).toBe("6");
+    expect(stageOf("packages/cli/src/runner/mutations-usage-extra.json")).toBe("3");
+    expect(stageOf("packages/cli/src/broker/mutations.json")).toBeUndefined();
+  });
+
   it("leaves anything else unmapped, never guessing from a similar path", () => {
     expect(stageOf("packages/cli/src/broker/mutations.json")).toBeUndefined();
     expect(stageOf("packages/cli/src/runner/sub/mutations.json")).toBeUndefined();
@@ -87,7 +106,7 @@ describe("confirm scope", () => {
   });
 
   it("refuses an unknown or missing stage, and both modes at once", () => {
-    expect(() => parseMode(["--confirm-stage", "4"], {})).toThrow(/stage/);
+    expect(() => parseMode(["--confirm-stage", "7"], {})).toThrow(/stage/);
     expect(() => parseMode(["--confirm-stage"], {})).toThrow(/stage/);
     expect(() => parseMode(["--confirm-stage", "--confirm"], {})).toThrow();
     expect(() => parseMode(["--confirm", "--confirm-stage", "2"], {})).toThrow(/one of/);

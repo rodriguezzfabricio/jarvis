@@ -11,7 +11,7 @@
 // Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
 // definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
 // every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
-// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
+// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3|4|5|6]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";

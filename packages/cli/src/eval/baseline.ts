@@ -6,6 +6,8 @@ import {
   buildChildEnv,
   buildTaskArgs,
   cacheEnv,
+  makeSessionTmpDir,
+  sessionTmpEnv,
   hitRateLimitError,
   initInfo,
   parseStreamJson,
@@ -121,7 +123,8 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
 
   const settingsPath = join(resultsDir, "settings.json");
   const mcpPath = join(resultsDir, "mcp.json");
-  writeTaskSettings(settingsPath, { worktree: workspace, jarvisHome, cacheDir, allowedDomains: task.allowedDomains });
+  const sessionTmpDir = makeSessionTmpDir(); // Claude Code's own temp root (decision 93)
+  writeTaskSettings(settingsPath, { worktree: workspace, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: task.allowedDomains });
   writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
   const args = buildTaskArgs({ prompt: task.prompt, settingsPath, mcpConfigPath: mcpPath, model: task.model, maxTurns: task.maxTurns });
   const bin = opts.claudeBin ?? pinnedClaudeBin();
@@ -135,11 +138,14 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     bin,
     args,
     cwd: workspace,
-    env: buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}) }),
+    env: buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir), ...(opts.extraEnv ?? {}) }),
     timeoutMs: task.timeoutMinutes * 60_000,
     stdoutPath: streamPath,
     stderrPath: join(resultsDir, "stderr.txt"),
-  }).finally(() => rmSync(cacheDir, { recursive: true, force: true }));
+  }).finally(() => {
+    rmSync(cacheDir, { recursive: true, force: true });
+    rmSync(sessionTmpDir, { recursive: true, force: true });
+  });
 
   const events = parseStreamJson(readFileSync(streamPath, "utf8"));
   const result = events.filter((e) => e.type === "result").at(-1);

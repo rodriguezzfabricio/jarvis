@@ -12,6 +12,7 @@ import { envFileSecrets } from "../../packages/cli/src/broker/secrets.ts";
 import { startBrokerServer } from "../../packages/cli/src/broker/server.ts";
 import { MODELS, pinnedClaudeBin } from "../../packages/cli/src/config/pins.ts";
 import { buildChildEnv, buildTaskArgs, cacheEnv, parseStreamJson, runSession, toolCalls, writeTaskSettings } from "../../packages/cli/src/harness/claude/index.ts";
+import { makeSessionTmpDir, sessionTmpEnv } from "../../packages/cli/src/harness/claude/settings.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 
 /**
@@ -26,6 +27,7 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
     const nonce = randomBytes(5).toString("hex");
     const root = mkdtempSync(join(realpathSync("/tmp"), "jarvis-safety-"));
     let jarvisHome: string | undefined;
+    let sessionTmp: string | undefined;
     let server: Awaited<ReturnType<typeof startBrokerServer>> | undefined;
     try {
       jarvisHome = mkdtempSync(join(homedir(), ".jarvis-broker-test-"));
@@ -73,10 +75,11 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
         "```",
       ].join("\n");
       const settingsPath = join(root, "settings.json");
-      writeTaskSettings(settingsPath, { worktree: work, jarvisHome, cacheDir: cache, brokerSocket: sock, allowedDomains: ["registry.npmjs.org"], readOnlyDirs: [repoRoot] });
+      sessionTmp = makeSessionTmpDir();
+      writeTaskSettings(settingsPath, { worktree: work, jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, brokerSocket: sock, allowedDomains: ["registry.npmjs.org"], readOnlyDirs: [repoRoot] });
       writeFileSync(join(root, "mcp.json"), '{"mcpServers":{}}\n');
       const args = buildTaskArgs({ prompt, settingsPath, mcpConfigPath: join(root, "mcp.json"), model: MODELS.cheap, maxTurns: 15, pluginDir: join(repoRoot, "plugin") });
-      const out = await runSession({ bin: pinnedClaudeBin(), args, cwd: work, env: buildChildEnv(process.env, cacheEnv(cache)), timeoutMs: 300_000 });
+      const out = await runSession({ bin: pinnedClaudeBin(), args, cwd: work, env: buildChildEnv(process.env, { ...cacheEnv(cache), ...sessionTmpEnv(sessionTmp) }), timeoutMs: 300_000 });
       const calls = toolCalls(parseStreamJson(out.stdout));
       const shell = calls.find((c) => c.name === "Bash" && String(c.input.command).includes("selftest.sh"))?.result?.text ?? "";
       const npm = calls.find((c) => c.name === "Bash" && String(c.input.command).includes("npm publish"))?.result?.text ?? "";
@@ -111,6 +114,7 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
       finally {
         rmSync(root, { recursive: true, force: true });
         if (jarvisHome) rmSync(jarvisHome, { recursive: true, force: true });
+        if (sessionTmp) rmSync(sessionTmp, { recursive: true, force: true });
       }
     }
   }, 360_000);

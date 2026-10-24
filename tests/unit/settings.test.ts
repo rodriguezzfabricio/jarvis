@@ -1,8 +1,8 @@
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { absRule, assertSafeTaskSettings, buildTaskSettings, cacheEnv, writeTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
+import { absRule, assertSafeTaskSettings, buildTaskSettings, cacheEnv, claudeUidTmp, CLAUDE_TMP_MAX_BYTES, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
 import { shortTmp } from "../helpers.ts";
 
 const ctx = {
@@ -123,10 +123,41 @@ describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () 
   });
 
   // Decision 93: sessions read no system temp folder but their own worktree and cache.
-  it("points the session's temp folder (and Claude Code's) at a private folder in the cache, never the system temp", () => {
+  it("points the session's own TMPDIR at a private folder in the cache, never the system temp", () => {
     const e = cacheEnv(ctx.cacheDir);
     expect(e.TMPDIR).toBe(`${ctx.cacheDir}/tmp`);
-    expect(e.CLAUDE_CODE_TMPDIR).toBe(`${ctx.cacheDir}/tmp`);
+    expect(e.CLAUDE_CODE_TMPDIR).toBeUndefined();
+  });
+
+  // 2.1.309 hands sandboxed commands TMPDIR=<CLAUDE_CODE_TMPDIR>/claude-<uid> only when that path is at
+  // most 44 bytes (AF_UNIX); otherwise the /tmp/claude-<uid> every Claude Code session of the user shares.
+  it("makes a short, private, fresh session temp folder Claude Code will use for sandboxed commands", () => {
+    const a = makeSessionTmpDir();
+    const b = makeSessionTmpDir();
+    try {
+      expect(a).not.toBe(b);
+      expect(a.startsWith("/private/tmp/jt-")).toBe(true);
+      expect(Buffer.byteLength(claudeUidTmp(a))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
+      expect(statSync(a).mode & 0o777).toBe(0o700);
+      expect(sessionTmpEnv(a)).toEqual({ CLAUDE_CODE_TMPDIR: a });
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
+  });
+
+  it("reopens exactly the session temp folder for reading and writing", () => {
+    const s = buildTaskSettings({ ...ctx, sessionTmpDir: "/private/tmp/jt-abc123" });
+    expect(s.sandbox.filesystem.allowRead).toEqual([ctx.cacheDir, "/private/tmp/jt-abc123"]);
+    expect(s.sandbox.filesystem.allowWrite).toEqual([ctx.cacheDir, "/private/tmp/jt-abc123"]);
+    expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["/private/tmp"]));
+  });
+
+  it("refuses a session temp folder Claude Code would ignore, or that reopens too much", () => {
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/private/tmp/a-folder-name-that-is-too-long" })).toThrow(/44 bytes/);
+    for (const d of ["/private/tmp", "/private/var/folders", "/private"]) expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: d })).toThrow(/temp root/);
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/tmp/jt-abc" })).toThrow(/real path/);
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/Users/f/.jarvis/t" })).toThrow(/runner-owned|worktree|cache/);
   });
 
   it("denies shell reads of the system temp roots", () => {

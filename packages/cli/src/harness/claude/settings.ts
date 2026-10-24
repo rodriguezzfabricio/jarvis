@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -29,6 +29,32 @@ export interface TaskSettingsInput {
   readOnlyDirs?: readonly string[];
   /** Real path of the runner's own $TMPDIR; defaults to the real path of os.tmpdir(). */
   hostTmpDir?: string;
+  /** Real path of this session's private temp folder (makeSessionTmpDir), Claude Code's CLAUDE_CODE_TMPDIR. */
+  sessionTmpDir?: string;
+}
+
+/**
+ * Claude Code 2.1.309 hands sandboxed commands TMPDIR=<CLAUDE_CODE_TMPDIR>/claude-<uid> only when that
+ * path is at most 44 bytes (AF_UNIX socket names); otherwise it falls back to /tmp/claude-<uid>, which
+ * every Claude Code session of the user shares. A cache folder is too long, so each session gets a
+ * short private folder of its own (decision 93).
+ */
+export const CLAUDE_TMP_MAX_BYTES = 44;
+
+export function claudeUidTmp(dir: string): string {
+  return join(dir, `claude-${process.getuid?.() ?? 0}`);
+}
+
+/** A fresh, private (0700), short folder for one session's temp files; the caller removes it afterwards. */
+export function makeSessionTmpDir(): string {
+  const dir = realpathSync(mkdtempSync("/private/tmp/jt-"));
+  if (Buffer.byteLength(claudeUidTmp(dir)) > CLAUDE_TMP_MAX_BYTES) throw new Error(`session temp folder ${dir} is too long for Claude Code`);
+  return dir;
+}
+
+/** Points Claude Code's own temp root, and so its sandboxed commands' TMPDIR, at the session's folder. */
+export function sessionTmpEnv(sessionTmpDir: string): Record<string, string> {
+  return { CLAUDE_CODE_TMPDIR: sessionTmpDir };
 }
 
 /**
@@ -99,7 +125,7 @@ export type TaskSettings = z.infer<typeof SafeTaskSettings>;
 const under = (p: string, dir: string) => p === dir || p.startsWith(`${dir}/`);
 
 function checkContext(input: TaskSettingsInput): void {
-  for (const [name, p] of Object.entries({ worktree: input.worktree, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, brokerSocket: input.brokerSocket ?? "/" })) {
+  for (const [name, p] of Object.entries({ worktree: input.worktree, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, brokerSocket: input.brokerSocket ?? "/", sessionTmpDir: input.sessionTmpDir ?? "/" })) {
     if (!isAbsolute(p)) throw new Error(`${name} must be an absolute real path, got ${p}`);
     if (p.startsWith("/tmp/") || p.startsWith("/var/")) throw new Error(`${name} must be a real path (macOS /tmp and /var are symlinks into /private): ${p}`);
   }
@@ -109,6 +135,14 @@ function checkContext(input: TaskSettingsInput): void {
   // allowRead outranks denyRead, so a runner folder inside a reopened path would be readable.
   if (under(input.jarvisHome, input.worktree) || under(input.jarvisHome, input.cacheDir)) throw new Error("the runner-owned folder must not sit inside the worktree or the cache");
   if (input.hostTmpDir !== undefined && !isAbsolute(input.hostTmpDir)) throw new Error(`hostTmpDir must be an absolute real path, got ${input.hostTmpDir}`);
+  const t = input.sessionTmpDir;
+  if (t !== undefined) {
+    if (Buffer.byteLength(claudeUidTmp(t)) > CLAUDE_TMP_MAX_BYTES) throw new Error(`the session temp folder must keep ${claudeUidTmp(t)} within ${CLAUDE_TMP_MAX_BYTES} bytes, or Claude Code falls back to the shared /tmp/claude-<uid>`);
+    if (tempRoots(input.hostTmpDir ?? defaultHostTmpDir()).some((r) => under(r, t))) throw new Error(`the session temp folder must be a folder of its own, not a temp root or above one: ${t}`);
+    for (const [name, p] of Object.entries({ "runner-owned folder": input.jarvisHome, worktree: input.worktree, cache: input.cacheDir })) {
+      if (under(t, p) || under(p, t)) throw new Error(`the session temp folder must not contain or sit inside the ${name}`);
+    }
+  }
   if (input.brokerSocket && !under(input.brokerSocket, input.jarvisHome)) throw new Error("the broker socket must live in the runner-owned folder");
   for (const d of input.readOnlyDirs ?? []) {
     if (!isAbsolute(d) || d.startsWith("/tmp/") || d.startsWith("/var/")) throw new Error(`read-only dir must be an absolute real path: ${d}`);
@@ -123,6 +157,8 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
   const denyTemp = tempRoots(input.hostTmpDir ?? defaultHostTmpDir());
   // The worktree is readable as the working directory, except under a denied temp root: reopen exactly it.
   const worktreeInTemp = denyTemp.some((r) => under(input.worktree, r));
+  // Claude Code's temp root for this session: its sandboxed commands' TMPDIR (decision 93).
+  const sessionTmp = input.sessionTmpDir !== undefined ? [input.sessionTmpDir] : [];
   const settings: TaskSettings = {
     autoMemoryEnabled: false,
     sandbox: {
@@ -137,8 +173,8 @@ export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {
       filesystem: {
         denyRead: [input.jarvisHome, ...denyTemp],
         // blockReadsOutsideWorkingDirectories closes reads of /Users and similar; the cache is reopened.
-        allowRead: [...(worktreeInTemp ? [input.worktree] : []), input.cacheDir, ...(input.readOnlyDirs ?? [])],
-        allowWrite: [input.cacheDir],
+        allowRead: [...(worktreeInTemp ? [input.worktree] : []), input.cacheDir, ...sessionTmp, ...(input.readOnlyDirs ?? [])],
+        allowWrite: [input.cacheDir, ...sessionTmp],
         denyWrite: [
           input.jarvisHome,
           join(input.worktree, ".git", "hooks"),
@@ -185,9 +221,8 @@ export function cacheEnv(cacheDir: string): Record<string, string> {
     npm_config_cache: join(cacheDir, "npm"),
     npm_config_store_dir: join(cacheDir, "pnpm-store"),
     XDG_CACHE_HOME: join(cacheDir, "xdg"),
-    // Decision 93: the system temp folders are read-denied, so the shells' TMPDIR and Claude Code's own
-    // temp root (it hands CLAUDE_CODE_TMPDIR to sandboxed commands as TMPDIR) live in the cache.
+    // Decision 93: the system temp folders are read-denied, so TMPDIR for Claude Code and its hooks lives in
+    // the cache. Sandboxed commands get Claude Code's own temp folder instead (sessionTmpEnv).
     TMPDIR: join(cacheDir, "tmp"),
-    CLAUDE_CODE_TMPDIR: join(cacheDir, "tmp"),
   };
 }

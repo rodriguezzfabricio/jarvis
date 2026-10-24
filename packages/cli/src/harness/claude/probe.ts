@@ -9,7 +9,7 @@ import { CLAUDE_CODE_VERSION, MODELS } from "../../config/pins.ts";
 import { buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
 import { runSession } from "./session.ts";
-import { buildTaskSettings, cacheEnv, writeTaskSettings, type TaskSettings, type TaskSettingsInput } from "./settings.ts";
+import { buildTaskSettings, cacheEnv, claudeUidTmp, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type TaskSettings, type TaskSettingsInput } from "./settings.ts";
 import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls, usageWaitUntil, type ToolCall } from "./streamjson.ts";
 
 /**
@@ -244,7 +244,7 @@ export function composeVerdict(
     else if (!did && r.isError) parts.push(`${c.form} refused (${firstLine(r.text)})`);
     else {
       ok = false;
-      parts.push(`${c.form}: ${r.isError ? "reported an error, yet it ran" : "reported success, yet nothing ran"}`);
+      parts.push(`${c.form}: ${r.isError ? `reported an error, yet it ran (${firstLine(r.text)})` : "reported success, yet nothing ran"}`);
     }
   }
   return { ok, detail: parts.join("; ") };
@@ -319,6 +319,9 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     return { key, src, copy: join(work, `tempread-${key}.txt`), err: join(work, `tempread-${key}.err`), rc: join(work, `tempread-${key}.rc`) };
   });
   const tmpdirCopy = join(work, "tmpdir-ok.txt");
+  // Claude Code's own temp root for this session, as the runner gives each task session one.
+  const sessionTmp = makeSessionTmpDir();
+  const sandboxTmp = claudeUidTmp(sessionTmp);
 
   const received: string[] = [];
   const checks: ProbeCheck[] = [];
@@ -376,13 +379,13 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     const settingsPath = join(root, "settings.json");
     const mcpPath = join(root, "mcp.json");
     const allowedDomains = opts.negativeControlAllowBlockedHost ? [allowedHost, blockedHost] : [allowedHost];
-    const ctx: TaskSettingsInput = { worktree: work, jarvisHome, cacheDir, brokerSocket: socketPath, allowedDomains, hostTmpDir: hostTmp };
+    const ctx: TaskSettingsInput = { worktree: work, jarvisHome, cacheDir, brokerSocket: socketPath, allowedDomains, hostTmpDir: hostTmp, sessionTmpDir: sessionTmp };
     writeTaskSettings(settingsPath, ctx);
     if (opts.negativeControlSettings) writeFileSync(settingsPath, `${JSON.stringify(opts.negativeControlSettings(buildTaskSettings(ctx)), null, 2)}\n`, { mode: 0o600 });
     writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
     const safeArgs = buildTaskArgs({ prompt: probePrompt(steps), settingsPath, mcpConfigPath: mcpPath, model, maxTurns: 30, pluginDir });
     const args = opts.negativeControlArgs ? opts.negativeControlArgs(safeArgs) : safeArgs;
-    const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...(opts.extraEnv ?? {}) });
+    const env = buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmp), ...(opts.extraEnv ?? {}) });
     const out = await runSession({ bin: opts.claudeBin, args, cwd: work, env, timeoutMs: opts.timeoutMs ?? 240_000 });
     exitCode = out.code;
     const events = parseStreamJson(out.stdout);
@@ -432,8 +435,8 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
     const composed = composeVerdict(compose, (c) => findCall(calls, c.step)?.result, (c) => existsSync(c.marker) && (c.content === undefined || readFileSync(c.marker, "utf8").includes(c.content)));
     add("shell_composition_recorded", composed.ok, composed.detail);
     const m = line(shellOut, "M") ?? "nothing";
-    const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && (m === join(cacheDir, "tmp") || m.startsWith(`${join(cacheDir, "tmp")}/`));
-    add("positive_session_tmpdir_usable", tmpdirOk, `sandboxed TMPDIR ${m}: ${tmpdirOk ? "a private cache folder, written and read back" : `not the private cache folder ${join(cacheDir, "tmp")}, or not usable`}`);
+    const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && m === sandboxTmp;
+    add("positive_session_tmpdir_usable", tmpdirOk, `sandboxed TMPDIR ${m}: ${tmpdirOk ? "the session's private folder, written and read back" : `not the session's private folder ${sandboxTmp}, or not usable`}`);
 
     // Negative checks.
     const all = `${out.stdout}\n${out.stderr}`;
@@ -469,6 +472,7 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
   } finally {
     server?.close();
     rmSync(root, { recursive: true, force: true });
+    rmSync(sessionTmp, { recursive: true, force: true });
     for (const c of tempReads) rmSync(c.src, { force: true });
     rmSync(outsideReadFile, { force: true });
     rmSync(outsideWriteFile, { force: true });

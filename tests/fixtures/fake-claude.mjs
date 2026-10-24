@@ -182,10 +182,13 @@ for (const st of steps) {
       writeFileSync(rc, (readable && mode !== "tmp-lies") || mode === "tmp-exit0" ? "0\n" : "1\n");
     }
     {
-      // Sandboxed commands get TMPDIR=$CLAUDE_CODE_TMPDIR, or /tmp/claude without it (the pinned binary).
+      // Sandboxed commands get TMPDIR=$CLAUDE_CODE_TMPDIR/claude-<uid> when that is at most 44 bytes, else the
+      // shared /tmp/claude-<uid> (the pinned binary).
       // tmpdir-system: the system temp, usable; tmpdir-broken: the right folder, but nothing written.
       const [, val, copy] = line("M").match(/printf %s (\S+) > "\$TMPDIR\/probe-tmpdir.txt" && cat "\$TMPDIR\/probe-tmpdir.txt" > (\S+);/);
-      const tmp = mode === "tmpdir-system" ? "/tmp/claude" : process.env.CLAUDE_CODE_TMPDIR ?? "/tmp/claude";
+      const uidTmp = (root) => `${root}/claude-${process.getuid()}`;
+      const own = process.env.CLAUDE_CODE_TMPDIR && Buffer.byteLength(uidTmp(process.env.CLAUDE_CODE_TMPDIR)) <= 44 ? uidTmp(process.env.CLAUDE_CODE_TMPDIR) : undefined;
+      const tmp = mode === "tmpdir-system" ? uidTmp("/tmp") : own ?? uidTmp("/tmp");
       if (mode !== "tmpdir-broken") writeFileSync(copy, val);
       res.push(`M:${tmp}`);
     }

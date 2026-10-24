@@ -104,13 +104,13 @@
   {
     "name": "probe accepts a system TMPDIR",
     "file": "packages/cli/src/harness/claude/probe.ts",
-    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && (m === join(cacheDir, \"tmp\") || m.startsWith(`${join(cacheDir, \"tmp\")}/`));",
+    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && m === sandboxTmp;",
     "replacement": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`);"
   },
   {
     "name": "probe accepts an unusable TMPDIR",
     "file": "packages/cli/src/harness/claude/probe.ts",
-    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && (",
-    "replacement": "const tmpdirOk = ("
+    "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && ",
+    "replacement": "const tmpdirOk = "
   }
 ]

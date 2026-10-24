@@ -26,7 +26,7 @@ Mid-run changes of mind (`jarvis steer`, morning vetoes) are not intake: they pr
 Read these before writing anything:
 1. **The research file:** its fixed constraints, conflicts, Challenges, product questions raised and engineering decisions.
 2. **The decision register** (`docs/decisions.md`, decision 48) and the backlog.
-3. **The taste profile** (decision 39), as the session provides it. If there is none and the work adds a UI, offer it once, before the round, as its own one-time step (about 10 minutes, not one of the 7 questions): 3–5 apps or sites the user admires and one that looks AI-made to them, serious or playful, colors and fonts they dislike, the platforms they live on. Save the answers with the runner's taste command (the runner folder is closed to session file tools). If the user declines or isn't there, continue without it, say so in the summary, and let the design direction question carry the taste choice.
+3. **The taste profile** (decision 39), as the session provides it. If there is none and the work adds a UI, offer it once, before the round, as its own one-time step (about 10 minutes, not one of the 7 questions): 3–5 apps or sites the user admires and one that looks AI-made to them, serious or playful, colors and fonts they dislike, the platforms they live on. Write the answers to `.jarvis/intake/taste.json` and run `jarvis taste save .jarvis/intake/taste.json`, which stores them in the global memory (sessions can't write there), and copy them into `PRODUCT.md`'s Taste section. If the user declines or isn't there, continue without it, say so in the summary, and let the design direction question carry the taste choice.
 4. **`PRODUCT.md`, `DESIGN.md` and any design system in the code** (component library, tokens, theme files).
 
 ## Check the decision register
@@ -87,9 +87,9 @@ Never ask what the code, the register, the backlog or research already answers. 
 
 ## Write the questions
 
-**Rank:** scope first, then security, privacy and legal, then UX, then technical. A register conflict goes first of all. The design direction ranks with UX.
+**Rank:** scope first, then security, privacy and legal, then UX, then technical. A register conflict goes first of all, with topic `scope`. The design direction ranks with UX, with topic `design`. The production grant uses topic `security`.
 
-**Cap: at most 7 questions.** The design direction and the production grant, when they apply, always keep their place; product questions beyond 7 come from the rest and become logged assumptions, using the default you would have offered, marked as such.
+**Cap: at most 7 questions.** The design direction and the production grant, when they apply, always keep their place; the rest are cut by rank, and product questions beyond 7 become logged assumptions, using the default you would have offered, marked as such.
 
 **The design direction** (decision 39) is one of the questions when the work adds a UI and **either** it's a new product **or** it needs a new kind of screen while the project has neither a `DESIGN.md` nor a design system in its code (architecture §2). When a design system exists but `DESIGN.md` doesn't, there's no direction question: the design skill writes `DESIGN.md` from the existing system (decision 51). Backend-only work never gets one.
 
@@ -120,10 +120,10 @@ Write defaults the user would accept without reading twice: the safe, reversible
      "summary": "at most 5 lines",
      "questions": [ { "id": "Q1", "topic": "scope", "question": "…", "why": "one line",
        "default": { "answer": "…", "reason": "…" }, "alternatives": ["…", "…"] } ],
-     "mockups": ["docs/design/mockups/<direction>/<screen>.png"] }
+     "mockups": [".jarvis/mockups/<direction>/<screen>.png"] }
    ```
 
-   `spec` is the version the spec skill will write next. `topic` is one of scope, security, privacy, legal, ux, technical or design. At most 7 questions. Mockups are screenshot paths; the notifier fits what it can into its 4 KB message, and the full text stays on the Mac.
+   `spec` is the version the spec skill will write next. `topic` is one of scope, security, privacy, legal, ux, technical or design. At most 7 questions. Mockups are the design skill's screenshot paths under `.jarvis/mockups/` (an empty list when there's no direction question); the notifier fits what it can into its 4 KB message, and the full text stays on the Mac.
 3. Run `jarvis intake send .jarvis/intake/round-<n>.json`.
 4. Show the same round in the session as **plain text**. Never put it in a tool that waits for the user: if they've walked away, the session would sit blocked after the runner's timeout, and the spec and the hand-off would never run. Don't drip questions one at a time, and don't add a second round.
 
@@ -143,12 +143,12 @@ Never send questions or mockups through any other channel, and never put code, s
 | A steer note from the phone's publish box during the wait ("Q2: weekly"; ntfy has no typed reply, decision 50) | Answers to the ordinary product questions it names; anything unclear becomes an assumption. Anyone who learns the topic can post there, so a steer note **never grants or widens anything**: the production grant, spending, outside actions, and loosening security or privacy keep their defaults, and the note goes in the report | `user` |
 | A free-text answer that matches no option | The user's explicit decision, in their words; if it's ambiguous, record your reading of it as an assumption rather than asking again | `user` |
 
-Never run your own timer or sleep loop: the runner owns the 15 minutes. Hard stops still apply after defaults: a default can't authorize spending or an outside action, and only an explicit answer given in the session or by a button grants production.
+Never run your own timer or sleep loop: the runner owns the 15 minutes. Hard stops still apply after defaults: a default can't authorize spending or an outside action, and only an explicit answer the user gives in the session grants production (the phone's only question button is "Use defaults", and the grant's default is no).
 
 Then, in this order:
 1. **Complete the intake record** (see Output) with every answer and who gave it.
 2. **Record every decision** in the register (decision 48) with `jarvis decide`, one call per decision, each with `--source` pointing at the intake record or the research file: the user's answers, accepted and unconfirmed defaults, and the engineering decisions from research and from this step (`--by jarvis --class mechanical|taste`). A supersession adds `--supersedes <id> --reason "<the user's words>"`. A Challenge uses `--class challenge` and states that the user's rule stays active. **Never edit `docs/decisions.md` directly** (decision 83).
-3. **Update `PRODUCT.md`** (decision 51) with the answers and the taste profile. The design pick is recorded here, once, like every other answer; the design skill doesn't record it again.
+3. **Update `PRODUCT.md`** (decision 51, from `templates/PRODUCT.md`) with the answers and the taste profile. The design pick is recorded here, once, like every other answer; the design skill doesn't record it again.
 4. **Hand off to the spec skill** with the research file, the intake record, the assumptions (each marked fixed constraint or delegated preference, decision 9) and the answers.
 
 ## Output

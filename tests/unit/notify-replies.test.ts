@@ -14,6 +14,12 @@ function setup() {
   const ledger = Ledger.open(dir);
   return { dir, ledger, inbox: new ReplyInbox(ledger) };
 }
+/** Runs recordAnswer so that a throw fails as an assertion, not a runner error. */
+function recordedMessage(run: () => ReturnType<typeof recordAnswer>): ReturnType<typeof recordAnswer> | undefined {
+  let message: ReturnType<typeof recordAnswer> | undefined;
+  expect(() => { message = run(); }).not.toThrow();
+  return message;
+}
 
 describe("reply parsing and durable first answers", () => {
   it("parses buttons and steer notes but refuses bare or malformed control answers", () => {
@@ -172,7 +178,7 @@ describe("decision 84 notifier contract", () => {
     broker.decide(p.approvalId!, first, "cli");
     const r = inbox.register(p.approvalId!, "approval");
     const answer = inbox.accept({ id: "tap", text: `${later}:${r.requestId}:${r.nonce}` });
-    const message = recordAnswer(ledger, answer, broker);
+    const message = recordedMessage(() => recordAnswer(ledger, answer, broker));
     expect(message).toEqual({ kind: "confirmation", text: `Not counted: request ${r.requestId} was already answered: ${label}` });
     expect(ledger.entries().at(-1)).toMatchObject({ kind: "notify", data: { phase: "recorded", outcome: "superseded", by: first } });
     expect(new ReplyInbox(Ledger.open(dir)).pending()).toEqual([]);
@@ -186,7 +192,7 @@ describe("decision 84 notifier contract", () => {
     const broker = new Broker({ ledger, project: "test", adapters: [], secrets: { get: () => undefined } });
     const r = inbox.register("missing", "approval");
     const answer = inbox.accept({ id: "tap", text: `approve:missing:${r.nonce}` });
-    expect(recordAnswer(ledger, answer, broker)).toEqual({ kind: "confirmation", text: "Not counted: request missing has no approval request" });
+    expect(recordedMessage(() => recordAnswer(ledger, answer, broker))).toEqual({ kind: "confirmation", text: "Not counted: request missing has no approval request" });
     expect(ledger.entries().at(-1)).toMatchObject({ kind: "notify", data: { phase: "recorded", outcome: "no-request" } });
     expect(new ReplyInbox(Ledger.open(dir)).pending()).toEqual([]);
     expect(ledger.entries().filter((e) => e.kind === "approval")).toEqual([]);

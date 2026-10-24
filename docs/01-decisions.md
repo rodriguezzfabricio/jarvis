@@ -759,6 +759,7 @@ Decision 71 moved "the desktop app loads the Jarvis plugin, settings and hooks t
 The stage 1 desktop check is therefore:
 - **The Jarvis plugin loads** in a desktop Code tab session, and **both hooks run there:** the tripwire blocks a known-forbidden call, and SessionStart runs.
 - **Evidence comes from records Claude Code writes,** such as the session transcript's blocked tool result and hook records, never from the model's own text, which a session could forge.
+- **The tripwire probe is a harmless Bash call whose text matches a tripwire rule:** `printf '%s\n' 'npm publish'`. A forbidden `Read` doesn't work as a probe, because Claude Code's built-in permission rules block it before any PreToolUse hook runs (Codex's protocol capture, Oct 24), so it can't show the tripwire ran. The command does nothing if run, and the tripwire blocks it from its text alone.
 - **The same check runs through the pinned CLI** with the same plugin, and the two results are compared.
 - **The safety envelope** (sandbox, allowlist, `--restricted`, `dontAsk`, the broker) **is proven only on the pinned CLI,** by the live probe and the live safety test, as today.
 

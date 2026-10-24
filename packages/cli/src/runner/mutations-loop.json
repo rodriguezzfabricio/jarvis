@@ -1,0 +1,194 @@
+[
+  {
+    "name": "runner-loop exclusive run lease",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "  acquire(): void {",
+    "replacement": "  acquire(): void { return;"
+  },
+  {
+    "name": "runner-loop crashed run cleanup",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "pidAlive: this.pidAlive,",
+    "replacement": "pidAlive: () => true,"
+  },
+  {
+    "name": "runner-loop main routing snapshot",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "loadRouting(this.opts.repoPath)",
+    "replacement": "loadRouting(this.opts.projectDir)"
+  },
+  {
+    "name": "runner-loop inbox durable cursor",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      await this.opts.applyInbox?.(action, this.ledger);",
+    "replacement": "      saveInboxCursor(this.opts.projectDir, batch.cursor, this.ledger.entries());\n      await this.opts.applyInbox?.(action, this.ledger);"
+  },
+  {
+    "name": "runner-loop usage dispatch barrier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "  private async pauseUsage(): Promise<void> {",
+    "replacement": "  private async pauseUsage(): Promise<void> { return;"
+  },
+  {
+    "name": "runner-loop usage reset canary",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (!this.opts.reprobe || !await this.opts.reprobe()) return false;",
+    "replacement": "if (false) return false;"
+  },
+  {
+    "name": "runner-loop dependency evidence",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "task.definition.dependencies.every((id) => state.tasks[id] !== undefined && isDone(state.tasks[id]!, this.verify))",
+    "replacement": "task.definition.dependencies.every(() => true)"
+  },
+  {
+    "name": "runner-loop writing concurrency cap",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "ready.slice(0, this.concurrency - this.running.size)",
+    "replacement": "ready"
+  },
+  {
+    "name": "runner-loop repair budget",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "decideRepair(task, { kind: \"failure\" },",
+    "replacement": "decideRepair(task, { kind: \"runner_crash\" },"
+  },
+  {
+    "name": "runner-loop notes excluded",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "        appendFileSync(join(workspace.path, \".git/info/exclude\"), \"\\n/.jarvis/\\n\");",
+    "replacement": ""
+  },
+  {
+    "name": "runner-loop whole group exit required",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (group && !groupExited) throw new Error(\"process group did not exit; attempt remains recoverable\");",
+    "replacement": "if (false) throw new Error(\"process group did not exit; attempt remains recoverable\");"
+  },
+  {
+    "name": "runner-loop process identity fail closed",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "outcome.status === \"refused\" || identityMissing || (outcome.status !== \"usage-limited\" && !group)",
+    "replacement": "outcome.status === \"refused\""
+  },
+  {
+    "name": "runner-loop process timeout enforced",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "timers.push(setTimeout(() => { timedOut = true; shutdown(); }, this.timeout));",
+    "replacement": ""
+  },
+  {
+    "name": "runner-loop timeout counts as failure",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (outcome.status !== \"finished\") {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "runner-loop candidate runner metadata absent",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (paths.some((path) => path.split(\"/\")[0]?.toLowerCase() === \".jarvis\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-loop all required gates",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "for (const name of task.definition.requiredChecks) {",
+    "replacement": "for (const name of task.definition.requiredChecks.slice(0, 1)) {"
+  },
+  {
+    "name": "runner-loop tamper blocks without repair",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (result.status === \"tampered\") return this.block(task, \"protected check changed\");",
+    "replacement": "if (result.status === \"tampered\") return;"
+  },
+  {
+    "name": "runner-loop gate evidence verified",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (!this.verify(result.entry).ok) return this.block(task, \"gate evidence changed\");",
+    "replacement": "if (false) return this.block(task, \"gate evidence changed\");"
+  },
+  {
+    "name": "runner-loop all named reviewers",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "for (const reviewer of task.definition.requiredReviews) {",
+    "replacement": "for (const reviewer of task.definition.requiredReviews.slice(0, 1)) {"
+  },
+  {
+    "name": "runner-loop independent review verdict",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (status === \"fail\") return;",
+    "replacement": "if (false) return;"
+  },
+  {
+    "name": "runner-loop promotion rechecks evidence",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (!isDone(task, this.verify)) return this.block(task, \"completion evidence changed\");",
+    "replacement": "if (false) return this.block(task, \"completion evidence changed\");"
+  },
+  {
+    "name": "runner-loop terminal candidate cleanup",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    deleteCandidateBranches(this.opts.repoPath,",
+    "replacement": "    (() => [])(this.opts.repoPath,"
+  },
+  {
+    "name": "runner-loop settle before lease release",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "finally { await loop.settle(); loop.release(); }",
+    "replacement": "finally { loop.release(); }"
+  },
+  {
+    "name": "runner-loop run canary mandatory",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "if (!(await probe()).ok)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-loop detach same process entrypoint",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "detached: true, stdio: [\"ignore\", fd, fd]",
+    "replacement": "detached: false, stdio: [\"ignore\", fd, fd]"
+  },
+  {
+    "name": "runner-loop planner goal preserved",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "goal: z.string().default(\"\"), exitCondition: z.string().default(\"\"), mayTouch: z.array(text).optional(),",
+    "replacement": ""
+  },
+  {
+    "name": "runner-loop cleanup process killer injection",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      ...(this.opts.kill ? { kill: this.opts.kill } : {}),",
+    "replacement": ""
+  },
+  {
+    "name": "runner-loop timeout candidate replay",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (!session) continue;",
+    "replacement": "if (!session || dataOf(session).outcome !== \"finished\") continue;"
+  },
+  {
+    "name": "runner-loop failing check does not skip required checks",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (result.status !== \"pass\") { failedGate = true; continue; }",
+    "replacement": "if (result.status !== \"pass\") return;"
+  },
+  {
+    "name": "runner-loop process identity checkpoint",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "processGroup: groupId, processGroupRecord: group",
+    "replacement": "processGroup: groupId, processGroupRecord: undefined"
+  },
+  {
+    "name": "runner-loop account reset waits not acknowledged early",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      let until: number | undefined;\n      while ((until = activeUsageWait(this.ledger.entries(), this.now())) !== undefined) await this.sleep(Math.min(60_000, until - this.now()));\n      if (!this.opts.reprobe || !await this.opts.reprobe()) return false;\n      const entries = this.ledger.entries();\n      if (activeUsageWait(entries, this.now()) !== undefined) continue;",
+    "replacement": "      if (!this.opts.reprobe || !await this.opts.reprobe()) return false;\n      const entries = this.ledger.entries();"
+  },
+  {
+    "name": "runner-loop review dispatch usage barrier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      await this.pauseUsage();\n      this.record(\"review_intent\",",
+    "replacement": "      this.record(\"review_intent\","
+  }
+]

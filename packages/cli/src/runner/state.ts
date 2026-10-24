@@ -13,6 +13,7 @@ const processGroupRecord = z.object({
 export type ProcessGroupRecord = z.infer<typeof processGroupRecord>;
 
 const definition = z.object({
+  goal: z.string().default(""), exitCondition: z.string().default(""), mayTouch: z.array(text).optional(),
   title: z.string().default(""), acceptanceCriteria: z.array(text).default([]), storyIds: z.array(text).default([]),
   dependencies: z.array(text).default([]), priority: z.number().finite().default(0),
   requiredChecks: z.array(text).min(1).default(["unit"]),

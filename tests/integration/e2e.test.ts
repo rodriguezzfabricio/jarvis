@@ -110,24 +110,30 @@ describe("e2e fixture: protected checks on the real gate (checks/gate.ts)", { ti
 // state_reached {state: "passed", revision} for it (runner/state.ts), after passing gate_result entries
 // for every required check at that revision; promotion moves the last-green tag (promoteCandidate).
 // To turn these on: set LOOP_READY to true (and adjust loadLoop if the API differs).
-const LOOP_READY = false;
+const LOOP_READY = true;
 interface RunLoopResult { status: string; done: string[]; blocked: string[] }
 type RunLoop = (opts: Record<string, unknown>) => Promise<RunLoopResult>;
-type CreateHarness = (opts: ReturnType<typeof harnessOptions>) => unknown;
+type CreateHarness = typeof import("../../packages/cli/src/harness/claude/task.ts").createClaudeHarness;
+type RunSession = typeof import("../../packages/cli/src/proc/session.ts").runSession;
 const src = (rel: string) => pathToFileURL(join(import.meta.dirname, "../../packages/cli/src", rel)).href;
-async function loadLoop(): Promise<{ runLoop: RunLoop; createClaudeHarness: CreateHarness }> {
+async function loadLoop(): Promise<{ runLoop: RunLoop; createClaudeHarness: CreateHarness; runSession: RunSession }> {
   const loop = (await import(src("runner/loop.ts"))) as { runLoop: RunLoop };
   const task = (await import(src("harness/claude/task.ts"))) as { createClaudeHarness: CreateHarness };
-  return { runLoop: loop.runLoop, createClaudeHarness: task.createClaudeHarness };
+  const session = (await import(src("proc/session.ts"))) as { runSession: RunSession };
+  return { runLoop: loop.runLoop, createClaudeHarness: task.createClaudeHarness, runSession: session.runSession };
 }
 async function run(p: E2EProject, extra: Record<string, unknown> = {}) {
-  const { runLoop, createClaudeHarness } = await loadLoop();
+  const { runLoop, createClaudeHarness, runSession } = await loadLoop();
   seedTasks(p);
   const clock = virtualClock();
   const reviews: string[] = [];
   const result = await runLoop({
     projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, runBranch: p.runBranch,
-    worktreeRoot: p.worktreeRoot, workRoot: p.workRoot, harness: createClaudeHarness(harnessOptions(p)), checks: p.checks,
+    worktreeRoot: p.worktreeRoot, workRoot: p.workRoot,
+    createHarness: (routing: Parameters<CreateHarness>[0]["routing"]) => createClaudeHarness({
+      ...harnessOptions(p), worktreeRoot: p.worktreeRoot, routing, binaryRealpath: () => p.claudeBin,
+      session: (spec) => runSession({ ...spec, bin: p.claudeBin }),
+    }), checks: p.checks,
     review: async (r: { taskId: string }) => { reviews.push(r.taskId); return "pass"; },
     taskTimeoutMs: 20_000, maxTurns: 20, now: clock.now, sleep: clock.sleep, usageMarginMs: 0, reprobe: async () => true, notify: async () => {},
     gitHome: p.gitHome, ...extra,

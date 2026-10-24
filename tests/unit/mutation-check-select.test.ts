@@ -175,45 +175,55 @@ describe("per-set control cache", () => {
 
 describe("subset verdict with full-suite fallback", () => {
   const v = (kind: string, detail = kind) => ({ kind, detail });
-  const fake = async (subset: { kind: string; detail: string } | undefined, full: { kind: string; detail: string }, control: object | null = { ids: ["x"] }) => {
+  const fake = async (subset: { kind: string; detail: string } | undefined, full: { kind: string; detail: string }, control: object | null = { ids: ["x"] }, confirm = false) => {
     const calls: string[] = [];
     const out = await judge({
       tests: subset === undefined ? [] : ["tests/unit/a.test.ts", "tests/unit/b.test.ts"],
       control: () => (calls.push("control"), control),
       runSubset: () => (calls.push("subset"), subset),
       runFull: async () => (calls.push("full"), full),
+      confirm,
     });
     return { out, calls };
   };
 
-  it("keeps a subset catch without running the full suite", async () => {
+  it("keeps a subset catch without running the full suite, marked unconfirmed", async () => {
     const { out, calls } = await fake(v("caught", "1 failing assertion(s): t"), v("error"));
-    expect(out).toEqual({ kind: "caught", detail: "1 failing assertion(s): t", scope: "2 of the suite's test files" });
+    expect(out).toEqual({ kind: "caught", detail: "1 failing assertion(s): t", scope: "2 of the suite's test files, not confirmed", confirmed: false });
     expect(calls).toEqual(["control", "subset"]);
   });
 
   it("re-runs a subset survivor on the full suite and reports the full suite's verdict", async () => {
-    expect((await fake(v("survived"), v("survived"))).out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, after 2 test files survived" });
+    expect((await fake(v("survived"), v("survived"))).out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, after 2 test files survived", confirmed: true });
     const { out, calls } = await fake(v("survived"), v("caught", "1 failing assertion(s): u"));
-    expect(out).toEqual({ kind: "caught", detail: "1 failing assertion(s): u", scope: "full suite, after 2 test files survived" });
+    expect(out).toEqual({ kind: "caught", detail: "1 failing assertion(s): u", scope: "full suite, after 2 test files survived", confirmed: true });
     expect(calls).toEqual(["control", "subset", "full"]);
   });
 
   it("re-runs a subset error on the full suite too, so only the full suite can turn it into a catch", async () => {
-    expect((await fake(v("error", "1 test(s) timed out"), v("error", "x"))).out).toEqual({ kind: "error", detail: "x", scope: "full suite, after 2 test files gave an error" });
+    expect((await fake(v("error", "1 test(s) timed out"), v("error", "x"))).out).toEqual({ kind: "error", detail: "x", scope: "full suite, after 2 test files gave an error", confirmed: true });
     expect((await fake(v("error"), v("caught"))).out.kind).toBe("caught");
   });
 
   it("goes straight to the full suite when no test file is related", async () => {
     const { out, calls } = await fake(undefined, v("survived"));
-    expect(out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, no related test file" });
+    expect(out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, no related test file", confirmed: true });
     expect(calls).toEqual(["full"]);
   });
 
   it("goes straight to the full suite when the subset's own control isn't clean", async () => {
     const { out, calls } = await fake(v("caught"), v("survived"), null);
-    expect(out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, the 2 test files' control wasn't clean" });
+    expect(out).toEqual({ kind: "survived", detail: "survived", scope: "full suite, the 2 test files' control wasn't clean", confirmed: true });
     expect(calls).toEqual(["control", "full"]);
+  });
+
+  // Codex review, critical: a test the selection can't see (a computed import) may error on the full suite.
+  it("in confirm mode reports only the full suite's verdict, so a hidden full-suite error is never a catch", async () => {
+    const { out, calls } = await fake(v("caught", "1 failing assertion(s): t"), v("error", "file-level errors in hidden.test.ts"), { ids: ["x"] }, true);
+    expect(out).toEqual({ kind: "error", detail: "file-level errors in hidden.test.ts", scope: "full suite, confirm mode", confirmed: true });
+    // The subset can't change a confirmed verdict, so confirm mode doesn't spend a run on it.
+    expect(calls).toEqual(["full"]);
+    expect((await fake(undefined, v("caught"), null, true)).out).toEqual({ kind: "caught", detail: "caught", scope: "full suite, confirm mode", confirmed: true });
   });
 
   it("hands the subset run the subset's control", async () => {

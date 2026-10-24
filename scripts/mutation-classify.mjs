@@ -65,11 +65,17 @@ export function classify(proc, report, controlIds, runEnd) {
 /**
  * The run's last line and exit code. "all N mutations caught" only when no filter was set and every
  * declared mutation ran and was caught; a filtered run says it's partial (Codex stage 0 review 16).
+ * `unconfirmed` counts catches seen on related tests only, never on the full suite: such a run is
+ * not the gate and exits 3 (Codex review of the subset mutation check).
  */
-export function summarize({ total, selected, filtered, results }) {
+export function summarize({ total, selected, filtered, results, unconfirmed = 0 }) {
   if (selected === 0) return { line: "no mutation matches the filter", exitCode: 2 };
   const bad = results.filter((l) => !l.startsWith("caught")).length;
   if (bad) return { line: `${bad} mutation(s) not caught`, exitCode: 1 };
+  if (unconfirmed) {
+    const ran = filtered || selected !== total ? `partial run: ${selected} of ${total} mutations selected` : `all ${total} ran`;
+    return { line: `${ran}, ${unconfirmed} caught on related tests only; not confirmed on the full suite (not the gate: JARVIS_MUTATION_CONFIRM=1)`, exitCode: 3 };
+  }
   if (filtered || selected !== total) return { line: `partial run: ${selected} of ${total} mutations selected, all ${selected} caught (not a complete proof)`, exitCode: 0 };
   return { line: `all ${total} mutations caught`, exitCode: 0 };
 }

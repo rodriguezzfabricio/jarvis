@@ -3,11 +3,12 @@
 // A mutation counts as caught only if: the unmodified control run passed, the mutated run collected
 // the same number of tests, and at least one assertion failed. Crashes and collection errors are
 // errors, never "caught". Every file is restored, even on failure.
-// Each mutation first runs only the test files that can observe the mutated file (import graph plus
-// files the tests name, scripts/mutation-select.mjs), against that set's own control run. Only a
-// catch is kept from that subset; a survivor or an error is re-run on the full suite, whose verdict
-// is the one reported, so the subset changes the time taken, never what counts as caught.
-// Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset;
+// Two modes. Confirm mode (--confirm or JARVIS_MUTATION_CONFIRM=1) is the gate: every verdict comes
+// from the full suite. The fast default first runs only the test files that can observe the mutated
+// file (import graph plus files the tests name, scripts/mutation-select.mjs) against that set's own
+// control; a survivor or an error there is re-run on the full suite, but a catch is kept unconfirmed
+// (a test the selection can't see may still error on the full suite), so a fast run exits 3, never 0.
+// Usage: node scripts/mutation-check.mjs [--confirm]   (JARVIS_MUTATIONS=<regex> to run a subset;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -226,6 +227,7 @@ if (duplicate) { console.log(`duplicate mutation name: ${duplicate}`); process.e
 const jobs = Number(process.env.JARVIS_MUTATION_JOBS ?? "1");
 if (!Number.isInteger(jobs) || jobs < 1) { console.log(`JARVIS_MUTATION_JOBS must be a whole number of at least 1, not "${process.env.JARVIS_MUTATION_JOBS}"`); process.exit(2); }
 const workerFlags = jobs > 1 ? [`--maxWorkers=${Math.max(1, Math.floor((availableParallelism() - 1) / jobs))}`] : [];
+const confirm = process.argv.includes("--confirm") || process.env.JARVIS_MUTATION_CONFIRM === "1";
 const started = Date.now();
 
 // Mutations run in disposable clones of the committed revision, never in the working tree, so an
@@ -352,6 +354,7 @@ const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const results = [];
 const controls = [];
 let controlIds;
+let unconfirmed = 0;
 // JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
 const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
 const selected = mutations.filter(([n]) => !only || only.test(n));
@@ -402,13 +405,14 @@ try {
     if (!orig.includes(from)) return `ERROR    ${name}: anchor not found in ${file}`;
     const tests = testsFor.get(file);
     // The subset's control runs before this clone is mutated, so a control only ever sees unmutated code.
-    const ctl = tests.length ? await subsetControl(tests, clone) : undefined;
+    const ctl = tests.length && !confirm ? await subsetControl(tests, clone) : undefined;
     const tag = name.replace(/\W+/g, "-");
     try {
       current.set(clone, [path, orig]);
       writeFileSync(path, orig.replace(from, to));
       const k = await judge({
         tests,
+        confirm,
         control: () => ctl,
         runSubset: async (t, sc) => {
           const m = await runSuite(clone, tag, t);
@@ -419,6 +423,7 @@ try {
           return classify(m.proc, m.report, controlIds, m.runEnd);
         },
       });
+      if (k.kind === "caught" && !k.confirmed) unconfirmed++;
       return `${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail}) [${k.scope}]`;
     } finally {
       writeFileSync(path, orig);
@@ -440,7 +445,7 @@ try {
   rmSync(work, { recursive: true, force: true });
 }
 console.log([...controls, ...results].join("\n"));
-console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s)`);
-const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results });
+console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s), ${confirm ? "confirm mode" : "fast mode (catches on related tests only)"}`);
+const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results, unconfirmed });
 console.log(`\n${s.line}`);
 process.exitCode = s.exitCode;

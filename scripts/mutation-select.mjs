@@ -109,19 +109,24 @@ export function controlCache(run) {
 }
 
 /**
- * One mutation's verdict. The subset's verdict stands only if it is a catch measured against the
- * subset's own clean control; every other outcome is the full suite's verdict, as before the subset
- * existed. Runners may return promises.
- * @param {{ tests: string[], control: (tests: string[]) => unknown, runSubset: (tests: string[], control: unknown) => unknown, runFull: () => unknown }} args
- * @returns {Promise<{ kind: string, detail: string, scope: string }>}
+ * One mutation's verdict. Without `confirm`, a catch on the subset (measured against the subset's own
+ * clean control) stands but is marked unconfirmed: a test the selection can't see may still error on
+ * the full suite. Every other outcome is the full suite's verdict. With `confirm`, the verdict is the
+ * full suite's alone; the subset can't change it, so it isn't run. Runners may return promises.
+ * @param {{ tests: string[], control: (tests: string[]) => unknown, runSubset: (tests: string[], control: unknown) => unknown, runFull: () => unknown, confirm?: boolean }} args
+ * @returns {Promise<{ kind: string, detail: string, scope: string, confirmed: boolean }>}
  */
-export async function judge({ tests, control, runSubset, runFull }) {
+export async function judge({ tests, control, runSubset, runFull, confirm = false }) {
   const files = `${tests.length} test file${tests.length === 1 ? "" : "s"}`;
-  const full = async (scope) => ({ ...(await runFull()), scope });
+  const full = async (scope) => {
+    const k = await runFull();
+    return { kind: k.kind, detail: k.detail, scope, confirmed: true };
+  };
+  if (confirm) return full("full suite, confirm mode");
   if (tests.length === 0) return full("full suite, no related test file");
   const c = await control(tests);
   if (!c) return full(`full suite, the ${files}' control wasn't clean`);
   const k = await runSubset(tests, c);
-  if (k.kind === "caught") return { kind: k.kind, detail: k.detail, scope: `${tests.length} of the suite's test files` };
+  if (k.kind === "caught") return { kind: k.kind, detail: k.detail, scope: `${tests.length} of the suite's test files, not confirmed`, confirmed: false };
   return full(`full suite, after ${files} ${k.kind === "survived" ? "survived" : "gave an error"}`);
 }

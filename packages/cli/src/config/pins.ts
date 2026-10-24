@@ -29,3 +29,8 @@ export const FULL_MODEL_ID = /^claude-[a-z]+-\d+(-\d+)*(-\d{8})?$/;
 /** Disk floor (decision 63). */
 export const DISK_FLOOR_BYTES = 20 * 1024 ** 3;
 export const DISK_SINGLE_WRITER_BYTES = 40 * 1024 ** 3;
+
+/** Maestro for iOS QA flows (decision 18); doctor checks it. */
+export function pinnedMaestroBin(home: string = homedir()): string {
+  return join(home, ".maestro", "bin", "maestro");
+}

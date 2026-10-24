@@ -103,6 +103,7 @@ From `jarvis --help` today:
 |---|---|
 | `jarvis doctor [--live] [--json]` | Preflight: pinned binaries, clean environment, disk, iCloud, ledgers, plugin, checks sandbox. `--live` adds the canary probe |
 | `jarvis triage "<request>"` | Classifies a request and prints its pipeline. `/jarvis` calls it first |
+| `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints (decisions 45, 53) |
 | `jarvis intake send\|answer\|answers` | Intake rounds: shown in the session, mirrored to ntfy; `answers --wait` waits for your reply |
 | `jarvis taste save <file>` | Saves your design taste profile |
 | `jarvis spec check` | Checks the structure and references of `docs/spec/vN.md` |

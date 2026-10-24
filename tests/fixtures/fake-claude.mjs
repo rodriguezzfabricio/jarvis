@@ -2,9 +2,10 @@
 // init message from the flags and settings it was given, the way the real binary does, runs the
 // worktree's own SessionStart hooks unless --restricted is set (as the real binary does), and acts
 // out one behavior chosen by FAKE_CLAUDE_MODE. It only touches paths named in the probe's steps.
-import { execSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execSync, spawnSync } from "node:child_process";
+import { existsSync, linkSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
+import { dirname } from "node:path";
 
 const argv = process.argv.slice(2);
 const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
@@ -26,9 +27,20 @@ if (!restricted && existsSync(".claude/settings.json")) {
 
 // Plugins passed with --plugin-dir always load and their hooks run (they are runner-owned).
 const pluginDir = flag("--plugin-dir");
-if (pluginDir && existsSync(`${pluginDir}/hooks/hooks.json`) && mode !== "plugin-hooks-off") {
-  const hooks = JSON.parse(readFileSync(`${pluginDir}/hooks/hooks.json`, "utf8")).hooks ?? {};
-  for (const h of hooks.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
+const pluginHooks = pluginDir && existsSync(`${pluginDir}/hooks/hooks.json`) ? JSON.parse(readFileSync(`${pluginDir}/hooks/hooks.json`, "utf8")).hooks ?? {} : {};
+if (mode !== "plugin-hooks-off") for (const h of pluginHooks.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
+// PreToolUse hooks run before each tool call, outside the sandbox; exit 2 blocks the call, stderr is the reason.
+const hookEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir ?? "", PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}` };
+function preToolUse(tool, input) {
+  if (mode === "pretool-hooks-off") return undefined;
+  for (const h of pluginHooks.PreToolUse ?? []) {
+    if (h.matcher && !new RegExp(`^(${h.matcher})$`).test(tool)) continue;
+    for (const c of h.hooks ?? []) {
+      const r = spawnSync("/bin/sh", ["-c", c.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir)], { input: JSON.stringify({ tool_name: tool, tool_input: input }), env: hookEnv, encoding: "utf8" });
+      if (r.status === 2) return `PreToolUse:${tool} hook error: ${r.stderr.trim()}`;
+    }
+  }
+  return undefined;
 }
 
 const init = {
@@ -100,15 +112,38 @@ const socketSend = (path, msg) => new Promise((res) => {
   s.on("error", (e) => res(String(e)));
 });
 
+// The pinned binary's dontAsk answer to compound commands, as observed live (docs/harness-assumptions.md).
+const composeRefused = (cmd) => /^for\b/.test(cmd);
+// One link line of selftest.sh: `make` creates the link (an unsandboxed escape), `lie` misreports the outcome.
+const linkLine = (key, [src, dst], { make = false, lie = false } = {}) => {
+  if (make) linkSync(src, dst);
+  return make !== lie ? `${key}:linked` : `${key}:refused:ln: ${dst}: Operation not permitted`;
+};
+
 let n = 0;
 for (const st of steps) {
+  if (mode === "compose-skip" && st.tool === "Bash" && st.command.includes("compose-redirect")) continue;
+  if (mode === "other-skip" && st.tool === "Write" && st.file_path.includes("/.jarvis/other-")) continue;
   const id = `toolu_${++n}`;
   const input = st.tool === "Bash" ? { command: st.command } : st.tool === "Write" ? { file_path: st.file_path, content: st.content } : { file_path: st.file_path };
   out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: st.tool, input }] } });
   let isError = true;
   let text = "Operation not permitted";
+  let hookBlock;
   if (mode === "dropped-settings") text = denied(st.tool);
   else if (st.tool === "Bash" && !tools.includes("Bash")) text = "Error: No such tool available: Bash.";
+  else if ((hookBlock = preToolUse(st.tool, input)) !== undefined) text = hookBlock;
+  else if (st.tool === "Bash" && !st.command.endsWith("selftest.sh")) {
+    text = "";
+    if (st.command.startsWith("sh ")) {
+      // The scratch-script workaround: a plain command.
+      if (mode === "scratch-refused") text = denied("Bash");
+      else { execSync(st.command); isError = false; }
+    } else if (mode === "compose-lies" && st.command.includes("| tee")) isError = false;
+    else if (mode === "compose-ran-refused" && composeRefused(st.command)) { execSync(st.command); text = denied("Bash"); }
+    else if (composeRefused(st.command)) text = denied("Bash");
+    else { text = execSync(st.command, { encoding: "utf8" }); isError = false; }
+  }
   else if (st.tool === "Bash") {
     // Act out selftest.sh line by line, the way a sandboxed shell would for this mode.
     const lines = readFileSync(st.command.replace(/^sh /, ""), "utf8").split("\n");
@@ -126,9 +161,20 @@ for (const st of steps) {
     if (mode !== "leak-network" && mode !== "dns-fail") res.push(`<sandbox_violations>\ndeny network-outbound ${blockedHost}:443 (user denied)\n</sandbox_violations>`);
     { const f = target("G", /printf x > (\S+)\)/); if (mode === "escape-write") { writeFileSync(f, "x"); res.push("G:written"); } else res.push("G:blocked"); }
     { const f = target("H", /printf x > (\S+)\)/); if (mode === "git-hook") { writeFileSync(f, "x"); res.push("H:written"); } else res.push("H:blocked"); }
+    // 2.1.309 lets sandboxed shells read /private/tmp outside the worktree (live probe, Oct 24).
+    { const f = target("T", /^cat (\S+)/); res.push(`T:${readFileSync(f, "utf8").trim()}`); }
+    if (mode !== "link-silent") {
+      const ln = (k) => line(k).match(/ln (\S+) (\S+) 2>&1/).slice(1);
+      res.push(linkLine("Lc", ln("Lc"), mode === "cache-link-lies" ? { lie: true } : mode === "cache-link-refused" ? {} : { make: true }));
+      res.push(linkLine("Lt", ln("Lt"), mode === "link-leak" ? { make: true, lie: true } : {}));
+      res.push(linkLine("Ld", ln("Ld"), mode === "link-runner" ? { make: true } : {}));
+      res.push(linkLine("Lg", ln("Lg"), mode === "link-gitconfig" ? { make: true } : {}));
+    }
     isError = false; text = res.join("\n");
   }
-  else if (st.tool === "Write" && st.file_path.includes("/work/")) { writeFileSync(st.file_path, st.content); isError = false; text = "File created"; }
+  else if (st.tool === "Write" && mode === "notes-refused" && st.file_path.includes("/.jarvis/notes/")) text = denied("Write");
+  else if (st.tool === "Write" && mode === "notes-claims" && st.file_path.includes("/.jarvis/notes/")) { isError = false; text = "File created"; }
+  else if (st.tool === "Write" && st.file_path.includes("/work/")) { mkdirSync(dirname(st.file_path), { recursive: true }); writeFileSync(st.file_path, st.content); isError = false; text = "File created"; }
   else if (st.tool === "Read" && mode === "leak-outside" && st.file_path.includes(".jarvis-probe-read-")) { text = readFileSync(st.file_path, "utf8"); isError = false; }
   else if (st.tool === "Read") text = "File is outside the working directories.";
   out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: text }] } });

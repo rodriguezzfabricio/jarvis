@@ -1,11 +1,12 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLAUDE_CODE_VERSION, CODEX_VERSION } from "../../packages/cli/src/config/pins.ts";
 import { shortTmp } from "../helpers.ts";
+import { namedSkills, repoSkills } from "../plugin-skills.ts";
 
 /**
  * Stage 7's clean install (architecture §8): HEAD exported with git archive (plus uncommitted
@@ -167,6 +168,21 @@ describe("clean install from git archive HEAD", () => {
     expect(r.stdout).toMatch(/ok\s+claude_pinned/);
     expect(r.stdout).toMatch(/warn\s+canary_probe\s+not run/);
   }, 120_000);
+
+  it("the installed plugin carries every skill /jarvis names, as real files", (ctx) => {
+    if (skipReason || !installed) ctx.skip(skipReason || "the install step did not run");
+    // The archive kept plugin/skills as a link; the install copy (symlinks followed) holds the files.
+    expect(lstatSync(join(repo, "plugin", "skills")).isSymbolicLink()).toBe(true);
+    const state = JSON.parse(readFileSync(join(home, ".fake-claude", "state.json"), "utf8")) as { plugins: { id: string; installPath: string }[] };
+    const plugin = state.plugins.find((p) => p.id === "jarvis@jarvis");
+    expect(plugin).toBeDefined();
+    const skills = [...new Set([...namedSkills(repo), ...repoSkills(repo)])];
+    expect(namedSkills(repo).length).toBeGreaterThan(0);
+    for (const s of skills) {
+      const file = join(plugin!.installPath, "skills", s, "SKILL.md");
+      expect(existsSync(file) && lstatSync(file).isFile(), file).toBe(true);
+    }
+  });
 
   it("is idempotent: a second run changes nothing it already did", (ctx) => {
     if (skipReason || !installed) ctx.skip(skipReason || "the install step did not run");

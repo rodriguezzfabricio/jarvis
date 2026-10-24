@@ -1,7 +1,7 @@
 // A stand-in for the pinned Claude Code's `--version` and `plugin` commands, for the clean-install
 // test. It keeps its marketplaces and plugins in $HOME/.fake-claude/state.json and logs every call
 // (argv and environment variable names) to $HOME/.fake-claude/calls.jsonl. No credentials, no network.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const home = process.env.HOME;
@@ -33,7 +33,11 @@ else if (is("plugin", "marketplace", "add", undefined, "--scope", "user")) {
   if (!entry) { console.error("marketplace jarvis has no plugin named jarvis"); process.exit(1); }
   const folder = join(market.path, entry.source);
   const { version } = JSON.parse(readFileSync(join(folder, ".claude-plugin", "plugin.json"), "utf8"));
-  state.plugins.push({ id: "jarvis@jarvis", version, scope: "user", enabled: true, readFromFolder: folder });
+  // Like 2.1.309 (tests/live/plugin-install.live.test.ts checks the real one): the plugin folder is
+  // copied into the cache with symlinks followed, so plugin/skills -> ../skills arrives as real files.
+  const installPath = join(home, ".claude", "plugins", "cache", "jarvis", "jarvis", version);
+  cpSync(folder, installPath, { recursive: true, dereference: true });
+  state.plugins.push({ id: "jarvis@jarvis", version, scope: "user", enabled: true, installPath, readFromFolder: folder });
   save();
   console.log("Installed jarvis@jarvis");
 } else {

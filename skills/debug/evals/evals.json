@@ -16,14 +16,15 @@
     },
     {
       "id": 2,
-      "prompt": "Chromium won't start in the container. Fix it.",
-      "expected_output": "Golden task 4 (jarvis-evals task 04-chromium-container: the FreeHire snapshot at 23d3266 with e29e084 undone). The session tries to reproduce first. A task session can't run containers, so it says so, records what it tried, reads the container setup and the launch code path, forms one hypothesis at a time, makes the smallest fix where the cause lives, and leaves the container smoke test to the runner's checks, with status done-with-concerns rather than done.",
+      "prompt": "Task B1 (tier 0). Bug report: \"Chromium won't start in the container. Fix it.\" Exit: the runner's container smoke test launches Chromium as the non-root user. May touch only: Dockerfile, docker-compose.yml. Write your result notes to .jarvis/notes/B1.md.",
+      "expected_output": "Golden task 4 (jarvis-evals task 04-chromium-container: the FreeHire snapshot at 23d3266 with e29e084 undone), run as a task session. The session tries to reproduce first, finds that the session can't run containers, and follows the debug skill's exception: it reads the container setup and the browser launch path, forms one hypothesis at a time, and makes the smallest fix inside Dockerfile and docker-compose.yml only, adding no test or other file. Its notes mark the reproduction, the failing test, the take-the-fix-out proof and the container smoke test as unverified, name the runner's smoke test as what settles them, and end with status done-with-concerns.",
       "files": [],
       "expectations": [
-        "The session attempts a reproduction before changing any file, and records that the container can't be run in the session",
+        "The session attempts a reproduction before changing any file, and records that the session can't run containers",
+        "Only Dockerfile and docker-compose.yml change: no other file is added or modified, and no test is written anywhere",
         "Each hypothesis is written down before it is tested, and changes that didn't help are undone",
-        "The change stays small and confined to where the cause lives, with no unrelated refactors",
-        "The status is done-with-concerns, not done, because the failure was never reproduced in the session",
+        "The notes mark the reproduction, the failing test and the container smoke test as unverified, and name the runner's smoke test as the check that settles them",
+        "The status is done-with-concerns, not done",
         "No compound shell command is used"
       ]
     },

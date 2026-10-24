@@ -43,7 +43,7 @@ No production code without a failing test first. For each acceptance criterion, 
 
 Prefer real code over mocks. Mock only what is slow or outside the machine (a mail server, a paid API, the network), and then assert on what your code sends to the stub, not on the stub's behavior. Wrote code before its test? Delete it and start from the test: keeping it "as a reference" is testing after.
 
-Record each red and green in the notes: the test, the command and one line of the failure you saw. The reviewer reads it, and the false-done rate (decision 35) is measured against it.
+Record each red and green in the notes: the test, the command and one line of the failure you saw. It's a claim; the runner sets it against its own evidence, and the false-done rate (decision 35) counts every claim the evidence contradicts.
 
 ## Small steps
 
@@ -94,7 +94,7 @@ Drop the words that hide a missing check: "should work", "probably", "looks righ
 
 ## Write the notes
 
-Before the session ends, write `.jarvis/notes/<task>.md`, with the task ID from the prompt. These are claims, not evidence: the runner's protected checks decide done (decisions 15, 16), and the reviewer starts from your diff and the runner's evidence, not from your account. Write them to be quick to check and to stay true when they're checked.
+Before the session ends, write `.jarvis/notes/<task>.md`, with the task ID from the prompt. These are claims, not evidence: the runner's protected checks decide done (decisions 15, 16). The notes are for the runner to reconcile with its evidence; reviewers start from the diff, the spec and that evidence, not from your account (decision 49). Write them to be quick to check and to stay true when they're checked.
 
 ```markdown
 # Notes: <task id>

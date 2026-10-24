@@ -33,11 +33,21 @@ No fix without a reproduction.
 3. **Check what changed:** the diff of the files involved, recent edits, config, dependency versions. A sanitized snapshot has no history, so compare with the code around it instead.
 4. **Flaky?** Run it several times (separate calls, or one script) and record how often it fails. Timing bugs need a condition to wait on, not a longer sleep.
 
-If you can't reproduce it in the session (it needs a container, a browser, a local server or a real service), say so instead of guessing. Record what you tried and why the session can't run it, read the code path the report points to, and write a test at the level you can run, such as a unit test of the function that's wrong. The runner's checks run the rest. A fix you couldn't reproduce is at most done-with-concerns.
+If you can't reproduce it because the session lacks what the bug needs, follow the next section. If you simply haven't found the trigger yet, keep looking: gather more data, don't guess.
+
+## When the session can't reproduce it
+
+Some bugs need what a task session doesn't have: containers, browsers, local servers (no local port is reachable, decision 68) or a real outside service. Then the strict steps below can't all be done, and this exception replaces them. It applies only after you've tried a reproduction and can name what the session lacks; "it was hard" doesn't count.
+- **Rely on the runner's reproduction and check results.** On a repair attempt the task prompt carries them: the failing output is your reproduction. On a first attempt, the report and the code path it points to are all you have; say so.
+- **Investigate by reading.** Trace the code and configuration the failure runs through, compare with a working example, and form one hypothesis at a time, written down, exactly as in "Isolate the root cause".
+- **Write a failing test only where one fits inside the task's stated file boundary** and runs in the session, such as a unit test of a function that's wrong. Never add a test or any other file outside the files the task allows: if the task says only two configuration files may change, only those two change, and the runner's checks are the test.
+- **Make the smallest fix** for the cause you found, inside that boundary.
+- **Mark every check you couldn't run as unverified** in the notes (the reproduction, the failing test, the take-the-fix-out proof, any suite that needs what the session lacks), with why, and name the runner check that will settle it. Run everything that can run here, and report those runs as usual.
+- **End at most done-with-concerns.** Never done: you never saw it fail or pass.
 
 ## Write the failing test
 
-Turn the reproduction into an automated test before the fix:
+Turn the reproduction into an automated test before the fix, unless the exception in "When the session can't reproduce it" applies; then follow that section instead:
 - the smallest input that shows the bug, at the lowest level that still shows it;
 - a name that states the correct behavior;
 - the expected value from the bug report or the spec, as a literal.
@@ -66,6 +76,8 @@ No fixes without root cause investigation first.
 3. The test proves the fix: take the fix out, watch the test fail, put the fix back, watch it pass.
 4. The whole suite passes, along with the typecheck, lint and build where the project has them, all after your last edit.
 
+Under "When the session can't reproduce it", run what the session can and mark each step above it can't run as unverified, with the runner check that will settle it.
+
 These runs are feedback, not evidence (decision 49): the runner reruns them on the committed revision. Report them in the notes as claims, with the command and its result.
 
 ## Escalate
@@ -84,7 +96,8 @@ Write `.jarvis/notes/<task>.md` as the build skill describes, with its status an
 ```markdown
 ## Bug
 Symptom: <what was reported>
-Reproduction: <exact steps or command> · reproduced in session: yes | no (why)
+Reproduction: <exact steps or command> · reproduced in session: yes | no (what the session lacks)
+Unverified: <each check the session couldn't run, why, and the runner check that settles it> | none
 Root cause: <file:line, what was wrong and why>
 Fix: <what changed>
 Proof: <test> failed before the fix with <one line> · passes after · fails again with the fix taken out
@@ -97,6 +110,7 @@ Tried and rejected: <hypothesis → what showed it wrong>
 - **"It works now" after a change you can't explain** isn't a fix. Undo it and find out what actually changed.
 - **A flaky test is a bug,** in the code or the test. Rerunning it until it passes, or widening its timeout, hides it.
 - **The sandbox looks like a bug.** "Connection refused" on a local port, "operation not permitted" outside the worktree, a refused compound command: these come from the session's limits (decisions 68, 69). Note them; don't change the code for them.
-- **No reproduction, no confidence.** A fix for a bug you never saw fail is a guess, and the status must say so.
+- **No reproduction, no confidence.** A fix for a bug you never saw fail is a guess until the runner's checks say otherwise: mark it unverified and end at most done-with-concerns.
+- **A test outside the task's file boundary breaks the task,** even a good one. When the task allows only certain files, the runner's checks are the test.
 - **Several fixes at once** can't tell you which one worked, and usually add a new bug. One at a time.
 - **Small isn't careless.** A tier-0 fix still gets its failing test, its proof and the whole suite.

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
-import { active, jobPlan, runAndRead, runGroup, runPool, stopAll } from "../../scripts/mutation-run.mjs";
+import { active, jobPlan, runAndRead, runGroup, runPool, stopAll, suiteEnv } from "../../scripts/mutation-run.mjs";
 
 // The mutation check's suites run as process groups it can always stop, so a timeout or a signal never
 // leaves a suite running or waits forever on a pipe (Codex review of the subset mutation check, 2 and 3).
@@ -114,6 +114,20 @@ describe("job pool", () => {
     let stop = false;
     const out = await runPool([1, 2, 3], ["a"], async (_w: string, n: number) => ((stop = true), n), { stopped: () => stop });
     expect(out).toEqual([1, undefined, undefined]);
+  });
+});
+
+// Main f4661fd: a filtered run's control failed, because the suite it ran inherited JARVIS_MUTATIONS.
+describe("suite environment", () => {
+  it("keeps the caller's environment but never the mutation check's own settings", () => {
+    const env = suiteEnv({ PATH: "/bin", HOME: "/h", JARVIS_MUTATIONS: "^x", JARVIS_MUTATION_CONFIRM: "1", JARVIS_MUTATION_JOBS: "3", JARVIS_OTHER: "kept" }, { JARVIS_TEST_TMP: "/t" });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/h", JARVIS_OTHER: "kept", JARVIS_TEST_TMP: "/t" });
+  });
+  it("lets a filtered run's control pass a suite that refuses JARVIS_MUTATIONS", async () => {
+    const check = "if ('JARVIS_MUTATIONS' in process.env || 'JARVIS_MUTATION_CONFIRM' in process.env) process.exit(1)";
+    const filtered = { ...process.env, JARVIS_MUTATIONS: "^review Claude", JARVIS_MUTATION_CONFIRM: "1" };
+    expect((await runGroup(process.execPath, ["-e", check], { env: filtered })).status).toBe(1);
+    expect((await runGroup(process.execPath, ["-e", check], { env: suiteEnv(filtered) })).status).toBe(0);
   });
 });
 

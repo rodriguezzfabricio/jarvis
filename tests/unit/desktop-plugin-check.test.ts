@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
-import { realpathSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error standalone host script
@@ -23,6 +23,8 @@ describe('desktop compatibility kit host orchestration', () => {
     expect(settings.sandbox.allowUnsandboxedCommands).toBe(false);
     expect(settings.autoMemoryEnabled).toBe(false);
     expect(readFileSync(join(run.workspace, 'PROMPT.txt'), 'utf8')).toContain("npm publish");
+    // A desktop chat carries no JARVIS_SESSION: the marker makes it a Jarvis session, so the tripwire denies.
+    expect(lstatSync(join(run.workspace, '.jarvis')).isDirectory()).toBe(true);
     expect(loadCheck(run.directory, options.home)).toEqual(run);
   });
   it('refuses reused ids and path traversal before writing', () => {

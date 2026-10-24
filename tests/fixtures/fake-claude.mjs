@@ -36,7 +36,7 @@ function preToolUse(tool, input) {
   for (const h of pluginHooks.PreToolUse ?? []) {
     if (h.matcher && !new RegExp(`^(${h.matcher})$`).test(tool)) continue;
     for (const c of h.hooks ?? []) {
-      const r = spawnSync("/bin/sh", ["-c", c.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir)], { input: JSON.stringify({ tool_name: tool, tool_input: input }), env: hookEnv, encoding: "utf8" });
+      const r = spawnSync("/bin/sh", ["-c", c.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir)], { input: JSON.stringify({ tool_name: tool, tool_input: input, cwd: process.cwd() }), env: hookEnv, encoding: "utf8" });
       if (r.status === 2) return `PreToolUse:${tool} hook error: ${r.stderr.trim()}`;
     }
   }
@@ -121,6 +121,9 @@ const linkLine = (key, [src, dst], { make = false, lie = false } = {}) => {
 };
 
 let n = 0;
+// other-first: the model tries .jarvis/other-<nonce> before anything has created .jarvis/, so only the
+// session's JARVIS_SESSION marks it as Jarvis for the tripwire.
+if (mode === "other-first") steps.sort((a, b) => Number(b.file_path?.includes("/.jarvis/other-") ?? false) - Number(a.file_path?.includes("/.jarvis/other-") ?? false));
 for (const st of steps) {
   if (mode === "compose-skip" && st.tool === "Bash" && st.command.includes("compose-redirect")) continue;
   if (mode === "other-skip" && st.tool === "Write" && st.file_path.includes("/.jarvis/other-")) continue;
@@ -169,6 +172,28 @@ for (const st of steps) {
       res.push(linkLine("Lt", ln("Lt"), mode === "link-leak" ? { make: true, lie: true } : {}));
       res.push(linkLine("Ld", ln("Ld"), mode === "link-runner" ? { make: true } : {}));
       res.push(linkLine("Lg", ln("Lg"), mode === "link-gitconfig" ? { make: true } : {}));
+    }
+    // Planted temp files: readable unless the settings deny their folder (and don't reopen it).
+    const fsPolicy = settings.sandbox?.filesystem ?? {};
+    const covered = (list, p) => (list ?? []).some((d) => p === d || p.startsWith(`${d}/`));
+    for (const k of lines.map((l) => / # step:(X\d+)$/.exec(l)?.[1]).filter(Boolean)) {
+      if (!line(k) || mode === "tmp-silent") continue;
+      const [, src, copy, err, rc] = line(k).match(/^cat (\S+) > (\S+) 2> (\S+); echo \$\? > (\S+)/);
+      const readable = mode === "tmp-leak" || mode === "tmp-lies" || !covered(fsPolicy.denyRead, src) || covered(fsPolicy.allowRead, src);
+      writeFileSync(copy, readable ? readFileSync(src) : "");
+      writeFileSync(err, readable ? "" : `cat: ${src}: Operation not permitted\n`);
+      writeFileSync(rc, (readable && mode !== "tmp-lies") || mode === "tmp-exit0" ? "0\n" : "1\n");
+    }
+    {
+      // Sandboxed commands get TMPDIR=$CLAUDE_CODE_TMPDIR/claude-<uid> when that is at most 44 bytes, else the
+      // shared /tmp/claude-<uid> (the pinned binary).
+      // tmpdir-system: the system temp, usable; tmpdir-broken: the right folder, but nothing written.
+      const [, val, copy] = line("M").match(/printf %s (\S+) > "\$TMPDIR\/probe-tmpdir.txt" && cat "\$TMPDIR\/probe-tmpdir.txt" > (\S+);/);
+      const uidTmp = (root) => `${root}/claude-${process.getuid()}`;
+      const own = process.env.CLAUDE_CODE_TMPDIR && Buffer.byteLength(uidTmp(process.env.CLAUDE_CODE_TMPDIR)) <= 44 ? uidTmp(process.env.CLAUDE_CODE_TMPDIR) : undefined;
+      const tmp = mode === "tmpdir-system" ? uidTmp("/tmp") : own ?? uidTmp("/tmp");
+      if (mode !== "tmpdir-broken") writeFileSync(copy, val);
+      res.push(`M:${tmp}`);
     }
     isError = false; text = res.join("\n");
   }

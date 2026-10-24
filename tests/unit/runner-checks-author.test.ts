@@ -1,10 +1,12 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync, linkSync } from "node:fs";
+import * as fs from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installChecks, readAuthoredChecks, buildChecksReviewPrompt } from "../../packages/cli/src/runner/checks-author.ts";
+import { installChecks, readAuthoredChecks, buildChecksReviewPrompt, readPlanningFile } from "../../packages/cli/src/runner/checks-author.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 
+vi.mock("node:fs", async (original) => ({ ...await original<typeof import("node:fs")>() }));
 const roots: string[] = [];
 const root = () => { const p = mkdtempSync("/private/tmp/j-author-"); roots.push(p); return p; };
 const complete = 'echo "JARVIS-CHECK-COMPLETE $(cat "$JARVIS_COMPLETION_FILE")"\n';
@@ -19,7 +21,7 @@ function workspace() {
   return { p, dir };
 }
 function project() { const p = root(); return { p, store: new ChecksStore(p), ledger: Ledger.open(p) }; }
-afterEach(() => { for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }); });
+afterEach(() => { vi.restoreAllMocks(); for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }); });
 describe("authored protected checks", () => {
   it("captures check definitions, black-box drivers, expectations and separate verify files", () => {
     const w = workspace(); const files = readAuthoredChecks(w.p);
@@ -127,13 +129,15 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
     const w = workspace(); const p = project(); const reviewVerdict = vi.fn(async () => ({ status: "pass" }));
     await installChecks(p.store, readAuthoredChecks(w.p), p.ledger, { spec, reviewVerdict });
     writeFileSync(join(p.store.checksDir, "expected/retained.txt"), "RETAINED-FILE");
+    p.store.approve(p.ledger, "retained file approved");
     writeFileSync(join(w.dir, "expected/result.txt"), "new\n");
     let rejectedPrompt = "";
     await expect(installChecks(p.store, readAuthoredChecks(w.p), p.ledger, { spec, reviewVerdict: async (prompt) => { rejectedPrompt = prompt; return { status: "fail" }; } })).rejects.toThrow();
     expect(rejectedPrompt).toContain("RETAINED-FILE");
+    expect(JSON.parse(rejectedPrompt.split("\n").at(-1)!).files["expected/retained.txt"]).toBe("RETAINED-FILE");
     expect(readFileSync(join(p.store.checksDir, "expected/result.txt"), "utf8")).toBe("result\n");
     await installChecks(p.store, readAuthoredChecks(w.p), p.ledger, { spec, reviewVerdict });
-    expect(reviewVerdict).toHaveBeenCalledTimes(2); expect(p.ledger.entries().filter((e) => e.kind === "checks_approved")).toHaveLength(2);
+    expect(reviewVerdict).toHaveBeenCalledTimes(2); expect(p.ledger.entries().filter((e) => e.kind === "checks_approved")).toHaveLength(3);
   });
   it("requires another review if protected files change while review is pending", async () => {
     const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
@@ -162,4 +166,197 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
     symlinkSync(w.dir, p.store.checksDir);
     await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict })).rejects.toThrow(); expect(reviewVerdict).not.toHaveBeenCalled();
   });
+  it.each([
+    'import { createRequire } from "node:module"; createRequire(import.meta.url)("../../src/x.cjs");',
+    'import { spawnSync } from "node:child_process"; spawnSync("node", ["src/server.mjs"], { stdio: ["ignore", "inherit", "inherit"] });',
+  ])("rejects createRequire and inherited stdio arrays: %s", (source) => {
+    const w = workspace(); writeFileSync(join(w.dir, "fixtures/drive.mjs"), source);
+    expect(() => readAuthoredChecks(w.p)).toThrow(/black box/);
+  });
+  it.each([["attack.py", "assert result == expected"], ["answers.txt", "42"], ["input.csv", "one,two"]])("rejects non-driver, non-JSON fixture %s", (file, content) => {
+    const w = workspace(); writeFileSync(join(w.dir, "fixtures", file), content);
+    expect(() => readAuthoredChecks(w.p)).toThrow(/driver scripts or JSON/);
+  });
+  it("accepts JSON input and drivers with captured stdio", () => {
+    const w = workspace(); writeFileSync(join(w.dir, "fixtures/input.json"), '{"value":42}');
+    writeFileSync(join(w.dir, "fixtures/drive.mjs"), 'import { spawnSync } from "node:child_process"; console.log(spawnSync("node", ["src/cli.mjs"], { stdio: ["ignore", "pipe", "pipe"] }).stdout.toString());');
+    expect(readAuthoredChecks(w.p).checks).toHaveLength(1);
+  });
+  it.each([`node -e 'import("./src/app.mjs")'`, `node -e 'require("./src/app.cjs")'`])("rejects in-process acceptance command %s", (command) => {
+    const w = workspace(); writeFileSync(join(w.dir, "ac1.check.json"), JSON.stringify({ ...check(), cases: [{ id: "main", command }] }));
+    expect(() => readAuthoredChecks(w.p)).toThrow(/black box/);
+  });
+  it.each(['import("./src/app.mjs")', 'require("./src/app.cjs")'])("rejects verifier source loading candidate code: %s", (source) => {
+    const w = workspace(); writeFileSync(join(w.dir, "verify.sh"), source + "\n" + complete);
+    expect(() => readAuthoredChecks(w.p)).toThrow(/may not run candidate/);
+  });
+  it.each([
+    ['echo "JARVIS-CHECK-COMPLETE hardcoded"', "completion file"],
+    ['cat "$JARVIS_COMPLETION_FILE"', "completion prefix"],
+  ])("requires each nonce protocol half independently: %s", (source) => {
+    const w = workspace(); writeFileSync(join(w.dir, "verify.sh"), source);
+    expect(() => readAuthoredChecks(w.p)).toThrow(/completion nonce/);
+  });
+  it.each(["root", "ancestor"])("rejects a replaced planning %s during a file read", (target) => {
+    const w = workspace(); const dir = target === "root" ? w.p : join(w.dir, "fixtures");
+    const actual = fs.lstatSync; let reads = 0;
+    vi.spyOn(fs, "lstatSync").mockImplementation(((path: fs.PathLike, options?: unknown) => {
+      const st = actual(path, options as never);
+      return String(path) === dir && ++reads === 2 ? Object.assign(st, { ino: st.ino + 1 }) : st;
+    }) as typeof fs.lstatSync);
+    expect(() => readPlanningFile(w.p, ".jarvis/checks/fixtures/drive.mjs")).toThrow(/directory changed/);
+  });
+  it("rejects an empty directory replaced during the tree read", () => {
+    const w = workspace(); const dir = join(w.dir, "empty"); mkdirSync(dir);
+    const actual = fs.lstatSync; let reads = 0;
+    vi.spyOn(fs, "lstatSync").mockImplementation(((path: fs.PathLike, options?: unknown) => {
+      const st = actual(path, options as never);
+      return String(path) === dir && ++reads === 3 ? Object.assign(st, { dev: st.dev + 1 }) : st;
+    }) as typeof fs.lstatSync);
+    expect(() => readAuthoredChecks(w.p)).toThrow(/directory changed/);
+  });
+  it.each(["mtimeMs", "ctimeMs"] as const)("rejects same-size file races detected only by %s", (field) => {
+    const w = workspace(); const actual = fs.fstatSync; let reads = 0;
+    vi.spyOn(fs, "fstatSync").mockImplementation(((fd: number) => {
+      const st = actual(fd);
+      return ++reads === 2 ? { ...st, [field]: st[field] + 1 } : st;
+    }) as typeof fs.fstatSync);
+    expect(() => readPlanningFile(w.p, ".jarvis/checks/fixtures/drive.mjs")).toThrow(/file changed during read/);
+  });
+  it("restores approved checks when the second install rename fails", async () => {
+    const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
+    await installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const previous = p.store.hashAll(); const actual = fs.renameSync; let renames = 0;
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (++renames === 2) throw new Error("second rename failed");
+      return actual(from, to);
+    });
+    await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) })).rejects.toThrow("second rename failed");
+    expect(p.store.hashAll()).toEqual(previous); expect(p.store.verify(p.ledger).ok).toBe(true);
+    expect(p.ledger.entries().filter((e) => e.kind === "checks_approved")).toHaveLength(1);
+  });
+  it("preserves the backup if restoring after a rename failure also fails", async () => {
+    const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
+    await installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const actual = fs.renameSync; let renames = 0;
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (++renames >= 2) throw new Error("rename unavailable");
+      return actual(from, to);
+    });
+    await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) })).rejects.toThrow();
+    const backup = fs.readdirSync(p.p).find((file) => file.endsWith("-previous"));
+    expect(backup).toBeDefined();
+    expect(readFileSync(join(p.p, backup!, "verify.sh"), "utf8")).toBe(files.files["verify.sh"]);
+  });
+  it("includes every bypass probe in reviewer instructions, architect guidance and a distinct eval", () => {
+    const prompt = buildChecksReviewPrompt(spec, readAuthoredChecks(workspace().p)).split("\n").slice(0, -1).join("\n");
+    const skill = readFileSync(new URL("../../skills/architect/SKILL.md", import.meta.url), "utf8");
+    const evals = JSON.parse(readFileSync(new URL("../../skills/architect/evals/evals.json", import.meta.url), "utf8")).evals as { prompt: string }[];
+    for (const probe of ["createRequire(import.meta.url)", 'new Function("return imp"+"ort(p)")', ".py", "fixtures/answers.txt", 'stdio: ["ignore","inherit","inherit"]', "node src/server.mjs &", "from src.app import f", "only echoes the nonce"]) {
+      expect(prompt).toContain(probe); expect(skill).toContain(probe);
+      expect(evals.some((e) => e.prompt.includes(probe))).toBe(true);
+    }
+    expect(prompt).toContain("advisory"); expect(prompt).toContain("fresh review");
+  });
+  it("provides approved lock hashes, unified added/removed/changed diffs and named removed cases", async () => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    original.files["obsolete.sh"] = "old helper\n";
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const hashes = p.store.hashAll(); const lockHash = p.store.verify(p.ledger).lockHash;
+    const files = { ...readAuthoredChecks(w.p).files, "ac1.check.json": JSON.stringify({ ...check(), cases: [{ id: "replacement", command: "node src/cli.mjs" }] }), "verify.sh": "# revised\n" + original.files["verify.sh"], "added.sh": "new helper\n" };
+    let captured = "";
+    await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, removeFiles: ["obsolete.sh"], reviewVerdict: async (prompt) => { captured = prompt; return { status: "fail" }; } })).rejects.toThrow();
+    const data = JSON.parse(captured.split("\n").at(-1)!);
+    expect(data.previous).toEqual({ lockHash, files: hashes });
+    expect(data.diffs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ file: "added.sh", diff: expect.stringContaining("--- /dev/null\n+++ b/added.sh\n@@ -0,0 +1,1 @@\n+new helper\n") }),
+      expect.objectContaining({ file: "obsolete.sh", diff: expect.stringContaining("--- a/obsolete.sh\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-old helper\n") }),
+      expect.objectContaining({ file: "verify.sh", diff: expect.stringContaining("--- a/verify.sh\n+++ b/verify.sh\n@@") }),
+    ]));
+    expect(data.removedCases).toEqual([{ check: "ac1", caseId: "main" }]);
+    expect(data.changedVerifyFiles).toEqual(["obsolete.sh", "verify.sh"]);
+    expect(captured).toContain("justify");
+  });
+  it("makes valid unified diffs for files lacking final newlines and empty files", async () => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    original.files["helper.sh"] = "old"; original.files["empty.sh"] = "";
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const files = { ...original.files, "helper.sh": "new\n", "empty.sh": "line" };
+    let captured = "";
+    await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async (prompt) => { captured = prompt; return { status: "fail" }; } })).rejects.toThrow();
+    const data = JSON.parse(captured.split("\n").at(-1)!);
+    expect(data.diffs).toEqual([
+      { file: "empty.sh", diff: "--- a/empty.sh\n+++ b/empty.sh\n@@ -0,0 +1,1 @@\n+line\n\\ No newline at end of file\n" },
+      { file: "helper.sh", diff: "--- a/helper.sh\n+++ b/helper.sh\n@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n" },
+    ]);
+  });
+  it.each([{}, { removedCases: [{ check: "ac1", caseId: "other", reason: "wrong case" }] }, { removedCases: [{ check: "ac1", caseId: "main", reason: " " }] }])("fails a pass lacking a specific removed-case justification: %j", async (justifications) => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const files = { ...original.files, "ac1.check.json": JSON.stringify({ ...check(), cases: [{ id: "other", command: "node src/cli.mjs" }] }) };
+    await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", ...justifications }) })).rejects.toThrow();
+    expect(p.store.verify(p.ledger).ok).toBe(true); expect(p.ledger.entries().filter((e) => e.kind === "checks_approved")).toHaveLength(1);
+  });
+  it("accepts specifically justified case removals and verifier command changes", async () => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const files = { ...original.files, "ac1.check.json": JSON.stringify({ ...check(), cases: [{ id: "replacement", command: "node src/cli.mjs" }], verify: 'sh "$JARVIS_CHECKS/verify.sh" main' }) };
+    await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", removedCases: [{ check: "ac1", caseId: "main", reason: "Replacement covers the same behavior." }] }) })).rejects.toThrow(/justify.*ac1.check.json/);
+    await installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", removedCases: [{ check: "ac1", caseId: "main", reason: "Replacement covers the same behavior." }], changedVerifyFiles: [{ file: "ac1.check.json", reason: "The original verifier remains required before completion." }] }) });
+    expect(p.store.verify(p.ledger).ok).toBe(true);
+  });
+  it("removes an explicitly named file only after a justified review", async () => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    original.files["obsolete.sh"] = "# unused helper\n";
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    await installChecks(p.store, readAuthoredChecks(w.p), p.ledger, { spec, removeFiles: ["obsolete.sh"], reviewVerdict: async () => ({ status: "pass", changedVerifyFiles: [{ file: "obsolete.sh", reason: "Unused helper; no observation coverage lost." }] }) });
+    expect(existsSync(join(p.store.checksDir, "obsolete.sh"))).toBe(false); expect(p.store.verify(p.ledger).ok).toBe(true);
+  });
+  it.each([{ removeFiles: ["../outside"] }, { removeFiles: ["missing.sh"] }, { removeFiles: ["verify.sh"] }])("refuses invalid, missing or simultaneously proposed removals %j", async ({ removeFiles }) => {
+    const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
+    await installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const reviewVerdict = vi.fn(async () => ({ status: "pass" }));
+    await expect(installChecks(p.store, files, p.ledger, { spec, removeFiles, reviewVerdict })).rejects.toThrow(/removal/);
+    expect(reviewVerdict).not.toHaveBeenCalled(); expect(p.store.verify(p.ledger).ok).toBe(true);
+  });
+  it("refuses an unapproved baseline instead of representing it as an approved diff", async () => {
+    const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
+    await installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    writeFileSync(join(p.store.checksDir, "verify.sh"), "# tampered\n" + files.files["verify.sh"]);
+    const reviewVerdict = vi.fn(async () => ({ status: "pass" }));
+    await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict })).rejects.toThrow(/approved/);
+    expect(reviewVerdict).not.toHaveBeenCalled();
+  });
+  it("refuses malformed JSON fixture data", () => {
+    const w = workspace(); writeFileSync(join(w.dir, "fixtures/input.json"), "this is not JSON");
+    expect(() => readAuthoredChecks(w.p)).toThrow(/JSON/);
+  });
+  it.each(["direct verifier", "script helper"])("requires a reason for a changed nested %s", async (kind) => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    const file = kind === "direct verifier" ? "expected/verify.txt" : "expected/helper.sh";
+    if (kind === "direct verifier") {
+      original.files[file] = original.files["verify.sh"]!;
+      original.files["ac1.check.json"] = JSON.stringify({ ...check(), verify: `sh "$JARVIS_CHECKS/${file}"` });
+    } else {
+      original.files[file] = "# verifier helper\n";
+      original.files["verify.sh"] = `sh "$JARVIS_CHECKS/${file}"\n` + original.files["verify.sh"];
+    }
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const files = { ...original.files, [file]: "# changed\n" + original.files[file] };
+    await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) })).rejects.toThrow(/justify.*expected/);
+    await installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", changedVerifyFiles: [{ file, reason: "Preserves every observation assertion." }] }) });
+    expect(p.store.verify(p.ledger).ok).toBe(true);
+  });
+  it("requires a justification for every changed verifier file and accepts complete reasons", async () => {
+    const w = workspace(); const p = project(); const original = readAuthoredChecks(w.p);
+    await installChecks(p.store, original, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    const files = { ...original.files, "verify.sh": "# revised\n" + original.files["verify.sh"] };
+    for (const changedVerifyFiles of [undefined, [{ file: "other.sh", reason: "wrong file" }], [{ file: "verify.sh", reason: " " }]]) {
+      await expect(installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", ...(changedVerifyFiles ? { changedVerifyFiles } : {}) }) })).rejects.toThrow();
+    }
+    await installChecks(p.store, { checks: [], files }, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass", changedVerifyFiles: [{ file: "verify.sh", reason: "Retains all observations; adds explanatory comment." }] }) });
+    expect(p.store.verify(p.ledger).ok).toBe(true);
+    expect((p.ledger.entries().at(-1)!.data as { reason: string }).reason).toContain("Retains all observations");
+  });
+
 });

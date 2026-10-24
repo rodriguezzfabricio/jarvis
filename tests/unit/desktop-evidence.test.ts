@@ -160,5 +160,33 @@ describe('compatibility capture safety gate', () => {
       expect(session).toHaveBeenCalledOnce(); expect(probe).toHaveBeenCalledOnce();
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
+  // Decision 95: like task sessions, the CLI capture gets its own short temp folder, removed afterwards.
+  it('gives the CLI session its own Claude Code temp folder, reopened in its settings and removed afterwards', async () => {
+    const { vi } = await import('vitest');
+    const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+    const { writeTaskSettings, claudeUidTmp, CLAUDE_TMP_MAX_BYTES } = await import('../../packages/cli/src/harness/claude/settings.ts');
+    const { captureCompatibility } = await import('../../packages/cli/src/harness/claude/desktop-evidence.ts');
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'compat-capture-'));
+    const input = { ...expected, directory: dir, workspace: dir + '/work', cacheDir: dir + '/cache', jarvisHome: dir + '/runner' };
+    for (const d of [input.workspace, input.cacheDir, input.jarvisHome]) fs.mkdirSync(d);
+    writeTaskSettings(dir + '/settings.json', { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
+    const probe = vi.fn().mockResolvedValue({ ok: true, checks: [], exitCode: 0 });
+    let seen: { tmp: string; existed: boolean; allowRead: string[]; allowWrite: string[] } | undefined;
+    const session = vi.fn().mockImplementation(async (spec: { args: string[]; env: Record<string, string> }) => {
+      const settings = JSON.parse(fs.readFileSync(spec.args[spec.args.indexOf('--settings') + 1]!, 'utf8'));
+      const tmp = String(spec.env.CLAUDE_CODE_TMPDIR);
+      seen = { tmp, existed: fs.existsSync(tmp), allowRead: settings.sandbox.filesystem.allowRead, allowWrite: settings.sandbox.filesystem.allowWrite };
+      return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: '', stderr: '' };
+    });
+    try {
+      await captureCompatibility(input, { probe, session });
+      expect(seen?.tmp).toMatch(/^\/private\/tmp\/jt-/);
+      expect(Buffer.byteLength(claudeUidTmp(seen!.tmp))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
+      expect(seen?.existed).toBe(true);
+      expect(seen?.allowRead).toContain(seen?.tmp);
+      expect(seen?.allowWrite).toContain(seen?.tmp);
+      expect(fs.existsSync(seen!.tmp)).toBe(false);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); if (seen) fs.rmSync(seen.tmp, { recursive: true, force: true }); }
+  });
 
 });

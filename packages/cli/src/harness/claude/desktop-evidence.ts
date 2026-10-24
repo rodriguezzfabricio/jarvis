@@ -80,13 +80,13 @@ export interface CaptureDependencies {
   session?: typeof import('./session.ts').runSession;
 }
 export async function captureCompatibility(input: CompatibilityContext & { directory: string; jarvisHome: string; cacheDir: string }, dependencies: CaptureDependencies = {}): Promise<void> {
-  const { writeFileSync, existsSync, readFileSync } = await import('node:fs');
+  const { writeFileSync, existsSync, readFileSync, mkdirSync, rmSync } = await import('node:fs');
   const { join } = await import('node:path');
   const { pinnedClaudeBin, MODELS } = await import('../../config/pins.ts');
   const { runCanaryProbe } = await import('./probe.ts');
   const { buildTaskArgs } = await import('./args.ts');
   const { buildChildEnv } = await import('./env.ts');
-  const { assertSafeTaskSettings, cacheEnv } = await import('./settings.ts');
+  const { assertSafeTaskSettings, cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings } = await import('./settings.ts');
   const { runSession } = await import('./session.ts');
   const started = join(input.directory, 'cli-started');
   writeFileSync(started, new Date().toISOString(), { flag: 'wx', mode: 0o600 });
@@ -96,10 +96,22 @@ export async function captureCompatibility(input: CompatibilityContext & { direc
   if (!probe.ok) throw new Error('live canary failed; compatibility session was not started');
   const settingsPath = join(input.directory, 'settings.json');
   assertSafeTaskSettings(JSON.parse(readFileSync(settingsPath, 'utf8')), { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, allowedDomains: [] });
+  mkdirSync(join(input.cacheDir, 'tmp'), { recursive: true, mode: 0o700 }); // TMPDIR (decision 95)
   const mcpConfigPath = join(input.directory, 'mcp.json');
   writeFileSync(mcpConfigPath, '{"mcpServers":{}}', { flag: 'wx', mode: 0o600 });
-  const args = buildTaskArgs({ prompt: compatibilityPrompt, settingsPath, mcpConfigPath, model: MODELS.cheap, maxTurns: 4, tools: ['Bash'], pluginDir: input.pluginDir });
-  const outcome = await (dependencies.session ?? runSession)({ bin: pinnedClaudeBin(), args, cwd: input.workspace, env: buildChildEnv(process.env, cacheEnv(input.cacheDir)), timeoutMs: 180_000, maxOutputBytes: 16 * 1024 * 1024, stdoutPath: join(input.directory, 'stream.jsonl'), stderrPath: join(input.directory, 'stderr.log') });
+  // Decision 95: the session gets its own short Claude Code temp folder, as task sessions do. The prepared
+  // settings stay untouched; the session runs on the same policy plus that folder.
+  const sessionTmpDir = makeSessionTmpDir();
+  let outcome;
+  try {
+    const cliSettingsPath = join(input.directory, 'cli-settings.json');
+    if (existsSync(cliSettingsPath)) throw new Error('CLI settings already exist');
+    writeTaskSettings(cliSettingsPath, { worktree: input.workspace, jarvisHome: input.jarvisHome, cacheDir: input.cacheDir, sessionTmpDir, allowedDomains: [] });
+    const args = buildTaskArgs({ prompt: compatibilityPrompt, settingsPath: cliSettingsPath, mcpConfigPath, model: MODELS.cheap, maxTurns: 4, tools: ['Bash'], pluginDir: input.pluginDir });
+    outcome = await (dependencies.session ?? runSession)({ bin: pinnedClaudeBin(), args, cwd: input.workspace, env: buildChildEnv(process.env, { ...cacheEnv(input.cacheDir), ...sessionTmpEnv(sessionTmpDir) }), timeoutMs: 180_000, maxOutputBytes: 16 * 1024 * 1024, stdoutPath: join(input.directory, 'stream.jsonl'), stderrPath: join(input.directory, 'stderr.log') });
+  } finally {
+    rmSync(sessionTmpDir, { recursive: true, force: true });
+  }
   writeFileSync(join(input.directory, 'outcome.json'), JSON.stringify(outcome, null, 2), { flag: 'wx', mode: 0o600 });
   if (outcome.code !== 0 || outcome.timedOut || outcome.overflowed) throw new Error('CLI capture failed; inspect outcome.json');
 }

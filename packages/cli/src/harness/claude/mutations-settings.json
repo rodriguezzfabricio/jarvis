@@ -1,0 +1,86 @@
+[
+  {
+    "name": "settings temp roots not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "        denyRead: [input.jarvisHome, ...denyTemp],",
+    "replacement": "        denyRead: [input.jarvisHome],"
+  },
+  {
+    "name": "settings /private/tmp not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "export const SYSTEM_TEMP_ROOTS = [\"/private/tmp\", \"/tmp\", ",
+    "replacement": "export const SYSTEM_TEMP_ROOTS = [\"/tmp\", "
+  },
+  {
+    "name": "settings /private/var/folders not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "\"/tmp\", \"/private/var/folders\", \"/var/folders\", ",
+    "replacement": "\"/tmp\", \"/var/folders\", "
+  },
+  {
+    "name": "settings runner TMPDIR not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings worktree always reopened",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "allowRead: [...(worktreeInTemp ? [input.worktree] : []), ",
+    "replacement": "allowRead: [input.worktree, "
+  },
+  {
+    "name": "settings worktree not reopened under a temp root",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "allowRead: [...(worktreeInTemp ? [input.worktree] : []), ",
+    "replacement": "allowRead: ["
+  },
+  {
+    "name": "settings runner folder inside a reopened path",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "  if (under(input.jarvisHome, input.worktree) || under(input.jarvisHome, input.cacheDir)) throw new Error(\"the runner-owned folder must not sit inside the worktree or the cache\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings session temp folder not reopened",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "const sessionTmp = input.sessionTmpDir !== undefined ? [input.sessionTmpDir] : [];",
+    "replacement": "const sessionTmp: string[] = [];"
+  },
+  {
+    "name": "settings session temp folder length unchecked",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "    if (Buffer.byteLength(claudeUidTmp(t)) > CLAUDE_TMP_MAX_BYTES) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "settings session temp folder may be a temp root",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "    if (tempRoots(input.hostTmpDir ?? defaultHostTmpDir()).some((r) => under(r, t))) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "settings session temp folder made too long",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "mkdtempSync(\"/private/tmp/jt-\")",
+    "replacement": "mkdtempSync(\"/private/tmp/jarvis-session-temp-folder-\")"
+  },
+  {
+    "name": "settings task session keeps the shared Claude temp",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),",
+    "replacement": "...cacheEnv(cacheDir),"
+  },
+  {
+    "name": "settings /private/var/tmp not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "\"/var/folders\", \"/private/var/tmp\", \"/var/tmp\"] as const;",
+    "replacement": "\"/var/folders\", \"/var/tmp\"] as const;"
+  },
+  {
+    "name": "settings desktop capture keeps the shared Claude temp",
+    "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
+    "anchor": "{ ...cacheEnv(input.cacheDir), ...sessionTmpEnv(sessionTmpDir) }",
+    "replacement": "cacheEnv(input.cacheDir)"
+  }
+]

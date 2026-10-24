@@ -24,9 +24,25 @@ export interface UsageSample {
   windows: Readonly<Record<string, UsageWindow>>;
 }
 
+/** What a session said it consumed. As reported and unchecked: runner/usage-log.ts validates it. */
+export interface SessionUsage {
+  reportedModel: string | undefined;
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  cacheReadTokens: number | undefined;
+  cacheWriteTokens: number | undefined;
+  /** The harness's own figure; on a subscription an API-equivalent estimate, not a charge. */
+  costUsd: number | undefined;
+  turns: number | undefined;
+  /** False without a final result (killed, timed out, truncated): tokens are a lower bound. */
+  complete: boolean;
+}
+
 export interface TaskResult {
   /** Cleanup diagnostics never replace a process outcome. */
   cleanupErrors?: readonly string[];
+  /** Absent when no session started. */
+  sessionUsage?: SessionUsage;
   exitCode: number | null;
   durationMs: number;
   /** Samples in stream order, so the loop can record before/after window consumption. */

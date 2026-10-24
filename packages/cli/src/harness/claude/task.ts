@@ -7,8 +7,9 @@ import { routeTask, validateRouting, type RoutingTable } from "../../runner/rout
 import { assertSafeTaskArgs, buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "./session.ts";
-import { cacheEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
+import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
 import { hitRateLimitError, parseStreamJson, rateLimits, usageWaitUntil } from "./streamjson.ts";
+import { assembleTaskPlugin, checkTaskPluginSource } from "./task-plugin.ts";
 
 export interface TaskPreflight {
   ok: boolean;
@@ -24,6 +25,7 @@ export interface ClaudeHarnessOptions {
   allowedDomains: readonly string[];
   /** startBrokerServer(...).socketPath: the bound address, never its public alias (decision 78). */
   brokerSocket?: string;
+  /** The repo's plugin/; each session gets its own runner-owned copy with only the task skills (task-plugin.ts). */
   pluginDir?: string;
   home?: string;
   parentEnv?: Readonly<Record<string, string | undefined>>;
@@ -34,6 +36,8 @@ export interface ClaudeHarnessOptions {
   cleanup?: (path: string) => void;
   /** Required live canary/doctor preflight, called before every session. Tests inject a fake. */
   preflight: (input: TaskInput) => Promise<TaskPreflight>;
+  /** Test seam: production makes a short private folder under /private/tmp (decision 93). */
+  sessionTmpDir?: () => string;
   /** Process seam for tests; production always uses runSession and the absolute pin. */
   session?: (spec: SessionSpec) => Promise<SessionOutcome>;
 }
@@ -45,9 +49,9 @@ function runnerOwnedPath(path: string, jarvisHome: string): void {
   if (!isAbsolute(path) || !under(resolve(path), jarvisHome) || !under(realpathSync(path), jarvisHome)) throw new Error("session configuration must be in the runner-owned folder");
 }
 
-function protectedPaths(input: TaskInput, jarvisHome: string, pluginDir?: string): void {
+function protectedPaths(input: TaskInput, jarvisHome: string, pluginDir?: string, agentWritable: readonly string[] = []): void {
   runnerOwnedPath(input.runHeaderPath, jarvisHome);
-  if (pluginDir) runnerOwnedPath(pluginDir, jarvisHome);
+  if (pluginDir) checkTaskPluginSource(pluginDir, agentWritable);
   if (!isAbsolute(input.logPath) || !under(resolve(input.logPath), jarvisHome)) throw new Error("task log must be in the runner-owned folder");
   mkdirSync(dirname(input.logPath), { recursive: true, mode: 0o700 });
   if (!under(realpathSync(dirname(input.logPath)), jarvisHome)) throw new Error("task log parent escapes the runner-owned folder");
@@ -109,12 +113,12 @@ function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { workt
   return { worktree, jarvisHome, cacheRoot, home, binary };
 }
 
-function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string): SessionSpec {
+function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string, sessionTmpDir: string): SessionSpec {
   const { worktree, jarvisHome, home, binary } = locations;
   const settingsPath = join(sessionDir, "settings.json");
   const mcpPath = join(sessionDir, "mcp.json");
   const context: TaskSettingsInput = {
-    worktree, jarvisHome, cacheDir, allowedDomains: opts.allowedDomains,
+    worktree, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: opts.allowedDomains,
     ...(opts.brokerSocket ? { brokerSocket: opts.brokerSocket } : {}),
   };
   writeTaskSettings(settingsPath, context);
@@ -123,15 +127,16 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const args = assertSafeTaskArgs([
     ...buildTaskArgs({
       prompt: input.prompt, settingsPath, mcpConfigPath: mcpPath, model: route.model, maxTurns: input.maxTurns,
-      runHeaderPath: input.runHeaderPath, ...(opts.pluginDir ? { pluginDir: opts.pluginDir } : {}),
+      runHeaderPath: input.runHeaderPath, ...(opts.pluginDir ? { pluginDir: assembleTaskPlugin(opts.pluginDir, join(sessionDir, "plugin")) } : {}),
     }),
     "--effort", route.effort,
   ]);
   const tmpDir = join(cacheDir, "tmp");
   mkdirSync(tmpDir, { mode: 0o700 });
   const env = buildChildEnv({ ...(opts.parentEnv ?? process.env), HOME: home }, {
-    ...cacheEnv(cacheDir), TMPDIR: tmpDir,
+    ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
+    JARVIS_SESSION: "1", // the plugin's tripwire enforces in Jarvis sessions only
   });
   return {
     bin: binary, args, cwd: worktree, env, timeoutMs: input.timeoutMs,
@@ -161,13 +166,14 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions): Harness {
         if (!routing) throw new Error(routingError ?? "routing snapshot is required");
         if (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 2_147_483_647) throw new Error("invalid task timeout");
         const locations = trustedLocations(input, opts);
-        protectedPaths(input, locations.jarvisHome, opts.pluginDir);
+        protectedPaths(input, locations.jarvisHome, opts.pluginDir, [realpathSync(opts.worktreeRoot), locations.cacheRoot]);
         const preflight = await opts.preflight(input);
         if (preflight.usageWaitUntil !== undefined) return { ...emptyResult(), status: "usage-limited", resetAt: preflight.usageWaitUntil, usageWaitUntil: preflight.usageWaitUntil };
         if (!preflight.ok) throw new Error("live preflight failed; no task session started");
         const cacheDir = mkdtempSync(join(locations.cacheRoot, "task-")); owned.push(cacheDir);
         const sessionDir = mkdtempSync(join(locations.jarvisHome, "task-")); owned.push(sessionDir);
-        const spec = prepareTask(input, opts, routing, locations, cacheDir, sessionDir);
+        const sessionTmpDir = (opts.sessionTmpDir ?? makeSessionTmpDir)(); owned.push(sessionTmpDir);
+        const spec = prepareTask(input, opts, routing, locations, cacheDir, sessionDir, sessionTmpDir);
         dispatched = true;
         outcome = taskOutcome(await (opts.session ?? runSession)(spec), input.logPath);
       } catch (e) {

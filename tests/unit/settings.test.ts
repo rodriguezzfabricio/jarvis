@@ -1,7 +1,8 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { absRule, assertSafeTaskSettings, buildTaskSettings, cacheEnv, writeTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
+import { absRule, assertSafeTaskSettings, buildTaskSettings, cacheEnv, claudeUidTmp, CLAUDE_TMP_MAX_BYTES, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
 import { shortTmp } from "../helpers.ts";
 
 const ctx = {
@@ -10,7 +11,9 @@ const ctx = {
   cacheDir: "/Users/f/.jarvis-work/cache",
   brokerSocket: "/Users/f/.jarvis/run/broker.sock",
   allowedDomains: ["registry.npmjs.org"],
+  hostTmpDir: "/private/var/folders/xy/abc/T",
 };
+const TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp"];
 const clone = () => structuredClone(buildTaskSettings(ctx)) as Record<string, any>;
 
 describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () => {
@@ -48,7 +51,7 @@ describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () 
 
   it("denies the runner folder to the shell and the file tools, and has no web tools", () => {
     const s = buildTaskSettings(ctx);
-    expect(s.sandbox.filesystem.denyRead).toEqual([ctx.jarvisHome]);
+    expect(s.sandbox.filesystem.denyRead).toEqual([ctx.jarvisHome, ...TEMP_ROOTS]);
     expect(s.permissions.deny).toEqual(["Read(//Users/f/.jarvis/**)", "Edit(//Users/f/.jarvis/**)", "WebSearch", "WebFetch"]);
     expect(s.permissions.allow).toEqual(["Edit(//Users/f/.jarvis-work/worktrees/p/t1/**)"]);
   });
@@ -117,5 +120,85 @@ describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () 
   it("points toolchain caches at the cache folder", () => {
     const e = cacheEnv(ctx.cacheDir);
     for (const k of ["GOMODCACHE", "GOCACHE", "npm_config_cache", "npm_config_store_dir"]) expect(e[k]?.startsWith(ctx.cacheDir)).toBe(true);
+  });
+
+  // Decision 93: sessions read no system temp folder but their own worktree and cache.
+  it("points the session's own TMPDIR at a private folder in the cache, never the system temp", () => {
+    const e = cacheEnv(ctx.cacheDir);
+    expect(e.TMPDIR).toBe(`${ctx.cacheDir}/tmp`);
+    expect(e.CLAUDE_CODE_TMPDIR).toBeUndefined();
+  });
+
+  // 2.1.309 hands sandboxed commands TMPDIR=<CLAUDE_CODE_TMPDIR>/claude-<uid> only when that path is at
+  // most 44 bytes (AF_UNIX); otherwise the /tmp/claude-<uid> every Claude Code session of the user shares.
+  it("makes a short, private, fresh session temp folder Claude Code will use for sandboxed commands", () => {
+    const a = makeSessionTmpDir();
+    const b = makeSessionTmpDir();
+    try {
+      expect(a).not.toBe(b);
+      expect(a.startsWith("/private/tmp/jt-")).toBe(true);
+      expect(Buffer.byteLength(claudeUidTmp(a))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
+      expect(statSync(a).mode & 0o777).toBe(0o700);
+      expect(sessionTmpEnv(a)).toEqual({ CLAUDE_CODE_TMPDIR: a });
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
+  });
+
+  it("reopens exactly the session temp folder for reading and writing", () => {
+    const s = buildTaskSettings({ ...ctx, sessionTmpDir: "/private/tmp/jt-abc123" });
+    expect(s.sandbox.filesystem.allowRead).toEqual([ctx.cacheDir, "/private/tmp/jt-abc123"]);
+    expect(s.sandbox.filesystem.allowWrite).toEqual([ctx.cacheDir, "/private/tmp/jt-abc123"]);
+    expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["/private/tmp"]));
+  });
+
+  it("refuses a session temp folder Claude Code would ignore, or that reopens too much", () => {
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/private/tmp/a-folder-name-that-is-too-long" })).toThrow(/44 bytes/);
+    for (const d of ["/private/tmp", "/private/var/folders", "/private"]) expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: d })).toThrow(/temp root/);
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/tmp/jt-abc" })).toThrow(/real path/);
+    expect(() => buildTaskSettings({ ...ctx, sessionTmpDir: "/Users/f/.jarvis/t" })).toThrow(/runner-owned|worktree|cache/);
+  });
+
+  it("denies shell reads of the system temp roots", () => {
+    expect(buildTaskSettings(ctx).sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(TEMP_ROOTS));
+  });
+
+  it("also denies the runner's own $TMPDIR (real path) when it lies outside those roots", () => {
+    expect(buildTaskSettings({ ...ctx, hostTmpDir: "/Users/f/tmp" }).sandbox.filesystem.denyRead).toEqual([ctx.jarvisHome, ...TEMP_ROOTS, "/Users/f/tmp"]);
+    expect(() => buildTaskSettings({ ...ctx, hostTmpDir: "relative/tmp" })).toThrow(/absolute/);
+  });
+
+  it("defaults to the real path of this process's temp folder", () => {
+    const { hostTmpDir: _, ...noTmp } = ctx;
+    const deny = buildTaskSettings(noTmp).sandbox.filesystem.denyRead;
+    const real = realpathSync(tmpdir());
+    expect(deny.some((d) => real === d || real.startsWith(`${d}/`))).toBe(true);
+  });
+
+  it("reopens exactly the worktree and the cache when they live under a temp root", () => {
+    const tmpCtx = { ...ctx, worktree: "/private/tmp/jp/work", cacheDir: "/private/tmp/jp/cache", jarvisHome: "/private/tmp/jp/jhome", brokerSocket: "/private/tmp/jp/jhome/b.sock" };
+    expect(buildTaskSettings(tmpCtx).sandbox.filesystem.allowRead).toEqual([tmpCtx.worktree, tmpCtx.cacheDir]);
+    expect(buildTaskSettings({ ...ctx, hostTmpDir: "/Users/f/.jarvis-work" }).sandbox.filesystem.allowRead).toEqual([ctx.worktree, ctx.cacheDir]);
+    expect(buildTaskSettings(ctx).sandbox.filesystem.allowRead).toEqual([ctx.cacheDir]);
+  });
+
+  it("refuses settings without the temp-root denials (the pre-decision-93 shape)", () => {
+    for (const root of TEMP_ROOTS) {
+      const s = clone();
+      s.sandbox.filesystem.denyRead = s.sandbox.filesystem.denyRead.filter((d: string) => d !== root);
+      expect(() => assertSafeTaskSettings(s, ctx)).toThrow(/unsafe/);
+    }
+    const old = clone();
+    old.sandbox.filesystem.denyRead = [ctx.jarvisHome];
+    expect(() => assertSafeTaskSettings(old, ctx)).toThrow(/unsafe/);
+    const widened = clone();
+    widened.sandbox.filesystem.allowRead = ["/private/tmp", ctx.cacheDir];
+    expect(() => assertSafeTaskSettings(widened, ctx)).toThrow(/unsafe/);
+  });
+
+  it("refuses a runner folder that an allowRead path would reopen", () => {
+    expect(() => buildTaskSettings({ ...ctx, jarvisHome: `${ctx.worktree}/.j`, brokerSocket: `${ctx.worktree}/.j/b.sock` })).toThrow(/runner-owned/);
+    expect(() => buildTaskSettings({ ...ctx, jarvisHome: `${ctx.cacheDir}/j`, brokerSocket: `${ctx.cacheDir}/j/b.sock` })).toThrow(/runner-owned/);
   });
 });

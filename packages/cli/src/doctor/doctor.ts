@@ -38,8 +38,9 @@ export interface DoctorDeps {
   foundation?: FoundationDeps;
 }
 
-const defaultExec = (bin: string, args: string[]) =>
-  execFileSync(bin, args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
+/** Binaries doctor runs get the allowlisted child environment, never this shell's (decision 58). */
+const execWithEnv = (env: Record<string, string>) => (bin: string, args: string[]) =>
+  execFileSync(bin, args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], env });
 const defaultFree = (p: string) => {
   const s = statfsSync(p);
   return Number(s.bavail) * Number(s.bsize);
@@ -62,7 +63,7 @@ export function checkClaudePinned(home: string, exec: (bin: string, args: string
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
   const home = deps.home ?? homedir();
   const env = deps.env ?? process.env;
-  const exec = deps.exec ?? defaultExec;
+  const exec = deps.exec ?? execWithEnv(buildChildEnv({ ...env, HOME: env.HOME ?? home }));
   const exists = deps.exists ?? existsSync;
   const platform = deps.platform ?? process.platform;
   const checks: DoctorCheck[] = [];

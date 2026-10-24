@@ -53,7 +53,8 @@ function command(bin, args, cwd, env, stdoutPath, stderrPath = stdoutPath) {
 
 export async function runReview(options) {
   // A filtered mutation check is never review evidence (it exits 4); refuse rather than silently drop it.
-  if (process.env.JARVIS_MUTATIONS !== undefined) throw Error('JARVIS_MUTATIONS is set: a filtered mutation check is not review evidence; unset it');
+  // options.env (default: this process's) lets tests state the environment instead of inheriting it.
+  if ((options.env ?? process.env).JARVIS_MUTATIONS !== undefined) throw Error('JARVIS_MUTATIONS is set: a filtered mutation check is not review evidence; unset it');
   const defaults = defaultEvidence({ confirmStage: options.confirmStage });
   const home = realpathSync(options.home ?? homedir());
   const repo = realpathSync(options.repo ?? join(home, 'Desktop/jarvis'));
@@ -148,7 +149,7 @@ export function parseCli(args) {
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const { values, options } = parseCli(process.argv.slice(2));
-    if (values.help) console.log('Usage: node scripts/review-run.mjs --round stage0-17 --prompts <dir> --schema <file> [--lanes A,B,D] [--model gpt-6.1-sol] [--effort high] [--repo <dir>] [--codex <absolute-path>] [--dry-run] [--evidence-config <trusted-json>] [--confirm-stage <0-1|2|3>]\nAdvisory only; never grants stage approval. Existing output is never overwritten.');
+    if (values.help) console.log(`Usage: node scripts/review-run.mjs --round stage0-17 --prompts <dir> --schema <file> [--lanes A,B,D] [--model gpt-6.1-sol] [--effort high] [--repo <dir>] [--codex <absolute-path>] [--dry-run] [--evidence-config <trusted-json>] [--confirm-stage <${STAGES.join('|')}>]\nAdvisory only; never grants stage approval. Existing output is never overwritten.`);
     else {
       const result = await runReview({ ...options, evidence: values['evidence-config'] ? JSON.parse(readFileSync(resolve(values['evidence-config']), 'utf8')) : undefined });
       console.log(`${values['dry-run'] ? 'Dry run' : 'Completed'}: ${result.revision}\nWorkspace: ${result.workspace}`);

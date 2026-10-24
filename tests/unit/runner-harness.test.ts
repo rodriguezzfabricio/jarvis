@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pinnedClaudeBin } from "../../packages/cli/src/config/pins.ts";
 import { BUILD_TOOLS } from "../../packages/cli/src/harness/claude/args.ts";
-import { buildTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
+import { buildTaskSettings, claudeUidTmp, CLAUDE_TMP_MAX_BYTES, SYSTEM_TEMP_ROOTS } from "../../packages/cli/src/harness/claude/settings.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../../packages/cli/src/harness/claude/task.ts";
 import { runSession, type SessionSpec, type SessionOutcome } from "../../packages/cli/src/proc/session.ts";
 import { DEFAULT_ROUTING } from "../../packages/cli/src/runner/routing.ts";
@@ -99,11 +99,17 @@ describe("Claude task safety envelope", () => {
   it("blocks outside reads, reopens only its private cache and uses the bound broker address", async () => {
     const { settings, spec, options, input } = await launched();
     expect(settings.permissions.blockReadsOutsideWorkingDirectories).toBe(true);
-    expect(settings.sandbox.filesystem.denyRead).toEqual([options.jarvisHome]);
-    const cache = settings.sandbox.filesystem.allowRead[0]!;
+    // Decision 93: the system temp roots are denied; this test's workspace lives under one, so it is reopened.
+    expect(settings.sandbox.filesystem.denyRead).toEqual([options.jarvisHome, ...SYSTEM_TEMP_ROOTS]);
+    const cache = settings.sandbox.filesystem.allowRead[1]!;
     expect(dirname(cache)).toBe(options.cacheRoot);
-    expect(settings.sandbox.filesystem.allowRead).toEqual([cache]);
-    expect(settings.sandbox.filesystem.allowWrite).toEqual([cache]);
+    // Claude Code's own temp root: short and private, or it falls back to the shared /tmp/claude-<uid>.
+    const sessionTmp = String(spec.env.CLAUDE_CODE_TMPDIR);
+    expect(settings.sandbox.filesystem.allowRead).toEqual([input.workspace, cache, sessionTmp]);
+    expect(settings.sandbox.filesystem.allowWrite).toEqual([cache, sessionTmp]);
+    expect(sessionTmp).toMatch(/^\/private\/tmp\/jt-/);
+    expect(Buffer.byteLength(claudeUidTmp(sessionTmp))).toBeLessThanOrEqual(CLAUDE_TMP_MAX_BYTES);
+    expect(existsSync(sessionTmp)).toBe(false);
     expect(settings.sandbox.filesystem.denyWrite).toEqual([options.jarvisHome, join(input.workspace, ".git/hooks"), join(input.workspace, ".git/config"), join(input.workspace, ".claude")]);
     expect(settings.permissions.deny).toContain(`Read(/${options.jarvisHome}/**)`);
     expect(settings.sandbox.network.allowUnixSockets).toEqual([options.brokerSocket]);
@@ -143,8 +149,9 @@ describe("Claude task safety envelope", () => {
     for (const key of ["NODE_OPTIONS", "HTTPS_PROXY", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_OPENAI", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) expect(spec.env[key]).toBeUndefined();
     expect(spec.env.PATH).not.toContain("/untrusted");
     expect(spec.env.HOME).toBe(options.home);
+    expect(spec.env.JARVIS_SESSION, "the tripwire enforces in Jarvis sessions only").toBe("1");
     expect(Object.keys(specs[0]!.env).sort()).toEqual([
-      "GOCACHE", "GOMODCACHE", "GOPATH", "GOTELEMETRY", "HOME", "JARVIS_BROKER_SOCKET", "PATH", "TMPDIR", "USER", "XDG_CACHE_HOME", "npm_config_cache", "npm_config_store_dir",
+      "CLAUDE_CODE_TMPDIR", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTELEMETRY", "HOME", "JARVIS_BROKER_SOCKET", "JARVIS_SESSION", "PATH", "TMPDIR", "USER", "XDG_CACHE_HOME", "npm_config_cache", "npm_config_store_dir",
     ].sort());
     expect(spec.stdoutPath).toBe(input.logPath);
     expect(spec.stderrPath).toBe(`${input.logPath}.stderr`);

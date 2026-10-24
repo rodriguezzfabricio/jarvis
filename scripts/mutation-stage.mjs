@@ -5,18 +5,29 @@
 /** The definition files the mutation check loads, besides its inline list. */
 export const DEFINITION_GLOBS = ["packages/cli/src/**/mutations*.json", "tests/unit/*mutations*.json"];
 
-export const STAGES = ["0-1", "2", "3"];
+export const STAGES = ["0-1", "2", "3", "4", "5", "6"];
 
-/** Definition source ("inline" or a repo path) -> stage. Exact paths or one folder level, nothing looser. */
+/**
+ * Definition source ("inline" or a repo path) -> stage, first match wins: exact paths first, then
+ * folder rules (one folder level, or broker/adapters at any depth). Paths of lanes that haven't
+ * landed yet are mapped ahead too: the alarm test only checks files that are loaded.
+ */
 const MAP = [
+  // Exact paths, ahead of any folder rule they would also match.
   [/^inline$/, "0-1"],
   [/^packages\/cli\/src\/harness\/claude\/mutations-probe\.json$/, "0-1"],
-  [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
+  [/^packages\/cli\/src\/harness\/claude\/mutations-settings\.json$/, "0-1"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
-  [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
-  // jarvis setup's local parts are built alongside stage 3 (decision 71 keeps account validation for stage 5).
-  [/^packages\/cli\/src\/setup\/mutations[^/]*\.json$/, "3"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
+  [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
+  [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
+  [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
+  // Folder rules.
+  [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
+  [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
+  [/^packages\/cli\/src\/(review|security|lanes)\/mutations[^/]*\.json$/, "4"],
+  [/^packages\/cli\/src\/(release|setup)\/mutations[^/]*\.json$/, "5"],
+  [/^packages\/cli\/src\/broker\/adapters\/(?:[^/]+\/)*mutations[^/]*\.json$/, "5"],
 ];
 
 /** The stage a definition source belongs to, or undefined if it isn't mapped. */

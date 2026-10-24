@@ -220,7 +220,10 @@ describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120
     const c = check("flood", "head -c 40000000 /dev/zero\nsleep 20\n", p, COMPLETE);
     p.store.approve(p.ledger, "v1");
     const started = Date.now();
-    const r = await gate(p, c);
+    // Raced against a deadline, so a capture that never ends fails an assertion, not the runner's timeout.
+    const raced = await Promise.race([gate(p, c), new Promise<"hung">((res) => setTimeout(() => res("hung"), 60_000))]);
+    expect(raced).not.toBe("hung");
+    const r = raced as Awaited<ReturnType<typeof gate>>;
     expect(r.status).toBe("fail");
     expect((r.entry.data as { observationsOverCap?: boolean }).observationsOverCap).toBe(true);
     expect(Date.now() - started).toBeLessThan(15_000);

@@ -19,13 +19,15 @@
     {
       "id": 2,
       "prompt": "Add a contacts screen for the recruiter feature. (Golden task 1, FreeHire: a SvelteKit UI with its own components and theme, and no DESIGN.md.)",
-      "expected_output": "An existing design system: no directions and no mockups. DESIGN.md is written from the code's theme, tokens and components, each traced to its file, in Google's format; inconsistencies are listed, not fixed. The new screen follows it.",
+      "expected_output": "An existing design system: no directions and no mockups. DESIGN.md is written from the code's theme, tokens and components, each traced to its file, in Google's format; inconsistencies are listed, not fixed. The new screen follows it. Inherited choices are preserved even where the AI-tells list would ban them for new work; checks run on the new screen only, and any proposed departure is a Taste decision recorded with --why, --alternatives and --depends-on.",
       "files": [],
       "expectations": [
         "No direction plans or mockups are made",
         "DESIGN.md's tokens match values found in the project's theme or component files, with the source paths in the Overview",
         "Inconsistencies in the existing system are listed under Do's and Don'ts and not changed",
-        "Any change to the existing system is recorded with jarvis decide --class taste"
+        "Any change to the existing system is recorded with jarvis decide --class taste",
+        "An inherited choice that the tells list bans for new work (for example the existing font) is kept and not reported as a finding",
+        "The design checks are scoped to the new contacts screen"
       ]
     },
     {

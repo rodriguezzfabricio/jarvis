@@ -17,7 +17,7 @@ Three entry points, each called by another step:
 | The pipeline, after the answers | A direction was picked, or defaulted | After the pick: write `DESIGN.md` and the theme plan |
 | Intake or the pipeline | A design system exists in the code but `DESIGN.md` doesn't | An existing design system: write `DESIGN.md` from it |
 
-Backend-only work never gets this skill. A feature that fits the existing screens follows `DESIGN.md` and runs only the checks. A UI bug (a misaligned button) runs the checks on that one screen and never asks about direction or makes mockups (architecture §2).
+Backend-only work never gets this skill. A feature that fits the existing screens follows `DESIGN.md`, and the checks run on the UI it changes. A UI bug (a misaligned button) runs the checks on that one screen and never asks about direction or makes mockups (architecture §2).
 
 ## Inputs
 
@@ -32,7 +32,10 @@ Read before drafting anything:
 
 When the project already has one, there are no directions and no mockups. Write `DESIGN.md` from the code (decision 51): read the theme and token files, the component library and the most-used screens, and record the colors, type, spacing, corners and components that are actually in use, citing the file each came from. Where the code is inconsistent (three grays that mean the same thing), record what's there and list the inconsistency under Do's and Don'ts; don't fix it here.
 
-Then follow it. Any change to an existing design system is a Taste decision (decision 11): record it with `jarvis decide --by jarvis --class taste --source DESIGN.md`, with what depends on it, so the user can veto it in the morning.
+Then follow it. Inherited choices are preserved, including ones the AI-tells list bans for new work (an existing Inter, a card kit, a purple brand): the bans apply to new design only, and an inherited choice is not a finding. The design checks run on the changed UI only, against the project's own tokens.
+
+A proposed departure from the inherited system (a new token, a different radius, fixing those three grays) is a Taste decision (decision 11), recorded before it's built so the user can veto it in the morning:
+`jarvis decide --by jarvis --class taste --why "<what the departure fixes>" --alternatives "keep the inherited <choice>" --depends-on "<the screens and components it changes>" --source DESIGN.md "<the departure>"`.
 
 ## Draft three directions
 
@@ -70,7 +73,7 @@ In away mode, the default direction is built first (the walking skeleton) and th
 
 ## The AI-tells list
 
-Decision 53. These are banned unless the brief asks for it, in which case the exception is written under `DESIGN.md`'s Do's and Don'ts with the brief's words:
+Decision 53. These are banned unless the brief asks for it, in which case the exception is written under `DESIGN.md`'s Do's and Don'ts with the brief's words. They apply to new design only: new products, new directions and the new parts of a screen. An existing design system keeps what it inherited (see above).
 
 | Tell | Do instead |
 |---|---|
@@ -96,11 +99,11 @@ Intake records the pick once, like every other answer; it's already recorded by 
 1. **Write `DESIGN.md`** at the repo root from `templates/DESIGN.md`, in Google's DESIGN.md format: the tokens in the YAML front matter (colors, typography, rounded, spacing, components, with components referring to tokens like `{colors.primary}`), then a short rationale per section. Copy the picked direction's colors, type and principles; fill spacing and corners on one consistent scale. The Overview records the direction, its dials and who picked it (user, default accepted or default unconfirmed).
 2. **Plan the theme code** (decision 51): the same tokens wired into the web theme, starting with `--*: initial` so the framework's default palette no longer exists, and for mobile, the styling layer reading the same token file, so web and mobile can't drift. The theme is generated from `DESIGN.md` and never edited by hand. If the code doesn't exist yet, write the plan as a build task; the build loop generates it.
 3. **Bring `PRODUCT.md` up to date** if the pick changed a product fact (rare; the voice usually stays).
-4. Any design choice you make beyond the picked direction (a spacing scale, a radius) is a Taste decision: record it with `jarvis decide --by jarvis --class taste --source DESIGN.md "<decision>"`. Never edit `docs/decisions.md` directly.
+4. Any design choice you make beyond the picked direction (a spacing scale, a radius) is a Taste decision: record it with `jarvis decide --by jarvis --class taste --why "<why it fits the direction>" --alternatives "<the other values considered>" --depends-on "<the components that use it>" --source DESIGN.md "<decision>"`. Never edit `docs/decisions.md` directly.
 
 ## Checks that code runs
 
-Decision 54: these run before any model looks at the design, on every UI change, as the design gate, `jarvis gate design`. Only the run the runner launches after a session ends is recorded; a run from inside a session is fast feedback and never counts as evidence (decision 49). Build so they pass:
+Decision 54: these run before any model looks at the design, on the changed UI of every UI change, as the design gate, `jarvis gate design`. Only the run the runner launches after a session ends is recorded; a run from inside a session is fast feedback and never counts as evidence (decision 49). Build so they pass:
 
 | Check | Catches |
 |---|---|

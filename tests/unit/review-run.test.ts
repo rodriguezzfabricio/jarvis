@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 // @ts-expect-error standalone script
-import { runReview, codexEnvironment, reserveLaneManifest, DEFAULT_EVIDENCE } from '../../scripts/review-run.mjs';
+import { runReview, codexEnvironment, reserveLaneManifest, DEFAULT_EVIDENCE, defaultEvidence, parseCli } from '../../scripts/review-run.mjs';
 // @ts-expect-error standalone script
 import { inspectReviews } from '../../scripts/review-status.mjs';
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'review-run-')));
@@ -157,4 +157,63 @@ it('records setup failure and refuses a symlinked response directory', async () 
 it('runs the review evidence mutation check in confirm mode', () => {
   const m = DEFAULT_EVIDENCE.find((c: { name: string }) => c.name === 'mutation-check');
   expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm']);
+  expect(defaultEvidence().find((c: { name: string }) => c.name === 'mutation-check').args).toEqual(['scripts/mutation-check.mjs', '--confirm']);
+});
+
+// Decision 94: a stage review confirms its own stage's mutations.
+it('passes --confirm-stage through to the mutation check, and refuses an unknown stage', async () => {
+  const m = defaultEvidence({ confirmStage: '0-1' }).find((c: { name: string }) => c.name === 'mutation-check');
+  expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm-stage', '0-1']);
+  expect(defaultEvidence({ confirmStage: '0-1' }).filter((c: { name: string }) => c.name !== 'mutation-check')).toEqual(DEFAULT_EVIDENCE.filter((c: { name: string }) => c.name !== 'mutation-check'));
+  expect(() => defaultEvidence({ confirmStage: '4' })).toThrow(/stage/);
+  const g = fixture();
+  await expect(runReview({ ...g, evidence: undefined, confirmStage: '9', dryRun: true })).rejects.toThrow(/stage/);
+});
+
+// Codex review of decision 94, critical: a filtered mutation check is not review evidence.
+it('refuses to start while JARVIS_MUTATIONS is set, before creating anything', async () => {
+  const g = fixture();
+  const before = process.env.JARVIS_MUTATIONS;
+  process.env.JARVIS_MUTATIONS = '^tripwire';
+  try {
+    await expect(runReview({ ...g, dryRun: true })).rejects.toThrow(/JARVIS_MUTATIONS/);
+    process.env.JARVIS_MUTATIONS = '';
+    await expect(runReview({ ...g, dryRun: true })).rejects.toThrow(/JARVIS_MUTATIONS/);
+  } finally {
+    if (before === undefined) delete process.env.JARVIS_MUTATIONS; else process.env.JARVIS_MUTATIONS = before;
+  }
+  expect(existsSync(join(g.home, '.jarvis'))).toBe(false);
+  expect(existsSync(join(g.home, '.jarvis-work'))).toBe(false);
+  const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', g.prompts, '--schema', g.schema, '--repo', g.repo, '--dry-run'], { encoding: 'utf8', env: { ...process.env, JARVIS_MUTATIONS: 'x' } });
+  expect(r.status).toBe(1);
+  expect(r.stderr).toMatch(/JARVIS_MUTATIONS/);
+});
+
+// Codex re-check of decision 94, high: parseArgs keeps only the last value, so a repeated flag picked a stage silently.
+it('CLI reads every --confirm-stage token: a repeat in either spelling or any bad value is refused', () => {
+  expect(parseCli(['--round', 'stage0-1', '--confirm-stage', '2', '--lanes', 'A,B', '--dry-run']).options).toMatchObject({ round: 'stage0-1', confirmStage: '2', lanes: ['A', 'B'], dryRun: true });
+  expect(parseCli(['--round', 'stage0-1', '--confirm-stage=3']).options.confirmStage).toBe('3');
+  expect(parseCli(['--round', 'stage0-1']).options.confirmStage).toBeUndefined();
+  expect(() => parseCli(['--confirm-stage=typo', '--confirm-stage', '3', '--confirm-stage=2'])).toThrow(/once/);
+  expect(() => parseCli(['--confirm-stage', '2', '--confirm-stage', '2'])).toThrow(/once/);
+  expect(() => parseCli(['--confirm-stage=2', '--confirm-stage=3'])).toThrow(/once/);
+  expect(() => parseCli(['--confirm-stage=typo'])).toThrow(/stage/);
+  expect(() => parseCli(['--confirm-stage='])).toThrow(/stage/);
+  const g = fixture();
+  const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', g.prompts, '--schema', g.schema, '--repo', g.repo, '--dry-run', '--confirm-stage=typo', '--confirm-stage', '3', '--confirm-stage=2'], { encoding: 'utf8' });
+  expect(r.status).toBe(1);
+  expect(r.stderr).toMatch(/--confirm-stage may be given only once/);
+  expect(r.stdout).toBe('');
+  // The CLI runs the review with those parsed options (split lanes, dry run, the stage).
+  const ok = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', g.prompts, '--schema', g.schema, '--repo', g.repo, '--codex', g.codex, '--lanes', 'A,B', '--dry-run', '--confirm-stage', '2'], { encoding: 'utf8', env: { ...process.env, HOME: g.home } });
+  expect(ok.stderr).toBe('');
+  expect(ok.stdout).toMatch(/^Dry run: /);
+});
+
+it('CLI takes --confirm-stage', () => {
+  const r = spawnSync(process.execPath, ['scripts/review-run.mjs', '--help'], { encoding: 'utf8' });
+  expect(r.stdout).toContain('[--confirm-stage <0-1|2|3>]');
+  const bad = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', '/nonexistent', '--schema', '/nonexistent', '--confirm-stage', '7'], { encoding: 'utf8' });
+  expect(bad.status).toBe(1);
+  expect(bad.stderr).toMatch(/stage/);
 });

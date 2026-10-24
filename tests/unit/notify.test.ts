@@ -32,9 +32,11 @@ describe("intake wait", () => {
     const sleeps: number[] = [];
     return { now: () => Date.now(), sleep: (ms: number, signal?: AbortSignal) => {
       sleeps.push(ms);
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, ms);
-        signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("cancelled")); }, { once: true });
+        // Honors abort by ending the sleep early. It resolves rather than rejects, so a mutation that
+        // drops the deadline race cannot leave an unhandled rejection in place of a failed assertion.
+        signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
       });
     }, sleeps };
   }

@@ -1,0 +1,10 @@
+# Response to stage 0 review 12 (Codex)
+
+Oct 24, 2026. Under decision 74, critical and high findings are fixed and re-reviewed; medium and low findings are fixed when cheap and otherwise go to `docs/backlog.md`.
+
+| # | Severity | Finding | Response |
+|---|---|---|---|
+| 1 | high | XML name/value configuration exposes literal credentials | **Fixed:** an element whose `name` or `key` attribute names a credential carries that name to its value: the `value` attribute, or else the element's text (child elements' text included, XML escapes decoded, CDATA kept literally). This covers Spring `<property name="password" value="…"/>` and `<property name="password"><value>…</value></property>`, Java `<entry key="db.password">…</entry>` and .NET `<add key="ApiKey" value="…"/>`. A `ref="…"` attribute is a reference, not a value. `.config` files (`web.config`, `nuget.config`) are now scanned as XML. **Tests:** refusals for each form, attributes in either order, an escaped entry, a CDATA param, `nuget.config` and `web.config`; the inert snapshot keeps references, a `ref`, an empty entry, a non-credential property and an empty `appSettings` key. **Mutations:** "XML name/value not inspected", "XML name/value element text not read", ".config files not scanned". |
+| 2 | medium | Exhausted read retries still classify a healthy ledger as tampered | **Fixed:** a read that never settles returns `contended`, never a tampering problem. `Ledger.verify` then reads under the writer lock, where no append can interleave, so its callers always get a consistent result. Doctor and the broker (`Ledger.entries`) both go through it. **Tests:** with an append during every attempt, `verifyLedger` reports contention without tampering, and `Ledger.verify` and `entries()` succeed with every entry. **Mutations:** "ledger reads not checked for stability", "contended ledger reads not retried under the lock". Backlog #18 (reopened, done). |
+
+FreeHire's real snapshots for tasks 1 and 2 still pass. 93 of 93 mutations caught.

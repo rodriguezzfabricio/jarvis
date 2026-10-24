@@ -14,8 +14,8 @@
   {
     "name": "settings /private/var/folders not denied",
     "file": "packages/cli/src/harness/claude/settings.ts",
-    "anchor": "\"/tmp\", \"/private/var/folders\", \"/var/folders\"] as const;",
-    "replacement": "\"/tmp\", \"/var/folders\"] as const;"
+    "anchor": "\"/tmp\", \"/private/var/folders\", \"/var/folders\", ",
+    "replacement": "\"/tmp\", \"/var/folders\", "
   },
   {
     "name": "settings runner TMPDIR not denied",
@@ -70,5 +70,11 @@
     "file": "packages/cli/src/harness/claude/task.ts",
     "anchor": "...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),",
     "replacement": "...cacheEnv(cacheDir),"
+  },
+  {
+    "name": "settings /private/var/tmp not denied",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "\"/var/folders\", \"/private/var/tmp\", \"/var/tmp\"] as const;",
+    "replacement": "\"/var/folders\", \"/var/tmp\"] as const;"
   }
 ]

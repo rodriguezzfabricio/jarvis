@@ -98,8 +98,8 @@
   {
     "name": "probe skips the runner's own TMPDIR",
     "file": "packages/cli/src/harness/claude/probe.ts",
-    "anchor": "[...new Set([\"/private/tmp\", hostTmp])]",
-    "replacement": "[\"/private/tmp\"]"
+    "anchor": "\"/private/var/tmp\", hostTmp])]",
+    "replacement": "\"/private/var/tmp\"])]"
   },
   {
     "name": "probe accepts a system TMPDIR",
@@ -112,5 +112,11 @@
     "file": "packages/cli/src/harness/claude/probe.ts",
     "anchor": "const tmpdirOk = fileHas(tmpdirCopy, `tmp-${nonce}`) && ",
     "replacement": "const tmpdirOk = "
+  },
+  {
+    "name": "probe skips /private/var/tmp",
+    "file": "packages/cli/src/harness/claude/probe.ts",
+    "anchor": "[\"/private/tmp\", \"/private/var/tmp\", ",
+    "replacement": "[\"/private/tmp\", "
   }
 ]

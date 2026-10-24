@@ -77,3 +77,4 @@ Medium and low findings from the Codex reviews (decision 74), and other deferred
 | 71 | Usage-lane Codex review M2 | medium | A usage-window reset inside one session corrupts window accounting (80%→95%, reset, 5%→10% reads as 70%); keep observations per window and reset period (`runner/usage-log.ts:80`) | Open |
 | 72 | Usage-lane Codex review L3 | low | Tests miss deleting "not billed on a subscription"; assert dollar figures are estimates, not charges | Open |
 | 73 | Usage-lane proposed decision 2 | low | The `result` event's `usage`, `total_cost_usd` and `num_turns` fields are unverified on the pinned binary; capture them in the live probe | Open |
+| 74 | Stage 7 follow-ups | low | Live-verify that a task session's Skill tool loads build/debug from the runner-assembled plugin in jarvisHome (unreadable to the session's shell) | Open |

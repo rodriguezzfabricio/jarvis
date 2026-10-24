@@ -3,7 +3,7 @@ import { createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
+import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments, type YAMLMap } from "yaml";
 import { safeGit } from "./git.ts";
 
 /**
@@ -145,11 +145,30 @@ export function isPlaceholderPassword(raw: string): boolean {
   return template.test(raw) || template.test(pw) || word.test(pw);
 }
 
+/** A base64 run, not part of a longer one. Credentials are short; longer runs (images, hashes) are skipped. */
+const BASE64_RUN = /(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{12,512}={0,2}(?![A-Za-z0-9+/=])/g;
+
+/**
+ * True if a base64 string decodes to printable user:password text: HTTP Basic credentials, as in
+ * npm's _auth, Docker's auths.*.auth and "Authorization: Basic …", wherever they appear (Codex review 10).
+ */
+export function isBase64UserPassword(b64: string): boolean {
+  // The user part looks like a user name, so base64-encoded JSON ({"c":1,…}) and other data don't match.
+  const m = /^([\w.@+~!$%&*=#|-]*):([\x21-\x7e]+)$/.exec(Buffer.from(b64, "base64").toString("latin1"));
+  return m !== null && !isPlaceholderPassword(m[2]!);
+}
+
 export function findCredentials(text: string): string[] {
   const hits = CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
   for (const m of text.matchAll(CRED_URL)) {
     if (!isPlaceholderPassword(m[3] ?? "") && !LOCAL_HOSTS.test(m[4] ?? "")) {
       hits.push("credential URL");
+      break;
+    }
+  }
+  for (const m of text.matchAll(BASE64_RUN)) {
+    if (isBase64UserPassword(m[0])) {
+      hits.push("base64 user:password");
       break;
     }
   }
@@ -208,7 +227,7 @@ const CONFIG_FILE = /(\.(json|jsonc|json5|ya?ml|toml|ini|cfg|conf|properties|tfv
  * than the dotenv rule: "author" or "auth: true" are not credentials, but any *_token, *_secret,
  * password or api key holding a literal value is.
  */
-const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|auth_ident|credentials?|connection_string|dsn)$/;
+const SECRET_FIELD = /(^|_)(secret|secrets|token|password|passwd|pwd|pass|apikey|api_key|private_key|secret_key|access_key|master_key|signing_key|encryption_key|session_key|jwt_key|hmac_key|client_secret|auth_token|authtoken|auth_ident|identitytoken|registrytoken|credentials?|connection_string|dsn)$/;
 
 function fieldName(raw: string): string {
   const last = raw.split(/[/:.[\]]/).filter((x) => x !== "").at(-1) ?? raw;
@@ -395,14 +414,23 @@ export function findSecretFields(name: string, text: string): string[] {
       }
       return n;
     };
+    /**
+     * A map's pairs, keys resolved (keys may be aliases: "*k : value") and YAML merges (<<: *base, or a
+     * list of them) expanded in place, so a merged name or value belongs to the entry (Codex review 10).
+     * Every duplicate is kept.
+     */
+    const pairsOf = (doc: Document.Parsed, m: YAMLMap): { key: string; value: unknown }[] =>
+      m.items.flatMap((p) => {
+        const k = deref(doc, p.key);
+        const key = isScalar(k) ? String(k.value) : "";
+        if (key !== "<<") return [{ key, value: p.value }];
+        const v = deref(doc, p.value);
+        return (isSeq(v) ? v.items.map((x) => deref(doc, x)) : [v]).flatMap((x) => (isMap(x) ? pairsOf(doc, x) : [{ key, value: x }]));
+      });
     const walkYaml = (doc: Document.Parsed, node: unknown, key: string): void => {
       const n = deref(doc, node);
       if (isMap(n)) {
-        // Keys and names may be aliases too ("*k : value").
-        const pairs = n.items.map((p) => {
-          const k = deref(doc, p.key);
-          return { key: isScalar(k) ? String(k.value) : "", value: p.value };
-        });
+        const pairs = pairsOf(doc, n);
         const envName = pairs
           .filter((p) => p.key === "name" || p.key === "key")
           .map((p) => deref(doc, p.value))

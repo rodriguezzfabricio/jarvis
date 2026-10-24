@@ -270,6 +270,13 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "auth-unscoped/.npmrc": "_auth=c3ZjOlN5bnRoZXRpYzlxdk0y\n",
       ".yarnrc.yml": 'npmAuthIdent: "svc:Synthetic9qvM2"\n',
       ".yarnrc": '"//registry.npmjs.org/:_authToken" Synthetic9qvM2abc\n',
+      // Codex review 10: Docker registry auth, base64 user:password anywhere, and YAML merges.
+      ".docker/config.json": '{"auths": {"https://index.docker.io/v1/": {"auth": "c3ZjOlN5bnRoZXRpYzlxdk0y"}}}\n',
+      "docker-token.json": '{"auths": {"ghcr.io": {"identitytoken": "Synthetic9qvM2"}}}\n',
+      "basic-header.ts": 'const headers = { Authorization: "Basic c3ZjOlN5bnRoZXRpYzlxdk0y" };\n',
+      "merge-name.yaml": "base: &base\n  name: DB_PASSWORD\nenv:\n  - <<: *base\n    value: Synthetic9qvM2\n",
+      "merge-value.yaml": "v: &v\n  value: Synthetic9qvM2\nenv:\n  - name: DB_PASSWORD\n    <<: *v\n",
+      "merge-seq.yaml": "a: &a {x: 1}\nb: &b {name: DB_PASSWORD}\nenv:\n  - <<: [*a, *b]\n    value: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
     for (const [name, content] of Object.entries(cases)) {
@@ -305,6 +312,10 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     writeFileSync(join(repo, "openapi.json"), '{"components": {"schemas": {"Login": {"properties": {"password": {"type": "string", "format": "password", "description": "At least 12 characters"}}}}}}\n');
     writeFileSync(join(repo, ".npmrc"), "registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_auth=${NPM_AUTH}\nauth-type=legacy\n");
     writeFileSync(join(repo, ".yarnrc"), '"//registry.npmjs.org/:_authToken" "${NPM_TOKEN}"\nyarn-offline-mirror "./mirror"\n');
+    mkdirSync(join(repo, ".docker"), { recursive: true });
+    writeFileSync(join(repo, ".docker", "config.json"), '{"auths": {"ghcr.io": {}}, "credsStore": "desktop", "credHelpers": {"gcr.io": "gcloud"}}\n');
+    writeFileSync(join(repo, "preview.html"), '<div data-view="eyJjIjotMTQ2NDQ3NzE0MywicCI6MzkxLCJ0IjoxNzgxMjY5Mjg4LCJoIjoiYmY5ZDM1N2MxZWVhM2M5YWNkIn0"></div>\n');
+    writeFileSync(join(repo, "integrity.json"), '{"integrity": "sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==", "id": "AbCdEfGhIjKlMnOp"}\n');
     writeFileSync(join(repo, "deploy.yaml"), "env:\n  - name: DB_PASSWORD\n    valueFrom: {secretKeyRef: {name: db, key: password}}\n  - name: LOG_LEVEL\n    value: debug\n");
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");

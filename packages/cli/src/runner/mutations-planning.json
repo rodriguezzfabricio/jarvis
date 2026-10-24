@@ -50,8 +50,8 @@
   {
     "name": "planning file boundary traversal",
     "file": "packages/cli/src/runner/plan.ts",
-    "anchor": "s !== \"..\" && s !== \".git\"",
-    "replacement": "s !== \".git\""
+    "anchor": "s !== \"..\" && s.toLowerCase() !== \".git\"",
+    "replacement": "s.toLowerCase() !== \".git\""
   },
   {
     "name": "planning file boundary metadata",
@@ -134,14 +134,14 @@
   {
     "name": "planning review includes retained files",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "const prompt = buildChecksReviewPrompt(options.spec, bundle);",
-    "replacement": "const prompt = buildChecksReviewPrompt(options.spec, proposed);"
+    "anchor": "const prompt = buildChecksReviewPrompt(options.spec, bundle, baseline);",
+    "replacement": "const prompt = buildChecksReviewPrompt(options.spec, proposed, baseline);"
   },
   {
     "name": "planning immutable reviewed files",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "const staged = stageFiles(parent, bundle.files);",
-    "replacement": "const staged = stageFiles(parent, { ...bundle.files, ...authored.files });"
+    "anchor": "return replaceChecks(store, bundle, ledger, verdict);",
+    "replacement": "return replaceChecks(store, { ...bundle, files: { ...bundle.files, ...authored.files } }, ledger, verdict);"
   },
   {
     "name": "planning bundle paths no escape",
@@ -200,7 +200,7 @@
   {
     "name": "planning driver stdio isolation",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": " || /\\bstdio\\s*:\\s*[\"']inherit[\"']/.test(content)",
+    "anchor": " || /\\bstdio\\s*:\\s*(?:[\"']inherit[\"']|\\[[^\\]]*[\"']inherit[\"'])/.test(content)",
     "replacement": ""
   },
   {
@@ -232,5 +232,185 @@
     "file": "packages/cli/src/runner/plan.ts",
     "anchor": "  if (!context) throw new Error(\"readPlan needs the runner's approved spec and installed checks\");",
     "replacement": "  if (!context) return PlanSchema.parse(JSON.parse(readPlanningFile(workspace, \".jarvis/plan.json\")));"
+  },
+  {
+    "name": "planning approved diff baseline",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!store.verify(ledger).ok || canonical(installedFiles(store)) !== canonical(existing))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning previous lock hashes",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "previous: baseline ? { lockHash: baseline.lockHash, files: baseline.hashes } : null",
+    "replacement": "previous: null"
+  },
+  {
+    "name": "planning unified file diffs",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "diff: unifiedDiff(file, before[file], bundle.files[file])",
+    "replacement": "diff: \"\""
+  },
+  {
+    "name": "planning removed case names",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "return { diffs, removedCases, changedVerifyFiles };",
+    "replacement": "return { diffs, removedCases: [], changedVerifyFiles };"
+  },
+  {
+    "name": "planning removed case justification",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!verdict.removedCases?.some((item) => item.check === removed.check && item.caseId === removed.caseId))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning changed verify justification",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!verdict.changedVerifyFiles?.some((item) => item.file === file))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning justification nonempty",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "const justification = z.string().trim().min(1).max(4000);",
+    "replacement": "const justification = z.string().trim().max(4000);"
+  },
+  {
+    "name": "planning review justification audit",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "`fresh protected-check review passed: ${canonical(verdict)}`",
+    "replacement": "\"fresh protected-check review passed\""
+  },
+  {
+    "name": "planning review bypass instructions",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "    ...REVIEW_PROBES,",
+    "replacement": ""
+  },
+  {
+    "name": "planning fixture driver or JSON extensions",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!/\\.(?:mjs|cjs|js|sh)$/.test(path)) throw new Error(\"fixtures must be driver scripts or JSON data\");",
+    "replacement": "if (!/\\.(?:mjs|cjs|js|sh)$/.test(path)) return;"
+  },
+  {
+    "name": "planning fixture valid JSON",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "catch { throw new Error(\"fixtures must contain valid JSON data\"); }",
+    "replacement": "catch { return; }"
+  },
+  {
+    "name": "planning fixture createRequire",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": " || /\\bcreateRequire\\s*\\(/.test(masked)",
+    "replacement": ""
+  },
+  {
+    "name": "planning fixture stdio arrays",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "|\\[[^\\]]*[\"']inherit[\"']",
+    "replacement": ""
+  },
+  {
+    "name": "planning restore approved checks",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "try { renameSync(backup, store.checksDir); }",
+    "replacement": "try { /* leave approved checks stranded */ }"
+  },
+  {
+    "name": "planning preserve unrestorable backup",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (installed) rmSync(backup, { recursive: true, force: true });",
+    "replacement": "rmSync(backup, { recursive: true, force: true });"
+  },
+  {
+    "name": "planning explicit file removal",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "    delete files[file];",
+    "replacement": ""
+  },
+  {
+    "name": "planning validate file removals",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!relativePath(file) || !Object.hasOwn(existing, file) || Object.hasOwn(proposed, file))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning single task installed unit",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!checks?.some((check) => check.name === \"unit\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning single task bounded request",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "const goal = request.trim().slice(0, 16_000);",
+    "replacement": "const goal = request.trim();"
+  },
+  {
+    "name": "planning single task clear empty request",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (!goal) throw new Error(\"singleTaskPlan requires a nonempty request\");",
+    "replacement": ""
+  },
+  {
+    "name": "planning case in-process imports",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "inProcess.test(c.command) || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning verifier in-process imports",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "|| inProcess.test(source)",
+    "replacement": ""
+  },
+  {
+    "name": "planning nonce completion file",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "!source.includes(\"JARVIS_COMPLETION_FILE\") || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning nonce completion prefix",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": " || !source.includes(COMPLETION_PREFIX)",
+    "replacement": ""
+  },
+  {
+    "name": "planning file directory stability",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "    unchanged(dirs);",
+    "replacement": ""
+  },
+  {
+    "name": "planning tree directory stability",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "  unchanged(dirs);\n  return files;",
+    "replacement": "  return files;"
+  },
+  {
+    "name": "planning file mtime stability",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": " || end.mtimeMs !== st.mtimeMs",
+    "replacement": ""
+  },
+  {
+    "name": "planning file ctime stability",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": " || end.ctimeMs !== st.ctimeMs",
+    "replacement": ""
+  },
+  {
+    "name": "planning nested verifier references",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "verifyFiles.has(file) || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning nested verifier helpers",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "!file.startsWith(\"fixtures/\") && /\\.(?:sh|mjs|cjs|js|py)$/.test(file)",
+    "replacement": "!file.includes(\"/\") && /\\.(?:sh|mjs|cjs|js|py)$/.test(file)"
   }
 ]

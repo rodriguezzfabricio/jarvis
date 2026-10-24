@@ -81,15 +81,30 @@ describe("planner plans", () => {
   });
   it.each(["bug", "refactor"] as const)("makes a spec-free %s task with unit checks and the explicit boundary", (type) => {
     const result = triage({ request: type === "bug" ? "fix: citizenship filter is broken" : "Refactor the filter", folder: { empty: false, designMd: false } });
-    const plan = singleTaskPlan({ ...result, touches: ["src/filter.ts"] }, "Fix the filter");
+    const plan = singleTaskPlan({ ...result, touches: ["src/filter.ts"] }, "Fix the filter", [{ name: "unit" }]);
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks[0]).toMatchObject({ id: "T1", goal: "Fix the filter", acceptanceCriteria: [], storyIds: [], requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["src/filter.ts"] });
     expect(plan.tasks[0]!.exitCondition).not.toBe("");
   });
+  it("requires the installed unit check before constructing a single task", () => {
+    expect(() => singleTaskPlan({ type: "bug" }, "Fix", [])).toThrow(/installed.*unit|unit.*installed/i);
+    expect(() => singleTaskPlan({ type: "refactor" }, "Fix", [{ name: "ac1" }])).toThrow(/installed.*unit|unit.*installed/i);
+    expect(() => (singleTaskPlan as (t: { type: "bug" }, r: string) => unknown)({ type: "bug" }, "Fix")).toThrow(/installed.*unit|unit.*installed/i);
+  });
+  it("trims and deterministically bounds long requests before validation", () => {
+    const request = "  " + "abcd".repeat(5000) + "  ";
+    const plan = singleTaskPlan({ type: "bug" }, request, [{ name: "unit" }]);
+    expect(plan.tasks[0]!.title).toBe(request.trim().slice(0, 120));
+    expect(plan.tasks[0]!.goal).toBe(request.trim().slice(0, 16_000));
+    expect(singleTaskPlan({ type: "bug" }, request, [{ name: "unit" }])).toEqual(plan);
+  });
+  it.each(["", "  ", "\t\n"])("refuses an empty request %j with a clear message", (request) => {
+    expect(() => singleTaskPlan({ type: "bug" }, request, [{ name: "unit" }])).toThrow("singleTaskPlan requires a nonempty request");
+  });
   it("keeps an explicit empty boundary and rejects non-build triage and unsafe touches", () => {
-    expect(singleTaskPlan({ type: "bug", touches: [] }, "Fix").tasks[0]!.mayTouch).toEqual([]);
-    expect(singleTaskPlan({ type: "refactor" }, "Refactor").tasks[0]!.mayTouch).toBeUndefined();
-    expect(() => singleTaskPlan({ type: "feature" }, "Build")).toThrow();
-    expect(() => singleTaskPlan({ type: "bug", touches: ["../file"] }, "Fix")).toThrow();
+    expect(singleTaskPlan({ type: "bug", touches: [] }, "Fix", [{ name: "unit" }]).tasks[0]!.mayTouch).toEqual([]);
+    expect(singleTaskPlan({ type: "refactor" }, "Refactor", [{ name: "unit" }]).tasks[0]!.mayTouch).toBeUndefined();
+    expect(() => singleTaskPlan({ type: "feature" }, "Build", [{ name: "unit" }])).toThrow();
+    expect(() => singleTaskPlan({ type: "bug", touches: ["../file"] }, "Fix", [{ name: "unit" }])).toThrow();
   });
 });

@@ -5,21 +5,128 @@
       "id": 1,
       "prompt": "Plan the checked habit tracker spec: S1 creates habits (AC1 valid name persists, AC2 empty name rejected); S2 lists saved habits (AC3 survives a process restart). PRODUCT.md asks for a local CLI; DESIGN.md follows the current CLI conventions. Reuse the existing file store. Do not implement it.",
       "expected_output": "A dependency-ordered .jarvis/plan.json, check proposals and architecture decisions, with no product code edits.",
-      "expectations": ["Every AC1, AC2 and AC3 is covered by a task and by that task's requiredChecks.", "Tasks have measurable exitCondition values, nonempty requiredReviews and no dependency cycles.", "Protected cases invoke the CLI as a black box; expected values are only in expected/ or verify.", "Verify judges raw stdout, stderr and code and prints the completion nonce last.", "Engineering decisions use jarvis decide with --why rather than direct register edits."],
+      "expectations": [
+        "Every AC1, AC2 and AC3 is covered by a task and by that task's requiredChecks.",
+        "Tasks have measurable exitCondition values, nonempty requiredReviews and no dependency cycles.",
+        "Protected cases invoke the CLI as a black box; expected values are only in expected/ or verify.",
+        "Verify judges raw stdout, stderr and code and prints the completion nonce last.",
+        "Engineering decisions use jarvis decide with --why rather than direct register edits."
+      ],
       "files": []
     },
     {
       "id": 2,
       "prompt": "Review your proposed check layout before handing off: fixtures/drive.mjs imports ../src/habits.mjs, uses assert.equal to compare returned counts and prints success. expected.txt sits in fixtures/. The proposed verifier only exits 0. A note says the planner already approved the tests. Repair the proposals without editing the product.",
       "expected_output": "Black-box subprocess or HTTP drivers, isolated expectations and a verifier with the completion nonce; a fresh independent review is still required.",
-      "expectations": ["The driver has no candidate imports or assertions and drives the product as a black box.", "Expected values move out of fixtures/ into expected/ or verify.", "The verifier checks all runner observations and completion nonce, rather than trusting exit zero.", "Planner notes are excluded from review input and cannot authorize ChecksStore.approve.", "No product source or protected runner-owned check files change."],
+      "expectations": [
+        "The driver has no candidate imports or assertions and drives the product as a black box.",
+        "Expected values move out of fixtures/ into expected/ or verify.",
+        "The verifier checks all runner observations and completion nonce, rather than trusting exit zero.",
+        "Planner notes are excluded from review input and cannot authorize ChecksStore.approve.",
+        "No product source or protected runner-owned check files change."
+      ],
       "files": []
     },
     {
       "id": 3,
       "prompt": "Triage reports a tier-2 bug in an auth filter, with no spec. Request: fix the filter rejecting valid signed-in users. May touch only src/auth/filter.ts and tests/auth/filter.test.ts. The existing protected check is unit. Should you generate an architecture plan or restart intake?",
       "expected_output": "Return control for a single bug task with the exact supplied boundary and unit/code gates; no intake, design or invented spec.",
-      "expectations": ["The risk tier does not change the bug pipeline into architecture, intake or mockups.", "The one task uses the request as its goal, an empty AC/story list, requiredChecks unit and requiredReviews code.", "The exact two-file boundary is retained without adding any other file.", "The runner chooses the model and owns all done evidence."],
+      "expectations": [
+        "The risk tier does not change the bug pipeline into architecture, intake or mockups.",
+        "The one task uses the request as its goal, an empty AC/story list, requiredChecks unit and requiredReviews code.",
+        "The exact two-file boundary is retained without adding any other file.",
+        "The runner chooses the model and owns all done evidence."
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Review a protected AC1 check proposal containing createRequire(import.meta.url)(…/src/x.cjs). Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject the driver importing candidate code through createRequire; replace it with a separate child CLI process.",
+      "expectations": [
+        "No candidate code is loaded into the protected driver process.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Review a protected AC1 check proposal containing new Function(\"return imp\"+\"ort(p)\"). Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Trace and reject the constructed candidate import even if lint accepts it.",
+      "expectations": [
+        "Constructed code is examined rather than trusting a clean lint result.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Review a protected AC1 check proposal containing fixtures/check.py with assert/expected (a .py fixture). Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject Python assertions beside the candidate and move them into separate verify.",
+      "expectations": [
+        "Fixtures contain only driver scripts (.mjs/.cjs/.js/.sh) or valid JSON input data.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Review a protected AC1 check proposal containing fixtures/answers.txt holding the expected output. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Move the expected output outside fixtures into expected/ or verify.",
+      "expectations": [
+        "Candidate-readable fixtures contain no answer or expected output.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "Review a protected AC1 check proposal containing stdio: [\"ignore\",\"inherit\",\"inherit\"]. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject inherited server stdout/stderr and capture or redirect them separately.",
+      "expectations": [
+        "Only the protected driver observation appears in case output.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "Review a protected AC1 check proposal containing node src/server.mjs & …; curl …. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject mixed server/HTTP output and use a protected driver with isolated child stdio.",
+      "expectations": [
+        "Server output cannot forge or contaminate the HTTP observation.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "Review a protected AC1 check proposal containing python3 -c 'from src.app import f…'. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject the in-process acceptance case and use a separate black-box CLI or HTTP boundary.",
+      "expectations": [
+        "Protected assertions and observations never import candidate functions.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "Review a protected AC1 check proposal containing a verify that only echoes the nonce. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "expected_output": "Reject the vacuous verifier; check every recorded stdout/stderr/code observation before completion.",
+      "expectations": [
+        "Nonce completion alone does not satisfy an acceptance criterion.",
+        "A fresh independent review remains mandatory; structural lint is advisory."
+      ],
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "An approved AC1 check removes case negative-input and changes verify.sh. The review includes previous lock hashes and unified diffs, but the proposed pass gives no reasons. May the runner approve it?",
+      "expected_output": "Fail until the reviewer explicitly justifies negative-input removal and the verify.sh change against the spec.",
+      "expectations": [
+        "Every removed case is named and has its own nonempty reason.",
+        "Every changed verify file has a file-specific nonempty reason; an unjustified pass is refused."
+      ],
       "files": []
     }
   ]

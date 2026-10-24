@@ -173,7 +173,7 @@ for (const st of steps) {
     // Planted temp files: readable unless the settings deny their folder (and don't reopen it).
     const fsPolicy = settings.sandbox?.filesystem ?? {};
     const covered = (list, p) => (list ?? []).some((d) => p === d || p.startsWith(`${d}/`));
-    for (const k of ["X1", "X2"]) {
+    for (const k of lines.map((l) => / # step:(X\d+)$/.exec(l)?.[1]).filter(Boolean)) {
       if (!line(k) || mode === "tmp-silent") continue;
       const [, src, copy, err, rc] = line(k).match(/^cat (\S+) > (\S+) 2> (\S+); echo \$\? > (\S+)/);
       const readable = mode === "tmp-leak" || mode === "tmp-lies" || !covered(fsPolicy.denyRead, src) || covered(fsPolicy.allowRead, src);

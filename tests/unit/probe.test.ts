@@ -177,9 +177,10 @@ describe("live canary probe (decisions 59, 68, 69), against a fake claude", () =
       expect(failed(await probe("tmp-lies"))).toEqual(["system_temp_not_readable"]);
     });
 
-    it("covers /private/tmp and the runner's own $TMPDIR", async () => {
+    it("covers /private/tmp, /private/var/tmp and the runner's own $TMPDIR", async () => {
       const detail = (await probe("safe")).checks.find((c) => c.name === "system_temp_not_readable")?.detail ?? "";
       expect(detail).toMatch(/\/private\/tmp\/jarvis-probe-tmp-\w+\.txt unreadable/);
+      expect(detail).toMatch(/\/private\/var\/tmp\/jarvis-probe-tmp-\w+\.txt unreadable/);
       const host = realpathSync(tmpdir());
       if (host !== "/private/tmp") expect(detail).toContain(`${host}/jarvis-probe-tmp-`);
     });

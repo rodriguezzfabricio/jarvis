@@ -309,10 +309,10 @@ export async function runCanaryProbe(opts: ProbeOptions): Promise<ProbeResult> {
   const scratchFile = join(work, ".jarvis", "scratch", "x");
   const scratchRan = join(work, "scratch-ran.txt");
   const otherFile = join(work, ".jarvis", `other-${nonce}.txt`);
-  // System temp folders (decision 93): a file planted in /private/tmp and in the runner's own $TMPDIR.
+  // System temp folders (decision 95): a file planted in /private/tmp, /private/var/tmp and the runner's own $TMPDIR.
   const hostTmp = realpathSync(tmpdir());
   const tempToken = `JARVIS-TEMP-${nonce}`;
-  const tempReads: TempReadCase[] = [...new Set(["/private/tmp", hostTmp])].map((d, i) => {
+  const tempReads: TempReadCase[] = [...new Set(["/private/tmp", "/private/var/tmp", hostTmp])].map((d, i) => {
     const key = `X${i + 1}`;
     const src = join(d, `jarvis-probe-tmp-${nonce}.txt`);
     writeFileSync(src, `${tempToken}\n`, { mode: 0o644 });

@@ -13,7 +13,7 @@ const ctx = {
   allowedDomains: ["registry.npmjs.org"],
   hostTmpDir: "/private/var/folders/xy/abc/T",
 };
-const TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders"];
+const TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp"];
 const clone = () => structuredClone(buildTaskSettings(ctx)) as Record<string, any>;
 
 describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () => {

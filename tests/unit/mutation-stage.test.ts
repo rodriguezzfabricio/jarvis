@@ -63,6 +63,29 @@ describe("confirm scope", () => {
     expect(parseMode(["--confirm-stage", "3"], {})).toEqual({ mode: "stage", stage: "3" });
   });
 
+  // Codex review of decision 94, high: only the first exact flag was read and checked.
+  it("parses every argument strictly: no repeated flag, no unknown option or stray value", () => {
+    expect(() => parseMode(["--confirm-stage", "2", "--confirm-stage", "typo"], {})).toThrow(/once/);
+    expect(() => parseMode(["--confirm-stage", "2", "--confirm-stage", "3"], {})).toThrow(/once/);
+    expect(() => parseMode(["--confirm-stage", "2", "--confirm-stage", "2"], {})).toThrow(/once/);
+    expect(() => parseMode(["--confirm", "--confirm"], {})).toThrow(/once/);
+    expect(() => parseMode(["--confirm-stage=2", "--confirm-stage", "3"], {})).toThrow(/once/);
+    expect(() => parseMode(["--confim"], {})).toThrow(/unknown/);
+    expect(() => parseMode(["--confirm-stages", "2"], {})).toThrow(/unknown/);
+    expect(() => parseMode(["-c"], {})).toThrow(/unknown/);
+    expect(() => parseMode(["2"], {})).toThrow(/unknown/);
+    expect(() => parseMode(["--confirm-stage", "2", "extra"], {})).toThrow(/unknown/);
+  });
+
+  it("validates the equals spelling exactly like the spaced one", () => {
+    expect(parseMode(["--confirm-stage=0-1"], {})).toEqual({ mode: "stage", stage: "0-1" });
+    expect(parseMode(["--confirm-stage=3"], {})).toEqual({ mode: "stage", stage: "3" });
+    expect(() => parseMode(["--confirm-stage=typo"], {})).toThrow(/stage/);
+    expect(() => parseMode(["--confirm-stage="], {})).toThrow(/stage/);
+    expect(() => parseMode(["--confirm-stage=2", "--confirm"], {})).toThrow(/one of/);
+    expect(() => parseMode(["--confirm=1"], {})).toThrow(/unknown/);
+  });
+
   it("refuses an unknown or missing stage, and both modes at once", () => {
     expect(() => parseMode(["--confirm-stage", "4"], {})).toThrow(/stage/);
     expect(() => parseMode(["--confirm-stage"], {})).toThrow(/stage/);

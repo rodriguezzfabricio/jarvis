@@ -37,14 +37,39 @@ export function confirmFor(mode, source) {
 
 /**
  * The run's mode: { mode: "fast" }, { mode: "confirm" } (--confirm or JARVIS_MUTATION_CONFIRM=1) or
- * { mode: "stage", stage } (--confirm-stage <stage>). Throws on an unknown stage or on both at once.
+ * { mode: "stage", stage } (--confirm-stage <stage> or --confirm-stage=<stage>). Every argument is
+ * parsed: an unknown option, a stray value, a repeated flag, an unknown stage or both modes at once
+ * throw (Codex review of decision 94).
  */
 export function parseMode(argv, env) {
-  const confirm = argv.includes("--confirm") || env.JARVIS_MUTATION_CONFIRM === "1";
-  const i = argv.indexOf("--confirm-stage");
-  if (i === -1) return confirm ? { mode: "confirm" } : { mode: "fast" };
-  const stage = argv[i + 1];
-  if (!STAGES.includes(stage)) throw new Error(`--confirm-stage needs a stage: ${STAGES.join(", ")} (got ${stage === undefined ? "nothing" : `"${stage}"`})`);
+  let confirm = false;
+  let stage;
+  const seen = new Set();
+  const once = (flag) => {
+    if (seen.has(flag)) throw new Error(`${flag} may be given only once`);
+    seen.add(flag);
+  };
+  const checkStage = (value) => {
+    if (!STAGES.includes(value)) throw new Error(`--confirm-stage needs a stage: ${STAGES.join(", ")} (got ${value === undefined ? "nothing" : `"${value}"`})`);
+    return value;
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--confirm") {
+      once("--confirm");
+      confirm = true;
+    } else if (arg === "--confirm-stage") {
+      once("--confirm-stage");
+      stage = checkStage(argv[++i]);
+    } else if (arg.startsWith("--confirm-stage=")) {
+      once("--confirm-stage");
+      stage = checkStage(arg.slice("--confirm-stage=".length));
+    } else {
+      throw new Error(`unknown argument "${arg}": use --confirm or --confirm-stage <${STAGES.join("|")}>`);
+    }
+  }
+  if (env.JARVIS_MUTATION_CONFIRM === "1") confirm = true;
+  if (stage === undefined) return confirm ? { mode: "confirm" } : { mode: "fast" };
   if (confirm) throw new Error("use one of --confirm (everything) and --confirm-stage <stage>");
   return { mode: "stage", stage };
 }

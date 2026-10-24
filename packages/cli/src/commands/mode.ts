@@ -49,7 +49,6 @@ export function register(program: Command, seams: ModeCommandOptions = {}): void
   program.command("mode").description("Teach-me mode: explain adds short \"why I did this\" notes, quiet turns them off; no argument prints the mode")
     .argument("[mode]", MODES.join("|")).option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .action((mode: string | undefined, options: { project?: string }) => {
-      if (mode !== undefined && !MODES.some((m) => m === mode)) throw new Error(`Unknown mode "${mode}". Modes: ${MODES.join(", ")}`);
       const project = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd: seams.cwd ?? process.cwd() });
       const dir = runnerProjectDir(project, seams.jarvisHome);
       const out = seams.output ?? console.log;

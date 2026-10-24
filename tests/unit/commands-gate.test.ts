@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { GATES, register as registerGate } from "../../packages/cli/src/commands/gate.ts";
+import { runFeedbackGate } from "../../packages/cli/src/checks/gate.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
+import { readInstalledChecks } from "../../packages/cli/src/runner/checks-author.ts";
 import { Ledger, LedgerTamperError } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
 
@@ -140,6 +142,24 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
   it("a gate with no installed check names what is installed", async () => {
     const p = project(); install(p, "unit", "exit 0\n"); p.store.approve(p.ledger, "v1");
     await expect(gate(p, ["security"])).rejects.toThrow(/no installed check.*installed: unit/i);
+  });
+
+  it("runFeedbackGate refuses a tampered store on its own, before any case runs", async () => {
+    const p = project(); const marker = join(root, `ran-${n}`); install(p, "unit", `touch ${marker}\nexit 1\n`); p.store.approve(p.ledger, "v1");
+    const [check] = readInstalledChecks(p.store);
+    writeFileSync(join(p.projectDir, "checks", "fixtures", "unit.sh"), `touch ${marker}\nexit 0\n`);
+    const r = await runFeedbackGate({ store: p.store, entries: p.ledger.entries(), jarvisHome: p.jarvisHome, workRoot: p.workRoot, workTree: p.repo, check: check! });
+    expect(r).toMatchObject({ check: "unit", status: "tampered", cases: [] });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("refuses a hard-linked working-tree file instead of copying what it points at", async () => {
+    const p = project(); const outside = join(root, `hl-${n}`); writeFileSync(outside, "HARDLINK-SECRET\n");
+    linkSync(outside, join(p.repo, "linked.txt"));
+    install(p, "unit", "cat linked.txt\n"); p.store.approve(p.ledger, "v1");
+    const r = await gate(p, ["test"]);
+    expect(r.output).toMatch(/unit: error/); expect(r.output).toMatch(/hard-linked/);
+    expect(r.output).not.toContain("HARDLINK-SECRET"); expect(r.codes).toEqual([2]);
   });
 
   it("refuses a missing ledger and a tampered ledger before running anything", async () => {

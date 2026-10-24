@@ -1,0 +1,439 @@
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
+import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
+import { createClaudeReviewer } from "../harness/claude/review.ts";
+import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
+import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type Review, type ReviewMaterial } from "../review/index.ts";
+import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
+import { planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
+import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
+import { rebuildState, repairsUsed } from "../runner/state.ts";
+import { recordSessionUsage, summarizeUsage, type UsageTotals } from "../runner/usage-log.ts";
+import type { UsageWaitNotice } from "../runner/usage-wait.ts";
+import { createWorkspace } from "../runner/worktrees.ts";
+import { checkSpec, type Spec } from "../spec/index.ts";
+import { triage, type Triage } from "../triage/triage.ts";
+import { checkEvalDomains, EXCLUDE, type GoldenTask } from "./baseline.ts";
+import { safeGit } from "./git.ts";
+import { assertHiddenAbsent, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
+import { PreflightError, type PreflightResult } from "./schedule.ts";
+import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
+
+/**
+ * The Jarvis arm of `jarvis eval` (decisions 35, 47; architecture §3.10): each golden task runs through
+ * Jarvis on a fresh sanitized snapshot made exactly as the baseline makes it, with the same live
+ * preflight, settings, sandbox and network allowlist (decisions 59, 70, 79), and its results land in the
+ * same per-run folder layout (~/.jarvis/evals/<task>/<run>/), so the two arms compare run for run.
+ *
+ * Bug and refactor tasks (golden tasks 4 and 5) go triage → singleTaskPlan → the build loop. Feature and
+ * new-product tasks (task 2) take the evals repo's written spec as the approved spec, run one planner
+ * session, and read its plan against the runner's copy of that spec and the installed checks (decision
+ * 91). The loop's protected checks are the evals repo's hidden checks, installed in a runner-owned folder
+ * no session can read. Every run's final revision is graded on the same hidden checks as the baseline's.
+ */
+
+// ---- The loop's interface (runner/loop.ts, integrated on another branch) ---------------------------
+// A structural copy of the API in tests/integration/e2e.test.ts. The loop is injected, so this arm does
+// not depend on loop.ts landing first; once it lands, these types can be imported from it instead.
+
+export interface RunLoopOptions {
+  projectId: string;
+  /** ~/.jarvis/projects/<id>-shaped: ledger, checks, checks.lock, evidence. Here <results>/project. */
+  projectDir: string;
+  jarvisHome: string;
+  /** The snapshot repo; promotion merges into runBranch and tags last-green. */
+  repoPath: string;
+  runBranch: string;
+  worktreeRoot: string;
+  workRoot: string;
+  harness: Harness;
+  checks: Readonly<Record<string, GateCheck>>;
+  review: Review;
+  taskTimeoutMs?: number;
+  maxTurns?: number;
+  maxConcurrent?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  usageMarginMs?: number;
+  reprobe?: () => Promise<boolean>;
+  notify?: (n: UsageWaitNotice) => Promise<void>;
+  gitHome?: string;
+}
+export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[] }
+export type RunLoop = (opts: RunLoopOptions) => Promise<RunLoopResult>;
+
+// ---- Options and results ----------------------------------------------------------------------------
+
+export const JARVIS_VARIANT = "jarvis";
+export type JarvisOutcome = "complete" | "blocked" | "crashed" | "plan-failed" | "usage-limited";
+export type Pipeline = "single-task" | "spec";
+
+/** Seams for the production Claude harness (tests point it at the fake claude). */
+export type HarnessSeams = Partial<Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "sessionTmpDir" | "home" | "parentEnv" | "cleanup">>;
+
+export interface JarvisEvalOptions {
+  /** The same live preflight as the baseline (a live doctor); must pass before any session (decision 59). */
+  preflight: () => Promise<PreflightResult>;
+  /** The private jarvis-evals repo: tasks/<id>/ and hidden/<id>/. */
+  evalsRepo: string;
+  runLoop: RunLoop;
+  /** Default: the production Claude harness, with the live preflight before every session. */
+  harness?: Harness;
+  harnessSeams?: HarnessSeams;
+  /** Default: the production review service (fresh Claude review, Codex cross-model; decision 88). */
+  review?: Review;
+  /** Grading seam; production is the protected-check gate. */
+  gate?: (input: GateInput) => Promise<GateResult>;
+  jarvisHome?: string;
+  workRoot?: string;
+  runId?: string;
+  /** HOME for the runner's git calls and sessions. */
+  home?: string;
+  pluginDir?: string;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  log?: (m: string) => void;
+}
+
+export interface TaskSummary { id: string; status: string; attempts: number; repairs: number; blockedReason: string | null }
+export interface JarvisMetrics {
+  tasks: TaskSummary[];
+  repairs: number;
+  sessions: { planner: number; build: number; review: number; total: number };
+  usageWaits: { count: number; waitMs: number };
+  usage: UsageTotals;
+  problems: string[];
+}
+
+export interface JarvisRunResult {
+  arm: "jarvis";
+  task: string;
+  runId: string;
+  resultsDir: string;
+  /** The snapshot repo: the loop's repoPath, kept for grading and review. */
+  workspace: string;
+  pipeline: Pipeline;
+  triage: { type: Triage["type"]; tier: Triage["tier"] };
+  /** "hidden" when the loop gated on the grading checks; "gate" when the evals repo gave separate ones. */
+  loopChecks: "hidden" | "gate";
+  outcome: JarvisOutcome;
+  error?: string;
+  loop: RunLoopResult | null;
+  /** What Jarvis reported: the loop said every task is done. A false done is this with a failing grade. */
+  claimedDone: boolean;
+  /** The revision the planner and the first task started from (the snapshot, plus the spec for task 2). */
+  baseRevision: string;
+  lastGreen: string | null;
+  /** last-green, or the base revision when nothing was accepted: what Jarvis delivered. */
+  finalCommit: string;
+  diffStat: string;
+  durationMs: number;
+  metrics: JarvisMetrics;
+  grade: Grade | null;
+  gradeError?: string;
+  snapshot: SnapshotManifest;
+  // What the scheduler reads (eval/schedule.ts's ScheduledRun).
+  started: boolean;
+  usageLimited: boolean;
+  usageWaitUntil: number | undefined;
+  exitCode: number | null;
+  timedOut: boolean;
+  resultSubtype: string | undefined;
+  numTurns: number | undefined;
+}
+
+// ---- Helpers ----------------------------------------------------------------------------------------
+
+/** Task 2's Jarvis run starts from task 01's defaults; the baseline-only "don't ask" line can be left out here. */
+export function jarvisRequest(evalsRepo: string, task: GoldenTask): string {
+  const p = join(evalsRepo, "tasks", task.id, "jarvis-prompt.md");
+  return existsSync(p) ? readFileSync(p, "utf8").trim() : task.prompt;
+}
+
+export function pipelineFor(type: Triage["type"]): Pipeline {
+  if (type === "bug" || type === "refactor") return "single-task";
+  if (type === "feature" || type === "new-product") return "spec";
+  throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm`);
+}
+
+/** The approved spec for a spec-pipeline task: tasks/<id>/spec.md, checked, and covered by the loop's checks. */
+export function loadApprovedSpec(evalsRepo: string, taskId: string, loopChecks: HiddenChecks): { text: string; spec: Spec } {
+  const p = join(evalsRepo, "tasks", taskId, "spec.md");
+  if (!existsSync(p)) throw new Error(`${taskId}: a feature task needs its written spec at tasks/${taskId}/spec.md (task 01's defaults, in the spec format)`);
+  const text = readFileSync(p, "utf8");
+  const checked = checkSpec(text, "v1.md"); // committed as docs/spec/v1.md, so it must say spec: 1
+  if (!checked.ok) throw new Error(`${taskId}: spec.md does not check: ${checked.problems.map((q) => `line ${q.line}: ${q.message}`).join("; ")}`);
+  if (checked.spec.status === "draft") throw new Error(`${taskId}: spec.md is a draft; the approved spec must be confirmed or unconfirmed`);
+  const covered = new Set(Object.values(loopChecks.criteria).flat());
+  const missing = checked.spec.criteria.map((c) => c.id).filter((id) => !covered.has(id));
+  if (missing.length) throw new Error(`${taskId}: no installed check covers ${missing.join(", ")}; a plan could never cover them (decision 91)`);
+  return { text, spec: checked.spec };
+}
+
+const PLAN_TASK = "plan";
+
+export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number }): string {
+  const list = Object.keys(input.checks.checks).sort().map((n) => `- ${n}: ${input.checks.criteria[n]!.join(", ") || "no criteria (project tests)"}`);
+  return [
+    "Plan this approved feature for Jarvis's build loop. You write a plan only: no product code, no checks, no commits.",
+    `The request, as typed: ${input.request}`,
+    `The approved spec is ${input.specPath}. It is confirmed: do not edit it or ask questions.`,
+    "Write .jarvis/plan.json: an object with a tasks array. Each task has id (T1, T2, ...), title, goal, exitCondition (measurable), acceptanceCriteria (AC ids), storyIds (S ids), dependencies (task ids), priority (a number; higher runs first), requiredChecks (names from the list below) and requiredReviews ([\"code\"]). Use small tasks in dependency order with no cycles. Cover every acceptance criterion in the spec, and link each task's criteria to its stories.",
+    `Installed protected checks (names, and the criteria each covers; the runner owns them and you cannot read them). A task listing an AC must require a check that covers it:\n${list.join("\n")}`,
+    `Stop after ${input.maxTurns} turns. The runner reads only .jarvis/plan.json.`,
+  ].join("\n\n");
+}
+
+const revisionOf = (repo: string, ref: string, home: string): string | null => {
+  try { return safeGit(repo, ["rev-parse", "-q", "--verify", `${ref}^{commit}`], { home }).toString().trim(); } catch { return null; }
+};
+
+/** Run metrics from the loop's ledger: tasks, repairs (decision 87's count), sessions, usage waits, usage. */
+export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plannerSessions: number): JarvisMetrics {
+  const problems: string[] = [];
+  let tasks: TaskSummary[] = [];
+  try {
+    const state = rebuildState(entries, { now });
+    tasks = Object.values(state.tasks).map((t) => ({ id: t.id, status: t.status, attempts: t.attemptCount, repairs: repairsUsed(t), blockedReason: t.blockedReason }));
+  } catch (e) {
+    problems.push(`ledger replay failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const runner = entries.filter((e) => e.actor === "runner");
+  const build = runner.filter((e) => e.kind === "attempt_started").length;
+  const review = runner.filter((e) => e.kind === "review_result").reduce((n, e) => {
+    const reviews = (e.data as { reviews?: unknown } | null)?.reviews;
+    return n + (Array.isArray(reviews) && reviews.length ? reviews.length : 1);
+  }, 0);
+  const waits = runner.filter((e) => e.kind === "usage_wait");
+  const waitMs = waits.reduce((n, e) => {
+    const ms = (e.data as { waitMs?: unknown } | null)?.waitMs;
+    return n + (typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms : 0);
+  }, 0);
+  return {
+    tasks,
+    repairs: tasks.reduce((n, t) => n + t.repairs, 0),
+    sessions: { planner: plannerSessions, build, review, total: plannerSessions + build + review },
+    usageWaits: { count: waits.length, waitMs },
+    usage: summarizeUsage(entries, { runId: null }).total,
+    problems,
+  };
+}
+
+interface Paths { home: string; jarvisHome: string; resultsDir: string; workspace: string; worktreeRoot: string; reviewRoot: string; cacheRoot: string; projectDir: string }
+
+/** The same folders as the baseline (decision 67), plus the loop's worktrees and review checkouts beside the snapshot. */
+function paths(task: GoldenTask, runId: string, opts: JarvisEvalOptions): Paths {
+  const home = opts.home ?? homedir();
+  const jarvisHome = realpathSync(opts.jarvisHome ?? join(homedir(), ".jarvis"));
+  const workRoot = opts.workRoot ?? join(homedir(), ".jarvis-work");
+  const resultsDir = join(jarvisHome, "evals", task.id, runId);
+  mkdirSync(resultsDir, { recursive: true, mode: 0o700 });
+  mkdirSync(join(workRoot, "evals", task.id), { recursive: true, mode: 0o700 });
+  const evalDir = realpathSync(join(workRoot, "evals", task.id));
+  // A private, empty toolchain cache root per run, deleted afterwards (Codex review 2, as for the baseline).
+  const cacheRoot = join(workRoot, "cache-runs", task.id, runId);
+  mkdirSync(cacheRoot, { recursive: true, mode: 0o700 });
+  const worktreeRoot = join(evalDir, `${runId}.wt`);
+  const reviewRoot = join(evalDir, `${runId}.review`);
+  for (const d of [worktreeRoot, reviewRoot]) mkdirSync(d, { mode: 0o700 });
+  return { home, jarvisHome, resultsDir, workspace: join(evalDir, runId), worktreeRoot, reviewRoot, cacheRoot: realpathSync(cacheRoot), projectDir: join(resultsDir, "project") };
+}
+
+/** The production harness, as the runner builds it: the live preflight before every session (decision 59). */
+export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTable, opts: JarvisEvalOptions): Harness {
+  return createClaudeHarness({
+    jarvisHome: p.jarvisHome,
+    cacheRoot: p.cacheRoot,
+    worktreeRoot: p.worktreeRoot,
+    allowedDomains: task.allowedDomains,
+    routing,
+    home: p.home,
+    ...(opts.pluginDir ? { pluginDir: opts.pluginDir } : {}),
+    preflight: async () => {
+      const pre = await opts.preflight();
+      return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) };
+    },
+    ...(opts.harnessSeams ?? {}),
+  });
+}
+
+/** What the reviewer gets (decisions 49, 88): the runner's spec or request and the task's criteria, never builder notes. */
+export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRevision: string; tier: TaskTier; specText: string | undefined; spec: Spec | undefined; request: string }, taskId: string, attemptId: string): ReviewMaterial {
+  const entries = ledger.entries();
+  const start = entries.filter((e) => e.actor === "runner" && e.kind === "attempt_started" && e.task_id === taskId && e.attempt_id === attemptId).at(-1);
+  const base = (start?.data as { baseRevision?: unknown } | undefined)?.baseRevision;
+  const created = entries.find((e) => e.actor === "runner" && e.kind === "task_created" && e.task_id === taskId);
+  const def = (created?.data ?? {}) as { acceptanceCriteria?: string[]; goal?: string; exitCondition?: string };
+  const criteria = (def.acceptanceCriteria ?? []).flatMap((id) => {
+    const c = input.spec?.criteria.find((x) => x.id === id);
+    return c ? [`${c.id}: ${c.text}`] : [];
+  });
+  return {
+    repoPath: input.repoPath,
+    baseRevision: typeof base === "string" ? base : input.baseRevision,
+    tier: input.tier,
+    spec: input.specText ?? `Request, as typed: ${input.request}\nGoal: ${def.goal ?? input.request}\nExit condition: ${def.exitCondition ?? "-"}`,
+    acceptanceCriteria: criteria.length ? criteria : def.exitCondition ? [def.exitCondition] : [],
+  };
+}
+
+function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, attemptId: string) => ReviewMaterial, opts: JarvisEvalOptions): Review {
+  return createReviewService({
+    ledger,
+    projectDir: p.projectDir,
+    workRoot: p.reviewRoot,
+    routing: DEFAULT_REVIEW_ROUTING,
+    home: p.home,
+    resolveMaterial: async (r) => material(r.taskId, r.attemptId),
+    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }) }),
+    codex: createCodexReviewer({ home: p.home }),
+  }).review;
+}
+
+const ms = (minutes: number) => minutes * 60_000;
+
+// ---- The run ----------------------------------------------------------------------------------------
+
+export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Promise<JarvisRunResult> {
+  checkEvalDomains(task.id, task.allowedDomains);
+  // Everything read from the evals repo is checked before the preflight, so a bad task file costs no usage.
+  const request = jarvisRequest(opts.evalsRepo, task);
+  const t = triage({ request, folder: { empty: task.source === undefined, designMd: false } });
+  const pipeline = pipelineFor(t.type);
+  const grading = loadHiddenChecks(hiddenDir(opts.evalsRepo, task.id, "checks"));
+  const gateDir = hiddenDir(opts.evalsRepo, task.id, "gate");
+  const loopChecks = existsSync(gateDir) ? loadHiddenChecks(gateDir) : grading;
+  const approved = pipeline === "spec" ? loadApprovedSpec(opts.evalsRepo, task.id, loopChecks) : undefined;
+  if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a hidden check named "unit" (singleTaskPlan's required check)`);
+
+  const pre = await opts.preflight();
+  if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
+  const started = Date.now();
+  const runId = opts.runId ?? `jarvis-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const p = paths(task, runId, opts);
+  const log = opts.log ?? (() => {});
+
+  const snapshot = await createSnapshot({
+    dest: p.workspace,
+    ...(task.source ? { sourceRepo: task.source.repo, rev: task.source.rev, revert: task.source.revert ?? [], allowSecretsIn: task.source.allowSecretsIn ?? [] } : {}),
+  });
+  writeFileSync(join(p.workspace, ".git", "info", "exclude"), `${EXCLUDE.join("\n")}\n`);
+  assertHiddenAbsent(p.workspace, [...new Set([grading.dir, loopChecks.dir])]);
+
+  let baseRevision = snapshot.commit;
+  const specPath = "docs/spec/v1.md";
+  if (approved) {
+    // Intake's output for task 2: the approved spec, committed where the build skill reads it.
+    if (existsSync(join(p.workspace, specPath))) throw new Error(`${task.id}: the snapshot already has ${specPath}`);
+    mkdirSync(join(p.workspace, "docs", "spec"), { recursive: true });
+    writeFileSync(join(p.workspace, specPath), approved.text);
+    safeGit(p.workspace, ["add", "--", specPath], { home: p.home });
+    safeGit(p.workspace, ["commit", "-q", "--no-verify", "-m", "approved spec (eval: the evals repo's written spec)"], { home: p.home, env: { GIT_AUTHOR_DATE: "2026-01-01T00:00:01Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:01Z" } });
+    baseRevision = safeGit(p.workspace, ["rev-parse", "HEAD"], { home: p.home }).toString().trim();
+  }
+
+  const ledger = Ledger.open(p.projectDir);
+  installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: ${loopChecks === grading ? "hidden checks" : "hidden gate checks"} from the evals repo`);
+  const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
+  const harness = opts.harness ?? productionHarness(task, p, routing, opts);
+  const tier: TaskTier = t.tier ?? 1;
+  const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request }, taskId, attemptId);
+  const review = opts.review ?? productionReview(p, ledger, material, opts);
+  writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
+    task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
+    loopChecks: loopChecks === grading ? "hidden" : "gate", checks: Object.keys(loopChecks.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
+    budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
+    workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, startedAt: new Date(started).toISOString(),
+  }, null, 2)}\n`);
+
+  let outcome: JarvisOutcome = "crashed";
+  let error: string | undefined;
+  let loop: RunLoopResult | null = null;
+  let plannerSessions = 0;
+  let usageWaitUntil: number | undefined;
+  try {
+    let plan: Plan | undefined;
+    if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(loopChecks.checks).map((name) => ({ name })));
+    else {
+      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: loopChecks, spec: approved!.spec, p, baseRevision });
+      plannerSessions = r.started ? 1 : 0;
+      if (r.kind === "plan") plan = r.plan;
+      else if (r.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = r.until ?? Math.floor(Date.now() / 1000) + 3600; }
+      else { outcome = "plan-failed"; error = r.reason; }
+    }
+    if (plan) {
+      for (const e of planEntries(plan)) ledger.append(e);
+      log(`${task.id} ${runId}: ${plan.tasks.length} task(s) planned; starting the build loop`);
+      loop = await opts.runLoop({
+        projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
+        worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: loopChecks.checks, review,
+        taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
+        reprobe: async () => (await opts.preflight()).ok,
+        notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),
+        ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}),
+      });
+      outcome = loop.status === "complete" ? "complete" : "blocked";
+    }
+  } catch (e) {
+    outcome = "crashed";
+    error = e instanceof Error ? e.message : String(e);
+    log(`${task.id} ${runId}: the run crashed: ${error}`);
+  } finally {
+    rmSync(p.cacheRoot, { recursive: true, force: true });
+  }
+
+  const metrics = jarvisMetrics(ledger.entries(), Date.now(), plannerSessions);
+  const lastGreen = revisionOf(p.workspace, "refs/tags/last-green", p.home);
+  const finalCommit = lastGreen ?? baseRevision;
+  const diffStat = safeGit(p.workspace, ["diff", "--shortstat", baseRevision, finalCommit], { home: p.home }).toString().trim();
+  let grade: Grade | null = null;
+  let gradeError: string | undefined;
+  if (outcome !== "usage-limited") {
+    try {
+      grade = await gradeRun({ runDir: p.resultsDir, repoPath: p.workspace, revision: finalCommit, hidden: grading, jarvisHome: p.jarvisHome, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), ...(opts.gate ? { gate: opts.gate } : {}) });
+    } catch (e) {
+      gradeError = e instanceof Error ? e.message : String(e);
+    }
+  }
+  const sessionsStarted = metrics.sessions.total > 0 || metrics.usage.sessions > 0;
+  const out: JarvisRunResult = {
+    arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
+    loopChecks: loopChecks === grading ? "hidden" : "gate", outcome, ...(error !== undefined ? { error } : {}), loop,
+    claimedDone: outcome === "complete", baseRevision, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot,
+    started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
+    numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
+  };
+  writeFileSync(join(p.resultsDir, "summary.json"), `${JSON.stringify(out, null, 2)}\n`);
+  return out;
+}
+
+type PlannerResult =
+  | { kind: "plan"; plan: Plan; started: true }
+  | { kind: "usage-limited"; until: number | undefined; started: boolean }
+  | { kind: "failed"; reason: string; started: boolean };
+
+async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string }): Promise<PlannerResult> {
+  const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: PLAN_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
+  try {
+    const sessions = join(i.p.projectDir, "sessions");
+    mkdirSync(sessions, { recursive: true, mode: 0o700 });
+    const header = join(sessions, "plan-a1.header.md");
+    writeFileSync(header, `Jarvis eval run: ${i.runId}\nRole: planner (architect). Golden task ${i.task.id}.\nPlans are claims, not evidence.\n`, { mode: 0o600 });
+    const prompt = plannerPrompt({ request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns });
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessions, "plan-a1.jsonl") });
+    recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId: "a1", role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
+    const started = outcome.status !== "refused";
+    if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, started };
+    if (outcome.status !== "finished") return { kind: "failed", reason: `planner session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}`, started };
+    try {
+      return { kind: "plan", plan: readPlan(ws.path, { spec: i.spec, checks: Object.keys(i.checks.checks).map((name) => ({ name, criteria: i.checks.criteria[name]! })) }), started: true };
+    } catch (e) {
+      return { kind: "failed", reason: `invalid plan: ${e instanceof Error ? e.message : String(e)}`, started: true };
+    }
+  } finally {
+    rmSync(ws.path, { recursive: true, force: true });
+  }
+}
+

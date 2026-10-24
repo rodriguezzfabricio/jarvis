@@ -200,8 +200,8 @@
   {
     "name": "commands memory follows a symlinked source",
     "file": "packages/cli/src/commands/memory.ts",
-    "anchor": "if (!st || st.isSymbolicLink() || (i < parts.length - 1",
-    "replacement": "if (!st || (i < parts.length - 1"
+    "anchor": "if (!st || (i < parts.length - 1 ? !st.isDirectory() : !st.isFile())) throw",
+    "replacement": "if (!st || (i < parts.length - 1 ? !lstatSync(path).isDirectory() && !st.isSymbolicLink() : !st.isFile() && !st.isSymbolicLink())) throw"
   },
   {
     "name": "commands memory accepts escaping sources",

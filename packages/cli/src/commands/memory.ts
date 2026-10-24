@@ -157,8 +157,9 @@ function checkSource(source: string, options: MemoryOptions, project: string, ho
   let path = projectRoot(options.cwd ?? process.cwd());
   for (const [i, part] of parts.entries()) {
     path = join(path, part);
+    // lstat: a symlink is neither a directory nor a file here, so no component is followed.
     const st = lstatSync(path, { throwIfNoEntry: false });
-    if (!st || st.isSymbolicLink() || (i < parts.length - 1 ? !st.isDirectory() : !st.isFile())) throw new Error(`Bad source: ${source} is not a regular file in this repo`);
+    if (!st || (i < parts.length - 1 ? !st.isDirectory() : !st.isFile())) throw new Error(`Bad source: ${source} is not a regular file in this repo`);
   }
 }
 

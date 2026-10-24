@@ -13,6 +13,8 @@ import { rebuildState } from "../../packages/cli/src/runner/state.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
+/** The error a command threw, so a wrong error fails an assertion (the mutation check counts only those). */
+const failure = (p: Promise<unknown>): Promise<unknown> => p.then(() => "resolved without an error", (e: unknown) => e);
 const roots: string[] = [];
 const fresh = () => { const root = realpathSync(mkdtempSync(join(tmpdir(), "jarvis-report-cmd-"))); roots.push(root); return root; };
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
@@ -79,14 +81,14 @@ describe("jarvis report [--open]", () => {
 
   it("refuses a missing ledger and creates nothing", async () => {
     const repo = fresh(); mkdirSync(join(repo, ".git")); const jarvisHome = fresh();
-    await expect(report({ repo, jarvisHome })).rejects.toThrow(/No run ledger/);
+    expect(String(await failure(report({ repo, jarvisHome })))).toMatch(/No run ledger/);
     expect(readdirSync(jarvisHome)).toEqual([]); expect(existsSync(join(repo, ".jarvis"))).toBe(false);
   });
 
   it("refuses a tampered ledger and leaves the previous report as it was", async () => {
     const s = setup(); mkdirSync(join(s.repo, ".jarvis")); writeFileSync(join(s.repo, ".jarvis", "REPORT.md"), "previous\n");
     writeFileSync(join(s.dir, "head.hash"), "f".repeat(64)); const before = snapshot(s.dir);
-    await expect(report(s)).rejects.toThrow(LedgerTamperError);
+    expect(await failure(report(s))).toBeInstanceOf(LedgerTamperError);
     expect(readFileSync(join(s.repo, ".jarvis", "REPORT.md"), "utf8")).toBe("previous\n");
     expect(snapshot(s.dir)).toEqual(before);
   });
@@ -94,14 +96,14 @@ describe("jarvis report [--open]", () => {
   it("says so and exits non-zero when ledger writers are active, without writing", async () => {
     const s = setup();
     const verify = () => ({ ok: false, contended: true, entries: [], repairable: [], problems: ["moving"] });
-    const r = await report(s, ["--open"], { verify });
+    const r = await report(s, ["--open"], { verify }).catch((e: unknown) => ({ output: String(e), opened: [] as string[], codes: [] as number[] }));
     expect(r.output).toMatch(/contended/i); expect(r.codes).toEqual([1]); expect(r.opened).toEqual([]);
     expect(existsSync(join(s.repo, ".jarvis", "REPORT.md"))).toBe(false);
   });
 
   it("refuses to write another project's report into this repo", async () => {
     const s = setup(); Ledger.open(join(s.jarvisHome, "projects", "other")).append({ kind: "steer", actor: "runner", data: { note: "x" } });
-    await expect(report(s, ["--project", "other"])).rejects.toThrow(/not this repo/i);
+    expect(String(await failure(report(s, ["--project", "other"])))).toMatch(/not this repo/i);
     expect(existsSync(join(s.repo, ".jarvis"))).toBe(false);
   });
 });

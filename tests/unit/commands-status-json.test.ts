@@ -10,6 +10,8 @@ import { Ledger, LedgerTamperError } from "../../packages/cli/src/ledger/ledger.
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
+/** The error a command threw, so a wrong error fails an assertion (the mutation check counts only those). */
+const failure = (p: Promise<unknown>): Promise<unknown> => p.then(() => "resolved without an error", (e: unknown) => e);
 const roots: string[] = [];
 const fresh = () => { const root = realpathSync(mkdtempSync(join(tmpdir(), "jarvis-status-json-"))); roots.push(root); return root; };
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
@@ -77,7 +79,7 @@ describe("jarvis status --json (for compound)", () => {
     const r = await status(s.jarvisHome, ["--json"], { verify });
     expect(JSON.parse(r.output)).toMatchObject({ status: "contended" }); expect(r.codes).toEqual([1]);
     writeFileSync(join(s.dir, "head.hash"), "f".repeat(64));
-    await expect(status(s.jarvisHome, ["--json"])).rejects.toThrow(LedgerTamperError);
+    expect(await failure(status(s.jarvisHome, ["--json"]))).toBeInstanceOf(LedgerTamperError);
   });
 
   it("keeps the plain status output without --json", async () => {

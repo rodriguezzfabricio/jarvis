@@ -13,6 +13,8 @@ import { shortTmp } from "../helpers.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
+/** The error a command threw, so a wrong error fails an assertion (the mutation check counts only those). */
+const failure = (p: Promise<unknown>): Promise<unknown> => p.then(() => "resolved without an error", (e: unknown) => e);
 const root = shortTmp("jgc-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: root, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
@@ -90,6 +92,12 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     expect(r.codes).toEqual([1]);
   });
 
+  it("test runs the installed unit check when no check is named test", async () => {
+    const p = project(); install(p, "unit", "exit 0\n"); p.store.approve(p.ledger, "v1");
+    const result = await gate(p, ["test"]).then((r) => r.output, (e: unknown) => String(e));
+    expect(result).toMatch(/unit: pass/);
+  });
+
   it("done runs every installed check", async () => {
     const p = project(); install(p, "unit", "exit 0\n"); install(p, "lint", "exit 1\n"); p.store.approve(p.ledger, "v1");
     const r = await gate(p, ["done"]);
@@ -135,13 +143,13 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
 
   it("an unknown gate name exits non-zero with the list of gates", async () => {
     const p = project(); install(p, "unit", "exit 0\n"); p.store.approve(p.ledger, "v1");
-    await expect(gate(p, ["unit"])).rejects.toThrow(new RegExp(GATES.join(", ")));
+    expect(String(await failure(gate(p, ["unit"])))).toMatch(new RegExp(GATES.join(", ")));
     expect(GATES).toEqual(["quick", "test", "lint", "security", "qa", "design", "done"]);
   });
 
   it("a gate with no installed check names what is installed", async () => {
     const p = project(); install(p, "unit", "exit 0\n"); p.store.approve(p.ledger, "v1");
-    await expect(gate(p, ["security"])).rejects.toThrow(/no installed check.*installed: unit/i);
+    expect(String(await failure(gate(p, ["security"])))).toMatch(/no installed check.*installed: unit/i);
   });
 
   it("runFeedbackGate refuses a tampered store on its own, before any case runs", async () => {
@@ -165,10 +173,10 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
   it("refuses a missing ledger and a tampered ledger before running anything", async () => {
     const p = project(); const marker = join(root, `ran-${n}`); install(p, "unit", `touch ${marker}\n`); p.store.approve(p.ledger, "v1");
     writeFileSync(join(p.projectDir, "head.hash"), "f".repeat(64));
-    await expect(gate(p, ["test"])).rejects.toThrow(LedgerTamperError);
+    expect(await failure(gate(p, ["test"]))).toBeInstanceOf(LedgerTamperError);
     expect(existsSync(marker)).toBe(false);
     rmSync(join(p.projectDir, "ledger.jsonl"));
-    await expect(gate(p, ["test"])).rejects.toThrow(/No run ledger/);
+    expect(String(await failure(gate(p, ["test"])))).toMatch(/No run ledger/);
     expect(existsSync(marker)).toBe(false);
   });
 });

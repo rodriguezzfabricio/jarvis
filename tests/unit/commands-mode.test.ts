@@ -10,6 +10,8 @@ import { buildRunHeader } from "../../packages/cli/src/runner/prompt.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
+/** The error a command threw, so a wrong error fails an assertion (the mutation check counts only those). */
+const failure = (p: Promise<unknown>): Promise<unknown> => p.then(() => "resolved without an error", (e: unknown) => e);
 const roots: string[] = [];
 const fresh = () => { const root = mkdtempSync(join(tmpdir(), "jarvis-mode-")); roots.push(root); return root; };
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
@@ -48,8 +50,8 @@ describe("jarvis mode explain|quiet (decision 32)", () => {
 
   it("refuses an unknown mode or project id and writes nothing", async () => {
     const jarvisHome = fresh();
-    await expect(run(jarvisHome, ["loud", "--project", "demo"])).rejects.toThrow(/explain.*quiet/);
-    await expect(run(jarvisHome, ["explain", "--project", "../escape"])).rejects.toThrow(/project id/i);
+    expect(String(await failure(run(jarvisHome, ["loud", "--project", "demo"])))).toMatch(/explain.*quiet/);
+    expect(String(await failure(run(jarvisHome, ["explain", "--project", "../escape"])))).toMatch(/project id/i);
     expect(readdirSync(jarvisHome)).toEqual([]);
   });
 

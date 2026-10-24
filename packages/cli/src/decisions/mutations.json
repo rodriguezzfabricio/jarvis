@@ -1,0 +1,260 @@
+[
+  {
+    "name": "decisions accept unknown maker",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": "z.enum([\"fabricio\", \"accepted-default\", \"jarvis\", \"inferred\", \"unconfirmed-default\"])",
+    "replacement": "z.enum([\"fabricio\", \"accepted-default\", \"jarvis\", \"inferred\", \"unconfirmed-default\", \"someone\"])"
+  },
+  {
+    "name": "decisions delete superseded entries",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": "return { ...next, entries: next.entries.map((entry) => entry.id === oldId",
+    "replacement": "return { ...next, entries: next.entries.filter((entry) => entry.id !== oldId).map((entry) => entry.id === oldId"
+  },
+  {
+    "name": "decisions omit supersession reason",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "if (!reason.trim()) throw new Error(\"Supersession reason must not be blank\");",
+    "replacement": "if (false) throw new Error(\"Supersession reason must not be blank\");"
+  },
+  {
+    "name": "decisions rewrite existing choices",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (!isDeepStrictEqual(oldChoice, choice))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions rewrite supersession reasons",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (!isDeepStrictEqual(oldStatus, status) && !(oldStatus.kind === \"active\" && status.kind === \"superseded\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions skip atomic rename",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "(this.options.rename ?? renameSync)(temporary, this.path);",
+    "replacement": "writeFileSync(this.path, output);"
+  },
+  {
+    "name": "decisions overwrite stale snapshots",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (document.source !== current.source)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions ignore edits before rename",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (readText(this.path) !== current.source)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions steal an existing lock",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "fd = openSync(lock, \"wx\", 0o600);",
+    "replacement": "fd = openSync(lock, \"w\", 0o600);"
+  },
+  {
+    "name": "decisions treat silence as override",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "outcome: \"keep\", reason: \"not-mentioned\"",
+    "replacement": "outcome: \"supersede\", reason: \"not-mentioned\""
+  },
+  {
+    "name": "decisions ignore explicit Fabricio changes",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "choice.by === \"fabricio\" && choice.intent === \"explicit\" && choice.reason?.trim()",
+    "replacement": "false"
+  },
+  {
+    "name": "decisions let Jarvis override Fabricio",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "} else if (choice.by === \"jarvis\" && (entry.madeBy === \"fabricio\" || entry.madeBy === \"accepted-default\")) {\n      result.settled.push({ decisionId: entry.id, outcome: \"keep\", reason: \"jarvis-cannot-override-fabricio\" });\n    } else if (choice.by === \"fabricio\" && choice.intent === \"explicit\" && choice.reason?.trim()) {",
+    "replacement": "} else if (choice.intent === \"explicit\" && choice.reason?.trim()) {"
+  },
+  {
+    "name": "decisions hide unresolved conflicts",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "result.questions.push({",
+    "replacement": "if (false) result.questions.push({"
+  },
+  {
+    "name": "decisions let Jarvis revisit firm choices",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "return { level: \"firm\", jarvisMayRevisit: false, confirmationRequired: false };",
+    "replacement": "return { level: \"firm\", jarvisMayRevisit: true, confirmationRequired: false };"
+  },
+  {
+    "name": "decisions delegate Challenge calls",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "if (entry.class === \"Challenge\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions silently confirm inferred calls",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "if (entry.madeBy === \"inferred\" || entry.madeBy === \"unconfirmed-default\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions revisit without a note",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "&& choice.note?.trim())",
+    "replacement": "&& true)"
+  },
+  {
+    "name": "decisions expose history by default",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": "(options.history || entry.status.kind === \"active\")",
+    "replacement": "true"
+  },
+  {
+    "name": "decisions default to switching a conflict",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "default: \"keep\",",
+    "replacement": "default: \"switch\","
+  },
+  {
+    "name": "decisions allow writes to drop existing entries",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "write(document: RegisterDocument): void { this.locked(() => this.persist(document)); }",
+    "replacement": "write(document: RegisterDocument): void { writeFileSync(this.path, serializeRegister({ ...document, source: \"\" })); }"
+  },
+  {
+    "name": "decisions accept one-way history links",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": "next.supersedes !== entry.id || ",
+    "replacement": ""
+  },
+  {
+    "name": "decisions accept backdated supersessions",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": " || entry.status.date < entry.date) {",
+    "replacement": ") {"
+  },
+  {
+    "name": "decisions stop escaping pipes",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": ".replaceAll(\"|\", \"\\\\|\")",
+    "replacement": ""
+  },
+  {
+    "name": "decisions report the wrong physical line",
+    "file": "packages/cli/src/decisions/format.ts",
+    "anchor": "`Decision register line ${line}: ${message}`",
+    "replacement": "`Decision register line ${line + 1}: ${message}`"
+  },
+  {
+    "name": "decisions why always shows history",
+    "file": "packages/cli/src/decisions/why.ts",
+    "anchor": "history: options.history === true",
+    "replacement": "history: true"
+  },
+  {
+    "name": "decisions skip request-date check",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "if (on < entry.date)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions bypass write firmness",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": "if (!firmness(old).jarvisMayRevisit && madeBy !== \"fabricio\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions forget timeout-default confirmation",
+    "file": "packages/cli/src/decisions/conflicts.ts",
+    "anchor": " || entry.madeBy === \"unconfirmed-default\"",
+    "replacement": ""
+  },
+  {
+    "name": "decisions skip source syntax checks",
+    "file": "packages/cli/src/decisions/source.ts",
+    "anchor": "export function isRepoRelativeSource(value: string): boolean {",
+    "replacement": "export function isRepoRelativeSource(value: string): boolean {\n  return true;"
+  },
+  {
+    "name": "decisions skip source realpath and existence checks",
+    "file": "packages/cli/src/decisions/source.ts",
+    "anchor": "target = realpathSync(resolve(root, source.split(\"#\")[0]!));",
+    "replacement": "target = resolve(root, source.split(\"#\")[0]!);"
+  },
+  {
+    "name": "decisions permit source links outside the repo",
+    "file": "packages/cli/src/decisions/source.ts",
+    "anchor": "if (!path || path === \"..\" || path.startsWith(`..${sep}`) || isAbsolute(path))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions allow symlinked register paths",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (lstatSync(path).isSymbolicLink() || realpathSync(path) !== path)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions omit lock owner metadata",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "JSON.stringify({ pid: process.pid, host: hostname(), time: new Date().toISOString() })",
+    "replacement": "JSON.stringify({})"
+  },
+  {
+    "name": "decisions follow a lock symlink",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "constants.O_RDONLY | constants.O_NOFOLLOW",
+    "replacement": "constants.O_RDONLY"
+  },
+  {
+    "name": "decisions omit directory fsync",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "try { (this.options.sync ?? fsyncSync)(directory); }",
+    "replacement": "try { /* directory not synced */ }"
+  },
+  {
+    "name": "decisions mislabel timeout defaults",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "\"default-unconfirmed\": \"unconfirmed-default\"",
+    "replacement": "\"default-unconfirmed\": \"accepted-default\""
+  },
+  {
+    "name": "decisions mislabel the mechanical class",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "mechanical: \"Mechanical\"",
+    "replacement": "mechanical: \"Taste\""
+  },
+  {
+    "name": "decisions invent a missing author",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": ".requiredOption(\"--by <maker>\", \"user|default-accepted|default-unconfirmed|jarvis\")",
+    "replacement": ".option(\"--by <maker>\", \"user|default-accepted|default-unconfirmed|jarvis\", \"user\")"
+  },
+  {
+    "name": "decisions invent a missing class",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": ".requiredOption(\"--class <class>\", \"mechanical|taste|challenge\")",
+    "replacement": ".option(\"--class <class>\", \"mechanical|taste|challenge\", \"mechanical\")"
+  },
+  {
+    "name": "decisions invent a missing rationale",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": ".requiredOption(\"--why <reason>\", \"why this choice was made\")",
+    "replacement": ".option(\"--why <reason>\", \"why this choice was made\", \"Unspecified\")"
+  },
+  {
+    "name": "decisions invent a missing source",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": ".requiredOption(\"--source <path>\", \"existing repo-relative evidence path, optionally with #anchor\")",
+    "replacement": ".option(\"--source <path>\", \"existing repo-relative evidence path, optionally with #anchor\", \"evidence.md\")"
+  },
+  {
+    "name": "decisions change the reversibility default",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "\"reversible\")",
+    "replacement": "\"easy\")"
+  },
+  {
+    "name": "decisions revalidate old sources on every write",
+    "file": "packages/cli/src/decisions/store.ts",
+    "anchor": "if (!oldIds.has(entry.id)) validateSource(",
+    "replacement": "validateSource("
+  }
+]

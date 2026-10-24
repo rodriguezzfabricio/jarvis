@@ -13,6 +13,8 @@ import { Ledger } from "./ledger/ledger.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts";
 import { loadTask, runBaseline } from "./eval/baseline.ts";
 import { runSchedule } from "./eval/schedule.ts";
+import * as decisionWrite from "./decisions/decide.ts";
+import * as decisionWhy from "./decisions/why.ts";
 import * as spec from "./spec/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
@@ -130,5 +132,7 @@ program
   });
 
 spec.register(program);
+decisionWhy.register(program);
+decisionWrite.register(program);
 
 await program.parseAsync();

@@ -5,7 +5,7 @@
 // errors, never "caught". Every file is restored, even on failure.
 // Usage: node scripts/mutation-check.mjs   (JARVIS_MUTATIONS=<regex> to run a subset)
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,6 +205,14 @@ const mutations = [
   ["read-only dirs writable", S, "          ...(input.readOnlyDirs ?? []),\n        ],", "        ],"],
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],
 ];
+// Lane-owned definitions live next to their code (decision 81: mutations arrive as definitions).
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+for (const file of globSync("packages/cli/src/*/mutations.json", { cwd: root }).sort()) {
+  for (const m of JSON.parse(readFileSync(join(root, file), "utf8"))) mutations.push([m.name, m.file, m.anchor, m.replacement]);
+}
+const names = mutations.map(([n]) => n);
+const duplicate = names.find((n, i) => names.indexOf(n) !== i);
+if (duplicate) { console.log(`duplicate mutation name: ${duplicate}`); process.exit(2); }
 
 // Mutations run in a disposable clone of the committed revision, never in the working tree, so an
 // interruption can't leave a safeguard disabled in the code under review (Codex stage 0 review 5).

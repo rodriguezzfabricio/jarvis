@@ -233,9 +233,9 @@ describe("review status is read-only, advisory and conservative", () => {
     const f = fixture(true);
     const before = readdirSync(f.round).map((name) => [name, readFileSync(join(f.round, name), "utf8")]);
     const script = resolve("scripts/review-status.mjs");
-    const json = JSON.parse(execFileSync(process.execPath, [script, f.base, "--json"], { encoding: "utf8" }));
+    const json = JSON.parse(spawnSync(process.execPath, [script, f.base, "--json"], { encoding: "utf8" }).stdout);
     expect(json).toMatchObject({ advisory: true, rounds: [{ result: "PASS" }] });
-    expect(execFileSync(process.execPath, [script, f.base], { encoding: "utf8" })).toContain("Advisory");
+    expect(spawnSync(process.execPath, [script, f.base], { encoding: "utf8" }).stdout).toContain("Advisory");
     expect(readdirSync(f.round).map((name) => [name, readFileSync(join(f.round, name), "utf8")])).toEqual(before);
     writeFileSync(join(f.round, "status"), "evidence-done\n");
     expect(spawnSync(process.execPath, [script, f.base], { encoding: "utf8" }).status).toBe(2);
@@ -270,6 +270,20 @@ describe('decision 79 lane manifests preserve historical reviews', () => {
     const f = fixture(true);
     writeFileSync(join(f.round, 'verdict-C.json'), JSON.stringify(verdict({ verdict: 'FAIL', findings: [{ severity: 'high', title: 'historical', file: 'x', line: 1, scenario: 'x', fix: 'x' }] })));
     expect(read(f.base).result).toBe('FAIL');
-    expect(read(f.base).lanes.find((x: {id: string}) => x.id === 'C').findings.high).toBe(1);
+    expect(read(f.base).lanes.find((x: {id: string}) => x.id === 'C')?.findings.high).toBe(1);
   });
+});
+
+it('requires missing lanes even when every declared lane succeeded', () => {
+  const f = fixture(true);
+  writeFileSync(join(f.round, 'lanes'), 'lanes A,B\n');
+  writeFileSync(join(f.round, 'status'), 'evidence-done\nlane A exit 0\nlane B exit 0\ncodex-done\n');
+  expect(read(f.base).problems).toContain('lane set lacks required lanes D, decision 79');
+  expect(read(f.base).result).toBe('FAIL');
+});
+it('rejects duplicate manifest letters even when the unique lane set is complete', () => {
+  const f = fixture(true);
+  writeFileSync(join(f.round, 'lanes'), 'lanes A,B,C,D,D\n');
+  expect(read(f.base).problems).toContain('invalid lane manifest');
+  expect(read(f.base).result).toBe('FAIL');
 });

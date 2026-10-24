@@ -935,6 +935,9 @@ Running every mutation on the full suite took about 6 hours at the old pace, so 
 - **Cost:** confirm mode takes about 29 s per mutation, set by the longest test files; splitting them is the lever.
 *From:* Codex mutation-check review, round 1 (FAIL, critical) and round 2 (RESOLVED), Oct 24.
 
+### 93. More Claude workers: up to 6 Claude and 5 Codex at once (new; Oct 24; Fabricio; changes decision 84's limits)
+Fabricio asked for more parallelism, with more of it on Claude Code. Agents mostly wait on the network; local CPU goes to test runs, which stay limited to each worker's own files, with full suites and mutation runs going through the quiet slot. The real ceiling is the shared Claude usage window (this session and every Claude worker draw from it): if a worker reports a usage limit, the integrator drops back to 2 Claude workers until the window resets.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

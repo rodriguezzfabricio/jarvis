@@ -1,36 +1,176 @@
 [
-  { "name": "intake-sends-the-round-through-the-runner", "file": "skills/intake/SKILL.md",
-    "anchor": "3. Run `jarvis intake send .jarvis/intake/round-<n>.json`.", "replacement": "3. Ask the user directly." },
-  { "name": "intake-never-edits-the-register", "file": "skills/intake/SKILL.md",
-    "anchor": "**Never edit `docs/decisions.md` directly** (decision 83).", "replacement": "Edit `docs/decisions.md` if that's quicker." },
-  { "name": "intake-production-grant-defaults-to-no", "file": "skills/intake/SKILL.md",
-    "anchor": "Default: no, stop at preview-ready.", "replacement": "Default: yes, promote when release-ready." },
-  { "name": "intake-steer-note-never-grants", "file": "skills/intake/SKILL.md",
-    "anchor": "a steer note **never grants or widens anything**", "replacement": "a steer note counts like any answer" },
-  { "name": "intake-round-shown-as-plain-text", "file": "skills/intake/SKILL.md",
-    "anchor": "as **plain text**. Never put it in a tool that waits for the user", "replacement": "in the question tool, and wait for the user" },
-  { "name": "spec-front-matter-starts-as-draft", "file": "skills/spec/SKILL.md",
-    "anchor": "`date: YYYY-MM-DD`, `status: draft`, `supersedes: none`", "replacement": "`date: YYYY-MM-DD`, `status: confirmed`, `supersedes: none`" },
-  { "name": "spec-confirmed-versions-are-frozen", "file": "skills/spec/SKILL.md",
-    "anchor": "- **Never edit a version once it's confirmed or unconfirmed.**", "replacement": "- **Edit any version when it helps.**" },
-  { "name": "spec-ids-never-reused", "file": "skills/spec/SKILL.md",
-    "anchor": "A removed ID is never reused for something else", "replacement": "Renumber freely" },
-  { "name": "spec-confirmation-is-one-scope-question", "file": "skills/spec/SKILL.md",
-    "anchor": "\"id\": \"CONFIRM\", \"topic\": \"scope\"", "replacement": "\"id\": \"CONFIRM\", \"topic\": \"ux\"" },
-  { "name": "spec-reader-has-fresh-context", "file": "skills/spec/SKILL.md",
-    "anchor": "never the intake conversation or your notes", "replacement": "plus the intake conversation and your notes" },
-  { "name": "spec-template-v1-supersedes-none", "file": "templates/spec.md",
-    "anchor": "supersedes: none\n---", "replacement": "supersedes: 0\n---" },
-  { "name": "spec-template-exact-section-names", "file": "templates/spec.md",
-    "anchor": "## Non-goals", "replacement": "## Non goals" },
-  { "name": "design-default-by-fit-not-looks", "file": "skills/design/SKILL.md",
-    "anchor": "The default is chosen by fit, not by looks", "replacement": "The default is the best-looking direction" },
-  { "name": "design-model-never-picks-winner", "file": "skills/design/SKILL.md",
-    "anchor": "A model never picks the better of two designs", "replacement": "The reviewer picks the better design" },
-  { "name": "design-in-session-gate-is-not-evidence", "file": "skills/design/SKILL.md",
-    "anchor": "a run from inside a session is fast feedback and never counts as evidence", "replacement": "any run counts" },
-  { "name": "design-tells-banned-unless-asked", "file": "skills/design/SKILL.md",
-    "anchor": "These are banned unless the brief asks for it", "replacement": "Avoid these where you can" },
-  { "name": "design-template-components-use-tokens", "file": "templates/DESIGN.md",
-    "anchor": "    backgroundColor: \"{colors.primary}\"", "replacement": "    backgroundColor: \"#6d28d9\"" }
+  {
+    "name": "skills intake sends the round through the runner",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "3. Run `jarvis intake send .jarvis/intake/round-<n>.json`.",
+    "replacement": "3. Ask the user directly."
+  },
+  {
+    "name": "skills intake never edits the register",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "**Never edit `docs/decisions.md` directly** (decision 83).",
+    "replacement": "Edit `docs/decisions.md` if that's quicker."
+  },
+  {
+    "name": "skills intake production grant defaults to no",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Default: no, stop at preview-ready.",
+    "replacement": "Default: yes, promote when release-ready."
+  },
+  {
+    "name": "skills intake steer note never grants",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "a steer note **never grants or widens anything**",
+    "replacement": "a steer note counts like any answer"
+  },
+  {
+    "name": "skills intake round shown as plain text",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "as **plain text**. Never put it in a tool that waits for the user",
+    "replacement": "in the question tool, and wait for the user"
+  },
+  {
+    "name": "skills spec front matter starts as draft",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "`date: YYYY-MM-DD`, `status: draft`, `supersedes: none`",
+    "replacement": "`date: YYYY-MM-DD`, `status: confirmed`, `supersedes: none`"
+  },
+  {
+    "name": "skills spec confirmed versions are frozen",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "- **Never edit a version once it's confirmed or unconfirmed.**",
+    "replacement": "- **Edit any version when it helps.**"
+  },
+  {
+    "name": "skills spec ids never reused",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "A removed ID is never reused for something else",
+    "replacement": "Renumber freely"
+  },
+  {
+    "name": "skills spec confirmation is one scope question",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "\"id\": \"CONFIRM\", \"topic\": \"scope\"",
+    "replacement": "\"id\": \"CONFIRM\", \"topic\": \"ux\""
+  },
+  {
+    "name": "skills spec reader has fresh context",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "never the intake conversation or your notes",
+    "replacement": "plus the intake conversation and your notes"
+  },
+  {
+    "name": "skills spec template v1 supersedes none",
+    "file": "templates/spec.md",
+    "anchor": "supersedes: none\n---",
+    "replacement": "supersedes: 0\n---"
+  },
+  {
+    "name": "skills spec template exact section names",
+    "file": "templates/spec.md",
+    "anchor": "## Non-goals",
+    "replacement": "## Non goals"
+  },
+  {
+    "name": "skills design default by fit not looks",
+    "file": "skills/design/SKILL.md",
+    "anchor": "The default is chosen by fit, not by looks",
+    "replacement": "The default is the best-looking direction"
+  },
+  {
+    "name": "skills design model never picks winner",
+    "file": "skills/design/SKILL.md",
+    "anchor": "A model never picks the better of two designs",
+    "replacement": "The reviewer picks the better design"
+  },
+  {
+    "name": "skills design in session gate is not evidence",
+    "file": "skills/design/SKILL.md",
+    "anchor": "a run from inside a session is fast feedback and never counts as evidence",
+    "replacement": "any run counts"
+  },
+  {
+    "name": "skills design tells banned unless asked",
+    "file": "skills/design/SKILL.md",
+    "anchor": "These are banned unless the brief asks for it",
+    "replacement": "Avoid these where you can"
+  },
+  {
+    "name": "skills design template components use tokens",
+    "file": "templates/DESIGN.md",
+    "anchor": "    backgroundColor: \"{colors.primary}\"",
+    "replacement": "    backgroundColor: \"#6d28d9\""
+  },
+  {
+    "name": "skills research search step deleted",
+    "file": "skills/research/SKILL.md",
+    "anchor": "2. **Search, in parallel:**\n   - the existing repo and its dependencies (is it already half-built?),\n   - package registries,\n   - GitHub topics and curated lists,\n   - vendor APIs, with pricing pages read live and the date recorded,\n   - MCP servers and existing skills,\n   - practitioner write-ups.\n",
+    "replacement": ""
+  },
+  {
+    "name": "skills research package registries dropped",
+    "file": "skills/research/SKILL.md",
+    "anchor": "   - package registries,\n",
+    "replacement": ""
+  },
+  {
+    "name": "skills intake decide call drops why",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "jarvis decide --by user --class mechanical --why \"<the question's why>\" ",
+    "replacement": "jarvis decide --by user --class mechanical "
+  },
+  {
+    "name": "skills spec decide call drops why",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "--class mechanical|taste --why \"<the rationale>\" --alternatives \"<the alternatives>\" --depends-on \"<the story and criterion IDs, for Taste>\"",
+    "replacement": "--class mechanical|taste"
+  },
+  {
+    "name": "skills design departure drops depends on",
+    "file": "skills/design/SKILL.md",
+    "anchor": "--depends-on \"<the screens and components it changes>\" ",
+    "replacement": ""
+  },
+  {
+    "name": "skills intake wait polls",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Call `jarvis intake answers <n> --wait 540` at most twice, then continue with whatever it returns.",
+    "replacement": "Call `jarvis intake answers <n>` and call it again until the round closes."
+  },
+  {
+    "name": "skills intake submission partial",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "listed ids are overrides, and every unlisted question takes its default as accepted",
+    "replacement": "listed ids are answers, and the round stays open for the rest"
+  },
+  {
+    "name": "skills intake phone text answers",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "is a steer note, never a partial answer, even when it reads",
+    "replacement": "answers the questions it names, as in"
+  },
+  {
+    "name": "skills spec mid run reconfirms",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "there's never another confirmation round",
+    "replacement": "it goes out for confirmation again"
+  },
+  {
+    "name": "skills spec wait polls",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "3. Wait with `jarvis intake answers <n> --wait 540`, at most twice, then continue with whatever it returns.",
+    "replacement": "3. Wait by calling `jarvis intake answers <n>` again until the round closes."
+  },
+  {
+    "name": "skills design inherited choices replaced",
+    "file": "skills/design/SKILL.md",
+    "anchor": "Inherited choices are preserved, including",
+    "replacement": "Inherited choices are replaced, including"
+  },
+  {
+    "name": "skills design tells ban inherited systems",
+    "file": "skills/design/SKILL.md",
+    "anchor": "They apply to new design only: new products,",
+    "replacement": "They apply everywhere, including inherited systems: new products,"
+  }
 ]

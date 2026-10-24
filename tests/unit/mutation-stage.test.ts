@@ -18,6 +18,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-runner-core.json")).toBe("3");
     expect(stageOf("packages/cli/src/runner/mutations-planning.json")).toBe("3");
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");
+    expect(stageOf("packages/cli/src/setup/mutations.json")).toBe("3");
   });
 
   it("leaves anything else unmapped, never guessing from a similar path", () => {

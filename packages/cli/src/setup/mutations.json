@@ -1,0 +1,158 @@
+[
+  {
+    "name": "setup reruns finished steps",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (prior && isFinished(prior) && !redo.has(step)) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "setup ignores --redo",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "isFinished(prior) && !redo.has(step)",
+    "replacement": "isFinished(prior)"
+  },
+  {
+    "name": "setup saves progress only at the end",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "    ctx.state = state;\n    saveState(jarvis, state, deps.rename ? { rename: deps.rename } : {});\n  }",
+    "replacement": "    ctx.state = state;\n  }\n  saveState(jarvis, state, deps.rename ? { rename: deps.rename } : {});"
+  },
+  {
+    "name": "setup records a skipped account as done",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "return { status: \"skipped\", detail: SKIPPED_ACCOUNT, provider: spec.provider };\n  const values",
+    "replacement": "return { status: \"done\", detail: SKIPPED_ACCOUNT, provider: spec.provider };\n  const values"
+  },
+  {
+    "name": "setup prints a stored token",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "print(`Stored ${meta.key} in ${ctx.secrets.location}",
+    "replacement": "print(`Stored ${meta.key}=${values[i]} in ${ctx.secrets.location}"
+  },
+  {
+    "name": "setup reads tokens with a visible prompt",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "await ctx.deps.tty.askHidden(`${label}: `)",
+    "replacement": "await ctx.deps.tty.ask(`${label}: `)"
+  },
+  {
+    "name": "setup skips token validation",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (value === \"\" || isStorableSecret(value)) return value;",
+    "replacement": "return value;"
+  },
+  {
+    "name": "setup production tokens not broker-only",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "brokerOnly: token.tier === \"production\"",
+    "replacement": "brokerOnly: false"
+  },
+  {
+    "name": "setup stores accounts without a ready backend",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "  if (!isFinished(ctx.state.steps.secrets)) return { status: \"failed\", detail: \"the secrets backend isn't ready; fix the secrets step first\" };\n  const print = ctx.deps.print;",
+    "replacement": "  const print = ctx.deps.print;"
+  },
+  {
+    "name": "setup ignores a broken secrets backend",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "return { status: \"failed\", detail: `the secrets backend isn't usable: ${(error as Error).message}` };",
+    "replacement": "void error;"
+  },
+  {
+    "name": "setup sends a test without --send-test",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (options.sendTest) ok =",
+    "replacement": "if (true) ok ="
+  },
+  {
+    "name": "setup overwrites existing ntfy topics",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (existing && !ctx.redo.has(\"ntfy\")) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "setup topics are predictable",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "random += TOPIC_ALPHABET[pick(TOPIC_ALPHABET.length)];",
+    "replacement": "random += TOPIC_ALPHABET[i % 2];"
+  },
+  {
+    "name": "setup topics are short",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "const TOPIC_RANDOM_LENGTH = 24;",
+    "replacement": "const TOPIC_RANDOM_LENGTH = 12;"
+  },
+  {
+    "name": "setup accepts a wrong Claude Code",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (check.level === \"pass\") return { status: \"done\", detail: check.detail };",
+    "replacement": "return { status: \"done\", detail: check.detail };"
+  },
+  {
+    "name": "setup installs an incomplete plugin",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (sourceCheck.level !== \"pass\") throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup accepts unknown --redo steps",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "else throw new Error(`Unknown setup step",
+    "replacement": "else void new Error(`Unknown setup step"
+  },
+  {
+    "name": "setup state follows symlinks",
+    "file": "packages/cli/src/setup/state.ts",
+    "anchor": "  refuseSymlink(path);\n  const st = lstatSync(path, { throwIfNoEntry: false });\n  if (!st) return { version: 1, steps: {} };\n  if (!st.isFile())",
+    "replacement": "  const st = lstatSync(path, { throwIfNoEntry: false });\n  if (!st) return { version: 1, steps: {} };\n  if (false)"
+  },
+  {
+    "name": "setup restarts on a corrupt state",
+    "file": "packages/cli/src/setup/state.ts",
+    "anchor": "    throw new Error(`${path} is not a valid setup state;",
+    "replacement": "    return { version: 1, steps: {} };\n    throw new Error(`${path} is not a valid setup state;"
+  },
+  {
+    "name": "setup private files readable by others",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "openSync(temp, \"wx\", 0o600)",
+    "replacement": "openSync(temp, \"wx\", 0o644)"
+  },
+  {
+    "name": "setup secrets accept unsafe values",
+    "file": "packages/cli/src/broker/secrets.ts",
+    "anchor": "return /^[\\x21\\x23-\\x26\\x28-\\x7e]{8,4096}$/.test(value);",
+    "replacement": "return value.length > 0;"
+  },
+  {
+    "name": "setup secrets accept a readable file",
+    "file": "packages/cli/src/broker/secrets.ts",
+    "anchor": "if ((existing.mode & 0o077) !== 0) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup secrets drop the broker-only marker",
+    "file": "packages/cli/src/broker/secrets.ts",
+    "anchor": "      if (meta.brokerOnly) kept.push(`${MARKER}${key}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "setup hidden prompt echoes",
+    "file": "packages/cli/src/setup/tty.ts",
+    "anchor": "        line += ch;\n      }\n    }\n  };",
+    "replacement": "        line += ch;\n        if (hidden) output.write(ch);\n      }\n    }\n  };"
+  },
+  {
+    "name": "setup hidden prompt accepts a pipe",
+    "file": "packages/cli/src/setup/tty.ts",
+    "anchor": "if (input.isTTY !== true || typeof input.setRawMode !== \"function\") throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup hidden prompt leaves raw mode on",
+    "file": "packages/cli/src/setup/tty.ts",
+    "anchor": "      } finally {\n        setRaw(false);\n",
+    "replacement": "      } finally {\n"
+  }
+]

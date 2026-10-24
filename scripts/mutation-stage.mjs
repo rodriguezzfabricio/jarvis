@@ -14,6 +14,8 @@ const MAP = [
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
+  // jarvis setup's local parts are built alongside stage 3 (decision 71 keeps account validation for stage 5).
+  [/^packages\/cli\/src\/setup\/mutations[^/]*\.json$/, "3"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
 ];
 

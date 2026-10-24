@@ -1,0 +1,440 @@
+[
+  {
+    "name": "runner-core clone shares hardlinks",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "\"--no-hardlinks\", ",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core clone retains origin",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "    command(git, path, [\"remote\", \"remove\", \"origin\"], home);",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core git runs planted hooks",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "return git(cwd, args, { home, env, ...(input ? { input } : {}) });",
+    "replacement": "return git(cwd, [\"-c\", \"core.hooksPath=.git/hooks\", ...args], { home, env, ...(input ? { input } : {}) });"
+  },
+  {
+    "name": "runner-core workspace config tampering accepted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (configHash(w.path) !== w.configHash)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core candidate escaping symlinks accepted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "  validateSymlinks(w.path);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core candidate git internals accepted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "throw new Error(`candidate touches git internals: ${path}`);",
+    "replacement": "continue;"
+  },
+  {
+    "name": "runner-core stale promotion accepted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (run([\"rev-parse\", \"--verify\", branch]) !== input.expectedHead)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core dirty promotion accepted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (run([\"status\", \"--porcelain\", \"--untracked-files=all\"]) !== \"\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core last-green points to old revision",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "[\"tag\", \"--force\", \"last-green\", revision]",
+    "replacement": "[\"tag\", \"--force\", \"last-green\", input.expectedHead]"
+  },
+  {
+    "name": "runner-core cleanup escapes root",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "return rel !== \"\" && rel !== \"..\" && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);",
+    "replacement": "return rel !== \"\";"
+  },
+  {
+    "name": "runner-core cleanup removes live lease workspace",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "    if (ownsPathInActive(path, active, input.state)) continue;",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core cleanup kills live lease group",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "    if (protectedGroups.has(group)) continue;",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core cleanup signals process not group",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "kill(-group, \"SIGKILL\");",
+    "replacement": "kill(group, \"SIGKILL\");"
+  },
+  {
+    "name": "runner-core dead lease holder retained",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "(clock.pidAlive !== undefined && !clock.pidAlive(lease.holderPid))",
+    "replacement": "false"
+  },
+  {
+    "name": "runner-core interrupted attempt passes",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "    if (t.status !== \"running\" || owned) continue;\n    t.status = \"failed\";",
+    "replacement": "    if (t.status !== \"running\" || owned) continue;\n    t.status = \"passed\";"
+  },
+  {
+    "name": "runner-core completion ignores required evidence",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": " || !hasPassEvidence(t)",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core forced runner files discarded silently",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "  validateRunnerChanges(git, w);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core new runner changes bypass tree guard",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "  validateRunnerChanges(git, w, tree);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core gitignore can reopen runner directory",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (changed.some((path) => path.toLowerCase() === \".gitignore\") && !rootIgnoresRunnerFiles(git, w, tree))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core notes follow a symlink parent",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "    plainDirectory(join(w.path, \".jarvis\"));",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core notes exceed byte bound",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "buffer.subarray(0, Math.min(used, maxBytes))",
+    "replacement": "buffer.subarray(0, used)"
+  },
+  {
+    "name": "runner-core notes are labeled trusted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "return { trust: \"untrusted\", text, truncated };",
+    "replacement": "return { trust: \"trusted\" as \"untrusted\", text, truncated };"
+  },
+  {
+    "name": "runner-core shared state drops task metadata",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  title: z.string().default(\"\"), acceptanceCriteria: z.array(text).default([]), storyIds: z.array(text).default([]),",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core done needs no completion checkpoint",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "!reached || ",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core done skips evidence re-verification",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "entry !== undefined && verify(entry).ok",
+    "replacement": "entry !== undefined"
+  },
+  {
+    "name": "runner-core review results keyed by check instead of reviewer",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "d[kind === \"gate_result\" ? \"check\" : \"reviewer\"]",
+    "replacement": "d[\"check\"]"
+  },
+  {
+    "name": "runner-core noncompleted attempts consume repairs",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "attempt.outcome === \"completed\" && attempt.candidateRevision !== null",
+    "replacement": "attempt.candidateRevision !== null"
+  },
+  {
+    "name": "runner-core foreign revision consumes repair",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": " && d.revision === attempt.candidateRevision",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core alternative switch history lost",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "    taskFor(r, e).alternativeSwitches.push(alternativeData.parse(e.data));",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core failure output skips verification",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "if (!checked.ok) return { ...result, problems: checked.problems };",
+    "replacement": "if (false) return { ...result, problems: checked.problems };"
+  },
+  {
+    "name": "runner-core failure tail exceeds line bound",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": ".split(\"\\n\").slice(-40).join(\"\\n\")",
+    "replacement": ".split(\"\\n\").slice(-400).join(\"\\n\")"
+  },
+  {
+    "name": "runner-core failure tail exceeds byte bound",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "let start = Math.max(0, buffer.length - maxBytes);",
+    "replacement": "let start = 0;"
+  },
+  {
+    "name": "runner-core failure output absent from hashed manifest accepted",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "    validateFailureLayout(data);",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core passing cases included with failing cases",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "data.caseResults.filter((c) => c.code !== 0 || c.timedOut)",
+    "replacement": "data.caseResults"
+  },
+  {
+    "name": "runner-core verify failures lose exit-zero observations",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "failed.length ? failed : data.caseResults",
+    "replacement": "failed"
+  },
+  {
+    "name": "runner-core case exit code replaced",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "const code = codeText === \"signal\" ? null : Number(codeText);",
+    "replacement": "const code = 0;"
+  },
+  {
+    "name": "runner-core failure evidence history lost after crash",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "task.attempts.flatMap((a) => a.evidence)",
+    "replacement": "task.evidence"
+  },
+  {
+    "name": "runner-core repair attempt history discarded",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  t.attempts.push(attempt);",
+    "replacement": "  t.attempts = [attempt];"
+  },
+  {
+    "name": "runner-core lease loses pre-attempt resources",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "      recordResources(r, lease.runId, lease.workspace, lease.processGroup);",
+    "replacement": "      // mutation"
+  },
+  {
+    "name": "runner-core usage resume retains old owner",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "      r.starts.set(t.id, d);",
+    "replacement": "      // mutation"
+  },
+  {
+    "name": "runner-core scheduler ignores dependencies",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "return dependency !== undefined && isDone(dependency, context.verifyEvidence ?? verifyEvidence);",
+    "replacement": "return true;"
+  },
+  {
+    "name": "runner-core broker claims become runner state",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  if (e.actor !== \"runner\") return;",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core candidate author is agent controlled",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "const env: Record<string, string> = { GIT_NO_REPLACE_OBJECTS: \"1\" };",
+    "replacement": "const env: Record<string, string> = { GIT_NO_REPLACE_OBJECTS: \"1\", GIT_AUTHOR_NAME: \"agent\" };"
+  },
+  {
+    "name": "runner-core ignored artifacts committed",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "run([\"add\", \"--all\", \"--\", \".\"]);",
+    "replacement": "run([\"add\", \"--all\", \"--force\", \"--\", \".\"]);"
+  },
+  {
+    "name": "runner-core candidate hidden from gate clone",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "`refs/heads/jarvis/candidates/${w.taskId}/${w.attemptId}`",
+    "replacement": "`refs/jarvis/candidates/${w.taskId}/${w.attemptId}`"
+  },
+  {
+    "name": "runner-core candidate cleanup deletes unrelated branches",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "const prefix = \"refs/heads/jarvis/candidates/\";",
+    "replacement": "const prefix = \"refs/heads/\";"
+  },
+  {
+    "name": "runner-core candidate cleanup ignores concurrent changes",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "[\"update-ref\", \"-d\", ref, revision]",
+    "replacement": "[\"update-ref\", \"-d\", ref]"
+  },
+  {
+    "name": "runner-core candidate branches are never deleted",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "    command(git, repoPath, [\"update-ref\", \"-d\", ref, revision], home);",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "runner-core usage wait rejects session metadata",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "z.object({ until: z.number().finite() }).passthrough()",
+    "replacement": "z.object({ until: z.number().finite() }).strict()"
+  },
+  {
+    "name": "runner-core usage wait does not pause all dispatch",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  if (r.state.usageWaitUntil !== null) return;",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core usage wait uses shortest deadline",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "wait.until > until",
+    "replacement": "wait.until < until"
+  },
+  {
+    "name": "runner-core tampered gate permits a repair",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "if (e.kind === \"gate_result\" && d.status === \"tampered\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core tampered gate has wrong blocked reason",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "blockTask(r, t, \"protected check changed\");",
+    "replacement": "blockTask(r, t, \"gate failed\");"
+  },
+  {
+    "name": "runner-core tampered attempt consumes repair",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "    && !attempt.evidence.some((entry) => entry.kind === \"gate_result\" && (entry.data as { status?: string }).status === \"tampered\")",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core new attempt unblocks tampered task",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  if (d.processGroupRecord) recordGroup(r, d.runId, d.processGroupRecord);\n  if (t.status === \"blocked\") return;",
+    "replacement": "  if (d.processGroupRecord) recordGroup(r, d.runId, d.processGroupRecord);"
+  },
+  {
+    "name": "runner-core late completion unblocks tampered task",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  t.candidateRevision = d.candidateRevision ?? null;\n  if (t.status === \"blocked\") return;",
+    "replacement": "  t.candidateRevision = d.candidateRevision ?? null;"
+  },
+  {
+    "name": "runner-core late lease retains blocked ownership",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "      if (t.status === \"blocked\") return;",
+    "replacement": "      // mutation"
+  },
+  {
+    "name": "runner-core hardlinked source imported",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (st.isFile() && st.nlink > 1)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core hardlinked notes read",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (st.nlink > 1) throw new Error(\"hardlinked notes refused\");",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-core ended run groups killed again",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "!r.ended && !alive(r.pid)",
+    "replacement": "!alive(r.pid)"
+  },
+  {
+    "name": "runner-core reused process group killed",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "if (current?.trim().replace(/\\s+/g, \" \") !== identity.startedAt.trim().replace(/\\s+/g, \" \"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core exited process group killed",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "if (!identity || records.some((record) => record.exited && record.startedAt === identity.startedAt))",
+    "replacement": "if (!identity)"
+  },
+  {
+    "name": "runner-core legacy process group identity guessed",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "const identity = records.at(-1);",
+    "replacement": "const identity = records.at(-1) ?? captureProcessGroup(group, input.readProcessStartTime ?? readProcessStartTime);"
+  },
+  {
+    "name": "runner-core creation start time discarded",
+    "file": "packages/cli/src/runner/cleanup.ts",
+    "anchor": "const startedAt = read(groupId)?.trim().replace(/\\s+/g, \" \");",
+    "replacement": "const startedAt = \"unknown\";"
+  },
+  {
+    "name": "runner-core group exit checkpoint discarded",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  if (d.processGroupRecord) endGroup(r, d.processGroupRecord);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core root routing policy changed",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (changed.some((path) => path.toLowerCase() === \".jarvis-routing.json\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "runner-core workspace git discovers ancestor",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (repositoryRoot !== null) Object.assign(env, {",
+    "replacement": "if (false) Object.assign(env, {"
+  },
+  {
+    "name": "runner-core invalid HEAD reaches staging",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "  requireRevision(command(git, w.path, [\"rev-parse\", \"--verify\", \"HEAD^{commit}\"], w.home).toString().trim());",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core absolute symlink imported",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (isAbsolute(link)) throw new Error(`absolute symlink refused: ${path}`);",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-core next attempt lease loses ownership",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "(r.leaseSeq.get(t.id) ?? -1) >= (r.startSeq.get(t.id) ?? 0)",
+    "replacement": "false"
+  },
+  {
+    "name": "runner-core dependency evidence not reverified",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "return dependency !== undefined && isDone(dependency, context.verifyEvidence ?? verifyEvidence);",
+    "replacement": "return dependency?.status === \"passed\";"
+  },
+  {
+    "name": "runner-core promotion bypasses candidate tree checks",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "  validateTree(git, { path: input.repoPath, home, baseRevision: input.expectedHead }, input.candidate.revision);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "runner-core invalid UTF-8 notes rejected",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "new TextDecoder(\"utf-8\", { fatal: false })",
+    "replacement": "new TextDecoder(\"utf-8\", { fatal: true })"
+  }
+]

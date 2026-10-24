@@ -13,6 +13,10 @@ afterEach(async () => {
   }
   server = undefined;
 });
+/** Settles a promise into a value, so a rejection fails as an assertion rather than a runner error. */
+async function settled<T>(promise: Promise<T>): Promise<{ value: T } | { error: string }> {
+  return promise.then((value) => ({ value }), (error: unknown) => ({ error: String(error) }));
+}
 // Exercise a fake HTTP server's request handler in memory when the worker sandbox denies listen.
 // This keeps wire-format assertions active; the separate smoke test uses real loopback fetch.
 async function fake(handler: RequestListener) {
@@ -61,7 +65,7 @@ describe("ntfy HTTP adapter", () => {
     let response = '{"id":"open","event":"open"}\n{"id":"one","event":"message","message":"hello"}\n{"id":"two","event":"message","message":"approve:r:n"}\n';
     const baseUrl = await fake((req, res) => { paths.push(req.url!); res.end(response); });
     const n = new NtfyNotifier({ baseUrl, topic: "out", replyTopic: "reply", since: "saved" });
-    expect(await n.poll()).toEqual([{ id: "one", text: "hello" }, { id: "two", text: "approve:r:n" }]);
+    expect(await settled(n.poll())).toEqual({ value: [{ id: "one", text: "hello" }, { id: "two", text: "approve:r:n" }] });
     expect(paths[0]).toBe("/reply/json?poll=1&since=saved");
     expect(n.lastId).toBe("two");
     response = '{"id":"three","event":"message","message":"ok"}\nbad';
@@ -100,7 +104,7 @@ describe("ntfy HTTP adapter", () => {
   it("skips unknown event types while strictly validating message events", async () => {
     const baseUrl = await fake((_req, res) => res.end('{"event":"future","id":7,"message":null}\n{"event":"message","id":"known","message":"hello"}\n'));
     const n = new NtfyNotifier({ baseUrl, topic: "out", replyTopic: "reply", since: "saved" });
-    expect(await n.poll()).toEqual([{ id: "known", text: "hello" }]);
+    expect(await settled(n.poll())).toEqual({ value: [{ id: "known", text: "hello" }] });
     expect(n.lastId).toBe("known");
   });
   it("permits plain HTTP only for loopback hosts", () => {

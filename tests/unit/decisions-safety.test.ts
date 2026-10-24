@@ -36,6 +36,7 @@ describe("decision 85 write boundaries", () => {
     const doc = register.read();
     expect(() => supersedeDecision(doc, 1, { ...input, madeBy: "jarvis" }, input.date, "Idea")).toThrow(/user|fabricio/i);
     const forged = supersedeDecision(doc, 1, input, input.date, "My choice");
+    expect(forged.entries.map((entry) => entry.id)).toEqual([1, 2]);
     forged.entries[1]!.madeBy = "jarvis";
     expect(() => register.write(forged)).toThrow(/user|fabricio/i);
   });

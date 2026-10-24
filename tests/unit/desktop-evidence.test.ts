@@ -125,7 +125,11 @@ describe('compatibility capture safety gate', () => {
     const probe = vi.fn().mockResolvedValue({ ok: false, checks: [], exitCode: 1 });
     try {
       const { captureCompatibility } = await import('../../packages/cli/src/harness/claude/desktop-evidence.ts');
-      await expect(captureCompatibility({ ...expected, directory: dir, jarvisHome: '/synthetic/.jarvis', cacheDir: '/synthetic/cache' }, { probe, session })).rejects.toThrow('live canary failed');
+      // Capture the rejection so a different error fails as an assertion, not a runner error.
+      const outcome = await captureCompatibility({ ...expected, directory: dir, jarvisHome: '/synthetic/.jarvis', cacheDir: '/synthetic/cache' }, { probe, session })
+        .then(() => ({ rejected: false, message: '' }), (err: unknown) => ({ rejected: true, message: err instanceof Error ? err.message : String(err) }));
+      expect(outcome.rejected).toBe(true);
+      expect(outcome.message).toContain('live canary failed');
       expect(probe).toHaveBeenCalledOnce();
       expect(session).not.toHaveBeenCalled();
       expect(fs.existsSync(path.join(dir, 'stream.jsonl'))).toBe(false);

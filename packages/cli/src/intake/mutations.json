@@ -1,0 +1,248 @@
+[
+  {
+    "name": "intake permits unknown round fields",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "}).strict();\nexport type IntakeRound",
+    "replacement": "}).passthrough();\nexport type IntakeRound"
+  },
+  {
+    "name": "intake permits six summary lines",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": ".length <= 5",
+    "replacement": ".length <= 6"
+  },
+  {
+    "name": "intake permits eight questions",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "z.array(questionSchema).min(1).max(7)",
+    "replacement": "z.array(questionSchema).min(1).max(8)"
+  },
+  {
+    "name": "intake permits duplicate question ids",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "new Set(questions.map((q) => q.id)).size === questions.length",
+    "replacement": "true"
+  },
+  {
+    "name": "intake permits symlinked handoffs",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "realpathSync(absolute) !== resolve(realpathSync(root), expected)",
+    "replacement": "false"
+  },
+  {
+    "name": "intake permits reuse with changed content",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (data(prior).fileHash !== loaded.fileHash)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake does not bind the raw file hash",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "createHash(\"sha256\").update(raw).digest(\"hex\")",
+    "replacement": "\"0\".repeat(64)"
+  },
+  {
+    "name": "intake omits message byte cap",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "text: limitText(",
+    "replacement": "text: String("
+  },
+  {
+    "name": "intake accepts unknown answer ids",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (!round.questionIds.includes(id))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake later session answer wins",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "const counted = !intent && supplied !== undefined;",
+    "replacement": "const counted = supplied !== undefined;"
+  },
+  {
+    "name": "intake deadline is exclusive",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "now >= deadlineOf(round)",
+    "replacement": "now > deadlineOf(round)"
+  },
+  {
+    "name": "intake confirms timed out defaults",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "confirmed: result.by !== \"timeout\"",
+    "replacement": "confirmed: true"
+  },
+  {
+    "name": "intake wait does not poll the phone",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (deps.notifier && waitMs > 0) await pollReplies(deps);",
+    "replacement": "if (false) await pollReplies(deps);"
+  },
+  {
+    "name": "intake taste permits storage symlinks",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake taste writes a world readable profile",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "openSync(temp, \"wx\", 0o600)",
+    "replacement": "openSync(temp, \"wx\", 0o644)"
+  },
+  {
+    "name": "intake taste overwrites before atomic replacement",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "(options.rename ?? renameSync)(temp, target);",
+    "replacement": "const unsafeFd = openSync(target, \"w\", 0o600); try { writeAll(unsafeFd, readFileSync(temp).toString()); } finally { closeSync(unsafeFd); }"
+  },
+  {
+    "name": "intake permits project traversal",
+    "file": "packages/cli/src/config/project.ts",
+    "anchor": "if (!/^[A-Za-z0-9_-]+$/.test(id))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake waits past round closure",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (result.state === \"closed\" || clock.now() >= stopAt)",
+    "replacement": "if (clock.now() >= stopAt)"
+  },
+  {
+    "name": "intake busy polls the ledger",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "options.pollMs ?? 5000",
+    "replacement": "options.pollMs ?? 1"
+  },
+  {
+    "name": "intake clamps a 540 second wait",
+    "file": "packages/cli/src/intake/commands.ts",
+    "anchor": "const waitMs = integer(options.wait, \"wait\") * 1000;",
+    "replacement": "const waitMs = Math.min(integer(options.wait, \"wait\") * 1000, 1000);"
+  },
+  {
+    "name": "intake omits accepted flag on unlisted defaults",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "acceptedDefaults: result.provenance[question.id] === \"default-accepted\"",
+    "replacement": "acceptedDefaults: false"
+  },
+  {
+    "name": "intake treats phone steer as a round answer",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "const intents = entries.filter((e) => phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true);",
+    "replacement": "const intents = entries.filter((e) => e.kind === \"steer\" || (phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true));"
+  },
+  {
+    "name": "intake project id hashes only the folder",
+    "file": "packages/cli/src/config/project.ts",
+    "anchor": ".update(root)",
+    "replacement": ".update(basename(root))"
+  },
+  {
+    "name": "intake project lookup drops option precedence",
+    "file": "packages/cli/src/config/project.ts",
+    "anchor": "options.option ?? options.env.JARVIS_PROJECT",
+    "replacement": "options.env.JARVIS_PROJECT ?? options.option"
+  },
+  {
+    "name": "intake poll uses receipt time for lateness",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": ": time! * 1000 >= deadlineOf(round) ? \"late\"",
+    "replacement": ": clockOf(deps).now() >= deadlineOf(round) ? \"late\""
+  },
+  {
+    "name": "intake cursor is not persisted",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (since && since !== readReplyCursor(deps.ledger))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake cursor is not resumed",
+    "file": "packages/cli/src/intake/commands.ts",
+    "anchor": "readReplyCursor(ledger) ?? config.since",
+    "replacement": "config.since"
+  },
+  {
+    "name": "intake local intents lack ownership",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "intakeOwned: true, intakeBy: by",
+    "replacement": "intakeOwned: false, intakeBy: by"
+  },
+  {
+    "name": "intake closed answers reported counted",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (existing.state === \"closed\") return { ...existing, counted: false };",
+    "replacement": "if (existing.state === \"closed\") return { ...existing, counted: true };"
+  },
+  {
+    "name": "intake initial delivery failure thrown",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "catch { return { ...result, deliveryFailed: true }; }",
+    "replacement": "catch { throw new Error(\"notification failed\"); }"
+  },
+  {
+    "name": "intake open reads acquire a writer lock",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (!intent && supplied === undefined && clockOf(deps).now() < deadlineOf(round))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "intake phone message omits questions",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "${round.snapshot.summary}\\n${questions}",
+    "replacement": "${round.snapshot.summary}"
+  },
+  {
+    "name": "intake multiline question rejected",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "question: text, why: line",
+    "replacement": "question: line, why: line"
+  },
+  {
+    "name": "intake taste errors hide field paths",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "throw new Error(`Invalid taste profile: ${detail}`);",
+    "replacement": "throw new Error(\"Invalid taste profile\");"
+  },
+  {
+    "name": "intake phone nonce is not checked",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "data(request).nonce !== parsed.nonce || ",
+    "replacement": ""
+  },
+  {
+    "name": "intake phone answer kind is not checked",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": " || parsed.answer !== \"defaults\"",
+    "replacement": ""
+  },
+  {
+    "name": "intake phone time is not required",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": ": !validTime ? \"missing-time\"",
+    "replacement": ""
+  },
+  {
+    "name": "intake timeout hides an on-time phone tap",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "return intents.find((entry) => data(entry).intakeBy !== \"timeout\") ?? intents[0];",
+    "replacement": "return intents[0];"
+  },
+  {
+    "name": "intake drops generic pending replies",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "const pending = inbox.pending().filter((answer) => answer.answer === \"steer\" || !answer.requestId.startsWith(\"intake-\"));",
+    "replacement": "const pending = inbox.pending().filter(() => false);"
+  },
+  {
+    "name": "intake does not delegate generic approvals",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "recordAnswer(deps.ledger, inbox.accept(reply), deps.broker)",
+    "replacement": "recordAnswer(deps.ledger, inbox.accept(reply))"
+  },
+  {
+    "name": "intake generic replay records round intents",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "const pending = inbox.pending().filter((answer) => answer.answer === \"steer\" || !answer.requestId.startsWith(\"intake-\"));",
+    "replacement": "const pending = inbox.pending();"
+  }
+]

@@ -9,7 +9,7 @@ export interface NtfyOptions {
   since?: string;
   timeoutMs?: number;
 }
-const Event = z.object({ event: z.literal("message"), id: z.string().min(1), message: z.string() });
+const Event = z.object({ event: z.literal("message"), id: z.string().min(1), message: z.string(), time: z.number().int().nonnegative().optional() });
 const Button = z.object({
   answer: z.enum(["defaults", "approve", "reject"]),
   requestId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/),
@@ -74,7 +74,7 @@ export class NtfyNotifier implements Notifier {
     for (const event of events) {
       if (typeof event === "object" && event !== null && "event" in event && event.event === "message") {
         const message = Event.parse(event);
-        replies.push({ id: message.id, text: message.message });
+        replies.push({ id: message.id, text: message.message, ...(message.time !== undefined ? { time: message.time } : {}) });
       }
     }
     const last = replies.at(-1);

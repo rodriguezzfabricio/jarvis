@@ -9,7 +9,7 @@ export interface Action {
   nonce: string;
   label: string;
 }
-export interface ReplyMessage { id: string; text: string }
+export interface ReplyMessage { id: string; text: string; time?: number }
 export interface Notifier {
   send(message: Message, actions: readonly Action[]): Promise<void>;
   poll(): Promise<ReplyMessage[]>;

@@ -202,5 +202,11 @@
     "file": "packages/cli/src/notify/replies.ts",
     "anchor": "outcome.outcome === \"recorded\" && !businessExists",
     "replacement": "outcome.outcome === \"recorded\""
+  },
+  {
+    "name": "notify generic inbox accepts intake taps",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "        if (parsed.requestId.startsWith(\"intake-\")) return ignore(\"unknown-request\");\n",
+    "replacement": ""
   }
 ]

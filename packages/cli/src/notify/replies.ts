@@ -83,6 +83,8 @@ export class ReplyInbox {
       if (parsed.kind === "invalid") return ignore("invalid");
       let intent: Intent;
       if (parsed.kind === "button") {
+        // Intake taps are routed to the intake round (receiveRoundReply), never answered here (decision 90).
+        if (parsed.requestId.startsWith("intake-")) return ignore("unknown-request");
         const request = entries.find((e) => isPhase(e, "request") && data(e).requestId === parsed.requestId)?.data as Request | undefined;
         if (!request) return ignore("unknown-request");
         if (entries.some((e) => isPhase(e, "answer") && data(e).requestId === parsed.requestId)) return ignore("already-answered");
@@ -99,7 +101,7 @@ export class ReplyInbox {
 
   pending(): CountedAnswer[] {
     const entries = this.ledger.entries();
-    return entries.filter((e) => isPhase(e, "answer") && !entries.some((r) => isRecorded(r, e.seq))).map(result);
+    return entries.filter((e) => isPhase(e, "answer") && data(e).intakeOwned !== true && !String(data(e).requestId ?? "").startsWith("intake-") && !entries.some((r) => isRecorded(r, e.seq))).map(result);
   }
 }
 
@@ -124,6 +126,7 @@ export function recordAnswer(ledger: Ledger, answer: ReplyResult, broker?: Pick<
   const recorded = ledger.transact((entries) => {
     const entry = entries.find((e) => e.seq === answer.seq && isPhase(e, "answer"));
     if (!entry || canonical(result(entry)) !== canonical(answer)) throw new Error("no matching counted answer");
+    if (data(entry).intakeOwned === true || String(data(entry).requestId ?? "").startsWith("intake-")) throw new Error("intake replies require intake routing");
     return entries.find((e) => isRecorded(e, answer.seq));
   });
   if (recorded) return recordingMessage(answer, data(recorded));

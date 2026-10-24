@@ -84,10 +84,15 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 | `jarvis setup` | One-time: accounts (decision 43), secrets backend, ntfy topics, taste profile, Claude Code version check, installs the plugin |
 | `jarvis doctor` | Preflight (decision 46): versions, sandbox, network allowlist, protected paths, broker reachable, iCloud check, memory-based concurrency, plugin loaded in CLI and desktop |
 | `jarvis run [--detach]` | The runner: works through the plan, hosts the broker and notifier, writes the report |
-| `jarvis steer "…"` | Adds a note to the inbox; the runner reads it between tasks (decision 40) |
+| `jarvis steer "…"` | Adds a note to the runner-owned inbox; the runner reads it between tasks (decisions 40, 87) |
 | `jarvis status` | Current run state from the ledger |
 | `jarvis report [--open]` | Rebuilds and opens the morning report |
 | `jarvis why <thing>` | Answers from the decision register, with sources (decision 48) |
+| `jarvis decide …` | Writes one decision register entry; firmness enforced on write (decision 85) |
+| `jarvis triage "…"` | Classifies a request and prints its pipeline; `/jarvis` calls it first (decision 89) |
+| `jarvis spec check\|version …` | Validates and versions the spec |
+| `jarvis intake send\|answer\|answers …` | Intake rounds: plain text in the session, mirrored to the phone; `answers --wait` polls the reply topic (decisions 86, 90) |
+| `jarvis taste save <file>` | Saves the taste profile (decision 90) |
 | `jarvis act <operation> …` | Client for the broker. The only path to outside actions (decision 12) |
 | `jarvis gate <name>` | Runs a protected check (`quick`, `test`, `lint`, `security`, `qa`, `design`, `done`). Only runs the runner launches after a session ends are recorded as evidence; runs from inside a session are feedback only (decision 49) |
 | `jarvis approve <id>` / `reject <id>` | Answers a pending approval from the terminal (same as answering through ntfy) |

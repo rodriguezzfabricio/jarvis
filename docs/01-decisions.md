@@ -917,6 +917,16 @@ An Opus review of the intake commands found that no component defined how a repo
 
 *From:* the integrator, Oct 24, after the Opus review of the intake commands.
 
+### 91. Stage 3 integration details (new; Oct 24; the integrator under decision 81's thresholds; Fabricio can veto)
+Settled while merging the runner inbox, planning and intake lanes:
+- **Inbox limits:** a steer note is at most 16 KiB and an inbox file at most 128 KiB. A skipped item is recorded as a runner `reconciled` entry with `type: "inbox_skipped"` and archived. An explicit id that matches no task replans nothing; it never widens to all pending work.
+- **Plans are judged against the runner's copy:** `readPlan` takes the approved spec and the installed checks from the runner. It never reads the spec or checks in the workspace, because the planner session can write them (planning review, medium 1).
+- **Task definitions keep the planner's intent:** `goal`, `exitCondition` and an optional `mayTouch` (plain repo-relative paths, never `.git` or `.jarvis` in any letter case). Nothing enforces `mayTouch` yet; the loop passes it to the prompt.
+- **Planning artifacts:** at most 256 KiB per file, 4 MiB per check bundle and 256 files. Each install reviews the complete merged bundle (backlog 65 adds the diff).
+- **Intake taps:** the generic reply inbox refuses any `intake-*` button before writing an intent, and those taps go to the round's handler only. A tap whose ntfy time is before the deadline counts even when it is read later. If the deadline already produced unconfirmed defaults, the tap upgrades the round to accepted defaults, recorded with `supersedesAnswerSeq`. Register entries already written as `unconfirmed-default` stay as they are (the register is append-only); confirm-once reads the round's state and skips anything the tap confirmed.
+- **A broken notifier config never blocks a round:** the round is recorded, the command prints that the notification wasn't delivered, and a warning names the config without its contents (decision 90).
+- **Project ids use the filesystem's own spelling** (`realpathSync.native`), so a path typed in the wrong letter case gives the same id.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

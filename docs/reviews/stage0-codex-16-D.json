@@ -1,0 +1,76 @@
+{
+  "verdict": "FAIL",
+  "summary": "Lane D: two high findings block approval: sandbox wrapping reintroduces runner environment secrets, and shared temporary storage permits interference with protected assertions.\n\n1. Prior findings: all 14 original critical/high reproductions in this lane have corresponding fixes and regression assertions. Review 1 #1 is guarded by restricted-mode/tool-list tests and the live malicious-hook negative control; #2 by settings/probe outside-read tests; #3 by web-tool exclusion and denial tests; #4 by baseline preflight rejection tests; #6 by network positive controls, denial-record assertions and live negative controls. Review 2 #3 has private-cache isolation/deletion tests; #4 has host-specific failure regressions. Review 5 #2 has signal-outcome tests; #3 has the substituted-object regression; #4 has short-write/zero-progress tests; #5 has reclamation and competing-writer tests. Review 6 #1 has concurrent broker call/socket/instance/process tests; #3 and review 7 #1 have early-exit and fabricated-observation regressions. Removing the corresponding protections would fail those assertions. Scanner findings belong to the other lanes.\n\n2. I established no concurrent-writer ledger corruption or loss of an acknowledged entry. Complete writes, fsync, serialized transactions and head repair support those guarantees. A new recovery-availability defect remains below. Existing broker adapters are local outbox stubs.\n\n3. The examined stage 0 Claude envelope has fixes and evidence for its original findings, but the combined review cannot pass. Stage 1 does not meet its safety proof because candidate code can receive runner secrets and can interfere with verifier scratch files. Baselines and the user-assisted desktop check remain outside this assessment.\n\nEvidence: supplied logs report successful typecheck, 187 passing unit/fault tests, four passing live tests and all 106 mutations caught. I independently passed typecheck using Node 24.21.0 and performed read-only wrapper and in-memory reproductions. Filesystem-writing/live suites and the complete shared-temporary-file gate exploit were not rerun in this read-only checkout. The logs do not establish tests-first development order.",
+  "remaining_for_stage0": [
+    "Fix both high findings, add regressions and mutation coverage, and capture fresh revision-linked evidence before approval.",
+    "Record the medium and low findings in docs/backlog.md under decision 74.",
+    "Save this lane's review and obtain passing verdicts from every review lane.",
+    "After approval, record the required baselines for tasks 1, 2 and 11. Stage 1 separately requires the user-assisted desktop plugin check."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Sandbox wrapping restores runner secrets omitted from the clean environment",
+      "file": "packages/cli/src/sandbox/srt.ts",
+      "line": 46,
+      "scenario": "runSandboxed supplies r.env only after asking the library to construct its wrapper in the runner process. The pinned sandbox-runtime reads process.env.JAVA_TOOL_OPTIONS and embeds its value as an explicit environment assignment in that wrapper. I set a synthetic parent value of -Djavax.net.ssl.keyStorePassword=ReviewSyntheticSecret and reproduced the generated command containing that complete secret. Candidate code can run printenv JAVA_TOOL_OPTIONS even though r.env omits the variable. Both gate phases use this path, bypassing decision 58's environment allowlist and the broker-only credential boundary.",
+      "fix": "Construct sandbox wrappers in a helper process with an explicitly sanitized environment, or use a verified library credential policy that prevents inherited values from being restored. Test the effective sandbox child environment with a synthetic secret in the runner's JAVA_TOOL_OPTIONS, and mutation-test removal of the protection."
+    },
+    {
+      "severity": "high",
+      "title": "Shared temporary storage lets surviving candidate code alter verifier assertions",
+      "file": "packages/cli/src/sandbox/srt.ts",
+      "line": 23,
+      "scenario": "The library adds /tmp/claude and /private/tmp/claude to writable roots and overrides the private TMPDIR values supplied by runGate with TMPDIR=/tmp/claude. I reproduced those defaults for both candidate and verifier policies. A concrete gate reproduction is: candidate output is value=41, while it launches a detached daemon with redirected stdio that watches this shared directory and replaces assertion scratch files with value=42. The protected verifier uses mktemp \"$TMPDIR/assert.XXXXXXXX\", copies main/stdout there, then checks that temporary file after further work. The daemon survives the documented process-group cleanup limitation and can rewrite that file; the trusted verifier then passes and prints the genuine completion nonce. Thus backlog #13's claim that such a daemon cannot forge a pass does not hold.",
+      "fix": "Give each phase genuinely separate temporary storage, prevent the wrapper from overriding it, and explicitly deny candidate access to verifier temporary storage and shared library defaults. Add a full gate regression using a surviving daemon and verifier scratch files; incorrect recorded output must fail."
+    },
+    {
+      "severity": "medium",
+      "title": "Starting another broker replaces an active project's socket",
+      "file": "packages/cli/src/broker/server.ts",
+      "line": 7,
+      "scenario": "Start brokers for projects A and B at the CLI's shared default socket. B unconditionally unlinks A's active socket and binds the same pathname. A's existing task sandbox permits that pathname, so its next request reaches B and is evaluated using B's ledger, grants and adapters. An in-memory reproduction using the actual server and broker code returned succeeded under B's production grant for a request sent to A's original socket. Closing A also removes B's socket at line 45. Current adapters limit the immediate impact to incorrect outbox actions and availability.",
+      "fix": "Use project/run-specific socket paths and refuse to replace a live listener. Reclaim only verified stale sockets, and unlink on close only if the pathname still identifies that server's socket. Add simultaneous-project and stale-close regressions."
+    },
+    {
+      "severity": "medium",
+      "title": "Later approval answers override the first decision",
+      "file": "packages/cli/src/broker/broker.ts",
+      "line": 118,
+      "scenario": "decide always appends another answer for an existing request, and claim uses the last answer. Using the actual Broker with an in-memory ledger, I rejected a request, observed rejected, then approved the same approvalId and observed succeeded with one adapter execution. This contradicts decision 50's first-valid-answer policy and permits a delayed contradictory answer to reverse the settled decision. The check and decision write are also separate operations.",
+      "fix": "Resolve pending approvals atomically under Ledger.transact and ignore or reject subsequent answers. Provide an explicit separate operation for intentional decision changes if needed. Test contradictory sequential and concurrent answers."
+    },
+    {
+      "severity": "medium",
+      "title": "Nested reclamation markers eventually exceed the filename limit",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "line": 347,
+      "scenario": "Each recursive marker appends .reclaim. plus a generated 24-character nonce to the same filename. A dead lock with seven stranded nested markers has a longest basename of 242 bytes; recovering the deepest marker attempts a 275-byte basename, exceeding macOS's 255-byte component limit. I reproduced ENAMETOOLONG through the actual Ledger using an in-memory filesystem enforcing that limit. Every subsequent append encounters the same state and fails, requiring manual recovery. Acknowledged entries remain intact.",
+      "fix": "Use bounded-length marker names while preserving ownership and instance binding, or adopt a crash-released locking primitive. Add repeated-reclaimer-crash tests using production-length nonces through the filesystem component limit."
+    },
+    {
+      "severity": "medium",
+      "title": "Filtered mutation runs falsely report complete coverage",
+      "file": "scripts/mutation-check.mjs",
+      "line": 225,
+      "scenario": "The loop filters mutations using JARVIS_MUTATIONS, but the final success message always uses mutations.length. With JARVIS_MUTATIONS=^no-such-mutation$, a clean control run executes no mutations yet prints all 106 mutations caught and exits 0. I reproduced this by evaluating the actual script with filesystem/process operations substituted in memory. A retained debugging filter can therefore produce misleading proof. The supplied full log contains individual catches and is not invalidated by this defect.",
+      "fix": "Track selected, executed and caught counts; reject an empty selection and clearly mark partial runs. Allow a complete-proof result only when every declared mutation executed and was caught. Add zero-match and subset regressions."
+    },
+    {
+      "severity": "medium",
+      "title": "Observation limits are checked after unbounded capture, hashing and copying",
+      "file": "packages/cli/src/checks/gate.ts",
+      "line": 154,
+      "scenario": "Candidate stdout/stderr are captured without a byte limit, then read entirely into memory by sha. The gate subsequently copies all observations before checking the 16 MiB cap, and still launches verification when over the cap. A case emitting hundreds of megabytes or gigabytes before its timeout can therefore force large runner allocations and duplicate disk consumption instead of being stopped near the advertised limit.",
+      "fix": "Enforce aggregate byte limits while capturing output, terminate the process on overflow, and record an explicit failed gate. Check sizes before hashing or copying and skip verification after overflow. Add a bounded oversized-output regression."
+    },
+    {
+      "severity": "low",
+      "title": "Doctor accepts missing or empty plugin hook registrations",
+      "file": "packages/cli/src/doctor/foundation.ts",
+      "line": 64,
+      "scenario": "With the manifest and tripwire file present, hooks.json containing only {\"hooks\":{\"PreToolUse\":[]}} satisfies this condition. Doctor reports that tripwire and SessionStart hooks are present even though neither hook is registered and session-start.mjs need not exist. Removing SessionStart from the current plugin likewise leaves this check passing.",
+      "fix": "Validate nonempty hook registrations, their expected commands and required script files. Add regressions for missing SessionStart and empty PreToolUse registrations."
+    }
+  ]
+}

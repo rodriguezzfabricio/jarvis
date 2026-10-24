@@ -1,0 +1,116 @@
+{
+  "verdict": "FAIL",
+  "summary": "Lane C reviewed revision e9121d421f408d462341c637e6473bd89eae5b44. Twelve high credential-exposure findings block approval; one medium false refusal should enter the backlog.\n\nPrior findings relevant to this lane have fixes and regression assertions for their original concrete reproductions: review 1 #5 (multiline dotenv, URLs, PEM); review 2 #1–2 (comments, size/NUL skips, UTF-16 and JSON URLs); review 3 #1–2 (password exemptions and DER); review 4 #1–2 (short/encrypted PEM and password-only URLs); review 5 #1 (apostrophes); review 6 #2 (escaped configuration credentials); review 13 #1–2 (Authorization and embedded keys); review 14 #1–2 (lowercase Authorization and private JWK). I verified these against snapshot.ts and snapshot.test.ts. Their original cases are guarded, but the broader encoding and non-configuration protections remain incomplete below. Configuration-only and other safety findings belong to the other lanes.\n\nSupplied revision-linked evidence reports successful typecheck, 187 passing unit/fault tests, four passing live tests, successful doctor --live and all 106 mutations caught. I independently passed typecheck and exercised the actual snapshot/scanning logic with filesystem and Git operations substituted in memory. Every exposure below was accepted unchanged without allowSecretsIn. Recovered generated keys successfully signed and verified a challenge. Raw PEM, DER, JWK and standard base64 DER controls were refused. Filesystem-writing and live suites were not rerun in this read-only checkout.\n\nWithin this lane, stage 0 does not meet decision 71's proof, excluding baselines. Stage 1's no-secret safety proof also remains incomplete, excluding the user-assisted desktop-app check.",
+  "remaining_for_stage0": [
+    "Close the credential exposures below with snapshot-level regressions and mutation coverage, while preserving ordinary non-secret repository content.",
+    "Record the medium false refusal in docs/backlog.md under decision 74.",
+    "Capture fresh revision-linked evidence and obtain passing reviews from all lanes; save the reviews under docs/reviews/.",
+    "After approval, record the required baselines for tasks 1, 2 and 11."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Literal credentials in source, documentation and notebooks bypass field inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 420,
+      "scenario": "findSecretFields returns immediately for ordinary non-configuration extensions. Reproductions accepted unchanged include creds.ts containing `export const password = \"Synthetic9qvM2\";`, README.md containing `password = Synthetic9qvM2`, generated.py containing `PASSWORD = 'Synthetic9qvM2'`, and a valid analysis.ipynb with that Python assignment in a code cell. A request.http fixture containing `X-API-Key: Synthetic9qvM2` also passes. These literal credentials lack a recognized vendor prefix, URL userinfo or Authorization scheme, so the remaining scanners never identify them.",
+      "fix": "Inspect explicit credential assignments and fields in supported source, documentation, HTTP fixtures and notebook cells. Preserve language and field context; require targeted review for ambiguous literals rather than exempting entire file classes. Add regressions for each representation."
+    },
+    {
+      "severity": "high",
+      "title": "Credential-bearing URL query parameters survive in lockfiles and source",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 190,
+      "scenario": "URL inspection recognizes password-bearing userinfo only. A valid yarn.lock with a resolved URL of `https://registry.acme.net/pkg.tgz?token=Synthetic9qvM2` was accepted unchanged; URL.searchParams recovered the token. request.ts containing `fetch(\"https://api.acme.net/download?api_key=Synthetic9qvM2\")` also passed. Services that authenticate downloads or API calls with these query parameters expose their credential to the task.",
+      "fix": "Inspect literal credential-bearing URL query parameters across file types, including lockfile download URLs. Apply narrow placeholder/reference handling and add snapshot regressions for token, access_token and api_key parameters."
+    },
+    {
+      "severity": "high",
+      "title": "Base64url and short wrapped base64 private keys evade decoding",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 206,
+      "scenario": "BASE64_BLOB accepts only the standard alphabet and requires an initial run of at least 24 characters. I generated Ed25519 PKCS#8 DER containing '-' or '_' when encoded as base64url; blob.txt containing that encoding was accepted. Standard base64 DER wrapped at 16 characters per line was also accepted. Decoding either retained file and importing it with createPrivateKey produced a working signing key.",
+      "fix": "Support base64url and valid whitespace-wrapped base64 with bounded decoding independent of the current initial-run requirement. Add generated-key snapshot regressions for URL-safe characters, padding variants and short wrapping."
+    },
+    {
+      "severity": "high",
+      "title": "Bare base64 login credentials retain length and ASCII exemptions",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 154,
+      "scenario": "Outside structurally recognized Docker/npm/header fields, BASE64_RUN and isBase64UserPassword still miss valid credentials. credential.txt containing base64 of `svc:8k2Z`, `svc:Syñthetic9qvM2`, or `svc:` followed by `q8Zr2vLm0Tx` repeated 37 times was accepted unchanged in separate reproductions. Each retained value decoded to the complete login. The structural fixes for earlier configuration findings do not cover these standalone or embedded non-configuration values.",
+      "fix": "Remove unjustified length and printable-ASCII exemptions from credential decoding, using credential context and valid text decoding to control false positives. Add short, long and Unicode snapshot regressions outside recognized configuration structures."
+    },
+    {
+      "severity": "high",
+      "title": "Decoded base64 content does not receive the complete inspection pipeline",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 217,
+      "scenario": "Decoded bytes receive only a DER check or findCredentials over latin1 text. They do not receive recursive decoding, scanViews or field inspection. Separate accepted reproductions were double-base64 PKCS#8 DER, base64 of UTF-16LE PEM, and base64 of `{\"password\":\"Synthetic9qvM2\"}`. Both keys remained usable after decoding; the JSON password was recovered exactly. Standard single-layer base64 DER was correctly refused as a control.",
+      "fix": "Apply one bounded inspection pipeline to decoded payloads, including text encodings, structured credential fields and nested wrappers. Enforce depth and expanded-byte limits. Add snapshot regressions for all three compositions."
+    },
+    {
+      "severity": "high",
+      "title": "Hex, base32 and source byte arrays expose private keys",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 677,
+      "scenario": "There is no decoding path for these common key representations. A generated Ed25519 PKCS#8 DER key survived unchanged as hexadecimal in blob.txt, RFC 4648 base32 in private.txt, and `const key = Buffer.from([48,...]);` in key.js. Decoding the retained text or evaluating the byte-array initializer recovered a private key that successfully signed and verified a challenge.",
+      "fix": "Inspect recognizable hex/base32 payloads and supported source byte-array initializers with bounded decoding and private-key detection. Add generated-key regressions and non-secret hash/data controls."
+    },
+    {
+      "severity": "high",
+      "title": "Percent decoding is incorrectly conditional on URL punctuation",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 263,
+      "scenario": "decodedViews percent-decodes only when the file contains %3a, %2f or %40. notes.md containing every character of `ghp_abcdefghijklmnopqrstuvwxyz0123456789` percent-encoded was accepted unchanged because it contains none of those delimiters. decodeURIComponent recovered the complete recognized token. Thus percent encoding alone defeats a token pattern that otherwise refuses the plaintext.",
+      "fix": "Inspect valid percent-encoded runs independently of URL delimiters, with bounded decoding and appropriate malformed-input handling. Add a snapshot regression for fully encoded credential prefixes and values."
+    },
+    {
+      "severity": "high",
+      "title": "Source literal decoding misses valid escapes and loses authentication context",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 258,
+      "scenario": "Separate accepted source reproductions included a JavaScript template literal containing `\\x67hp_abcdefghijklmnopqrstuvwxyz0123456789`, a quoted token split using JavaScript backslash-newline continuation, and a Python string expressing the token entirely with octal escapes. I verified the JavaScript values evaluate to the original token. Also, `const h = { Authorization: \"\\x42earer Synthetic9qvM2\" };` passes: decodedViews extracts `Bearer Synthetic9qvM2` without its Authorization field name, so neither view matches the header detector. Evaluation recovered the complete Bearer credential.",
+      "fix": "Decode supported source literal syntax, including templates, continuations and octal escapes, while retaining surrounding field/assignment context. Add snapshot regressions for each case rather than scanning isolated decoded literals only."
+    },
+    {
+      "severity": "high",
+      "title": "Other text encodings are silently treated as clean",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 223,
+      "scenario": "scanViews covers UTF-8 and selected NUL-based views only. A generated PEM private key encoded with Python's cp037 EBCDIC codec was accepted unchanged as private.txt; decoding it recovered a working key. A UTF-7 shifted representation, constructed from UTF-16BE base64 between '+' and '-', also passed and recovered the same usable PEM. Neither unsupported encoding triggers review.",
+      "fix": "Recognize supported additional encodings and refuse identifiable unsupported encoded text that cannot be inspected safely. Feed decoded text through the complete scanner, with regressions for EBCDIC and UTF-7 and controls for ordinary binary assets."
+    },
+    {
+      "severity": "high",
+      "title": "Compression and archive members are never inspected",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 675,
+      "scenario": "The scanner searches container bytes without unpacking them. Generated-key reproductions accepted unchanged were gzip PEM in blob.gz, zlib DER in blob.bin, Brotli PEM in blob.br, a valid deflated ZIP containing secret.pem, and a valid tar containing secret.der. Decompression or member extraction recovered working signing keys in every case. The tar case also shows that an uncompressed DER member bypasses the top-level-only DER check.",
+      "fix": "Identify compression/archive formats by content and inspect bounded decompressed members through the full pipeline. Require targeted review for unsupported or encrypted containers. Add regressions covering these formats, nesting limits and harmless archives."
+    },
+    {
+      "severity": "high",
+      "title": "Credential containers are protected by suffix rather than content",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 652,
+      "scenario": "CREDENTIAL_CONTAINERS applies only to selected filename extensions, while isDerPrivateKey recognizes unencrypted standalone keys only. I reproduced acceptance of a valid unencrypted PuTTY v2 Ed25519 key named identity.txt and an OpenSSL-generated PKCS#12 RSA key container with an empty password named identity.bin. Both yielded working signing keys. Encrypted PKCS#8 DER under key.bin or base64 in key.b64 also passed; supplying the known build passphrase recovered the key.",
+      "fix": "Recognize private-key/container formats from their content, including PuTTY, PKCS#12 and encrypted PKCS#8, independently of filenames. Require review when encrypted material cannot be inspected. Add genuine generated-container regressions under arbitrary suffixes."
+    },
+    {
+      "severity": "high",
+      "title": "Private JWK detection in source depends on quoting and a 1000-character gap",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 131,
+      "scenario": "Structural JWK inspection is limited to configuration extensions; source relies on bounded regular expressions. key.ts containing a valid exported Ed25519 JWK with a 1200-character note between kty and d was accepted unchanged. A compact identity.ts object with its d value in a JavaScript template literal also passed because the pattern requires single or double quotes. Importing each retained object as a JWK produced a working signing key. Existing distant-field coverage tests JSON configuration, not source.",
+      "fix": "Inspect supported source object literals for private/symmetric JWK members without proximity or quote-style assumptions. Add generated-key regressions for distant fields and template literals, retaining public-key controls."
+    },
+    {
+      "severity": "medium",
+      "title": "Ordinary base64-encoded public URLs are refused as passwords",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 162,
+      "scenario": "isBase64UserPassword interprets any printable `name:rest` as a login. A source file containing the base64 encoding of `https://example.com/guide` was refused with `base64 user:password`: it interprets https as the username and //example.com/guide as the password. This is ordinary public URL data and unnecessarily forces a file-wide allowSecretsIn exception.",
+      "fix": "Use decoded-content and usage context to distinguish public URI data from authentication material. Add a public-URL acceptance regression alongside the real Basic-auth rejection cases."
+    }
+  ]
+}

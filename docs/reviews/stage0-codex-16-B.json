@@ -1,0 +1,244 @@
+{
+  "verdict": "FAIL",
+  "summary": "Reviewed e9121d421f408d462341c637e6473bd89eae5b44 in lane B. The original configuration-related reproductions are fixed and guarded by assertions in tests/unit/snapshot.test.ts: R1 #5; R2 #1–2; R3 #1; R4 #2; R5 #1; R6 #2; R7 #2; R8 #1; R9 #1–2; R10 #1–2; R11 #1; R12 #1; R13 #1–2; R14 #1–2; R15 #1–2. This confirms those specific fixes, not complete credential protection. The review 15 continuation and extensionless-file fixes remain incomplete for other valid representations identified below.\n\nEvery reported reproduction was accepted by the actual createSnapshot function without allowSecretsIn and retained its credential bytes, using filesystem and Git substitutions in memory. INI, XML, plist and escaped JavaScript-key semantics were additionally checked with independent parsers. Typecheck passed independently. Supplied evidence reports 187 passing unit/fault tests, four passing live tests, successful doctor --live and all 106 mutations caught. Filesystem-writing and live suites were not independently rerun in this read-only checkout.\n\nWithin this lane, stage 0 does not meet decision 71's proof even excluding baselines, and stage 1 does not meet its no-secret safety proof even excluding the desktop plugin check. No conclusion about ledger concurrency or other lanes is claimed.",
+  "remaining_for_stage0": [
+    "Close the configuration credential bypasses below with snapshot-level regressions and mutation coverage.",
+    "Capture fresh revision-linked evidence and obtain passing independent reviews for every decision 77 lane.",
+    "Save this review under docs/reviews/; the review checkout is read-only.",
+    "After approval, record at least one valid baseline each for tasks 1, 2 and 11."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Common configuration extensions bypass field inspection entirely",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 268,
+      "scenario": "Track production.env containing 'DB_PASSWORD=Synthetic9qvM2\\n', .my.cnf containing '[client]\\npassword=Synthetic9qvM2\\n', main.tf containing 'provider \"example\" {\\n api_key = \"Synthetic9qvM2\"\\n}\\n', or terraform.tfstate containing '{\"resources\":[{\"instances\":[{\"attributes\":{\"password\":\"Synthetic9qvM2\"}}]}]}'. Each passes unchanged. CONFIG_FILE excludes these extensions, and their basenames are not extensionless. Dockerfile.prod with an ordinary ENV API_TOKEN assignment also passes.",
+      "fix": "Recognize conventional configuration paths and dialects independently of the current extension list. Parse their actual format or require explicit review when credential-bearing configuration cannot be inspected. Add separate snapshot regressions for env files, MySQL configuration, Terraform configuration/state and suffixed container build files."
+    },
+    {
+      "severity": "high",
+      "title": "Extensionless structured configurations are treated only as assignment lines",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 422,
+      "scenario": "Track .kube/config containing '{\"apiVersion\":\"v1\",\"kind\":\"Config\",\"users\":[{\"name\":\"prod\",\"user\":{\"token\":\"Synthetic9qvM2\"}}]}'. It passes unchanged because extensionless files never enter structured parsing. A valid compact YAML kubeconfig 'users: [{name: prod, user: {token: Synthetic9qvM2}}]' and .gem/credentials containing '---\\n:rubygems_api_key: Synthetic9qvM2\\n' also pass.",
+      "fix": "Infer structured formats for conventional extensionless files and inspect their parsed nodes. Refuse credential-store formats that cannot be inspected. Extend the review 15 regression beyond INI-shaped AWS credentials."
+    },
+    {
+      "severity": "high",
+      "title": "Non-XML config and plist dialects silently receive XML-only inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 520,
+      "scenario": "Track app.config containing '{\"password\":\"Synthetic9qvM2\"}' or '[db]\\npassword=Synthetic9qvM2\\n'. Both pass because .config returns after XML regex inspection. An OpenStep-format settings.plist containing '{ password = Synthetic9qvM2; }' also passes.",
+      "fix": "Detect the actual configuration dialect rather than equating these extensions with XML. Parse supported JSON, INI and OpenStep representations, or refuse uninspectable credential-bearing files."
+    },
+    {
+      "severity": "high",
+      "title": "Dotenv files skip credential names recognized by the structured scanner",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 678,
+      "scenario": "Track .env containing 'DB_PWD=Synthetic9qvM2\\n' or .env.production containing 'DB_PASS=Synthetic9qvM2\\n'. redactEnvText's SECRET_KEY recognizes neither name, and createSnapshot explicitly skips findSecretFields for dotenv files. Both credentials survive unchanged, although the general field classifier recognizes these names.",
+      "fix": "Use consistent credential-name classification for dotenv redaction and subsequent validation. Inspect remaining dotenv assignments after redaction rather than exempting the entire file from field inspection."
+    },
+    {
+      "severity": "high",
+      "title": "INI colon delimiters without following whitespace evade inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 552,
+      "scenario": "Track pip.conf containing '[global]\\npassword:Synthetic9qvM2\\n'. Python ConfigParser parses password as Synthetic9qvM2, but the scanner requires whitespace, a quote or end-of-line after ':'. createSnapshot accepts the file unchanged.",
+      "fix": "Implement the supported INI dialect's delimiter semantics, including colon assignments without whitespace. Add a snapshot regression verified against ConfigParser."
+    },
+    {
+      "severity": "high",
+      "title": "INI comment stripping discards literal password characters",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 555,
+      "scenario": "Track settings.ini containing '[db]\\npassword = #Synthetic9qvM2\\n' or '[db]\\npassword = dummy #Synthetic9qvM2\\n'. Default ConfigParser returns the complete values '#Synthetic9qvM2' and 'dummy #Synthetic9qvM2'; inline comments are disabled by default. The scanner skips the first value and truncates the second to the exempt placeholder dummy. Both snapshots pass. A value beginning ';Synthetic9qvM2' also passes.",
+      "fix": "Do not impose inline-comment semantics across INI/properties dialects that retain these characters. Preserve literal values or inspect every plausible interpretation when the consuming dialect is unknown."
+    },
+    {
+      "severity": "high",
+      "title": "INI quote handling drops credential suffixes",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 560,
+      "scenario": "Track settings.ini containing '[db]\\npassword=\"\"Synthetic9qvM2\\n'. ConfigParser returns the literal value '\"\"Synthetic9qvM2'. The scanner keeps only the text between the first and last quote, treats it as empty, and accepts the unchanged file. .npmrc with '_authToken=\"${TOKEN}\"Synthetic9qvM2' also passes the scanner.",
+      "fix": "Apply format-specific quoting rules and never discard non-comment suffixes after a closing quote. Refuse ambiguous syntax rather than classifying only a convenient substring."
+    },
+    {
+      "severity": "high",
+      "title": "Blank lines and comments interrupt INI credential continuation inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 558,
+      "scenario": "Track settings.ini containing '[db]\\npassword =\\n # ignored comment\\n Synthetic9qvM2\\n', or place a blank line between the assignment and its indented continuation. Default ConfigParser retains the continuation as part of password. The scanner stops at the comment or blank line, judges the initial assignment empty and never associates the later literal with password.",
+      "fix": "Preserve sensitive-key context across comments and permitted blank lines according to INI continuation semantics. Add regressions extending the review 15 cases with both interruptions."
+    },
+    {
+      "severity": "high",
+      "title": "Java-properties key syntax bypasses credential classification",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 552,
+      "scenario": "Track application.properties containing 'db.password Synthetic9qvM2\\n', 'db.pass\\u0077ord=Synthetic9qvM2\\n', or 'db.pass\\\\\\nword=Synthetic9qvM2\\n'. These use valid properties whitespace separation, Unicode escapes and logical-line continuation respectively. All pass unchanged because the scanner neither parses those separators nor reconstructs and decodes property keys.",
+      "fix": "Parse Java-properties logical lines, separators and key escapes before inspecting names and values. Add snapshot regressions for each representation."
+    },
+    {
+      "severity": "high",
+      "title": "JSON5 fallback does not implement JSON5 key escapes",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 381,
+      "scenario": "Track settings.json5 containing '{pass\\u0077ord: \"Synthetic9qvM2\"}', \"{'pass\\u0077ord':'Synthetic9qvM2'}\", or a single-quoted key split with a backslash-newline between pass and word. These decode to a password key under JavaScript/JSON5 semantics. The JSON/YAML fallback either preserves the escape literally or fails without recognizing the fragmented credential name, and createSnapshot accepts each unchanged.",
+      "fix": "Use a JSON5 parser that exposes decoded keys and preserves duplicates, or reject unsupported JSON5 syntax before accepting the file. Do not treat a YAML parse or a raw-word search as equivalent JSON5 inspection."
+    },
+    {
+      "severity": "high",
+      "title": "JSONC trailing-comma removal changes string values before classification",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 326,
+      "scenario": "Track config.jsonc containing '{\"password\":\"${TOKEN,}\",}'. The final comma requires JSONC normalization. stripJsonc also removes the comma inside the password string, turning the inspected value into the exempt reference '${TOKEN}'. The original literal password '${TOKEN,}' remains on disk and the snapshot passes.",
+      "fix": "Remove trailing commas through a string-aware tokenizer or a real JSONC parser. Add a regression asserting that normalization never changes string contents."
+    },
+    {
+      "severity": "high",
+      "title": "XML mixed text and comments hide password element contents",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 522,
+      "scenario": "Track settings.xml containing '<settings><password>Synth<!--comment-->etic9qvM2</password></settings>' or '<settings><password>Synth<![CDATA[etic9qvM2]]></password></settings>'. An XML parser obtains Synthetic9qvM2 in both cases. Neither the plain-text regex nor the CDATA-only regex matches the complete password element, so both snapshots pass.",
+      "fix": "Inspect parsed XML element text with comments removed and text/CDATA nodes concatenated. Add snapshot regressions for mixed content and comments adjacent to CDATA."
+    },
+    {
+      "severity": "high",
+      "title": "Valid XML-plist key and value representations evade the regex scanner",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 521,
+      "scenario": "Accepted Info.plist reproductions include '<plist><dict><key>pass&#119;ord</key><string>Synthetic9qvM2</string></dict></plist>', a comment between <key>password</key> and its string value, whitespace in '<key >' and '<string >' tags, a CDATA password key, and '<key>password</key><integer>9372165408</integer>'. Python plistlib recovers a password entry from every example. The scanner misses each.",
+      "fix": "Parse plist dictionaries and associate decoded keys with their actual typed values. Inspect all credential-bearing value types and permit normal XML whitespace, comments and entity/CDATA representations."
+    },
+    {
+      "severity": "high",
+      "title": "XML property names in child elements do not reach their values",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 531,
+      "scenario": "Track config.xml containing '<configuration><property><name>db.password</name><value>Synthetic9qvM2</value></property></configuration>'. This conventional Hadoop-style property structure passes unchanged. The scanner transfers context only from name/key attributes, leaving child <name> and <value> elements unrelated.",
+      "fix": "Recognize supported XML property structures with child name/key and value elements, using parsed XML. Add a snapshot regression for this sibling-element representation."
+    },
+    {
+      "severity": "high",
+      "title": "Nested maps discard sensitive parent-field context",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 466,
+      "scenario": "Track config.json containing '{\"credentials\":{\"production\":\"Synthetic9qvM2\"}}', config.yaml containing 'password: {value: Synthetic9qvM2}', or config.toml containing '[password]\\nproduction = \"Synthetic9qvM2\"\\n'. Each passes. The walkers replace credential-bearing parent context with the ordinary child key, exposing the literal value.",
+      "fix": "Preserve credential context through credential containers and value wrappers. Distinguish explicitly recognized schema-description structures from actual credential containers instead of resetting context for every map."
+    },
+    {
+      "severity": "high",
+      "title": "Kubernetes Secret objects are not recognized as credential containers",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 494,
+      "scenario": "Track secret.yaml containing 'apiVersion: v1\\nkind: Secret\\nstringData:\\n  arbitrary: Synthetic9qvM2\\n'. It passes unchanged. Using 'data:\\n  arbitrary: U3ludGhldGljOXF2TTI=' also passes and decodes directly to the credential. Secret objects nested in kind: List pass as well. Kubernetes permits arbitrary keys here, so checking only password-like leaf names is insufficient.",
+      "fix": "Recognize Kubernetes Secret structure and inspect or refuse literal data/stringData entries independently of their names. Decode data values and preserve this treatment through lists, aliases and merges."
+    },
+    {
+      "severity": "high",
+      "title": "Legacy Docker registry credential maps lack structural protection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 465,
+      "scenario": "Track .dockercfg, or the same content in legacy-docker.json, containing '{\"r.acme.net\":{\"auth\":\"dTo4azJa\",\"email\":\"svc@acme.net\"}}'. Both pass unchanged. The auth value decodes to u:8k2Z. Legacy Docker configuration has registry entries at the root rather than beneath auths, so the structural safeguard never runs; the generic base64 detector skips this short encoding.",
+      "fix": "Recognize legacy Docker credential-store paths and root registry/auth maps. Apply credential treatment independently of base64 length, as already done for modern auths entries."
+    },
+    {
+      "severity": "high",
+      "title": "Connection-string containers and non-URL DSNs expose embedded passwords",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 432,
+      "scenario": "Track appsettings.json containing '{\"ConnectionStrings\":{\"DefaultConnection\":\"Server=db.prod.acme.net;User Id=svc;Password=Synthetic9qvM2;Database=app\"}}'. It passes unchanged. So does '{\"database\":\"host=db.prod.acme.net user=svc password=Synthetic9qvM2 dbname=app\"}'. Neither representation is a credential URL or a complete NAME=value line, and the conventional connection-string context is lost.",
+      "fix": "Recognize connection-string containers and inspect supported semicolon/key-value DSN grammars for literal authentication material. Add ASP.NET and PostgreSQL keyword-DSN snapshot regressions."
+    },
+    {
+      "severity": "high",
+      "title": "Serialized credential objects inside configuration strings are not inspected",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 432,
+      "scenario": "Track ci.yml containing a step with 'uses: azure/login@v2' and 'with:\\n  creds: \\'{\"clientId\":\"client\",\"clientSecret\":\"Synthetic9qvM2\",\"tenantId\":\"tenant\",\"subscriptionId\":\"sub\"}\\''. The YAML scalar contains a complete literal service-principal credential object, but its inner fields are never parsed and creds is not recognized as sensitive. The snapshot passes unchanged.",
+      "fix": "Inspect conventional serialized credential payloads, including Azure login creds, and parse supported nested configuration strings with bounded recursion. Refuse literal credential containers that cannot be inspected."
+    },
+    {
+      "severity": "high",
+      "title": "Reference exemptions accept expressions containing literal credentials",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 296,
+      "scenario": "Track ci.yml containing \"env:\\n  DB_PASSWORD: ${{ 'Synthetic9qvM2' }}\\n\". The expression evaluates to the literal password, but every expression with this wrapper is exempted. config.json with '{\"password\":\"$(printf Synthetic9qvM2)\"}' also passes. Even malformed 'env(Synthetic9qvM2' and a quoted YAML value '\"!Sub Synthetic9qvM2\"' are accepted as references.",
+      "fix": "Recognize complete references to external values rather than arbitrary expression wrappers or prefixes. Inspect embedded literals/defaults, and reject malformed or uninspectable expressions under sensitive fields."
+    },
+    {
+      "severity": "high",
+      "title": "URL placeholder decoding is incorrectly applied to ordinary configuration passwords",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 299,
+      "scenario": "Track config.json containing '{\"password\":\"%24%7BDB_PASSWORD%7D\"}'. It passes unchanged because isPlaceholderPassword percent-decodes the ordinary JSON string into '${DB_PASSWORD}' and treats it as a reference. A JSON consumer receives the literal password '%24%7BDB_PASSWORD%7D'; JSON does not perform URL decoding. The same issue accepts '%74est' as the placeholder test.",
+      "fix": "Make placeholder classification encoding-aware. Percent-decode only actual URL components or formats whose consumers perform that decoding; classify ordinary configuration strings literally."
+    },
+    {
+      "severity": "high",
+      "title": "Short numeric and untyped boolean spellings are exempted as credential values",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 441,
+      "scenario": "Track config.json containing '{\"password\":123}' or config.toml containing 'password = 123'. Both pass despite consumers being able to use their text representation as a password/PIN. Separately, settings.ini containing '[db]\\npassword=false\\n' or 'password=off' passes because isInertUntyped treats the value as a switch; ConfigParser returns these as literal strings.",
+      "fix": "Do not exempt sensitive scalar values solely because they contain fewer than four digits or resemble booleans in an untyped format. Base exemptions on the consuming format's actual types and explicit non-credential schema."
+    },
+    {
+      "severity": "high",
+      "title": "Tool-specific directive grammars bypass assignment-only scanning",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 552,
+      "scenario": "Accepted unchanged reproductions include Dockerfile with 'ENV API_TOKEN Synthetic9qvM2', Dockerfile with 'ENV A=1 API_TOKEN=Synthetic9qvM2', redis.conf with 'requirepass Synthetic9qvM2', .curlrc with 'oauth2-bearer = \"Synthetic9qvM2\"' or 'user = \"svc:Synthetic9qvM2\"', and .authinfo with 'machine api.acme.net login svc password Synthetic9qvM2'. Each carries a literal authentication value through a conventional tool grammar that the generic line matcher does not understand.",
+      "fix": "Implement inspection for supported directive-based credential formats, including every assignment in multi-assignment directives, or refuse conventional credential stores pending explicit review. Add independent regressions for Docker, Redis, curl and authinfo."
+    },
+    {
+      "severity": "high",
+      "title": "Compact HCL and HOCON objects hide credential assignments inside ordinary values",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 552,
+      "scenario": "Track terraform.tfvars containing 'service = { api_key = \"Synthetic9qvM2\" }\\n' or application.conf containing 'database { host = db.prod.acme.net, password = Synthetic9qvM2 }\\n'. Both pass unchanged. These extensions reach the scanner, but the line matcher inspects only the first assignment/name and never parses the nested credential field.",
+      "fix": "Parse supported HCL/HOCON object syntax recursively, or refuse credential-bearing syntax that cannot be inspected. Add compact and multiline object regressions rather than relying on standalone assignment tests."
+    },
+    {
+      "severity": "high",
+      "title": "Conventional credential field names remain outside classification",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 274,
+      "scenario": "Accepted config.json reproductions include '{\"passphrase\":\"Synthetic9qvM2\"}', '{\"authKey\":\"Synthetic9qvM2\"}', '{\"AccountKey\":\"Synthetic9qvM2\"}', and '{\"apiKeys\":[\"Synthetic9qvM2\"],\"passwords\":[\"Synthetic9qvM2\"]}'. These cover passphrases, authentication keys, account keys and plural credential lists. Nested '{\"api\":{\"key\":\"Synthetic9qvM2\"}}' also passes because parent context is discarded.",
+      "fix": "Cover conventional credential names and plural collections, and use contextual path classification where a generic leaf such as key becomes sensitive. Add snapshot regressions for these concrete names and paths."
+    },
+    {
+      "severity": "high",
+      "title": "Literal authentication cookies survive structured request configuration",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 274,
+      "scenario": "Track http.json containing '{\"headers\":{\"Cookie\":\"session=Synthetic9qvM2\"}}'. It passes unchanged. A literal session authentication cookie is sufficient to authenticate without a password, but Cookie/Set-Cookie structures receive neither sensitive-field inspection nor cookie-value inspection.",
+      "fix": "Inspect authentication-bearing cookie configuration, or require explicit review for literal cookie headers. Preserve reference-only forms and add snapshot regressions for session-cookie credentials."
+    },
+    {
+      "severity": "high",
+      "title": "Tuple-form HTTP headers lose sensitive-name context",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 460,
+      "scenario": "Track request.json containing '{\"headers\":[[\"X-Api-Key\",\"Synthetic9qvM2\"]]}'. This valid header-pair representation passes unchanged. The array walker treats the header name and value as unrelated scalar elements, although object-form X-Api-Key is correctly rejected.",
+      "fix": "Recognize supported header name/value tuples and apply credential classification to their associated values. Add tuple-form regressions alongside object-form header tests."
+    },
+    {
+      "severity": "high",
+      "title": "Credentials embedded in command-valued configuration are missed",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 435,
+      "scenario": "Track ci.yaml containing 'run: \"cd app && API_KEY=Synthetic9qvM2 npm run build\"\\n'. It passes because ENV_ASSIGNMENT only matches an assignment at the beginning of the scalar. A Kubernetes manifest with 'args: [\"--password\", \"Synthetic9qvM2\"]' also passes because adjacent credential arguments are never associated.",
+      "fix": "Inspect supported command/argument representations for literal credential assignments and credential-bearing flags, including assignments after command separators. Refuse ambiguous credential-bearing command syntax rather than assuming it contains references."
+    },
+    {
+      "severity": "high",
+      "title": "Commented credential assignments are discarded before structural inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 424,
+      "scenario": "Track settings.yaml containing '# password: Synthetic9qvM2\\nsettings: true\\n', settings.toml containing '# password = \"Synthetic9qvM2\"\\nhost = \"prod.acme.net\"\\n', or settings.jsonc containing a commented password assignment. Each passes unchanged. A still-valid production credential left in a commented alternative configuration remains readable by the task, while parsing discards its credential-name context and generic token patterns do not recognize the opaque value.",
+      "fix": "Inspect credential-named assignments retained in configuration comments, or require explicit review for ambiguous literal credential examples. Add snapshot regressions proving that commenting out a credential does not make its bytes safe to expose."
+    }
+  ]
+}

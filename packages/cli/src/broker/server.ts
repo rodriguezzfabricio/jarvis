@@ -7,8 +7,13 @@ import type { Broker, BrokerResponse } from "./broker.ts";
 
 /** Each foreground run gets a distinct project-bound address; clients receive this exact path. */
 export function brokerSocketPath(project: string, run: string = randomUUID(), home = homedir()): string {
+  return brokerSocketIn(join(home, ".jarvis", "run"), project, run);
+}
+
+/** The same project- and run-bound name, in a given run folder (`jarvis run` uses its runner home's). */
+export function brokerSocketIn(runDir: string, project: string, run: string = randomUUID()): string {
   const key = createHash("sha256").update(JSON.stringify([project, run])).digest("hex").slice(0, 24);
-  return join(home, ".jarvis", "run", `${key}.sock`);
+  return join(runDir, `${key}.sock`);
 }
 
 /** The broker's Unix socket (owner-only). One newline-terminated JSON request per connection. */

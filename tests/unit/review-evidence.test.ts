@@ -174,16 +174,21 @@ describe("review material from gate evidence is bounded, never refused for size"
   });
 
   it("cuts a diff larger than the review input at file boundaries and lists the files it left out", async () => {
-    const big = Array.from({ length: 40_000 }, (_, i) => `generated row ${i} ${"x".repeat(40)}`).join("\n");
+    const rows = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag} row ${i} ${"x".repeat(40)}`).join("\n");
+    // One 2.4 MB generated file, and 30 files of about 40 KB: together far over the input limit.
+    const medium = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`mid-${String(i).padStart(2, "0")}.txt`, `${rows(650, `mid${i}`)}\n`]));
     const s = setup((dir) => { verifyLogs(dir); caseFiles(dir, "unit", () => writeFileSync(join(dir, "cases/unit/stdout"), "ok\n")); },
-      { "aaa-generated.txt": `${big}\n`, "zzz.txt": "zzz-change\n" });
+      { "aaa-generated.txt": `${rows(40_000, "generated")}\n`, ...medium, "zzz.txt": "zzz-change\n" });
     expect((await s.service.reviewDetailed(s.request)).verdict).toBe("pass");
     const prompt = s.prompts[0]!;
-    expect(Buffer.byteLength(prompt)).toBeLessThan(800 * 1024);
+    // At most 768 KiB of data, plus the instructions: below macOS's 1 MiB for arguments and environment.
+    expect(Buffer.byteLength(prompt)).toBeLessThanOrEqual(776 * 1024);
     const data = dataOf(prompt);
     expect(data.diff).toContain("+zzz-change");
+    expect(data.diff).toContain("+mid0 row 649");
     expect(data.diff).not.toContain("generated row 39999");
     expect(data.diffNote).toMatch(/aaa-generated\.txt/);
+    expect(data.diffNote).toMatch(/mid-29\.txt/);
     expect(data.diffNote).toMatch(/checkout/);
   });
 

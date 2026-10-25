@@ -38,6 +38,12 @@ describe("native smoke uses a runner-owned artifact handoff after the build gate
     const s = setup(); const gate = vi.fn(async () => ({ status: "pass", evidenceDir: s.evidenceDir } as GateResult));
     expect(await runDesktop(s.input, { gate, probe: s.probe, exists: () => true, platform: "darwin" })).toMatchObject({ status: "not run" }); expect(s.probe).not.toHaveBeenCalled();
   });
+  it("never launches the candidate app on the runner without an injected sandboxed native launcher", async () => {
+    const s = setup(); const before = s.ledger.entries().length;
+    const gate = vi.fn(async (g: DesktopGateInput) => { await g.afterCases(s.checkout); return { status: "pass", evidenceDir: s.evidenceDir } as GateResult; });
+    expect(await runDesktop(s.input, { gate, exists: () => true, platform: "darwin" })).toMatchObject({ status: "not run", reason: expect.stringMatching(/sandboxed native launcher/) });
+    expect(s.ledger.entries().length).toBe(before); expect(existsSync(join(s.evidenceDir, "native-observation.json"))).toBe(false);
+  });
   it("keeps native failures as failures and explicitly reports offline download requirements", async () => {
     const s = setup(); const gate = vi.fn(async (g: DesktopGateInput) => { await g.afterCases!(s.checkout); return { status: "pass", evidenceDir: s.evidenceDir } as GateResult; });
     expect((await runDesktop(s.input, { gate, probe: async () => ({ kind: "qa-desktop-native", status: "fail", reason: "no menu" }), exists: () => true, platform: "darwin" })).status).toBe("fail");

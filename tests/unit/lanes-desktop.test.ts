@@ -42,6 +42,10 @@ describe("desktop build and runner native observations", () => {
   it("observes native survival, the status item and clean shutdown, then always cleans up", async () => {
     const s = native(); const raw = await probeDesktop(s.bundle, s.policy, s.deps); expect(raw).toMatchObject({ status: "observed", menuBar: true, stayedUpMs: 100, shutdown: { code: 0, signal: null } }); expect(verifyNativeObservation(raw, 100).ok).toBe(true); expect(s.stop).toHaveBeenCalledOnce();
   });
+  it("refuses to launch a native bundle without an injected sandboxed launcher", async () => {
+    const s = native(); const { launch: _launch, ...unsandboxed } = s.deps;
+    await expect(probeDesktop(s.bundle, s.policy, unsandboxed)).rejects.toThrow(/sandboxed native launcher/); expect(s.spawn).not.toHaveBeenCalled();
+  });
   it("fails early exit, missing menu items and unclean shutdown", async () => {
     const early = native(); early.exit(); expect((await probeDesktop(early.bundle, early.policy, early.deps)).status).toBe("fail"); expect(early.stop).toHaveBeenCalledOnce();
     const menu = native(); menu.spawn.mockResolvedValue({ ...ok, stdout: "false" }); expect((await probeDesktop(menu.bundle, menu.policy, menu.deps)).status).toBe("fail"); expect(menu.stop).toHaveBeenCalledOnce();

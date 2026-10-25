@@ -5,7 +5,6 @@ import { runGate, type GateCheck, type GateInput, type GateResult } from "../che
 import type { ChecksStore } from "../checks/store.ts";
 import type { LedgerEntry } from "../ledger/ledger.ts";
 import { captureDesktopBundle, type DesktopArtifact } from "./desktop-artifact.ts";
-import { probeDesktop } from "./desktop-observe.ts";
 import { verifyNativeObservation } from "./desktop-verify.ts";
 import { fileHash } from "./materialize.ts";
 import { validateDesktopPlan, type DesktopNativeObservation, type DesktopPlan, type NativeProbePolicy } from "./desktop-types.ts";
@@ -13,6 +12,7 @@ export type DesktopInput = Omit<GateInput, "check" | "extraEnv">;
 export interface DesktopGateInput extends GateInput { afterCases: (checkout: string) => Promise<void> }
 export interface DesktopRunDeps {
   gate?: (input: DesktopGateInput) => Promise<GateResult>;
+  /** Native probe whose launcher sandboxes the app. Absent, native coverage is "not run" (decision 102). */
   probe?: (bundle: string, policy: NativeProbePolicy) => Promise<DesktopNativeObservation>;
   exists?: (path: string) => boolean;
   platform?: NodeJS.Platform;
@@ -65,8 +65,10 @@ export async function runDesktop(input: DesktopInput, deps: DesktopRunDeps = {})
       return reason ? { status: "not run", reason, result } : { status: result.status, result };
     }
     if (!artifact) return { status: "not run", reason: "not run: desktop (protected build artifact handoff unavailable)", result };
+    // The built app is candidate code: it runs only through an injected sandboxed launcher (decision 102).
+    if (!deps.probe) return { status: "not run", reason: "not run: desktop (no sandboxed native launcher)", result };
     let native: DesktopNativeObservation;
-    try { native = await (deps.probe ?? probeDesktop)(artifact.bundlePath, { outputRoot, stayUpMs: plan.stayUpMs, shutdownMs: plan.shutdownMs }); }
+    try { native = await deps.probe(artifact.bundlePath, { outputRoot, stayUpMs: plan.stayUpMs, shutdownMs: plan.shutdownMs }); }
     catch (error) { native = { kind: "qa-desktop-native", status: "fail", reason: String(error) }; }
     const status = verifyNativeObservation(native, plan.stayUpMs).ok ? "pass" : "fail";
     return { status, result, native, entry: recordNative(input, result, artifact, native, status) };

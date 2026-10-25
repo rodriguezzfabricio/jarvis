@@ -1,12 +1,16 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
-import { launchDesktopBundle } from "./desktop-launch.ts";
 import type { DesktopProcess } from "./desktop-process.ts";
 import { validDuration, type DesktopNativeObservation, type NativeProbePolicy } from "./desktop-types.ts";
 import { assertNoBundleLinks, insideTree } from "./materialize.ts";
 export { observeDesktopBuild, type DesktopBuildDeps } from "./desktop-build.ts";
 export interface NativeProbeDeps {
+  /**
+   * Required: a launcher that starts the app inside a sandbox (no runner home, no network). The built
+   * app is candidate code, so there is no default: an unsandboxed spawn on the runner could read the
+   * runner's secrets and act outside the broker (Opus review of QA follow-up 1; decision 102).
+   */
   launch?: (bundlePath: string) => Promise<DesktopProcess>;
   spawn?: (spec: SessionSpec) => Promise<SessionOutcome>;
   now?: () => number;
@@ -21,6 +25,7 @@ const good = (r: SessionOutcome) => r.code === 0 && !r.timedOut && !r.overflowed
 
 /** Runner only. Candidate input is solely a bundle path contained in runner-owned build output. */
 export async function probeDesktop(bundlePath: string, policy: NativeProbePolicy, deps: NativeProbeDeps = {}): Promise<DesktopNativeObservation> {
+  if (!deps.launch) throw new Error("native probe needs a sandboxed native launcher; none is available");
   if (typeof bundlePath !== "string" || !isAbsolute(bundlePath) || !bundlePath.endsWith(".app") || !isAbsolute(policy.outputRoot) || !validDuration(policy.stayUpMs) || !validDuration(policy.shutdownMs)) throw new Error("invalid native bundle or probe policy");
   const root = realpathSync(policy.outputRoot);
   if (lstatSync(bundlePath).isSymbolicLink() || !lstatSync(bundlePath).isDirectory() || !insideTree(root, realpathSync(bundlePath)) || root === realpathSync(bundlePath)) throw new Error("native bundle must be inside runner build output");
@@ -28,7 +33,7 @@ export async function probeDesktop(bundlePath: string, policy: NativeProbePolicy
   const raw: DesktopNativeObservation = { kind: "qa-desktop-native", status: "fail" };
   let app: DesktopProcess | undefined;
   try {
-    app = await (deps.launch ?? launchDesktopBundle)(bundlePath);
+    app = await deps.launch(bundlePath);
     if (!Number.isSafeInteger(app.pid) || app.pid <= 0) throw new Error("invalid native process id");
     raw.pid = app.pid;
     const now = deps.now ?? Date.now; const sleep = deps.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))); const started = now();

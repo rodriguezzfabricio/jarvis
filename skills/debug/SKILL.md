@@ -63,9 +63,19 @@ No fixes without root cause investigation first.
 - **One hypothesis at a time.** Write it down: "X is the cause because Y." Test it with the smallest change or observation that could prove it wrong. Wrong? Undo that change and form a new hypothesis; never stack fixes.
 - **Say "I don't understand X"** in the notes rather than pretending. Unknowns are what escalation is for.
 
+## Cover every path to the symptom
+
+A report names one symptom, but its cause usually has several triggers, and a fix for the first one you find leaves the report open. Before you fix anything, list them:
+- **The data as it really arrives.** For every caller of the code you'll change, read what it actually passes. Follow the value back to where it is produced or stored: its encoding, markup, case, whitespace and units. Compare with how similar code in the project treats the same data. A test with a clean, hand-typed input proves nothing about what the caller sends.
+- **Every place the symptom can happen:** every configuration, service, entrypoint, platform or deployment file the report's words cover, not only the first one you found. Search for all of them: each place that runs the failing code, builds or starts the failing component, or reads the setting.
+- **Write them down** in the notes as `Paths:`. Mark each one fixed, or out of scope with the reason. Cover each one with a test where a test fits, at the lowest level that still shows it.
+
+If the list keeps growing, the cause probably sits lower than where you're looking: go back to "Isolate the root cause".
+
 ## Fix
 
 - **One fix, for the root cause:** the smallest change that makes the failing test pass, in the files where the cause lives.
+- **Fix it in the layer the report points at.** When the report names a layer (the container, the deploy configuration, the build, one function's output), the cause and the fix usually live there. A change in another layer is a symptom fix unless the cause really is there: application code reworked for an environment fault, or a caller patched around a library bug. If you change another layer, say why in the notes.
 - **No "while I'm here" improvements,** bundled refactors or extra features. They hide what fixed the bug and widen the review.
 - **A guard where the bad value surfaced, while the source keeps producing it, is a symptom fix.** If you also add a guard at a second layer (defense in depth), say so in the notes.
 
@@ -73,8 +83,9 @@ No fixes without root cause investigation first.
 
 1. The new test passes.
 2. The original symptom is gone: rerun the exact reproduction, not only the test.
-3. The test proves the fix: take the fix out, watch the test fail, put the fix back, watch it pass.
-4. The whole suite passes, along with the typecheck, lint and build where the project has them, all after your last edit.
+3. Check the fix against the report, not only your test. A test built from your hypothesis passes even when the hypothesis is wrong. Reread the report's own words and walk each entry in your `Paths:` list: would the reporter's real case now work, with the real data, in the real environment the report names?
+4. The test proves the fix: take the fix out, watch the test fail, put the fix back, watch it pass.
+5. The whole suite passes, along with the typecheck, lint and build where the project has them, all after your last edit.
 
 Under "When the session can't reproduce it", run what the session can and mark each step above it can't run as unverified, with the runner check that will settle it.
 
@@ -99,6 +110,7 @@ Symptom: <what was reported>
 Reproduction: <exact steps or command> · reproduced in session: yes | no (what the session lacks)
 Unverified: <each check the session couldn't run, why, and the runner check that settles it> | none
 Root cause: <file:line, what was wrong and why>
+Paths: <each path to the symptom: fixed (test) | out of scope (why)>
 Fix: <what changed>
 Proof: <test> failed before the fix with <one line> · passes after · fails again with the fix taken out
 Tried and rejected: <hypothesis → what showed it wrong>
@@ -107,6 +119,7 @@ Tried and rejected: <hypothesis → what showed it wrong>
 ## Gotchas
 
 - **The obvious fix is often the symptom.** Seeing where it breaks isn't knowing why. Trace to the source before you change a line.
+- **Your own test can't catch your wrong hypothesis.** It encodes what you believe the bug is, so a fix for the wrong cause passes it, and the runner's checks too when the project's suite never covered the bug. The report and your `Paths:` list are what catch it.
 - **"It works now" after a change you can't explain** isn't a fix. Undo it and find out what actually changed.
 - **A flaky test is a bug,** in the code or the test. Rerunning it until it passes, or widening its timeout, hides it.
 - **The sandbox looks like a bug.** "Connection refused" on a local port, "operation not permitted" outside the worktree, a refused compound command: these come from the session's limits (decisions 68, 69). Note them; don't change the code for them.

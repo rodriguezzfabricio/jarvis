@@ -54,6 +54,7 @@ const skills: Record<string, SkillRules> = {
       { section: "One command per call", phrase: "no loops" },
       { section: "One command per call", phrase: "sh .jarvis/scratch/" }, // `sh script.sh` ran under dontAsk
       { section: "One command per call", phrase: "never retry variations" },
+      { section: "One command per call", phrase: "refuses that one command, not the tool" }, // decision 114: a refused heredoc ended every run's testing
       { section: "Stay inside the worktree", phrase: "Never commit" }, // the runner commits (decision 68)
       { section: "Stay inside the worktree", phrase: "never push" },
       { section: "Stay inside the worktree", phrase: "jarvis act" }, // decision 12: the only path outside
@@ -86,6 +87,7 @@ const skills: Record<string, SkillRules> = {
       "When the session can't reproduce it",
       "Write the failing test",
       "Isolate the root cause",
+      "Cover every path to the symptom",
       "Fix",
       "Run the checks",
       "Escalate",
@@ -116,9 +118,16 @@ const skills: Record<string, SkillRules> = {
       { section: "Isolate the root cause", phrase: "No fixes without root cause investigation first" }, // superpowers
       { section: "Isolate the root cause", phrase: "one hypothesis at a time" },
       { section: "Isolate the root cause", phrase: "working example" },
+      // Decision 114: one cause, several triggers; a fix for the first trigger found is an incomplete fix.
+      { section: "Cover every path to the symptom", phrase: "every caller" },
+      { section: "Cover every path to the symptom", phrase: "where it is produced or stored" },
+      { section: "Cover every path to the symptom", phrase: "every configuration, service, entrypoint" },
+      { section: "Cover every path to the symptom", phrase: "Paths:" },
       { section: "Fix", phrase: "smallest change" },
       { section: "Fix", phrase: "while I'm here" },
+      { section: "Fix", phrase: "the layer the report points at" }, // decision 114
       { section: "Run the checks", phrase: "the original symptom" },
+      { section: "Run the checks", phrase: "against the report, not only your test" }, // decision 114: a test built from the hypothesis passes when the hypothesis is wrong
       { section: "Run the checks", phrase: "take the fix out" }, // red-green proof of the regression test
       { section: "Run the checks", phrase: "feedback, not evidence" }, // decision 49
       { section: "Escalate", phrase: "After 3 failed fixes" }, // superpowers

@@ -101,6 +101,16 @@ describe("review: sandbox build and native probe separation", () => {
   ])("reports unavailable offline build dependencies: %s", async stderr => {
     expect(await desktop.observeDesktopBuild(temp(), plan, {}, { exists: () => true, spawn: async () => ({ ...ok, code: 1, stderr }) })).toMatchObject({ status: "not run", reason: "not run: desktop build needs network" });
   });
+  it("a build that exits 0 without a real app bundle in the checkout is not an observed build", async () => {
+    const spawn = async () => ({ ...ok });
+    const none = await desktop.observeDesktopBuild(temp(), plan, {}, { spawn, exists: () => true });
+    expect(none).toMatchObject({ status: "fail", reason: expect.stringMatching(/no app bundle/) });
+    const outside = temp(); mkdirSync(join(outside, "Contents/MacOS"), { recursive: true }); writeFileSync(join(outside, "Contents/Info.plist"), "plist");
+    const linked = temp(); mkdirSync(join(linked, "target")); symlinkSync(outside, join(linked, plan.bundle));
+    expect(await desktop.observeDesktopBuild(linked, plan, {}, { spawn, exists: () => true })).toMatchObject({ status: "fail", reason: expect.stringMatching(/no app bundle/) });
+    const built = temp(); mkdirSync(join(built, plan.bundle, "Contents/MacOS"), { recursive: true }); writeFileSync(join(built, plan.bundle, "Contents/Info.plist"), "plist");
+    expect(await desktop.observeDesktopBuild(built, plan, {}, { spawn, exists: () => true })).toMatchObject({ status: "observed" });
+  });
   it("accepts only a bundle path inside runner build output; fixed probes receive only a numeric PID", async () => {
     const root = temp(); const app = join(root, 'app; malicious " text.app'); mkdirSync(app);
     const launch = vi.fn(async (_bundle: string) => ({ pid: 123, alive: () => true, waitForExit: async () => ({ code: 0, signal: null }), stop: vi.fn(async () => {}) }));

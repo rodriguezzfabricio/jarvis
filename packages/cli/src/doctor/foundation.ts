@@ -2,8 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { join } from "node:path";
 import { requestBroker } from "../broker/client.ts";
 import { ChecksStore } from "../checks/store.ts";
-import { Ledger } from "../ledger/ledger.ts";
+import { verifyLedger } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
+import { verifyChecksReadOnly } from "./read-only.ts";
 import type { DoctorCheck } from "./doctor.ts";
 
 /** Stage 1 doctor checks (decision 46; architecture §3.2): the foundation is in place and intact. */
@@ -12,6 +13,7 @@ export interface FoundationDeps {
   pluginDir: string;
   socketPath: string;
   tmpRoot?: string;
+  ledgerVerify?: typeof verifyLedger;
 }
 
 export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]> {
@@ -24,8 +26,7 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
   if (ids.length === 0) add("ledgers", "pass", "no projects yet");
   for (const id of ids) {
     const dir = join(projects, id);
-    // Through Ledger.verify: a ledger that writers keep moving is read under the lock, not called tampered.
-    const v = Ledger.open(dir).verify();
+    const v = (d.ledgerVerify ?? verifyLedger)(dir);
     add(`ledger.${id}`, v.ok ? "pass" : "fail", v.ok ? `${v.entries.length} entries verified${v.repairable.length ? ` (repairable: ${v.repairable.join(", ")})` : ""}` : v.problems.join("; "));
     const store = new ChecksStore(dir);
     // A project that ever approved checks must still have its lock (Codex stage 0 review 7): a missing
@@ -33,7 +34,7 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
     const approved = v.ok && v.entries.some((e) => e.kind === "checks_approved");
     if (v.ok && (approved || existsSync(store.lockPath))) {
       try {
-        const c = store.verify(Ledger.open(dir));
+        const c = verifyChecksReadOnly(store, d.ledgerVerify);
         add(`checks.${id}`, c.ok ? "pass" : "fail", c.ok ? "protected checks match the approved lock" : c.problems.join("; "));
       } catch (e) {
         add(`checks.${id}`, "fail", String(e));

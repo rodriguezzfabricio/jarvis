@@ -11,6 +11,7 @@ export interface QaToolchainManifest {
   playwright: { module: string; cli: string; executable: string; package: string; version: string };
   axe: { source: string; package: string; version: string };
   files: Record<string, string>;
+  chromium?: { bundle: string; executable: string; files: Record<string, string>; smokeLaunched: true };
 }
 export interface VerifiedQaToolchain {
   root: string; manifestPath: string; manifestHash: string;
@@ -50,6 +51,12 @@ export function verifyQaToolchain(manifestPath: string, manifestHash: string, re
   const required = [manifest.playwright.module, manifest.playwright.cli, manifest.playwright.executable, manifest.playwright.package, manifest.axe.source, manifest.axe.package];
   for (const value of required) if (!Object.hasOwn(manifest.files, relative(root, child(root, value)))) throw new Error("tool entry is missing from approved hashes");
   verifyFiles(root, manifest.files);
+  if (manifest.chromium) {
+    const bundle = relative(root, child(root, manifest.chromium.bundle));
+    const actual = Object.keys(manifest.files).filter(key => key.startsWith(`${bundle}/`)).sort();
+    const recorded = Object.keys(manifest.chromium.files).map(key => relative(root, child(root, `${bundle}/${key}`))).sort();
+    if (manifest.chromium.smokeLaunched !== true || JSON.stringify(actual) !== JSON.stringify(recorded) || actual.some(key => manifest.files[key] !== manifest.chromium!.files[key.slice(bundle.length + 1)])) throw new Error("incomplete materialized Chromium manifest");
+  }
   for (const pin of [manifest.playwright, manifest.axe]) {
     if (typeof pin.version !== "string" || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(pin.version) || (JSON.parse(readFileSync(child(root, pin.package), "utf8")) as {version?: unknown}).version !== pin.version) throw new Error("QA package version differs from the approved pin");
   }
@@ -81,3 +88,5 @@ export function loadBrowserRuntime(manifestPath: string, manifestHash: string, r
   const runtime = createRequire(resolve(manifestPath))(verified.playwrightModule) as { chromium: { launch(options: { headless: boolean; executablePath: string }): ReturnType<BrowserRuntime["launch"]> } };
   return { launch: () => runtime.chromium.launch({ headless: true, executablePath: verified.chromiumExecutable }), axeSource: readFileSync(verified.axeSource, "utf8") };
 }
+
+export { installChromiumBundle, type ChromiumInstallInput } from "./chromium-install.ts";

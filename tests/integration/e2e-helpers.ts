@@ -311,9 +311,27 @@ export function expectLastGreenMoved(p: E2EProject, from: string | null, path?: 
   return now!;
 }
 
-/** The ledger chain verifies, and every session the runner launched carried the safety envelope and matched a scripted session. */
+/**
+ * Every revision the run branch moved to, and last-green, was gated and reviewed as that exact revision:
+ * every check of the task it completed passed there, and its review passed there (decision 96).
+ */
+export function expectPromotionsGated(p: E2EProject): void {
+  const chain = git(p, p.repoPath, ["rev-list", "--first-parent", `${p.baseRevision}..${p.runBranch}`]).split("\n").filter(Boolean);
+  const green = lastGreen(p);
+  const all = entries(p);
+  for (const revision of new Set([...chain, ...(green && green !== p.baseRevision ? [green] : [])])) {
+    const passed = all.find((e) => e.kind === "state_reached" && (e.data as { mergedRevision?: string }).mergedRevision === revision);
+    expect(passed, `${revision}: on the run branch without a recorded promotion`).toBeDefined();
+    const task = p.tasks.find((t) => t.id === passed!.task_id)!;
+    for (const check of task.requiredChecks) expect(all.some((e) => e.kind === "gate_result" && gateData(e).revision === revision && gateData(e).check === check && gateData(e).status === "pass"), `${revision}: no passing ${check}`).toBe(true);
+    for (const reviewer of task.requiredReviews) expect(all.some((e) => e.kind === "review_result" && (e.data as { reviewer?: string }).reviewer === reviewer && gateData(e).revision === revision && gateData(e).status === "pass"), `${revision}: no passing ${reviewer} review`).toBe(true);
+  }
+}
+
+/** The ledger chain verifies, every promotion was gated, and every session the runner launched carried the safety envelope and matched a scripted session. */
 export function expectRunSound(p: E2EProject): void {
   expect(p.ledger.verify().ok).toBe(true);
+  expectPromotionsGated(p);
   for (const c of sessionCalls(p)) {
     expect(c.envelope, `session ${c.n} launched without the safety envelope`).toEqual([]);
     expect(c.session, `session ${c.n} (task ${c.task}) matched no scripted session`).not.toBeNull();

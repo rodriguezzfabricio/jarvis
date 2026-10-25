@@ -7,7 +7,7 @@ import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import {
   createE2EProject, expectLastGreenMoved, expectNoFailures, expectNoPassAfter, expectRunSound, expectTampered,
   expectTaskBlocked, expectTaskDone, expectTaskNotDone, expectUsageWait, failedAttempts, fileAt, gateStatuses, harnessOptions,
-  lastGreen, seedTasks, sessionCalls, virtualClock, type E2EOptions, type E2EProject,
+  lastGreen, seedTasks, sessionCalls, taskEntries, virtualClock, type E2EOptions, type E2EProject,
 } from "./e2e-helpers.ts";
 
 const projects: E2EProject[] = [];
@@ -162,7 +162,12 @@ describe("e2e: the runner loop on the fake claude (decision 84)", { timeout: 600
   loopIt("(b) the first attempt fails its checks, the repair passes", async () => {
     const p = project("repair");
     await run(p);
-    expect(gateStatuses(p, "T1", "ac1")).toEqual(["fail", "pass"]);
+    // A passing repair built on a head that T2's promotion moved past is merged and gated again
+    // (decision 96), so a second pass may follow; nothing fails after the first attempt.
+    const [first, ...rest] = gateStatuses(p, "T1", "ac1");
+    expect(first).toBe("fail");
+    expect(rest.length).toBeGreaterThan(0);
+    expect(rest.every((s) => s === "pass")).toBe(true);
     expect(failedAttempts(p, "T1")).toHaveLength(1);
     expectTaskDone(p, "T1");
     expectTaskDone(p, "T2");
@@ -192,7 +197,11 @@ describe("e2e: the runner loop on the fake claude (decision 84)", { timeout: 600
     expect(wait.data).toMatchObject({ reason: "usage-limited", countsAsFailure: false });
     expect(clock.slept.length).toBeGreaterThan(0);
     expectNoFailures(p, "T1");
-    expect(gateStatuses(p, "T1", "ac1")).toEqual(["pass"]); // the limited session's work was never judged
+    // The limited session's work was never judged: one attempt, and every gate on it passed (a re-gate
+    // of its candidate merged onto T2's promotion may add a second pass, decision 96).
+    expect(gateStatuses(p, "T1", "ac1").length).toBeGreaterThan(0);
+    expect(gateStatuses(p, "T1", "ac1").every((s) => s === "pass")).toBe(true);
+    expect(new Set(taskEntries(p, "T1", "attempt_started").map((e) => e.attempt_id)).size).toBe(1);
     expectTaskDone(p, "T1");
     expectTaskDone(p, "T2");
     expect(sessionCalls(p).filter((c) => c.task === "T1").map((c) => c.session)).toEqual(["T1-limited", "T1-resumed-good"]);

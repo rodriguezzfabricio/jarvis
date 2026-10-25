@@ -1040,6 +1040,9 @@ Fabricio, Oct 25: "I'm literally just gonna let you do it and let you judge it y
 - **The verdict:** the proof passes only when both judges pass it. If their 1–5 scores differ by more than 1 point, or one passes and one fails, Fabricio decides.
 - The integrator never rates work it orchestrated. Fabricio can still rate any run himself; his rating replaces the judges'.
 
+### 106. One notify.json format; the stage-0 file reads as the same config (new; Oct 25; the run-wiring worker, found by the first live intake run)
+Stage 0 wrote `~/.jarvis/notify.json` with `backend`, `server`, `topic`, `reply_topic`; the CLI's strict schema wanted `baseUrl`, `topic`, `replyTopic`, so every intake round said "notifications are off". One parser (`notify/config.ts`) now serves setup, intake and `jarvis run`, and reads both forms (`backend: "ntfy"` + `server` → `baseUrl`, `reply_topic` → `replyTopic`). The file stays as it is, so the phone's subscriptions keep working, and `jarvis setup --redo ntfy` rewrites it in setup's form. Errors never quote the file: its topics act as secrets.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

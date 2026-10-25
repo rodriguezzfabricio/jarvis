@@ -259,6 +259,32 @@ describe("ledger (decisions 41, 49)", () => {
     expect(lockFiles(dir)).toEqual([]);
   });
 
+  // Codex round 18 D: recovery restarted its descent from the root after every marker, so unwinding a
+  // stranded chain cost quadratic steps and one durable claim per marker, all charged to the deadline.
+  it("unwinds a long stranded chain without charging its slow durable claims to the lock deadline", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    strandedChain(dir, 40, dead);
+    // Each marker removal costs 100 ms, as an fsynced claim can on a loaded disk: 4 s of unwinding.
+    const clock = virtualClock();
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 1000, clock, onLockStep: (step) => void (step === "unwound" && (clock.t += 100)) });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(clock.t).toBeGreaterThan(4000);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(lockFiles(dir)).toEqual([]);
+  });
+
+  it("descends a stranded chain once, not once per marker", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    strandedChain(dir, 40, dead);
+    // One tick per clock read: a descent per marker needs about 40 * 41 / 2 reads, a single descent about 41.
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 200, clock: virtualClock(1) });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(lockFiles(dir)).toEqual([]);
+  });
+
   it("stops unwinding when a live competitor claims the next parent mid-unwind, and never removes it", () => {
     const dead = deadPid();
     const { dir } = fresh(2);

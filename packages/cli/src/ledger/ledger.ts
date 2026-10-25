@@ -308,8 +308,11 @@ export class Ledger {
    * (ledger.lock.reclaim.<nonce>), and only while it is still that same instance, so a replacement lock
    * is never removed. A reclaimer that dies holding a marker is a dead owner too, and its marker is
    * recovered the same way using bounded names: the original lock nonce plus a hash of the parent
-   * marker name and owner nonce. Stranded legacy nested names remain recoverable. The same deadline
-   * bounds every descent, without imposing a depth limit on repeated reclaimer crashes.
+   * marker name and owner nonce. Stranded legacy nested names remain recoverable.
+   *
+   * The deadline bounds waiting: for a live owner, and for the descent that finds a stranded chain. It
+   * doesn't bound unwinding that chain, which is progress, bounded by the chain the descent saw (Codex
+   * round 18 D). There is no depth limit on repeated reclaimer crashes.
    */
   private withLock<T>(fn: () => T): T {
     const lock = join(this.dir, LOCK);
@@ -317,8 +320,9 @@ export class Ledger {
     const timeout = this.opts.lockTimeoutMs ?? 30_000;
     const deadline = this.clock.now() + timeout;
     for (;;) {
-      if (this.clock.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
       if (this.createOwned(lock, nonce)) break;
+      // After the attempt, so a recovery that finished past the deadline still gets its try.
+      if (this.clock.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
       const h = readOwner(lock);
       if (h && !pidAlive(h.pid)) this.reclaim(lock, h, deadline);
       else this.clock.sleep(2 + Math.floor(Math.random() * 5));
@@ -354,13 +358,22 @@ export class Ledger {
     }
   }
 
-  /** Removes the instance of `path` that the dead owner `h` holds, at most once (see withLock). */
+  /**
+   * Removes the instance of `path` that the dead owner `h` holds, at most once, together with the dead
+   * markers stranded below it (see withLock). One descent, bounded by the deadline, records each dead
+   * instance down to the first whose claim name is free; `unwind` then removes them deepest first.
+   */
   private reclaim(path: string, h: Owner, deadline: number): void {
     const rootNonce = h.nonce;
+    const chain: Stranded[] = [];
     let depth = 0;
     while (this.clock.now() <= deadline) {
       const legacy = `${path}.reclaim.${h.nonce}`;
       const digest = createHash("sha256").update(`${basename(path)}\0${h.nonce}`).digest("hex");
+      const marker = depth === 0
+        ? legacy
+        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);
+      chain.push({ path, owner: h, marker });
       // Existing installations may have stranded nested markers. Observe them without ever
       // recreating their names: every contender must CREATE the same bounded claim for a parent.
       // Otherwise a disappearing legacy marker could produce two exclusive claims on that parent.
@@ -377,24 +390,7 @@ export class Ledger {
         this.clock.sleep(2 + Math.floor(Math.random() * 5));
         return;
       }
-      const marker = depth === 0
-        ? legacy
-        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);
-      const mine = randomBytes(12).toString("hex");
-      if (!existsSync(marker) && this.createOwned(marker, mine)) {
-        try {
-          if (depth === 0) this.opts.onLockStep?.("reclaim-claimed");
-          const again = readOwner(path);
-          if (depth === 0) this.opts.onLockStep?.("before-unlink");
-          if (again && again.nonce === h.nonce) {
-            rmSync(path, { force: true });
-            if (depth > 0) this.opts.onLockStep?.("unwound");
-          }
-        } finally {
-          if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
-        }
-        return;
-      }
+      if (!existsSync(marker)) return this.unwind(chain);
       const m = readOwner(marker);
       if (m && !pidAlive(m.pid)) {
         path = marker;
@@ -404,6 +400,35 @@ export class Ledger {
         this.clock.sleep(2 + Math.floor(Math.random() * 5));
         return;
       }
+    }
+  }
+
+  /**
+   * Removes the dead instances a descent recorded, deepest first, each one only under its own freshly
+   * created exclusive claim and only while it is still the instance observed. Removing a marker frees
+   * the name that claims its parent, so each step is O(1) and the whole unwind is bounded by the chain's
+   * length, not the deadline. It stops at the first claim a rival holds or instance that changed, and
+   * withLock looks again.
+   */
+  private unwind(chain: readonly Stranded[]): void {
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const { path, owner, marker } = chain[i]!;
+      const mine = randomBytes(12).toString("hex");
+      if (!this.createOwned(marker, mine)) return;
+      let removed = false;
+      try {
+        if (i === 0) this.opts.onLockStep?.("reclaim-claimed");
+        const again = readOwner(path);
+        if (i === 0) this.opts.onLockStep?.("before-unlink");
+        if (again && again.nonce === owner.nonce) {
+          rmSync(path, { force: true });
+          removed = true;
+          if (i > 0) this.opts.onLockStep?.("unwound");
+        }
+      } finally {
+        if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
+      }
+      if (!removed) return;
     }
   }
 
@@ -424,6 +449,13 @@ export class Ledger {
 interface Owner {
   pid: number;
   nonce: string;
+}
+
+/** A dead lock or marker instance seen during a descent, and the name that claims it. */
+interface Stranded {
+  path: string;
+  owner: Owner;
+  marker: string;
 }
 
 /** The "pid nonce" owner record of a lock or marker; undefined if it's gone or unreadable. */

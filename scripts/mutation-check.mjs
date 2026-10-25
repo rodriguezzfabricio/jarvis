@@ -240,7 +240,10 @@ const mutations = [
   ["tripwire checks the cwd only, not up to its toplevel", TW, '    if (marked(d, ".git")) break;\n', "    break;\n"],
   ["tripwire walks past a repo-less cwd", TW, "{ chain.length = 1; break; }", "{ break; }"],
   ["tripwire ignores .jarvis-routing.json", TW, ' || marked(d, ".jarvis-routing.json")', ""],
-  ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && RUNNER_HOME_BASH.test(text)) return OFF_LIMITS;\n', ""],
+  ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;\n', ""],
+  // Codex round 18, lane D, low: relative Bash operands and cd.
+  ["tripwire leaves relative Bash paths unresolved", TW, "    const full = resolve(dir, expand(t));\n    if (full === runnerHome || full.startsWith(`${runnerHome}/`)) return true;\n", ""],
+  ["tripwire ignores cd in Bash", TW, "      if (next === undefined || operator(next)) dir = home;\n      else { dir = resolve(dir, expand(next)); i++; }\n", "      i++;\n"],
   ["tripwire ignores HOME for the runner home", TW, "  if (!env.HOME || !isAbsolute(env.HOME)) return false;\n", "  return false;\n"],
   ["tripwire scope: task sessions not marked Jarvis", "packages/cli/src/harness/claude/task.ts", '    JARVIS_SESSION: "1", // the plugin\'s tripwire enforces in Jarvis sessions only\n', ""],
   ["tripwire scope: probe session not marked Jarvis", "packages/cli/src/harness/claude/probe.ts", ', JARVIS_SESSION: "1" });', " });"],

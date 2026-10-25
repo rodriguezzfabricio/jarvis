@@ -5,6 +5,7 @@ import { dirname, join, posix } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
+import { tempRoots } from "../sandbox/temp.ts";
 import type { ChecksStore } from "./store.ts";
 
 /**
@@ -150,6 +151,7 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
     const real = (p: string) => realpathSync(p);
     const commonEnv = { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", CI: "1" };
     const hasFixtures = existsSync(fixtures);
+    const systemTemp = tempRoots();
 
     // The cases: candidate code runs here. It can read the checkout and the fixtures, not the
     // expectations (the rest of the checks folder), the verify folder or the recorded observations.
@@ -164,7 +166,8 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
       mkdirSync(caseEvidence, { recursive: true, mode: 0o700 });
       const r = await runSandboxed({
         policy: {
-          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir)],
+          // Decision 95: no system temp folder either; the run folder (with its private TMPDIR) is reopened.
+          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir), ...systemTemp],
           allowRead: [real(runDir), ...(hasFixtures ? [real(fixtures)] : [])],
           allowWrite: [real(checkout), real(home), real(cache)],
           allowLocalBinding: g.check.allowLocalBinding === true,
@@ -204,7 +207,7 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
       const verifyStdout = join(evidenceDir, "verify-stdout.log");
       ver = await runSandboxed({
         policy: {
-          denyRead: [real(g.jarvisHome), real(homedir()), real(runDir)],
+          denyRead: [real(g.jarvisHome), real(homedir()), real(runDir), ...systemTemp],
           allowRead: [real(verifyDir), real(g.store.checksDir)],
           allowWrite: [real(verifyHome)],
         },

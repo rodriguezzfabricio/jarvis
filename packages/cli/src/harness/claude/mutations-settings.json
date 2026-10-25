@@ -7,19 +7,19 @@
   },
   {
     "name": "settings /private/tmp not denied",
-    "file": "packages/cli/src/harness/claude/settings.ts",
+    "file": "packages/cli/src/sandbox/temp.ts",
     "anchor": "export const SYSTEM_TEMP_ROOTS = [\"/private/tmp\", \"/tmp\", ",
     "replacement": "export const SYSTEM_TEMP_ROOTS = [\"/tmp\", "
   },
   {
     "name": "settings /private/var/folders not denied",
-    "file": "packages/cli/src/harness/claude/settings.ts",
+    "file": "packages/cli/src/sandbox/temp.ts",
     "anchor": "\"/tmp\", \"/private/var/folders\", \"/var/folders\", ",
     "replacement": "\"/tmp\", \"/var/folders\", "
   },
   {
     "name": "settings runner TMPDIR not denied",
-    "file": "packages/cli/src/harness/claude/settings.ts",
+    "file": "packages/cli/src/sandbox/temp.ts",
     "anchor": "  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);\n",
     "replacement": ""
   },
@@ -73,7 +73,7 @@
   },
   {
     "name": "settings /private/var/tmp not denied",
-    "file": "packages/cli/src/harness/claude/settings.ts",
+    "file": "packages/cli/src/sandbox/temp.ts",
     "anchor": "\"/var/folders\", \"/private/var/tmp\", \"/var/tmp\"] as const;",
     "replacement": "\"/var/folders\", \"/var/tmp\"] as const;"
   },
@@ -82,5 +82,29 @@
     "file": "packages/cli/src/harness/claude/desktop-evidence.ts",
     "anchor": "{ ...cacheEnv(input.cacheDir), ...sessionTmpEnv(sessionTmpDir) }",
     "replacement": "cacheEnv(input.cacheDir)"
+  },
+  {
+    "name": "settings gate candidates read the system temp",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir), ...systemTemp],",
+    "replacement": "denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir)],"
+  },
+  {
+    "name": "settings gate assertions read the system temp",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "denyRead: [real(g.jarvisHome), real(homedir()), real(runDir), ...systemTemp],",
+    "replacement": "denyRead: [real(g.jarvisHome), real(homedir()), real(runDir)],"
+  },
+  {
+    "name": "settings task session can't read the Jarvis install",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    ...(locations.installDir ? { readOnlyDirs: [locations.installDir] } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings Jarvis install may overlap agent folders",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  for (const root of roots) if (under(installDir, root) || under(root, installDir)) throw",
+    "replacement": "  for (const root of roots) if (false) throw"
   }
 ]

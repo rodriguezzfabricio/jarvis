@@ -32,6 +32,37 @@ function inRunnerHome(path, cwd, env) {
   return full === home || full.startsWith(`${home}/`);
 }
 
+/**
+ * Bash: the spelling rule, plus every operand that mentions `.jarvis` resolved against the cwd and HOME,
+ * following plain `cd` commands (`cd`, `cd ~`, `cd $HOME`, `cd dir`). Straightforward forms only: this is
+ * a tripwire, not a parser; the task sandbox is the wall.
+ */
+function bashInRunnerHome(command, cwd, env) {
+  if (RUNNER_HOME_BASH.test(command)) return true;
+  if (!env.HOME || !isAbsolute(env.HOME)) return false;
+  const home = resolve(env.HOME);
+  const runnerHome = join(home, ".jarvis");
+  const expand = (w) => w.replace(/^(?:--?[\w-]+|[A-Za-z_]\w*)=/, "").replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, home);
+  const operator = (t) => /^[;&|()<>\n]+$/.test(t);
+  const tokens = command.match(/[;&|()<>\n]+|[^\s;&|()<>'"`]+/g) ?? [];
+  let dir = typeof cwd === "string" && isAbsolute(cwd) ? cwd : "/";
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (operator(t)) continue;
+    if (t === "cd") {
+      const next = tokens[i + 1];
+      if (next === undefined || operator(next)) dir = home;
+      else { dir = resolve(dir, expand(next)); i++; }
+      if (dir === runnerHome || dir.startsWith(`${runnerHome}/`)) return true;
+      continue;
+    }
+    if (!t.includes(".jarvis")) continue;
+    const full = resolve(dir, expand(t));
+    if (full === runnerHome || full.startsWith(`${runnerHome}/`)) return true;
+  }
+  return false;
+}
+
 // The files sessions may own under the repo's `.jarvis/`: a task session's notes (architecture §5) and
 // scratch scripts (decision 68: a script instead of a refused compound command), and what the skills
 // write there: intake rounds, answers and the taste draft; design mockups; the planner's plan and
@@ -92,7 +123,7 @@ export function check(input, env = process.env) {
   const ti = input?.tool_input ?? {};
   const text = tool === "Bash" ? String(ti.command ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
   if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
-  if (tool === "Bash" && RUNNER_HOME_BASH.test(text)) return OFF_LIMITS;
+  if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
   if (!isJarvisSession(input, env)) return undefined;
   if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text)) return OFF_LIMITS;
   if (tool !== "Bash") return undefined;

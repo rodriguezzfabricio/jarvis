@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GateResult } from "../../packages/cli/src/checks/gate.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { installDesktopChecks, runDesktop } from "../../packages/cli/src/lanes/desktop.ts";
@@ -31,7 +32,7 @@ describe("desktop build and runner native observations", () => {
     const projectDir = temp(); const store = new ChecksStore(projectDir); const ledger = Ledger.open(projectDir); installDesktopChecks(store, plan); store.approve(ledger, "reviewed");
     const input = { projectDir, store, ledger, workRoot: temp(), repoPath: temp(), jarvisHome: temp(), revision: "a".repeat(40), taskId: "task", attemptId: "one" };
     // A gate that answers (a failed build), so a mutated platform check fails an assertion instead of crashing.
-    const gate = vi.fn(async () => ({ status: "fail" as const, evidenceDir: temp() }));
+    const gate = vi.fn(async () => ({ status: "fail", evidenceDir: temp() }) as unknown as GateResult);
     expect((await runDesktop(input, { gate, platform: "darwin", exists: () => false })).status).toBe("not run"); writeFileSync(join(store.checksDir, "desktop/plan.json"), "{}"); expect((await runDesktop(input, { gate })).status).toBe("tampered"); expect(gate).not.toHaveBeenCalled();
   });
   it.each([{ code: 1 }, { code: null }, { timedOut: true }, { overflowed: true }])("fails bounded build outcomes %j", async change => {

@@ -18,6 +18,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-runner-core.json")).toBe("3");
     expect(stageOf("packages/cli/src/runner/mutations-planning.json")).toBe("3");
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");
+    expect(stageOf("packages/cli/src/eval/mutations-jarvis.json")).toBe("3"); // the Jarvis arm proves stage 3 (tasks 2, 4, 5)
   });
 
   it("leaves anything else unmapped, never guessing from a similar path", () => {
@@ -26,6 +27,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations/extra.json")).toBeUndefined();
     expect(stageOf("tests/unit/skills-design-mutations.json")).toBeUndefined();
     expect(stageOf("packages/cli/src/harness/claude/mutations.json")).toBeUndefined();
+    expect(stageOf("packages/cli/src/eval/mutations.json")).toBeUndefined();
   });
 
   it("maps every definition file the mutation check loads", () => {

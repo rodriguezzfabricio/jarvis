@@ -1,0 +1,194 @@
+[
+  {
+    "name": "eval jarvis skips preflight",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (!pre.ok) throw new PreflightError(",
+    "replacement": "  if (false) throw new PreflightError("
+  },
+  {
+    "name": "eval jarvis allowlist not enforced at run",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  checkEvalDomains(task.id, task.allowedDomains);\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis hidden leak check skipped",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  assertHiddenAbsent(p.workspace, [...new Set([grading.dir, loopChecks.dir])]);\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis harness skips the live preflight",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "      const pre = await opts.preflight();\n      return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) };",
+    "replacement": "      return { ok: true };"
+  },
+  {
+    "name": "eval jarvis harness widens the task allowlist",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    allowedDomains: task.allowedDomains,\n    routing,",
+    "replacement": "    allowedDomains: [...task.allowedDomains, \"github.com\"],\n    routing,"
+  },
+  {
+    "name": "eval jarvis claims done when blocked",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "claimedDone: outcome === \"complete\",",
+    "replacement": "claimedDone: outcome !== \"crashed\","
+  },
+  {
+    "name": "eval jarvis crash recorded as complete",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    outcome = \"crashed\";\n    error = e instanceof Error",
+    "replacement": "    outcome = \"complete\";\n    error = e instanceof Error"
+  },
+  {
+    "name": "eval jarvis grades the base revision",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  const finalCommit = lastGreen ?? baseRevision;",
+    "replacement": "  const finalCommit = baseRevision;"
+  },
+  {
+    "name": "eval jarvis loop budget not the task's",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns,",
+    "replacement": "taskTimeoutMs: ms(task.timeoutMinutes) * 10, maxTurns: task.maxTurns * 10,"
+  },
+  {
+    "name": "eval jarvis spec coverage not checked",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (missing.length) throw new Error(",
+    "replacement": "  if (false) throw new Error("
+  },
+  {
+    "name": "eval jarvis bug task without a unit check",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (pipeline === \"single-task\" && !loopChecks.checks.unit) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "eval jarvis planner workspace kept",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    rmSync(ws.path, { recursive: true, force: true });\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis usage waits not counted",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const waits = runner.filter((e) => e.kind === \"usage_wait\");",
+    "replacement": "const waits = runner.filter((e) => e.kind === \"usage_wait\" && false);"
+  },
+  {
+    "name": "eval jarvis usage-limited planner counted as a failure",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    if (outcome.status === \"usage-limited\") return { kind: \"usage-limited\", until: outcome.resetAt ?? outcome.usageWaitUntil, started };\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis gate folder ignored",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  const loopChecks = existsSync(gateDir) ? loadHiddenChecks(gateDir) : grading;",
+    "replacement": "  const loopChecks = grading;"
+  },
+  {
+    "name": "eval jarvis run without sessions counted as started",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  const sessionsStarted = metrics.sessions.total > 0 || metrics.usage.sessions > 0;",
+    "replacement": "  const sessionsStarted = true;"
+  },
+  {
+    "name": "eval jarvis hidden symlinks copied",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "      if (st.isSymbolicLink()) throw new Error(`hidden checks may not contain symlinks",
+    "replacement": "      if (false) throw new Error(`hidden checks may not contain symlinks"
+  },
+  {
+    "name": "eval jarvis hidden checks not approved",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "  store.approve(ledger, reason);\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis leak check ignores file contents",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "        if (hit !== undefined) leaks.push(",
+    "replacement": "        if (false) leaks.push("
+  },
+  {
+    "name": "eval jarvis leak check ignores overlap",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "    if (inside(real, ws) || inside(ws, real)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "eval jarvis grade ignores failing checks",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "pass: checks.length > 0 && checks.every((c) => c.status === \"pass\"),",
+    "replacement": "pass: checks.length > 0,"
+  },
+  {
+    "name": "eval jarvis grading evidence outside the run folder",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "  const projectDir = join(resolve(g.runDir), \"grade\", ",
+    "replacement": "  const projectDir = join(resolve(g.runDir), \"..\", \"grade\", "
+  },
+  {
+    "name": "eval jarvis unstarted run graded",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "  if (s.started !== true) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "eval jarvis false done ignores the grade",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": ": base.claimedDone && hidden === \"fail\";",
+    "replacement": ": false;"
+  },
+  {
+    "name": "eval jarvis usage-limited baseline counted",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "    counted: started && !limited,",
+    "replacement": "    counted: started,"
+  },
+  {
+    "name": "eval jarvis baseline claims done on timeout",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "s.exitCode === 0 && s.timedOut !== true && s.resultSubtype",
+    "replacement": "s.exitCode === 0 && s.resultSubtype"
+  },
+  {
+    "name": "eval jarvis verdict ignores false done",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "verdict: ratingBetter && falseDoneOk && hiddenOk ?",
+    "replacement": "verdict: ratingBetter && hiddenOk ?"
+  },
+  {
+    "name": "eval jarvis verdict ignores hidden checks",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "  const hiddenOk = rate(j.hiddenPass, j.graded) >= rate(b.hiddenPass, b.graded);",
+    "replacement": "  const hiddenOk = true;"
+  },
+  {
+    "name": "eval jarvis verdict from one run",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "    if (s.runs < MIN_RUNS) missing.push(",
+    "replacement": "    if (s.runs < 1) missing.push("
+  },
+  {
+    "name": "eval jarvis verdict without ratings",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "      if (s.rated < s.runs) missing.push(",
+    "replacement": "      if (false) missing.push("
+  },
+  {
+    "name": "eval jarvis rating out of range accepted",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "r.rating < 1 || r.rating > 5",
+    "replacement": "r.rating < 0 || r.rating > 6"
+  },
+  {
+    "name": "eval jarvis scheduler ignores the run prefix",
+    "file": "packages/cli/src/eval/schedule.ts",
+    "anchor": "`${deps.prefix ?? \"baseline\"}-${",
+    "replacement": "`baseline-${"
+  }
+]

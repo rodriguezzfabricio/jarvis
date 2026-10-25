@@ -156,6 +156,7 @@ const mutations = [
   ["gate verifies over-cap observations", GT, "    if (withinCap) {\n      for (const k of g.check.cases) {", "    if (true) {\n      for (const k of g.check.cases) {"],
   ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  const partial = filtered || selected !== total;", "  const partial = false;"],
   ["mutated runs may skip tests the control ran", "scripts/mutation-classify.mjs", "    if (differ.length) return { kind: \"error\", detail: `skipped tests differ", "    if (false) return { kind: \"error\", detail: `skipped tests differ"],
+  ["successful mutation suites leave their group running", "scripts/mutation-run.mjs", "      reaped = reapGroup(child, graceMs);", "      reaped = Promise.resolve();"],
   ["subset controls ignore the full control's skips", "scripts/mutation-select.mjs", " && same(skippedIds(r.report), idsForFiles(full.skipped, files))", ""],
   ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).

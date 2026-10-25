@@ -18,7 +18,7 @@ import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync,
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classify, summarize, testIds } from "./mutation-classify.mjs";
+import { classify, skippedIds, summarize, testIds } from "./mutation-classify.mjs";
 import { jobPlan, runAndRead, runPool, stopAll, suiteEnv } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
 import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
@@ -123,6 +123,9 @@ const mutations = [
   ["review manifest ignored", RS, "    else ids = declared;", "    else ids = [\"A\", \"B\", \"C\", \"D\"];"],
   ["review required lanes ignored", RS, "    if (missing.length) problems.push", "    if (false) problems.push"],
   ["review manifest validation bypassed", RS, "    if (!match || new Set(declared).size !== declared.length) problems.push(\"invalid lane manifest\");", "    if (false) problems.push(\"invalid lane manifest\");"],
+  ["review status rejects stage-scoped success", RS, "  const useStaged = staged && (!plain || staged.index > plain.index);", "  const useStaged = false;"],
+  ["review status trusts stage-scoped counts", RS, " && Number(confirmed) + Number(fast) === Number(n)) {", ") {"],
+  ["review status lets a PASS verdict carry a critical", RS, "const blocking = valid && (value.verdict === \"FAIL\" || findings.critical > 0 ||", "const blocking = valid && (value.verdict === \"FAIL\" ||"],
   ["review runner inherits parent environment", RR, "const env = codexEnvironment(home);", "const env = { ...process.env, ...codexEnvironment(home) };"],
   ["review runner accepts dirty source", RR, "  if (git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');", ""],
   ["review runner exposes builder response", RR, "if (name.endsWith('-response.md')) unlinkSync", "if (false) unlinkSync"],
@@ -155,6 +158,9 @@ const mutations = [
   ["gate ignores the case output cap", GT, "        maxOutputBytes: MAX_OUT_BYTES - captured,\n", ""],
   ["gate verifies over-cap observations", GT, "    if (withinCap) {\n      for (const k of g.check.cases) {", "    if (true) {\n      for (const k of g.check.cases) {"],
   ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  const partial = filtered || selected !== total;", "  const partial = false;"],
+  ["mutated runs may skip tests the control ran", "scripts/mutation-classify.mjs", "    if (differ.length) return { kind: \"error\", detail: `skipped tests differ", "    if (false) return { kind: \"error\", detail: `skipped tests differ"],
+  ["successful mutation suites leave their group running", "scripts/mutation-run.mjs", "      reaped = reapGroup(child, graceMs);", "      reaped = Promise.resolve();"],
+  ["subset controls ignore the full control's skips", "scripts/mutation-select.mjs", " && same(skippedIds(r.report), idsForFiles(full.skipped, files))", ""],
   ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).
   ["public path replacement", "packages/cli/src/broker/server.ts", "    linkSync(privatePath, socketPath);", "    rmSync(socketPath, {force:true}); linkSync(privatePath, socketPath);"],
@@ -165,7 +171,7 @@ const mutations = [
   ["act omits explicit run socket requirement", "packages/cli/src/cli.ts", "    if (!opts.socket) throw new Error(\"Specify a run socket with --socket or JARVIS_BROKER_SOCKET; use the path printed by jarvis broker.\");", ""],
   ["foreground broker skips SIGHUP cleanup", "packages/cli/src/cli.ts", "    process.once(\"SIGHUP\", shutdown);", ""],
   ["D5 bounded names removed", L, "      const marker = depth === 0\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);", "      const marker = legacy;"],
-  ["M1 legacy creation name depends on existence", L, "      if (depth > 0 && legacyFits && existsSync(legacy)) {\n        this.opts.onLockStep?.(\"legacy-observed\");\n        const previous = readOwner(legacy);\n        if (previous && !pidAlive(previous.pid)) {\n          path = legacy;\n          h = previous;\n          depth++;\n          continue;\n        }\n        sleepMs(2 + Math.floor(Math.random() * 5));\n        return;\n      }\n      const marker = depth === 0\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n", "      const marker = legacyFits && (depth === 0 || existsSync(legacy))\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n      if (depth > 0 && marker === legacy) this.opts.onLockStep?.(\"legacy-observed\");\n"],
+  ["M1 legacy creation name depends on existence", L, "      const marker = depth === 0\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n      chain.push({ path, owner: h, marker });\n      // Existing installations may have stranded nested markers. Observe them without ever\n      // recreating their names: every contender must CREATE the same bounded claim for a parent.\n      // Otherwise a disappearing legacy marker could produce two exclusive claims on that parent.\n      const legacyFits = Buffer.byteLength(basename(legacy)) <= 255;\n      if (depth > 0 && legacyFits && existsSync(legacy)) {\n        this.opts.onLockStep?.(\"legacy-observed\");\n        const previous = readOwner(legacy);\n        if (previous && !pidAlive(previous.pid)) {\n          path = legacy;\n          h = previous;\n          depth++;\n          continue;\n        }\n        this.clock.sleep(2 + Math.floor(Math.random() * 5));\n        return;\n      }\n", "      const legacyFits = Buffer.byteLength(basename(legacy)) <= 255;\n      const marker = legacyFits && (depth === 0 || existsSync(legacy))\n        ? legacy\n        : join(this.dir, `${LOCK}.reclaim.${rootNonce}.${digest}`);\n      if (depth > 0 && marker === legacy) this.opts.onLockStep?.(\"legacy-observed\");\n      chain.push({ path, owner: h, marker });\n"],
   ["D4 conflicting answer throw to silent return", BR, "if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);", "if (firstDecision !== decision) return;"],
   ["D4 first linked answer find to findLast", BR, "const firstAnswer = open && es.find((e) => {", "const firstAnswer = open && es.findLast((e) => {"],
   ["D4 linked answer payload hash predicate removed", BR, "return d.approvalId === openData?.approvalId && d.payloadHash === hash && d.op === op", "return d.approvalId === openData?.approvalId && d.op === op"],
@@ -204,8 +210,10 @@ const mutations = [
   ["gate clones without hash verification", GT, '"-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout"', '"clone", "--quiet", "--no-hardlinks", "--no-checkout"'],
   ["gate records a signal as exit 0", GT, 'r.code === null ? "signal\\n"', 'r.code === null ? "0\\n"'],
   ["ledger ignores short writes", L, "    if (!Number.isInteger(n) || n <= 0) throw new Error", "    if (false) throw new Error"],
-  ["lock reclaimed without a marker", L, "      if (!existsSync(marker) && this.createOwned(marker, mine)) {", "      if (true) {"],
+  ["lock reclaimed without a marker", L, "      if (!this.createOwned(marker, mine)) return;\n", "      if (false) return;\n"],
   ["a dead reclaimer's marker blocks forever", L, "      if (m && !pidAlive(m.pid)) {", "      if (false) {"],
+  ["ledger unwind restarts from the root", L, "      if (!removed) return;\n    }\n", "      return;\n    }\n"],
+  ["ledger lock deadline checked before the attempt", L, "      if (this.createOwned(lock, nonce)) break;\n      // After the attempt, so a recovery that finished past the deadline still gets its try.\n      if (this.clock.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);\n", "      if (this.clock.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);\n      if (this.createOwned(lock, nonce)) break;\n"],
   ["evidence not re-hashed", GT, "    else if (sha(p) !== h) problems.push", "    else if (false) problems.push"],
   ["D4 operation-only approval binding (prior shared control)", BR, "        const open = es.find((e) => e.kind === \"approval_request\" && (e.data as D).payloadHash === hash && (e.data as D).op === op);\n        const openData = open?.data as D | undefined;\n        const firstAnswer = open && es.find((e) => {\n          if (e.kind !== \"approval\") return false;\n          const d = e.data as D;\n          return d.approvalId === openData?.approvalId && d.payloadHash === hash && d.op === op\n            && (d.decision === \"approve\" || d.decision === \"reject\");\n        });", "        const open = es.find((e) => e.kind === \"approval_request\" && (e.data as D).op === op);\n        const openData = open?.data as D | undefined;\n        const firstAnswer = open && es.find((e) => {\n          if (e.kind !== \"approval\") return false;\n          const d = e.data as D;\n          return d.approvalId === openData?.approvalId && d.op === op\n            && (d.decision === \"approve\" || d.decision === \"reject\");\n        });"],
   ["broker retries unknown outcomes", BR, '["succeeded", "unknown"].includes', '["succeeded"].includes'],
@@ -240,7 +248,10 @@ const mutations = [
   ["tripwire checks the cwd only, not up to its toplevel", TW, '    if (marked(d, ".git")) break;\n', "    break;\n"],
   ["tripwire walks past a repo-less cwd", TW, "{ chain.length = 1; break; }", "{ break; }"],
   ["tripwire ignores .jarvis-routing.json", TW, ' || marked(d, ".jarvis-routing.json")', ""],
-  ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && RUNNER_HOME_BASH.test(text)) return OFF_LIMITS;\n', ""],
+  ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;\n', ""],
+  // Codex round 18, lane D, low: relative Bash operands and cd.
+  ["tripwire leaves relative Bash paths unresolved", TW, "    const full = resolve(dir, expand(t));\n    if (full === runnerHome || full.startsWith(`${runnerHome}/`)) return true;\n", ""],
+  ["tripwire ignores cd in Bash", TW, "      if (next === undefined || operator(next)) dir = home;\n      else { dir = resolve(dir, expand(next)); i++; }\n", "      i++;\n"],
   ["tripwire ignores HOME for the runner home", TW, "  if (!env.HOME || !isAbsolute(env.HOME)) return false;\n", "  return false;\n"],
   ["tripwire scope: task sessions not marked Jarvis", "packages/cli/src/harness/claude/task.ts", '    JARVIS_SESSION: "1", // the plugin\'s tripwire enforces in Jarvis sessions only\n', ""],
   ["tripwire scope: probe session not marked Jarvis", "packages/cli/src/harness/claude/probe.ts", ', JARVIS_SESSION: "1" });', " });"],
@@ -404,9 +415,10 @@ async function main() {
     console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
     return 2;
   }
-  const controlIds = testIds(control.report);
+  // The tests the control skipped (an opt-in live test without its environment) must stay skipped, and only those.
+  const fullControl = { ids: testIds(control.report), skipped: skippedIds(control.report) };
   controls.push(`control  ${c.detail} [full suite, ${collectedFiles(control.report, sandboxRepo).length} test files]`);
-  const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), controlIds, onLine: (line) => controls.push(line) });
+  const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), control: fullControl, onLine: (line) => controls.push(line) });
 
   const mutate = async (clone, [name, file, from, to, source]) => {
     const path = join(clone, file);
@@ -426,11 +438,11 @@ async function main() {
         control: () => ctl,
         runSubset: async (t, sc) => {
           const m = await runSuite(clone, tag, t);
-          return classify(m.proc, m.report, sc.ids, m.runEnd);
+          return classify(m.proc, m.report, sc, m.runEnd);
         },
         runFull: async () => {
           const m = await runSuite(clone, `${tag}-full`);
-          return classify(m.proc, m.report, controlIds, m.runEnd);
+          return classify(m.proc, m.report, fullControl, m.runEnd);
         },
       });
       verdicts.push({ kind: k.kind, confirmed: k.confirmed, scoped: confirm });

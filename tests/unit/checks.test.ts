@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runGate, verifyEvidence } from "../../packages/cli/src/checks/gate.ts";
@@ -8,7 +9,8 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jtk-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing every repo this file made can outlast the default 10 s hook limit under a loaded full run.
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: root, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
 let n = 0;
 
@@ -229,6 +231,31 @@ describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120
     expect(Date.now() - started).toBeLessThan(15_000);
     expect(statSync(join(r.evidenceDir, "cases", "main", "stdout")).size).toBeLessThanOrEqual(17 * 1024 * 1024);
     expect(existsSync(join(r.evidenceDir, "verify-stdout.log")) ? readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8") : "").toBe("");
+  });
+
+  // Codex round 18, lanes A and D, high: gate sandboxes lacked decision 95's temp denials.
+  it("keeps candidates and assertions from reading the system temp folders, while each phase's own TMPDIR works", async () => {
+    const nonce = `${process.pid}-${Date.now()}`;
+    const secret = `GATE-TEMP-SECRET-${nonce}`;
+    const planted = [...new Set(["/private/tmp", "/private/var/tmp", realpathSync(tmpdir())])].map((d) => join(d, `jarvis-gate-secret-${nonce}.txt`));
+    for (const f of planted) writeFileSync(f, `${secret}\n`, { mode: 0o600 });
+    try {
+      const p = project();
+      const reads = planted.map((f) => `cat ${f} 2>&1\n`).join("");
+      const c = check("temp", `${reads}printf own-ok > "$TMPDIR/own" && cat "$TMPDIR/own"\n`, p, `${reads}printf 'verify-ok\\n' > "$TMPDIR/v" && cat "$TMPDIR/v"\n${COMPLETE}`);
+      p.store.approve(p.ledger, "v1");
+      const r = await gate(p, c);
+      const caseOut = out(r);
+      const verifyOut = readFileSync(join(r.evidenceDir, "verify-stdout.log"), "utf8");
+      expect(caseOut).toContain("own-ok");
+      expect(verifyOut).toContain("verify-ok");
+      expect(caseOut).not.toContain(secret);
+      expect(verifyOut).not.toContain(secret);
+      for (const f of planted) expect(caseOut).toContain(`${f}: Operation not permitted`);
+      expect(r.status).toBe("pass");
+    } finally {
+      for (const f of planted) rmSync(f, { force: true });
+    }
   });
 
   it("doesn't let candidate output forge the completion line", async () => {

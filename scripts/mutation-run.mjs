@@ -31,6 +31,37 @@ function exited(child, ms) {
   });
 }
 
+/** True while any process is left in the child's group. */
+function groupAlive(child) {
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Waits up to `ms` for the child's group to empty; true if it did. */
+async function groupGone(child, ms) {
+  for (const end = Date.now() + ms; groupAlive(child); ) {
+    if (Date.now() >= end) return false;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return true;
+}
+
+/**
+ * After the leader exits, stops whatever it left in its group (round 18, lane D: a successful suite left
+ * background children running): TERM, a bounded wait, then KILL.
+ */
+async function reapGroup(child, graceMs) {
+  if (!groupAlive(child)) return;
+  signalGroup(child, "SIGTERM");
+  if (await groupGone(child, graceMs)) return;
+  signalGroup(child, "SIGKILL");
+  await groupGone(child, graceMs);
+}
+
 /**
  * Runs `cmd` in a new process group with spawnSync's old limits (15 minutes, 1 MB per output
  * stream) and resolves with spawnSync's { status, signal, error? }. It never rejects.
@@ -83,9 +114,16 @@ export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 1
       proc.error ??= error;
       finish();
     });
-    child.on("close", (status, signal) => {
+    // On every exit, success included, the rest of the group is stopped before the run counts as ended;
+    // that also frees pipes a group member still holds, so "close" can follow.
+    let reaped = Promise.resolve();
+    child.once("exit", () => {
+      reaped = reapGroup(child, graceMs);
+    });
+    child.on("close", async (status, signal) => {
       proc.status = status;
       proc.signal = signal;
+      await reaped;
       finish();
     });
   });

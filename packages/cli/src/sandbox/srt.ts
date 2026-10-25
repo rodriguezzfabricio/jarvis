@@ -22,11 +22,13 @@ export interface SrtPolicy {
   allowedDomains?: string[];
   /** Lets tests bind and reach local ports (all of them: loopback is all-or-nothing). Off by default. */
   allowLocalBinding?: boolean;
+  /** Unix sockets the sandbox may connect to, by real path. None by default. */
+  allowUnixSockets?: string[];
 }
 
 export function srtConfig(p: SrtPolicy) {
   return SandboxRuntimeConfigSchema.parse({
-    network: { allowedDomains: p.allowedDomains ?? [], deniedDomains: [], allowUnixSockets: [], allowLocalBinding: p.allowLocalBinding === true },
+    network: { allowedDomains: p.allowedDomains ?? [], deniedDomains: [], allowUnixSockets: p.allowUnixSockets ?? [], allowLocalBinding: p.allowLocalBinding === true },
     filesystem: { denyRead: p.denyRead, allowRead: p.allowRead, allowWrite: p.allowWrite, denyWrite: SHARED_TMP },
   });
 }

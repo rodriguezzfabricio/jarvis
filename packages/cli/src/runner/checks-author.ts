@@ -297,7 +297,7 @@ function requireJustifications(verdict: z.infer<typeof Verdict>, changes: Return
 }
 
 /** The runner's protected checks, read only from an approved, unchanged store (decision 15). */
-export function readInstalledChecks(store: ChecksStore, ledger: Ledger): AuthoredCheck[] {
+export function readApprovedChecks(store: ChecksStore, ledger: Ledger): AuthoredCheck[] {
   const verified = store.verify(ledger);
   if (!verified.ok) throw new Error(`protected checks are not the approved set: ${verified.problems.join("; ")}`);
   // The lock, not the authoring lint, is what makes these trustworthy: they were reviewed and approved.
@@ -308,6 +308,10 @@ function installedFiles(store: ChecksStore): Record<string, string> {
   directory(dirname(store.checksDir));
   if (!lstatSync(store.checksDir, { throwIfNoEntry: false })) return {};
   return readTree(store.checksDir);
+}
+/** The installed definitions, read no-follow from the runner's store. Verify the store against the ledger first. */
+export function readInstalledChecks(store: ChecksStore): AuthoredCheck[] {
+  return validateFiles(installedFiles(store)).checks;
 }
 function stageFiles(parent: string, files: Record<string, string>): string {
   const temp = mkdtempSync(join(parent, ".checks-planning-"));

@@ -26,6 +26,11 @@ export interface ClaudeHarnessOptions {
   allowedDomains: readonly string[];
   /** startBrokerServer(...).socketPath: the bound address, never its public alias (decision 78). */
   brokerSocket?: string;
+  /**
+   * The Jarvis install (the folder holding packages/cli/src/cli.ts and its node_modules) whose CLI sessions run
+   * as `jarvis act`. Reopened read-only; it must not overlap the worktrees, caches or runner folder.
+   */
+  installDir?: string;
   /** The repo's plugin/; each session gets its own runner-owned copy with only the task skills (task-plugin.ts). */
   pluginDir?: string;
   home?: string;
@@ -102,7 +107,14 @@ function removeTaskDirectory(path: string): void {
   rmSync(path, { recursive: true, force: true });
 }
 
-function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string } {
+function trustedInstall(installDir: string, roots: readonly string[]): string {
+  if (!isAbsolute(installDir) || realpathSync(installDir) !== installDir) throw new Error("the Jarvis install must be an absolute real path");
+  if (!lstatSync(join(installDir, "packages", "cli", "src", "cli.ts"), { throwIfNoEntry: false })?.isFile()) throw new Error("the Jarvis install has no packages/cli/src/cli.ts");
+  for (const root of roots) if (under(installDir, root) || under(root, installDir)) throw new Error("the Jarvis install must not overlap the worktrees, caches or runner folder");
+  return installDir;
+}
+
+function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string; installDir?: string } {
   const worktree = realpathSync(input.workspace);
   const worktreeRoot = realpathSync(opts.worktreeRoot);
   if (!isAbsolute(input.workspace) || worktree === worktreeRoot || !under(worktree, worktreeRoot)) throw new Error("workspace must be below the worktree root");
@@ -115,7 +127,8 @@ function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { workt
     if (under(home, root)) throw new Error("session home must be outside worktrees, cache and jarvisHome");
     if (!isAbsolute(binaryTarget) || under(resolve(binaryTarget), root)) throw new Error("pinned binary must resolve outside worktrees, cache and jarvisHome");
   }
-  return { worktree, jarvisHome, cacheRoot, home, binary };
+  const installDir = opts.installDir === undefined ? undefined : trustedInstall(opts.installDir, [worktreeRoot, cacheRoot, jarvisHome]);
+  return { worktree, jarvisHome, cacheRoot, home, binary, ...(installDir ? { installDir } : {}) };
 }
 
 function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string, sessionTmpDir: string): SessionSpec {
@@ -124,6 +137,8 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const mcpPath = join(sessionDir, "mcp.json");
   const context: TaskSettingsInput = {
     worktree, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: opts.allowedDomains,
+    // `jarvis act` loads the installed CLI: read-only, and only that folder.
+    ...(locations.installDir ? { readOnlyDirs: [locations.installDir] } : {}),
     ...(opts.brokerSocket ? { brokerSocket: opts.brokerSocket } : {}),
   };
   writeTaskSettings(settingsPath, context);

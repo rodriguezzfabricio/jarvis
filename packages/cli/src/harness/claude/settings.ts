@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { defaultHostTmpDir, tempRoots } from "../../sandbox/temp.ts";
 import { isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { assertTaskDomains } from "../../eval/allowlist.ts";
 
 /**
  * Generated settings for a task session (decisions 12, 13, 59, 60, 68, 69).
@@ -23,7 +24,7 @@ export interface TaskSettingsInput {
   cacheDir: string;
   /** Real path of the broker's Unix socket; omit when no broker runs (baselines). */
   brokerSocket?: string;
-  /** Hosts sandboxed commands may reach. */
+  /** Exact public hosts sandboxed commands may reach; local services require runner ownership. */
   allowedDomains: readonly string[];
   /** Folders sessions may read but never write: the Jarvis install, so `jarvis act` runs (decision 12). */
   readOnlyDirs?: readonly string[];
@@ -57,24 +58,9 @@ export function sessionTmpEnv(sessionTmpDir: string): Record<string, string> {
   return { CLAUDE_CODE_TMPDIR: sessionTmpDir };
 }
 
-/**
- * System temp folders (decision 93): other processes' scratch files live there, and
- * blockReadsOutsideWorkingDirectories leaves them readable to sandboxed shells. Both spellings,
- * because macOS's /tmp and /var are symlinks into /private.
- */
-export const SYSTEM_TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp"] as const;
-
-function defaultHostTmpDir(): string | undefined {
-  const t = tmpdir();
-  return existsSync(t) ? realpathSync(t) : undefined;
-}
-
-/** The temp roots a session may not read: the system ones plus the runner's $TMPDIR when it lies elsewhere. */
-export function tempRoots(hostTmpDir: string | undefined): string[] {
-  const roots: string[] = [...SYSTEM_TEMP_ROOTS];
-  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);
-  return roots;
-}
+// System temp folders (decision 95): blockReadsOutsideWorkingDirectories leaves them readable to
+// sandboxed shells. The list is shared with the gate's sandbox.
+export { SYSTEM_TEMP_ROOTS, tempRoots } from "../../sandbox/temp.ts";
 
 /** Permission-rule form of an absolute path: //abs/path (a single leading / is relative to the settings file). */
 export function absRule(path: string): string {
@@ -149,7 +135,7 @@ function checkContext(input: TaskSettingsInput): void {
     if (under(d, input.jarvisHome) || under(input.jarvisHome, d)) throw new Error("a read-only dir must not contain or sit inside the runner-owned folder");
     if (under(input.worktree, d) || under(d, input.worktree)) throw new Error("a read-only dir must not contain or sit inside the worktree");
   }
-  for (const d of input.allowedDomains) if (!/^[a-z0-9.*-]+(:\d+)?$/i.test(d) || d === "*") throw new Error(`invalid allowed domain: ${d}`);
+  assertTaskDomains(input.allowedDomains);
 }
 
 export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {

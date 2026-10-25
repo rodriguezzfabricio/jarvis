@@ -7,7 +7,7 @@ It has two parts:
 - **The Jarvis plugin for Claude Code**: the `/jarvis` command, skills and safety hooks. This is what you talk to.
 - **The `jarvis` CLI**: a TypeScript program that runs the checks, keeps the ledger, holds credentials in a broker, and later drives the unattended build loop.
 
-Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker, the protected checks and the unattended runner (`jarvis run`) work today. `jarvis setup` is still coming. Commands that don't exist yet are marked "coming" below.
+Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker, the protected checks and the unattended runner (`jarvis run`) work today. `jarvis setup` covers the one-time setup.
 
 ## Requirements
 
@@ -46,16 +46,7 @@ If `~/.local/bin` isn't on your `PATH`, the installer tells you. Add `export PAT
 
 ## First run
 
-1. **Set up** (coming): `jarvis setup` will create your ntfy topics, accounts and taste profile. Until it exists, set up notifications by hand:
-
-   ```sh
-   mkdir -p ~/.jarvis
-   node -e 'const t = "jarvis-" + require("crypto").randomBytes(12).toString("hex"); console.log(JSON.stringify({ baseUrl: "https://ntfy.sh", topic: t, replyTopic: t + "-reply" }, null, 2))' > ~/.jarvis/notify.json
-   chmod 600 ~/.jarvis/notify.json
-   cat ~/.jarvis/notify.json
-   ```
-
-   Subscribe to both topics in the ntfy app. Anyone who knows a topic name can read it or post to it, so treat the names like passwords. Without this file, intake still works; you just answer in the session.
+1. **Set up:** run `jarvis setup` in a terminal. It checks the pinned Claude Code, prepares the secrets file, walks through the house-stack accounts (each one skippable; tokens are typed into a hidden prompt and stored only in `~/.jarvis/secrets/`), creates your ntfy topics (an existing `~/.jarvis/notify.json` is kept), offers the taste profile once, and installs the plugin copy that build sessions use. Running it again skips finished steps; `--redo <step>` repeats one. Subscribe to both printed topics in the ntfy app, then try `jarvis setup --send-test`. Anyone who knows a topic name can read it or post to it, so treat the names like passwords. Without ntfy, intake still works; you just answer in the session.
 
 2. **Check everything**, including the live probe:
 
@@ -101,6 +92,7 @@ From `jarvis --help` today:
 
 | Command | What it does |
 |---|---|
+| `jarvis setup [--redo <step>] [--send-test]` | One-time, resumable setup: Claude Code check, secrets backend, account tokens (hidden prompt, never sent anywhere), ntfy topics, taste profile, plugin copy for build sessions |
 | `jarvis doctor [--live] [--json]` | Preflight: pinned binaries, clean environment, disk, iCloud, ledgers, plugin, checks sandbox. `--live` adds the canary probe |
 | `jarvis triage "<request>"` | Classifies a request and prints its pipeline. `/jarvis` calls it first |
 | `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints (decisions 45, 53) |
@@ -111,21 +103,16 @@ From `jarvis --help` today:
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
 | `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
-| `jarvis status` | The current run, rebuilt from its ledger |
+| `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline <tasks…>` | Runs plain Claude Code on golden tasks, as the baseline Jarvis must beat |
-
-Coming:
-
-| Command | What it will do |
-|---|---|
-| `jarvis setup` | One-time setup: accounts, secrets, ntfy topics, taste profile |
-| `jarvis report [--open]` | The morning report |
-| `jarvis gate <name>` | Runs a protected check by hand (feedback only, never evidence) |
+| `jarvis eval jarvis\|grade\|compare\|rate <task…>` | Runs golden tasks through Jarvis, grades both arms on the hidden checks, compares them (decision 97) |
+| `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
+| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence (decision 98) |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off |
-| `jarvis eval <task>` | Golden task with Jarvis and with the baseline, side by side |
+| `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
 
 ## Troubleshooting
 

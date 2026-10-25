@@ -16,7 +16,7 @@ import { createClaudeHarness } from "../harness/claude/task.ts";
 import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from "../review/index.ts";
-import { readInstalledChecks, type AuthoredCheck } from "../runner/checks-author.ts";
+import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions } from "../runner/loop.ts";
 import { readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
@@ -89,7 +89,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const runGit = options.git ?? safeGit;
   const git = (args: readonly string[]) => runGit(context.repoPath, args, { home }).toString().trim();
   const ledger = Ledger.open(context.projectDir);
-  const checks = readInstalledChecks(new ChecksStore(context.projectDir), ledger);
+  const checks = readApprovedChecks(new ChecksStore(context.projectDir), ledger);
   if (!checks.length) throw new Error("no approved protected checks: approve the checks before running");
   const runBranch = runBranchOf(git);
   const spec = approvedSpec(git, runBranch);

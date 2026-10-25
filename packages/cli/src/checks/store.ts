@@ -42,7 +42,8 @@ export class ChecksStore {
     return { lockHash };
   }
 
-  verify(ledger: Ledger): { ok: boolean; problems: string[]; lockHash: string | undefined } {
+  /** Needs only verified entries, so a reader with no ledger writer can check the store too. */
+  verify(ledger: Pick<Ledger, "entries">): { ok: boolean; problems: string[]; lockHash: string | undefined } {
     const problems: string[] = [];
     if (!existsSync(this.lockPath)) return { ok: false, problems: ["no checks.lock: checks were never approved"], lockHash: undefined };
     const content = readFileSync(this.lockPath, "utf8");

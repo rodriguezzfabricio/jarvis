@@ -33,6 +33,29 @@ describe("suite processes", () => {
     expect(await runGroup(process.execPath, ["-e", "process.exit(3)"])).toEqual({ status: 3, signal: null });
   });
 
+  // Round 18, lane D: a successful run left its background children running.
+  it("stops the whole group after a successful run, background children included", async () => {
+    const pidFile = join(dir, "background.pid");
+    const leaderFile = join(dir, "leader.pid");
+    const proc = await runGroup("/bin/sh", ["-c", `echo $$ > ${leaderFile}; /bin/sleep 20 >/dev/null 2>&1 & echo $! > ${pidFile}`], { graceMs: 200 });
+    expect(proc).toEqual({ status: 0, signal: null });
+    // The group is already empty when the run resolves, not some time later.
+    expect(() => process.kill(-Number(readFileSync(leaderFile, "utf8").trim()), 0)).toThrow();
+    expect(await gone(await pidIn(pidFile))).toBe(true);
+    expect(active.size).toBe(0);
+  });
+
+  it("stops a TERM-ignoring background child after a successful run, within the grace period", async () => {
+    const pidFile = join(dir, "stubborn.pid");
+    const started = Date.now();
+    const leaderFile = join(dir, "stubborn-leader.pid");
+    const proc = await runGroup("/bin/sh", ["-c", `echo $$ > ${leaderFile}; (trap '' TERM; exec /bin/sleep 20) >/dev/null 2>&1 & echo $! > ${pidFile}`], { graceMs: 200 });
+    expect(proc.status).toBe(0);
+    expect(() => process.kill(-Number(readFileSync(leaderFile, "utf8").trim()), 0)).toThrow();
+    expect(await gone(await pidIn(pidFile))).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it("reports a binary that can't start as an error", async () => {
     const proc = await runGroup(join(dir, "missing-binary"), []);
     expect(proc.error?.code).toBe("ENOENT");

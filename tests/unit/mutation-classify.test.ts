@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
-import { classify, isAssertionFailure, summarize, testIds } from "../../scripts/mutation-classify.mjs";
+import { classify, isAssertionFailure, skippedIds, summarize, testIds } from "../../scripts/mutation-classify.mjs";
 // @ts-expect-error plain .mjs script without types
 import { parseMode, tally } from "../../scripts/mutation-stage.mjs";
 
@@ -104,6 +104,31 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(end.unhandled).toBeGreaterThan(0);
     expect(classify(proc, rep, testIds(rep), end).kind).toBe("error");
   }, 60_000);
+
+  // Round 18, lanes A and D: an opt-in skipped test (security-gitleaks-live without its env) made every
+  // control "unfinished". A skip in the control is finished; a mutated run must skip exactly the same tests.
+  it("accepts tests the control skipped, and only those, as finished", () => {
+    const withSkip = report([t("a", "passed"), t("b", "passed"), t("s", "skipped")], { success: true });
+    const c = classify(ok, withSkip, undefined, ended("passed"));
+    expect(c).toEqual({ kind: "clean", detail: "2 tests passed, 1 skipped" });
+    const skipControl = { ids: testIds(withSkip), skipped: skippedIds(withSkip) };
+    expect(skipControl.skipped).toEqual(["unit/x.test.ts > s s"]);
+    expect(classify(fail, report([t("a", "failed", ["AssertionError: x"]), t("b", "passed"), t("s", "skipped")]), skipControl, ended()).kind).toBe("caught");
+    expect(classify(ok, withSkip, skipControl, ended("passed")).kind).toBe("survived");
+  });
+
+  it("treats a test skipped under mutation but not in the control, or the reverse, as an error", () => {
+    const withSkip = report([t("a", "passed"), t("b", "passed"), t("s", "skipped")], { success: true });
+    const skipControl = { ids: testIds(withSkip), skipped: skippedIds(withSkip) };
+    const newlySkipped = classify(fail, report([t("a", "failed", ["AssertionError: x"]), t("b", "skipped"), t("s", "skipped")]), skipControl, ended());
+    expect(newlySkipped).toEqual({ kind: "error", detail: "skipped tests differ from the control's: unit/x.test.ts > s b" });
+    const nowRuns = classify(fail, report([t("a", "failed", ["AssertionError: x"]), t("b", "passed"), t("s", "passed")]), skipControl, ended());
+    expect(nowRuns).toEqual({ kind: "error", detail: "skipped tests differ from the control's: unit/x.test.ts > s s" });
+    // A plain id list (no skips recorded) allows no skip at all, as before.
+    expect(classify(fail, report([t("a", "failed", ["AssertionError: x"]), t("b", "skipped")]), control, ended()).kind).toBe("error");
+    // Still unfinished: a test left pending.
+    expect(classify(ok, report([t("a", "passed"), t("b", "pending")], { success: true }), undefined, ended("passed")).kind).toBe("error");
+  });
 
   it("reports survivors and clean control runs", () => {
     const r = report([t("a", "passed"), t("b", "passed")], { success: true });

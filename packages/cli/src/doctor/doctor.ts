@@ -48,6 +48,18 @@ const defaultFree = (p: string) => {
 
 const GB = 1024 ** 3;
 
+/** Pinned Claude Code, by absolute path (decision 57). Shared with jarvis setup. */
+export function checkClaudePinned(home: string, exec: (bin: string, args: string[]) => string = execWithEnv(buildChildEnv({ ...process.env, HOME: process.env.HOME ?? home })), exists: (p: string) => boolean = existsSync): DoctorCheck {
+  const claude = pinnedClaudeBin(home);
+  if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude} (install with: claude install ${CLAUDE_CODE_VERSION})` };
+  try {
+    const v = exec(claude, ["--version"]).trim();
+    return { name: "claude_pinned", level: v.startsWith(`${CLAUDE_CODE_VERSION} `) ? "pass" : "fail", detail: `${claude} reports "${v}"` };
+  } catch (e) {
+    return { name: "claude_pinned", level: "fail", detail: `could not run ${claude}: ${String(e)}` };
+  }
+}
+
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
   const home = deps.home ?? homedir();
   const env = deps.env ?? process.env;
@@ -57,17 +69,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const add = (name: string, level: Level, detail: string) => checks.push({ name, level, detail });
 
-  // Pinned Claude Code, by absolute path (decision 57).
   const claude = pinnedClaudeBin(home);
-  if (!exists(claude)) add("claude_pinned", "fail", `missing ${claude} (install with: claude install ${CLAUDE_CODE_VERSION})`);
-  else {
-    try {
-      const v = exec(claude, ["--version"]).trim();
-      add("claude_pinned", v.startsWith(`${CLAUDE_CODE_VERSION} `) ? "pass" : "fail", `${claude} reports "${v}"`);
-    } catch (e) {
-      add("claude_pinned", "fail", `could not run ${claude}: ${String(e)}`);
-    }
-  }
+  checks.push(checkClaudePinned(home, exec, exists));
 
   // Pinned Codex for cross-model review; the Claude reviewer is the fallback (decision 66).
   const codex = pinnedCodexBin(home);

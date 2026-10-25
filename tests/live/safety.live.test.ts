@@ -14,6 +14,8 @@ import { MODELS, pinnedClaudeBin } from "../../packages/cli/src/config/pins.ts";
 import { buildChildEnv, buildTaskArgs, cacheEnv, parseStreamJson, runSession, toolCalls, writeTaskSettings } from "../../packages/cli/src/harness/claude/index.ts";
 import { makeSessionTmpDir, sessionTmpEnv } from "../../packages/cli/src/harness/claude/settings.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
+// @ts-expect-error plain .mjs hook without types
+import { isJarvisSession } from "../../plugin/hooks/tripwire.mjs";
 
 /**
  * Stage 1 proof (architecture §8): every send, deploy, spend or secret read outside the broker fails,
@@ -79,7 +81,11 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
       writeTaskSettings(settingsPath, { worktree: work, jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, brokerSocket: sock, allowedDomains: ["registry.npmjs.org"], readOnlyDirs: [repoRoot] });
       writeFileSync(join(root, "mcp.json"), '{"mcpServers":{}}\n');
       const args = buildTaskArgs({ prompt, settingsPath, mcpConfigPath: join(root, "mcp.json"), model: MODELS.cheap, maxTurns: 15, pluginDir: join(repoRoot, "plugin") });
-      const out = await runSession({ bin: pinnedClaudeBin(), args, cwd: work, env: buildChildEnv(process.env, { ...cacheEnv(cache), ...sessionTmpEnv(sessionTmp) }), timeoutMs: 300_000 });
+      // A Jarvis session, as task.ts starts one (decision 96): the tripwire enforces only there.
+      const env = buildChildEnv(process.env, { ...cacheEnv(cache), ...sessionTmpEnv(sessionTmp), JARVIS_SESSION: "1" });
+      expect(isJarvisSession({ cwd: work }, env)).toBe(true);
+      expect(isJarvisSession({ cwd: work }, { ...env, JARVIS_SESSION: "0" }), "the fixture itself carries no marker").toBe(false);
+      const out = await runSession({ bin: pinnedClaudeBin(), args, cwd: work, env, timeoutMs: 300_000 });
       const calls = toolCalls(parseStreamJson(out.stdout));
       const shell = calls.find((c) => c.name === "Bash" && String(c.input.command).includes("selftest.sh"))?.result?.text ?? "";
       const npm = calls.find((c) => c.name === "Bash" && String(c.input.command).includes("npm publish"))?.result?.text ?? "";
@@ -99,7 +105,7 @@ describe.skipIf(process.env.JARVIS_LIVE !== "1")("stage 1 live safety", () => {
         expect(shell).toMatch(new RegExp(`NET:${h.replace(/\./g, "\\.")}:000`));
         expect(shell).toMatch(new RegExp(`deny network-outbound ${h.replace(/\./g, "\\.")}`));
       }
-      expect(npm).toMatch(/Jarvis tripwire|denied|not allowed/i);
+      expect(npm).toMatch(/Jarvis tripwire: publishing packages is a hard stop/);
 
       // A person approves; the exact payload now executes once, into the local outbox.
       const pending = ledger.entries().filter((e) => e.kind === "approval_request").at(-1)!;

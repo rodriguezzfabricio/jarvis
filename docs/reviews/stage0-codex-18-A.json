@@ -1,0 +1,53 @@
+{
+  "verdict": "FAIL",
+  "summary": "Reviewed e85023ff9096a69f04c17d0b4877957518d12c81. Two high findings meet decision 84’s blocking bar: candidate processes can read other processes’ temporary files, and the scanner admits literal npm registry credentials through Yarn configuration.\n\nPrior findings: the original non-scanner critical/high fixes remain present with relevant regression assertions. R1#1: restricted mode and explicit tools, guarded by args/probe tests; R1#2: outside-read restrictions, guarded by settings/probe tests; R1#3: web-tool exclusion, guarded by args/settings tests; R1#4: mandatory preflight, guarded by baseline tests; R1#6 and R2#4: connectivity plus explicit denial evidence, guarded by probe tests; R2#3: private caches, guarded by baseline isolation tests; R5#2: signal outcomes, R5#3: verified cloning, and R6#3/R7#1: runner-captured observations and isolated verification, guarded by checks tests; R5#4: complete writes and R5#5: ownership-aware reclamation, guarded by ledger tests; R6#1: atomic broker claims, guarded by concurrent instance/socket/process tests. R16D1’s sanitized wrapper helper and R16D2’s separate temporary storage have regressions in srt/checks tests. The new temporary-read finding is distinct from the repaired shared-write attack.\n\nThe original npm Basic/Yarn-auth and .npmrc suffix cases, R9#2 and R16B7, are fixed and snapshot-tested. Other original scanner reproductions downgraded by decision 79 remain nonblocking. However, the reference exemption underlying R16B20 also affects npmAuthIdent, retaining full severity for the concrete registry case below. Standalone npm-token recognition additionally lacks an effective isolated regression.\n\nI found no new concurrent-writer corruption or loss of an acknowledged ledger entry. Complete writes, entry/head fsync, directory fsync and serialized transactions support those guarantees. Supplied kill/concurrent-writer fault tests pass, but two ledger recovery unit tests time out.\n\nNeither stage meets its closing proof, even excluding baselines and the desktop check. Evidence reports 1,820 passing tests, three failures and 14 skips; the live stage 1 test fails; mutation checking exits 2 before executing mutations. The canary and doctor pass. I independently passed typecheck and performed read-only scanner/classifier/config reproductions. Filesystem-writing and live suites were not rerun; nested sandbox execution was refused. Fake scenarios script outcomes rather than prove OS enforcement; I established no additional fake-mode false safety PASS beyond the test-coverage issue reported below.",
+  "remaining_for_stage0": [
+    "Fix both blocking credential paths with regressions and mutation coverage; perform the targeted follow-up review permitted by decision 84.",
+    "Resolve the two ledger recovery test timeouts and the runner-usage mutation-definition assertion failure, then capture clean revision-linked unit/fault evidence.",
+    "Repair mutation control selection and obtain successful --confirm-stage 0-1 or --confirm evidence. The supplied run confirms no mutations.",
+    "Correct the live safety session’s Jarvis marker and rerun through approval, delivery and duplicate prevention.",
+    "Save this review and record nonblocking findings in docs/backlog.md. After approval, run the required baselines; stage 1 separately retains the user-assisted desktop plugin check."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Candidate gate processes retain read access to system temporary files",
+      "file": "packages/cli/src/checks/gate.ts",
+      "line": 142,
+      "scenario": "The candidate policy denies jarvisHome, homedir and this gate’s verifier directory, but omits every system-temp denial added to task sessions. srtConfig forwards that list unchanged, and the pinned runtime defaults to allowing filesystem reads outside denied regions. A candidate invoked by a protected case can enumerate/read same-user scratch files under /private/tmp or /private/var/folders, including another Claude session’s temporary output. It can print recovered credentials into case stdout; runner/repair.ts:29 subsequently includes failed-case output in repair prompts. Inspection of the effective runtime read configuration confirmed no temp denial. Blocking under decision 84: this is a concrete path from candidate execution to secrets outside its workspace.",
+      "fix": "Apply system-temp and host-TMPDIR read denials to gate processes, reopening only their exact phase-owned directories and necessary inputs. Add a gate regression with synthetic secrets in each denied temp root, alongside positive controls for the gate’s private temporary directory, and mutation-test the denials."
+    },
+    {
+      "severity": "high",
+      "title": "Reference exemptions admit literal Yarn registry logins",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 346,
+      "scenario": "A .yarnrc.yml containing npmRegistryServer: https://registry.npmjs.org and npmAuthIdent: \"vault:9qvM2!7x\" produces no findings from findSnapshotCredentials. The ordinary control \"alice:9qvM2!7x\" is rejected. The scanner treats vault:, op: and secretref: prefixes as references regardless of the consuming format. Yarn instead base64-encodes a colon-containing npmAuthIdent directly into Basic authentication ([implementation](https://github.com/yarnpkg/berry/blob/master/packages/plugin-npm/sources/npmHttpUtils.ts#L421)). Thus an npm account named vault can have its literal password exported without allowSecretsIn. Blocking under decisions 79 and 84: this exposes credentials usable against the explicitly allowlisted npm registry; it is the npm-specific exception, not a generic scanner-hygiene finding.",
+      "fix": "Use format-specific reference rules for npm/Yarn authentication fields. Accept only substitutions the consuming package manager actually resolves, and inspect literal fallback values. Add snapshot-level regressions for these username prefixes, including scoped npmRegistries/npmScopes configurations, and a mutation."
+    },
+    {
+      "severity": "medium",
+      "title": "An opt-in skipped test prevents every mutation mode from reaching mutations",
+      "file": "scripts/mutation-check.mjs",
+      "line": 336,
+      "scenario": "The full control includes tests/unit/security-gitleaks-live.test.ts, which skips unless JARVIS_SECURITY_LIVE=1 and its binary exists. The classifier rejects every status other than passed/failed. Consequently the normal control always errors on that deliberate skip, even after unrelated unit failures are repaired. The supplied mutation log records exactly this exit-2 failure; an independent classifier reproduction gives the same result. This fails closed, but leaves the required safeguard proof unavailable.",
+      "fix": "Move opt-in live tests outside the required unit control or explicitly exclude them from its selection. Preserve strict detection of unexpectedly unfinished active tests. Add an orchestration regression proving the normal control reaches and judges a mutation."
+    },
+    {
+      "severity": "medium",
+      "title": "The live stage 1 safety fixture is no longer classified as a Jarvis session",
+      "file": "tests/live/safety.live.test.ts",
+      "line": 82,
+      "scenario": "The fixture creates a Git repository without a .jarvis marker and launches Claude without JARVIS_SESSION=1. Decision 96’s tripwire therefore deliberately permits publishing commands. Supplied live evidence shows npm publish --dry-run reaching npm and failing on missing package.json, followed by the assertion failure at line 102. The test stops before exercising approval, delivery and duplicate prevention. Production task.ts supplies the marker, so this finding concerns invalid proof rather than an established production bypass.",
+      "fix": "Launch this fixture with JARVIS_SESSION=1, preferably through the production session assembly, and assert its classification before the publishing attempt. Retain the requirement for a genuine denial and rerun the entire test."
+    },
+    {
+      "severity": "medium",
+      "title": "The npm-token fixture still passes when npm-token recognition is disabled",
+      "file": "tests/unit/snapshot.test.ts",
+      "line": 329,
+      "scenario": "The sole npm_ token fixture assigns its value to a variable named token. The newer literal-field scanner rejects that assignment independently of the npm-token pattern. I disabled the npm-token rule in memory: the existing fixture still returned credential literal \"token\", while the identical standalone token returned no findings. The declared mutation \"npm tokens not recognized\" therefore lacks an isolated regression for this safeguard.",
+      "fix": "Add a snapshot fixture containing a standalone npm token or an innocuously named value, plus a direct recognition assertion. Verify that disabling the npm-token rule makes that regression fail, then confirm the mutation."
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 interface Mutation { name: string; file: string; anchor: string; replacement: string }
 const sets = [
   { path: "packages/cli/src/harness/claude/mutations-probe.json", prefix: /^probe /, file: /^packages\/cli\/src\/harness\/claude\/probe\.ts$/, min: 19 },
-  { path: "packages/cli/src/harness/claude/mutations-settings.json", prefix: /^settings /, file: /^packages\/cli\/src\/harness\/claude\/(settings|task|desktop-evidence)\.ts$/, min: 14 },
+  { path: "packages/cli/src/harness/claude/mutations-settings.json", prefix: /^settings /, file: /^packages\/cli\/src\/(harness\/claude\/(settings|task|desktop-evidence)|sandbox\/temp|checks\/gate)\.ts$/, min: 16 },
 ];
 for (const set of sets) {
   it(`keeps unique prefixed mutation names and exactly one occurrence of every anchor (${set.path})`, () => {

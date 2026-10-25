@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error standalone .mjs script, like mutation-classify.mjs
 import { inspectReviews } from "../../scripts/review-status.mjs";
+// @ts-expect-error standalone .mjs script
+import { summarize } from "../../scripts/mutation-classify.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "review-status-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -13,9 +15,9 @@ const checks = ["typecheck", "unit-tests", "live-probe", "doctor-live", "mutatio
 let count = 0;
 const verdict = (extra: object = {}) => ({ verdict: "PASS", summary: "synthetic", findings: [], remaining_for_stage0: [], ...extra });
 
-function fixture(lanes = false) {
+function fixture(lanes = false, roundName?: string) {
   const base = join(root, String(++count));
-  const name = lanes ? "stage0-16" : "stage0-15";
+  const name = roundName ?? (lanes ? "stage0-16" : "stage0-15");
   const round = join(base, name);
   const workspace = join(base, `checkout-${revision}`);
   const evidence = join(workspace, ".review-evidence");
@@ -114,6 +116,25 @@ describe("review status is read-only, advisory and conservative", () => {
     expect(read(f.base)).toMatchObject({ state: "failed", result: "FAIL", mutations: { caught: null, notCaught: 2 } });
   });
 
+  // Round 18, lane D: a successful --confirm-stage summary was read as "missing positive summary".
+  it("accepts the summarizer's stage-scoped success line, and checks its counts and stage", () => {
+    const f = fixture();
+    const results = Array.from({ length: 5 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
+    const s = summarize({ total: 5, selected: 5, filtered: false, results, unconfirmed: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } });
+    expect(s.exitCode).toBe(0);
+    writeFileSync(join(f.evidence, "mutation-check.log"), `caught   m0 (x)\n\n${s.line}\nexit 0\n`);
+    expect(read(f.base)).toMatchObject({ state: "finished", result: "PASS", mutations: { caught: 5, notCaught: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } } });
+    for (const bad of [
+      "all 5 mutations caught; stage 0-1: 3 confirmed, 3 caught in fast mode (outside stage 0-1)",
+      "all 5 mutations caught; stage 9: 3 confirmed, 2 caught in fast mode (outside stage 9)",
+      "all 5 mutations caught; stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 2)",
+      "partial run: 5 of 9 mutations selected, all 5 caught (not a complete proof, not the gate); stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 0-1)",
+    ]) {
+      writeFileSync(join(f.evidence, "mutation-check.log"), `${bad}\nexit 0\n`);
+      expect(read(f.base).result, bad).toBe("FAIL");
+    }
+  });
+
   it("requires a positive mutation summary and accepts non-blocking findings", () => {
     const f = fixture();
     writeFileSync(join(f.evidence, "mutation-check.log"), "exit 0\n");
@@ -204,6 +225,39 @@ describe("review status is read-only, advisory and conservative", () => {
     writeFileSync(join(f.round, "verdict.json"), JSON.stringify(verdict({ findings: [finding] })));
     expect(read(f.base)).toMatchObject({ state: "failed", result: "FAIL" });
     expect(read(f.base).lanes[0].findings).toEqual({ critical: 0, high: 1, medium: 0, low: 0 });
+  });
+
+  // Round 18, lane D (low): decision 84 blocks on criticals, and on highs only with a concrete path to a
+  // credential leak, an action outside the broker or a false pass. The verdict schema has no per-finding
+  // flag; round 18's prompt makes the lane's verdict that mark ("PASS only if there are no blocking
+  // findings under decision 84"), so from round 18 on a PASS lane's highs are recorded, not blocking.
+  const abd = (name: string, laneA: object) => {
+    const f = fixture(true, name);
+    writeFileSync(join(f.round, "lanes"), "lanes A,B,D\n");
+    writeFileSync(join(f.round, "status"), "evidence-done\nlane A exit 0\nlane B exit 0\nlane D exit 0\ncodex-done\n");
+    writeFileSync(join(f.round, "verdict-A.json"), JSON.stringify(verdict(laneA)));
+    return read(f.base);
+  };
+  const high = { severity: "high", title: "synthetic", file: "sample.ts", line: 1, scenario: "no leak path", fix: "synthetic" };
+  it("applies decision 84 from round 18 on: a PASS lane's high is non-blocking, a critical or a FAIL blocks", () => {
+    const pass = abd("stage0-18", { findings: [high] });
+    expect(pass.problems).toEqual([]);
+    expect(pass).toMatchObject({ state: "finished", result: "PASS", blockingRule: "decision 84" });
+    expect(pass.lanes[0]).toMatchObject({ id: "A", state: "finished", findings: { critical: 0, high: 1, medium: 0, low: 0 } });
+    expect(abd("stage0-18", { verdict: "FAIL", findings: [high] })).toMatchObject({ state: "failed", result: "FAIL" });
+    const critical = abd("stage0-18", { findings: [{ ...high, severity: "critical" }] });
+    expect(critical).toMatchObject({ state: "failed", result: "FAIL" });
+    expect(critical.problems).toContain("Lane A reports a blocking result");
+    for (const later of ["stage0-19", "stage2-1", "stage1-3"]) expect(abd(later, { findings: [high] }), later).toMatchObject({ result: "PASS", blockingRule: "decision 84" });
+  });
+
+  it("keeps decision 74's severity-only reading for rounds before 18", () => {
+    for (const earlier of ["stage0-17", "stage0-16"]) {
+      expect(abd(earlier, {}), earlier).toMatchObject({ result: "PASS", blockingRule: "decision 74" });
+      const r = abd(earlier, { findings: [high] });
+      expect(r, earlier).toMatchObject({ result: "FAIL", blockingRule: "decision 74" });
+      expect(r.problems).toEqual(["Lane A reports a blocking result"]);
+    }
   });
 
   it("reports a reviewer FAIL even without high findings", () => {

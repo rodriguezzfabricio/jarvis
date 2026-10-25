@@ -33,7 +33,7 @@ describe("README commands", () => {
 
   it("lists only real commands as available, and the rest as coming", () => {
     for (const c of available) expect(built, c).toContain(c);
-    expect(coming.length).toBeGreaterThan(0);
+    // Every listed command is built now, so the Coming table may be gone; whatever it lists must not exist yet.
     // `eval` exists with only its baseline subcommand; `jarvis eval <task>` is the part still coming.
     for (const c of coming.filter((x) => x !== "eval")) expect(built, `${c} is built now; move it out of "Coming"`).not.toContain(c);
   });

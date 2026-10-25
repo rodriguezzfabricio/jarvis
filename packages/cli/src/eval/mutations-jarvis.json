@@ -14,7 +14,7 @@
   {
     "name": "eval jarvis hidden leak check skipped",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "  assertHiddenAbsent(p.workspace, [...new Set([grading.dir, loopChecks.dir])]);\n",
+    "anchor": "  assertHiddenAbsent(p.workspace, [grading.dir, loopChecks.dir]);\n",
     "replacement": ""
   },
   {
@@ -82,12 +82,6 @@
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "    if (outcome.status === \"usage-limited\") return { kind: \"usage-limited\", until: outcome.resetAt ?? outcome.usageWaitUntil, started };\n",
     "replacement": ""
-  },
-  {
-    "name": "eval jarvis gate folder ignored",
-    "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "  const loopChecks = existsSync(gateDir) ? loadHiddenChecks(gateDir) : grading;",
-    "replacement": "  const loopChecks = grading;"
   },
   {
     "name": "eval jarvis run without sessions counted as started",
@@ -190,5 +184,59 @@
     "file": "packages/cli/src/eval/schedule.ts",
     "anchor": "`${deps.prefix ?? \"baseline\"}-${",
     "replacement": "`baseline-${"
+  },
+  {
+    "name": "eval jarvis falls back to the grading checks without a gate folder",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (!existsSync(gateDir)) throw new Error(`${task.id}: the Jarvis arm needs hidden/${task.id}/gate/ (the project's own suite, for the loop); hidden/${task.id}/checks/ only grades (decision 97)`);\n  const loopChecks = loadHiddenChecks(gateDir);",
+    "replacement": "  const loopChecks = existsSync(gateDir) ? loadHiddenChecks(gateDir) : grading;"
+  },
+  {
+    "name": "eval jarvis gate may hold grading files",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  assertHiddenDisjoint(loopChecks, grading);\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis evals review with codex",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    codex: null,",
+    "replacement": "    codex: (input) => import(\"../review/codex.ts\").then((m) => m.createCodexReviewer({ home: p.home })(input)),"
+  },
+  {
+    "name": "eval jarvis reviewer skips the live preflight",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams",
+    "replacement": "preflight: async () => ({ ok: true }), ...(opts.reviewerSeams"
+  },
+  {
+    "name": "eval jarvis grade without a suite fingerprint",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "  const grade: Grade = { revision: g.revision, suite, gradedAt",
+    "replacement": "  const grade: Grade = { revision: g.revision, suite: \"\", gradedAt"
+  },
+  {
+    "name": "eval jarvis suite fingerprint ignores contents",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "`${f} ${fileHashes[f]}`",
+    "replacement": "f"
+  },
+  {
+    "name": "eval jarvis compare ignores mixed suites",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "  if (suites.length > 1) missing.push(",
+    "replacement": "  if (false) missing.push("
+  },
+  {
+    "name": "eval jarvis compare counts grades without a suite",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": " || typeof g.suite !== \"string\" || !/^[0-9a-f]{64}$/.test(g.suite)) return",
+    "replacement": ") return"
+  },
+  {
+    "name": "eval jarvis baseline skips the hidden leak check",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "    try { assertHiddenAbsent(workspace, opts.hiddenDirs); }",
+    "replacement": "    try { }"
   }
 ]

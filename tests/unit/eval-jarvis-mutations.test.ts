@@ -8,7 +8,7 @@ it("keeps unique eval-jarvis-prefixed mutation names and exactly one occurrence 
   expect(new Set(definitions.map((d) => d.name)).size).toBe(definitions.length);
   for (const d of definitions) {
     expect(d.name).toMatch(/^eval jarvis /);
-    expect(d.file).toMatch(/^packages\/cli\/src\/eval\/(jarvis|hidden|compare|schedule)\.ts$/);
+    expect(d.file).toMatch(/^packages\/cli\/src\/eval\/(jarvis|hidden|compare|schedule|baseline)\.ts$/);
     expect(readFileSync(d.file, "utf8").split(d.anchor).length - 1, d.name).toBe(1);
     expect(d.replacement).not.toBe(d.anchor);
   }

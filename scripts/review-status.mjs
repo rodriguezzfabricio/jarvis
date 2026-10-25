@@ -55,7 +55,21 @@ function validVerdict(value) {
     ["title", "file", "scenario", "fix"].every((key) => typeof finding[key] === "string"));
 }
 
+/**
+ * Which bar a round's lanes are judged by. Decision 74 (rounds before 18): any critical or high blocks.
+ * Decision 84 (stage 0 round 18 on, and every later stage): criticals block, and highs only with a
+ * concrete path to a credential leak, an action outside the broker or a false pass. The verdict schema
+ * has no per-finding flag for that; from round 18 the prompt makes the lane's verdict the reviewer's
+ * mark ("PASS only if there are no blocking findings under decision 84"), so a PASS lane's highs are
+ * recorded, not blocking. A critical always blocks, whatever the verdict says.
+ */
+export function blockingRule(name) {
+  const m = /^stage(\d+)-(\d+)$/.exec(name);
+  return m && (Number(m[1]) > 0 || Number(m[2]) >= 18) ? "decision 84" : "decision 74";
+}
+
 function inspectRound(root, name) {
+  const rule = blockingRule(name);
   const path = join(root, name);
   const files = names(path)?.map((entry) => entry.name) ?? [];
   const statusFile = read(join(path, "status"));
@@ -160,14 +174,15 @@ function inspectRound(root, name) {
       if (exitCode === null) problems.push(`Lane ${id} lacks a completion marker`);
       else if (exitCode !== 0) problems.push(`Lane ${id} exited ${exitCode}`);
       if (!valid) problems.push(`Lane ${id} verdict ${raw.error ?? "invalid"}`);
-      if (valid && (value.verdict === "FAIL" || findings.critical > 0 || findings.high > 0)) problems.push(`Lane ${id} reports a blocking result`);
-      state = exitCode === 0 && valid && value.verdict === "PASS" && findings.critical === 0 && findings.high === 0 ? "finished" : "failed";
+      const blocking = valid && (value.verdict === "FAIL" || findings.critical > 0 || (rule === "decision 74" && findings.high > 0));
+      if (blocking) problems.push(`Lane ${id} reports a blocking result`);
+      state = exitCode === 0 && valid && !blocking ? "finished" : "failed";
     }
     return { id, state, exitCode, verdict: valid ? value.verdict : null, findings, detail: valid ? null : raw.error ?? "invalid or partial JSON" };
   });
   const finished = completed && lanes.every((lane) => lane.state === "finished") && evidence.every((log) => log.exitCode === 0);
   const state = problems.length ? "failed" : finished ? "finished" : evidenceReady ? "reviewing" : workspace || status ? "capturing evidence" : "queued";
-  return { name, advisory: true, state, result: state === "failed" ? "FAIL" : state === "finished" ? "PASS" : "PENDING", revision, workspace, evidence, install, mutations, lanes, problems };
+  return { name, advisory: true, blockingRule: rule, state, result: state === "failed" ? "FAIL" : state === "finished" ? "PASS" : "PENDING", revision, workspace, evidence, install, mutations, lanes, problems };
 }
 
 export function inspectReviews(root = join(homedir(), ".jarvis", "codex-review")) {

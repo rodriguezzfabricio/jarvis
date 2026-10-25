@@ -15,9 +15,9 @@ const checks = ["typecheck", "unit-tests", "live-probe", "doctor-live", "mutatio
 let count = 0;
 const verdict = (extra: object = {}) => ({ verdict: "PASS", summary: "synthetic", findings: [], remaining_for_stage0: [], ...extra });
 
-function fixture(lanes = false) {
+function fixture(lanes = false, roundName?: string) {
   const base = join(root, String(++count));
-  const name = lanes ? "stage0-16" : "stage0-15";
+  const name = roundName ?? (lanes ? "stage0-16" : "stage0-15");
   const round = join(base, name);
   const workspace = join(base, `checkout-${revision}`);
   const evidence = join(workspace, ".review-evidence");
@@ -225,6 +225,39 @@ describe("review status is read-only, advisory and conservative", () => {
     writeFileSync(join(f.round, "verdict.json"), JSON.stringify(verdict({ findings: [finding] })));
     expect(read(f.base)).toMatchObject({ state: "failed", result: "FAIL" });
     expect(read(f.base).lanes[0].findings).toEqual({ critical: 0, high: 1, medium: 0, low: 0 });
+  });
+
+  // Round 18, lane D (low): decision 84 blocks on criticals, and on highs only with a concrete path to a
+  // credential leak, an action outside the broker or a false pass. The verdict schema has no per-finding
+  // flag; round 18's prompt makes the lane's verdict that mark ("PASS only if there are no blocking
+  // findings under decision 84"), so from round 18 on a PASS lane's highs are recorded, not blocking.
+  const abd = (name: string, laneA: object) => {
+    const f = fixture(true, name);
+    writeFileSync(join(f.round, "lanes"), "lanes A,B,D\n");
+    writeFileSync(join(f.round, "status"), "evidence-done\nlane A exit 0\nlane B exit 0\nlane D exit 0\ncodex-done\n");
+    writeFileSync(join(f.round, "verdict-A.json"), JSON.stringify(verdict(laneA)));
+    return read(f.base);
+  };
+  const high = { severity: "high", title: "synthetic", file: "sample.ts", line: 1, scenario: "no leak path", fix: "synthetic" };
+  it("applies decision 84 from round 18 on: a PASS lane's high is non-blocking, a critical or a FAIL blocks", () => {
+    const pass = abd("stage0-18", { findings: [high] });
+    expect(pass.problems).toEqual([]);
+    expect(pass).toMatchObject({ state: "finished", result: "PASS", blockingRule: "decision 84" });
+    expect(pass.lanes[0]).toMatchObject({ id: "A", state: "finished", findings: { critical: 0, high: 1, medium: 0, low: 0 } });
+    expect(abd("stage0-18", { verdict: "FAIL", findings: [high] })).toMatchObject({ state: "failed", result: "FAIL" });
+    const critical = abd("stage0-18", { findings: [{ ...high, severity: "critical" }] });
+    expect(critical).toMatchObject({ state: "failed", result: "FAIL" });
+    expect(critical.problems).toContain("Lane A reports a blocking result");
+    for (const later of ["stage0-19", "stage2-1", "stage1-3"]) expect(abd(later, { findings: [high] }), later).toMatchObject({ result: "PASS", blockingRule: "decision 84" });
+  });
+
+  it("keeps decision 74's severity-only reading for rounds before 18", () => {
+    for (const earlier of ["stage0-17", "stage0-16"]) {
+      expect(abd(earlier, {}), earlier).toMatchObject({ result: "PASS", blockingRule: "decision 74" });
+      const r = abd(earlier, { findings: [high] });
+      expect(r, earlier).toMatchObject({ result: "FAIL", blockingRule: "decision 74" });
+      expect(r.problems).toEqual(["Lane A reports a blocking result"]);
+    }
   });
 
   it("reports a reviewer FAIL even without high findings", () => {

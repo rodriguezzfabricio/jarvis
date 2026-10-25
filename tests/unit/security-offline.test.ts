@@ -20,11 +20,7 @@ function setup() {
 }
 function pins(db?: string): ScannerPins {
   const fn = (pinsModule as unknown as { pinnedSecurityScanners: (db?: string) => ScannerPins }).pinnedSecurityScanners;
-  expect(fn).toBeTypeOf("function");
-  const configured = fn(db);
-  // The shared pin edit is delivered to the integrator; exercise the corrected policy here.
-  configured.semgrep = { ...configured.semgrep!, args: [...configured.semgrep!.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] };
-  return configured;
+  expect(fn).toBeTypeOf("function"); return fn(db);
 }
 function database(dir: string, ecosystems = ["npm", "Go", "PyPI"]) {
   mkdirSync(dir, { recursive: true });
@@ -38,6 +34,8 @@ it("pins all three installed scanners by absolute path and exact version", () =>
   const all = pins();
   expect(Object.fromEntries(Object.entries(all).map(([tool, pin]) => [tool, [pin.bin, pin.version]]))).toEqual({ gitleaks: ["/opt/homebrew/bin/gitleaks", "8.28.0"], semgrep: ["/opt/homebrew/bin/semgrep", "1.182.0"], "osv-scanner": ["/opt/homebrew/bin/osv-scanner", "2.7.0"] });
   expect(all.gitleaks!.args).toEqual(expect.arrayContaining(["--redact=100", "--ignore-gitleaks-allow", "--gitleaks-ignore-path=/dev/null"]));
+  // Semgrep skips files over 1 MB by default and reports nothing about them (backlog 92, verified live).
+  expect(all.semgrep!.args).toContain("--max-target-bytes=0");
 });
 
 it("uses only vendored Semgrep rules, disabled metrics, version checks and nosem", async () => {
@@ -45,7 +43,7 @@ it("uses only vendored Semgrep rules, disabled metrics, version checks and nosem
   const result = await runScanner("semgrep", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => { calls.push(spec); return ok(spec.args.includes("--version") ? "1.182.0\n" : '{"results":[],"errors":[]}'); } });
   expect(result.status).toBe("pass");
   const scan = calls[1]!;
-  expect(scan.args).toEqual(expect.arrayContaining(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--config", pin.rulesFile]));
+  expect(scan.args).toEqual(expect.arrayContaining(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0", "--config", pin.rulesFile]));
   expect(scan.env).toMatchObject({ SSL_CERT_FILE: "/etc/ssl/cert.pem", SEMGREP_SEND_METRICS: "off", SEMGREP_ENABLE_VERSION_CHECK: "0" });
   expect(scan.env.HOME).not.toBe(checkout); expect(scan.env.TMPDIR).not.toBe(checkout);
   expect(Object.keys(scan.env).sort()).toEqual(["CI", "HOME", "LANG", "PATH", "SEMGREP_ENABLE_VERSION_CHECK", "SEMGREP_SEND_METRICS", "SSL_CERT_FILE", "TMPDIR"]);

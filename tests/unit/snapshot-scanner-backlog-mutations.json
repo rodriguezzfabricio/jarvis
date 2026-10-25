@@ -150,12 +150,6 @@
     "replacement": "const m = /^([^\\s:]*):([\\p{L}\\p{N}\\p{P}\\p{S}]+)$/u.exec(decoded);"
   },
   {
-    "name": "scanner quoted assignment boundaries",
-    "file": "packages/cli/src/eval/snapshot-literals.ts",
-    "anchor": "(?<![\\\\w\"'\\x60])",
-    "replacement": ""
-  },
-  {
     "name": "scanner shell substitution references",
     "file": "packages/cli/src/eval/snapshot-literals.ts",
     "anchor": "const word = `(?:\\\\$\\\\([^()]*\\\\)|${LITERAL.source}|[^\\\\s;&|]+)`;",
@@ -166,12 +160,6 @@
     "file": "packages/cli/src/eval/snapshot-literals.ts",
     "anchor": "const value = /^[\"']/.test(m[2]!) ? body(m[2]!) : m[2]!;",
     "replacement": "const value = /^[\"'`]/.test(m[2]!) ? body(m[2]!) : m[2]!;"
-  },
-  {
-    "name": "scanner literal backtick context",
-    "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "literalFields(text, FIELD_POLICY, shellBackticks)",
-    "replacement": "literalFields(text, FIELD_POLICY, false)"
   },
   {
     "name": "scanner nested registry member names",

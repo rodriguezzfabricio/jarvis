@@ -158,6 +158,11 @@ describe("images and fonts", () => {
     expect(scan(name, bytes)).toEqual([]);
   });
 
+  it("keeps binary data whose first bytes pass the zlib checksum but name no valid window", () => {
+    // 0xf8 0x00: method 8 and (0xf800 % 31) === 0, but window 15 is past zlib's maximum of 7.
+    expect(scan("blob.bin", Buffer.from([0xf8, 0x00, 0xff, 0xfe, 0x80, 0x81, 0x00, 0xc3]))).toEqual([]);
+  });
+
   it("does not decode encoded fields inside an image (an XMP thumbnail, say)", () => {
     expect(scan("screenshot.png", Buffer.concat([PNG, noise("xmp", 4096), Buffer.from("<x:xmpmeta><xmpGImg:image>eJz/////////////</xmpGImg:image></x:xmpmeta>"), noise("xmp2", 4096)]))).toEqual([]);
   });
@@ -180,4 +185,16 @@ describe("images and fonts", () => {
     const dest = await snapshot(files);
     expect(readFileSync(join(dest, "cmd/server/main.go"), "utf8")).toBe(files["cmd/server/main.go"]);
   }, 60_000);
+});
+
+// Two older rules that the backlog 50–64 literal checks masked (their mutations survived since 58ea864):
+// each case here is refused only by the rule named.
+describe("rules the literal checks used to mask", () => {
+  it("refuses an npm access token outside any assignment", () => {
+    expect(scan("notes.md", "Publish with npm_q8Zr2vLm0TxSynthetic9qvM2abcdefghijZ from CI.\n")).toEqual(["npm token"]);
+  });
+
+  it("refuses an unparseable configuration that names a credential field", () => {
+    expect(scan("broken.yaml", "database:\n  password: ${DB_PASSWORD}\n bad: [unclosed\n")).toEqual(["unparseable configuration with credential-named fields"]);
+  });
 });

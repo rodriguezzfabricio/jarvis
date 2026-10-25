@@ -1,0 +1,51 @@
+# Original Jarvis rules. Go has no builtin eval; template execution is the analogous sink.
+rules:
+  - id: jarvis.go.sql-injection
+    languages: [go]
+    severity: ERROR
+    message: SQL built by concatenation can permit injection; use bound parameters.
+    pattern-either:
+      - pattern: $DB.Query($SQL + $INPUT, ...)
+      - pattern: $DB.Exec($SQL + $INPUT, ...)
+  - id: jarvis.go.template-eval
+    languages: [go]
+    severity: ERROR
+    message: Parsing a dynamic template requires review; keep templates trusted.
+    patterns:
+      - pattern: $T.Parse($CODE)
+      - pattern-not: $T.Parse("...")
+  - id: jarvis.go.unsafe-deserialization
+    languages: [go]
+    severity: ERROR
+    message: Decoding request bodies as gob permits resource exhaustion; use bounded data formats.
+    pattern: gob.NewDecoder($REQ.Body).Decode(...)
+  - id: jarvis.go.command-execution
+    languages: [go]
+    severity: ERROR
+    message: Command execution requires review; never pass user input to a shell.
+    pattern: exec.Command(...)
+  - id: jarvis.go.ssrf
+    languages: [go]
+    severity: ERROR
+    message: Request-controlled destinations need an allowlist.
+    mode: taint
+    pattern-sources:
+      - pattern: $REQ.URL.Query().Get(...)
+      - pattern: $REQ.FormValue(...)
+    pattern-sinks:
+      - pattern: http.Get($URL)
+      - pattern: http.Post($URL, ...)
+  - id: jarvis.go.hardcoded-secret
+    languages: [go]
+    severity: ERROR
+    message: Credential-like literal requires review; use the secret backend.
+    patterns:
+      - pattern-either:
+          - pattern: $KEY := "$VALUE"
+          - pattern: $KEY = "$VALUE"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)^(api_?key|secret|password|token)$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: .{8,}

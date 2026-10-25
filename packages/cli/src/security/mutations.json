@@ -193,7 +193,7 @@
   },
   {
     "name": "security: semgrep nosem disabling omitted",
-    "file": "packages/cli/src/security/scanners.ts",
+    "file": "packages/cli/src/security/offline.ts",
     "anchor": "\"--disable-nosem\"",
     "replacement": "\"--metrics=off\""
   },
@@ -352,5 +352,113 @@
     "file": "packages/cli/src/security/scanners.ts",
     "anchor": "finally { if (reportDir) rmSync(reportDir, { recursive: true, force: true }); }",
     "replacement": "finally {}"
+  },
+  {
+    "name": "security offline: Semgrep pin version changed",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "version: \"1.182.0\"",
+    "replacement": "version: \"1.182.1\""
+  },
+  {
+    "name": "security offline: OSV pin version changed",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "version: \"2.7.0\"",
+    "replacement": "version: \"2.7.1\""
+  },
+  {
+    "name": "security offline: nested Semgrep suppression honored",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "\"--x-ignore-semgrepignore-files\", ",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: scanner git ignores honored",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "\"--no-git-ignore\", ",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: Semgrep registry configuration allowed",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "const config = args.indexOf(\"--config\"); const rules = args[config + 1];",
+    "replacement": "return args;\n  const config = args.indexOf(\"--config\"); const rules = args[config + 1];"
+  },
+  {
+    "name": "security offline: Semgrep required flags not enforced",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!semgrepFlags.every((flag) => args.includes(flag))",
+    "replacement": "false"
+  },
+  {
+    "name": "security offline: OSV required flags not enforced",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!osvFlags.every((flag) => pin.args.includes(flag))",
+    "replacement": "false"
+  },
+  {
+    "name": "security offline: OSV downloads allowed in gate",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "...osvFlags]);",
+    "replacement": "...osvFlags, \"--download-offline-databases\"]);"
+  },
+  {
+    "name": "security offline: database preflight skipped",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "!osvCacheReady(pin, cwd, runtime)",
+    "replacement": "false"
+  },
+  {
+    "name": "security offline: cache hashes not verified",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "JSON.stringify(files) === JSON.stringify(manifest.files)",
+    "replacement": "true"
+  },
+  {
+    "name": "security offline: cache ecosystem coverage ignored",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "!ecosystems.every((ecosystem) => manifest.ecosystems.includes(ecosystem))",
+    "replacement": "false"
+  },
+  {
+    "name": "security offline: system certificate environment omitted",
+    "file": "packages/cli/src/security/runtime.ts",
+    "anchor": "{ env[key] = value; continue; }",
+    "replacement": "{ continue; }"
+  },
+  {
+    "name": "security offline: database not installed into fixtures",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "cpSync(pin.databaseDir, join(fixture, \"osv-db\"), { recursive: true, errorOnExist: true, force: false });",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: missing database exemptible",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "result.detail !== \"not run: osv database missing\" && ",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: OSV library version parsed as scanner version",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "? stdout.split(\"\\n\").filter((line) => line.startsWith(\"osv-scanner version:\")).join(\"\\n\") : stdout;",
+    "replacement": "? stdout : stdout;"
+  },
+  {
+    "name": "security offline: failed database download published",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "if ((result.code !== 0 && result.code !== 1) || result.timedOut || result.overflowed) throw Error(\"OSV database download failed\");",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: unpinned database fetch binary accepted",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "JSON.stringify(reportedScannerVersion(\"osv-scanner\", version.stdout)) !== '[\"2.7.0\"]'",
+    "replacement": "false"
+  },
+  {
+    "name": "security offline: empty download published",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "if (files.length === 0) throw Error(\"OSV database download produced no files\");",
+    "replacement": ""
   }
 ]

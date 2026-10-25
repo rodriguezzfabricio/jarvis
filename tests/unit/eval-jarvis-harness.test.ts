@@ -46,7 +46,7 @@ describe("eval jarvis: the production harness on the fake claude", () => {
     expect(spec.args).toContain("--restricted");
     expect(spec.args).toContain("--strict-mcp-config");
     expect(spec.args).toContain("--no-session-persistence");
-    expect(settings.sandbox).toMatchObject({ failIfUnavailable: true, allowUnsandboxedCommands: false, network: { allowedDomains: ["registry.npmjs.org", "localhost"] } });
+    expect(settings.sandbox).toMatchObject({ failIfUnavailable: true, allowUnsandboxedCommands: false, network: { allowedDomains: ["registry.npmjs.org", "proxy.golang.org"] } });
     expect(settings.sandbox.filesystem.denyRead).toContain(fx.jarvisHome);
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${fx.jarvisHome}/**)`, "WebSearch", "WebFetch"]));
     expect(settings.permissions.blockReadsOutsideWorkingDirectories).toBe(true);

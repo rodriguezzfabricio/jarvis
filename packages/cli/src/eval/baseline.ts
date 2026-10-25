@@ -19,6 +19,7 @@ import {
   type RateLimitInfo,
 } from "../harness/claude/index.ts";
 import { safeGit } from "./git.ts";
+import { assertTaskDomains } from "./allowlist.ts";
 import { assertHiddenAbsent } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
@@ -44,13 +45,20 @@ export interface GoldenTask {
 /**
  * The only hosts an eval session may reach (decision 79). The snapshot scanner is best-effort, so this
  * list is part of the boundary: a host that accepts authenticated writes (today only the npm registry)
- * is added only after the scanner covers its credential forms, with tests and mutations.
+ * is added only after the scanner covers its credential forms, with tests and mutations. Public Go
+ * module discovery can forward task-chosen paths to an origin: retained pending a read-only mirror
+ * (round 18, option b). It is not an exfiltration barrier for snapshot contents.
  */
-export const EVAL_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
+export const EVAL_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com"];
 
 export function checkEvalDomains(id: string, domains: readonly string[]): void {
-  const extra = domains.filter((d) => !EVAL_ALLOWED_DOMAINS.includes(d));
-  if (extra.length) throw new Error(`${id}: allowedDomains outside the eval allowlist (decision 79): ${extra.join(", ")}`);
+  try {
+    assertTaskDomains(domains);
+    const extra = domains.filter((d) => !EVAL_ALLOWED_DOMAINS.includes(d));
+    if (extra.length) throw new Error(`outside the eval allowlist: ${extra.join(", ")}`);
+  } catch (error) {
+    throw new Error(`${id}: allowedDomains refused (decision 79): ${String(error)}`, { cause: error });
+  }
 }
 
 export function loadTask(evalsRepo: string, id: string): GoldenTask {

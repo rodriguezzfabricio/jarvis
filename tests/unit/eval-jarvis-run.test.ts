@@ -59,7 +59,7 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     for (const f of ["manifest.json", "summary.json", "grade.json"]) expect(existsSync(join(r.resultsDir, f)), f).toBe(true);
     expect(r.resultsDir).toBe(join(fx.jarvisHome, "evals", "05-citizenship", "jarvis-r1"));
     expect(r.workspace).toBe(join(fx.workRoot, "evals", "05-citizenship", "jarvis-r1"));
-    expect(json(join(r.resultsDir, "manifest.json"))).toMatchObject({ variant: "jarvis", pipeline: "single-task", allowedDomains: ["registry.npmjs.org", "localhost"] });
+    expect(json(join(r.resultsDir, "manifest.json"))).toMatchObject({ variant: "jarvis", pipeline: "single-task", allowedDomains: ["registry.npmjs.org", "proxy.golang.org"] });
     expect(json(join(r.resultsDir, "summary.json"))).toMatchObject({ outcome: "complete", claimedDone: true, finalCommit: r.finalCommit });
     // Grading ran on the final revision, in its own runner-owned folder.
     expect(g.calls.map((c) => [c.revision, c.check.name, c.projectDir.startsWith(join(r.resultsDir, "grade"))])).toEqual([[r.finalCommit, "unit", true]]);

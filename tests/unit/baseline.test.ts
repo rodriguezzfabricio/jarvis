@@ -86,7 +86,7 @@ describe("baseline runs (decision 47)", () => {
 
   // Decision 79: the eval allowlist is a compensating control for the best-effort scanner, so a task
   // file can't widen it. A new host needs its credential forms covered first, then a code change here.
-  const evalDomains = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
+  const evalDomains = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com"];
   const writeTask = (id: string, allowedDomains: string[]) => {
     const evals = join(root, "evals-79");
     mkdirSync(join(evals, "tasks", id), { recursive: true });

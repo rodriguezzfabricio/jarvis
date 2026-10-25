@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { assertTaskDomains } from "../../eval/allowlist.ts";
 
 /**
  * Generated settings for a task session (decisions 12, 13, 59, 60, 68, 69).
@@ -23,7 +24,7 @@ export interface TaskSettingsInput {
   cacheDir: string;
   /** Real path of the broker's Unix socket; omit when no broker runs (baselines). */
   brokerSocket?: string;
-  /** Hosts sandboxed commands may reach. */
+  /** Exact public hosts sandboxed commands may reach; local services require runner ownership. */
   allowedDomains: readonly string[];
   /** Folders sessions may read but never write: the Jarvis install, so `jarvis act` runs (decision 12). */
   readOnlyDirs?: readonly string[];
@@ -149,7 +150,7 @@ function checkContext(input: TaskSettingsInput): void {
     if (under(d, input.jarvisHome) || under(input.jarvisHome, d)) throw new Error("a read-only dir must not contain or sit inside the runner-owned folder");
     if (under(input.worktree, d) || under(d, input.worktree)) throw new Error("a read-only dir must not contain or sit inside the worktree");
   }
-  for (const d of input.allowedDomains) if (!/^[a-z0-9.*-]+(:\d+)?$/i.test(d) || d === "*") throw new Error(`invalid allowed domain: ${d}`);
+  assertTaskDomains(input.allowedDomains);
 }
 
 export function buildTaskSettings(input: TaskSettingsInput): TaskSettings {

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "eval public allowlist regains blanket localhost",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "\"fonts.googleapis.com\", \"fonts.gstatic.com\"];",
+    "replacement": "\"fonts.googleapis.com\", \"fonts.gstatic.com\", \"localhost\"];"
+  },
+  {
+    "name": "eval task file skips domain validation",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "  checkEvalDomains(id, t.allowedDomains);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "eval programmatic run skips domain validation",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "  checkEvalDomains(task.id, task.allowedDomains);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "task settings skip domain validation",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "  assertTaskDomains(input.allowedDomains);",
+    "replacement": "  // mutation"
+  },
+  {
+    "name": "task settings admit local hosts and ports",
+    "file": "packages/cli/src/eval/allowlist.ts",
+    "anchor": "    if (isLocalHost(canonical)) fail();",
+    "replacement": "    // mutation"
+  },
+  {
+    "name": "task settings skip canonical loopback addresses",
+    "file": "packages/cli/src/eval/allowlist.ts",
+    "anchor": "canonical = new URL(`http://${domain}`).hostname.toLowerCase();",
+    "replacement": "canonical = host.toLowerCase();"
+  },
+  {
+    "name": "task settings accept wildcard policies",
+    "file": "packages/cli/src/eval/allowlist.ts",
+    "anchor": "  for (const domain of domains) {",
+    "replacement": "  for (const domain of domains) {\n    if (typeof domain === \"string\" && domain.includes(\"*\")) continue;"
+  }
+]

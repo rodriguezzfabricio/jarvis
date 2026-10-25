@@ -112,7 +112,7 @@ export function createEvalFixture(): EvalFixture {
 
 export function addTask(fx: EvalFixture, id: string, prompt: string, o: { revert?: string[]; rev?: string; spec?: string; noSource?: boolean } = {}): GoldenTask {
   const task = {
-    id, title: `fixture ${id}`, model: "claude-sonnet-5-5", maxTurns: 20, timeoutMinutes: 2, allowedDomains: ["registry.npmjs.org", "localhost"],
+    id, title: `fixture ${id}`, model: "claude-sonnet-5-5", maxTurns: 20, timeoutMinutes: 2, allowedDomains: ["registry.npmjs.org", "proxy.golang.org"],
     ...(o.noSource ? {} : { source: { repo: fx.sourceRepo, rev: o.rev ?? fx.fixRev, revert: o.revert ?? [] } }),
   };
   put(join(fx.evalsRepo, "tasks", id), { "task.json": JSON.stringify(task, null, 2), "prompt.md": `${prompt}\n`, ...(o.spec ? { "spec.md": o.spec } : {}) });

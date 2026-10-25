@@ -1,4 +1,4 @@
-import { brotliDecompressSync, crc32, inflateSync } from "node:zlib";
+import { brotliDecompressSync, constants, crc32, inflateSync } from "node:zlib";
 
 /**
  * Images and fonts, read only as far as needed to tell their pixel and glyph payload from everything else
@@ -8,7 +8,8 @@ import { brotliDecompressSync, crc32, inflateSync } from "node:zlib";
  * chunk's CRC matches and its IDAT stream inflates to exactly the image's size; a JPEG, GIF or WebP parses
  * to its end marker; a font's every table lies inside the file, doesn't overlap another or the directory,
  * and every compressed table decompresses to its declared length. A malformed file gets no exemption: all
- * of its bytes are scanned as text, with whatever its compressed parts decoded to.
+ * of its bytes are scanned as text, with what its compressed parts decode to as far as they go, wherever
+ * the structure broke (recovered).
  *
  * Even then pixel data, palettes and glyph tables are only scanned for long printable runs (32 or more
  * characters), not exempt outright, as is the whole file; every other byte (text chunks, EXIF and XMP,
@@ -53,6 +54,35 @@ class Budget {
       if ((e as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") throw new Error("expanded byte limit");
       return undefined;
     }
+  }
+  /**
+   * What `data` decompresses to as far as it goes, for scanning a malformed file: a truncated stream up to
+   * its end, a damaged one up to the damage (its longest prefix that decodes), bytes after it ignored.
+   * Bounded like decompress: past the budget, this throws.
+   */
+  salvage(data: Buffer, brotli = false): Buffer {
+    const options = { maxOutputLength: Math.max(1, this.remaining), finishFlush: brotli ? constants.BROTLI_OPERATION_FLUSH : constants.Z_SYNC_FLUSH };
+    const decode = (d: Buffer): Buffer | undefined => {
+      try {
+        return brotli ? brotliDecompressSync(d, options) : inflateSync(d, options);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") throw new Error("expanded byte limit");
+        return undefined;
+      }
+    };
+    let out = decode(data);
+    if (!out) {
+      // A prefix decodes if and only if it ends before the damage: binary search for the longest one.
+      out = Buffer.alloc(0);
+      for (let lo = 1, hi = data.length - 1; lo <= hi; ) {
+        const mid = (lo + hi) >> 1;
+        const prefix = decode(data.subarray(0, mid));
+        if (prefix) [out, lo] = [prefix, mid + 1];
+        else hi = mid - 1;
+      }
+    }
+    this.remaining -= out.length;
+    return out;
   }
 }
 
@@ -112,21 +142,15 @@ function png(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
     if (type === "IEND") break;
   }
   // The pixel stream inflates to exactly the image's size and nothing follows it. Otherwise what it does
-  // inflate to is no image: it is scanned as text, within the byte budget.
+  // inflate to is no image: it is scanned as text (recovered).
+  if (idat.length === 0 || image === undefined || image > MAX_PIXEL_BYTES) return false;
   const stream = Buffer.concat(idat);
-  if (idat.length === 0 || (image ?? 0) > MAX_PIXEL_BYTES) return false;
-  let r: { buffer: Buffer; engine: { bytesWritten: number } };
   try {
-    r = inflateSync(stream, { info: true, maxOutputLength: image === undefined ? Math.max(1, budget.remaining) : image + 1 }) as unknown as typeof r;
-  } catch (e) {
-    if (image === undefined && (e as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") throw new Error("expanded byte limit");
+    const r = inflateSync(stream, { info: true, maxOutputLength: image + 1 }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+    return r.buffer.length === image && r.engine.bytesWritten === stream.length;
+  } catch {
     return false;
   }
-  if (image !== undefined && r.buffer.length === image && r.engine.bytesWritten === stream.length) return true;
-  if (r.buffer.length > budget.remaining) throw new Error("expanded byte limit");
-  budget.remaining -= r.buffer.length;
-  parts.text.push(r.buffer);
-  return false;
 }
 
 function jpeg(buf: Buffer, parts: MediaParts): boolean {
@@ -297,11 +321,11 @@ function woff(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
 /** WOFF2's known table tags, by their 6-bit index in a table directory entry. */
 const WOFF2_TAGS = "cmap head hhea hmtx maxp name OS/2 post cvt  fpgm glyf loca prep CFF  VORG EBDT EBLC gasp hdmx kern LTSH PCLT VDMX vhea vmtx BASE GDEF GPOS GSUB EBSC JSTF MATH CBDT CBLC COLR CPAL SVG  sbix acnt avar bdat bloc bsln cvar fdsc feat fmtx fvar gvar hsty just lcar mort morx opbd prop trak Zapf Silf Glat Gloc Feat Sill".match(/.{4} ?/g)!.map((t) => t.slice(0, 4));
 
-/** WOFF2: one Brotli stream holding every table, in directory order. Collections get no exemption. */
-function woff2(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
-  if (buf.length < 48 || buf.readUInt32BE(8) !== buf.length || buf.toString("latin1", 4, 8) === "ttcf") return false;
+/** A WOFF2 table directory: its tables' tags and lengths, and where the Brotli stream starts after it. */
+function woff2Directory(buf: Buffer): { tables: { tag: string; length: number }[]; at: number } | undefined {
+  if (buf.length < 48) return undefined;
   const count = buf.readUInt16BE(12);
-  if (count === 0 || count > MAX_TABLES) return false;
+  if (count === 0 || count > MAX_TABLES) return undefined;
   let at = 48;
   const base128 = () => {
     let n = 0;
@@ -314,7 +338,7 @@ function woff2(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
   };
   const tables: { tag: string; length: number }[] = [];
   for (let i = 0; i < count; i++) {
-    if (at >= buf.length) return false;
+    if (at >= buf.length) return undefined;
     const flags = buf[at++]!;
     let tag = WOFF2_TAGS[flags & 0x3f];
     if ((flags & 0x3f) === 0x3f) {
@@ -326,9 +350,18 @@ function woff2(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
     // glyf and loca are transformed at version 0; every other table at any version but 0.
     const transformed = tag === "glyf" || tag === "loca" ? version === 0 : version !== 0;
     const length = transformed ? base128() : original;
-    if (tag === undefined || !/^[\x20-\x7e]{4}$/.test(tag) || original < 0 || length < 0) return false;
+    if (tag === undefined || !/^[\x20-\x7e]{4}$/.test(tag) || original < 0 || length < 0) return undefined;
     tables.push({ tag, length });
   }
+  return { tables, at };
+}
+
+/** WOFF2: one Brotli stream holding every table, in directory order. Collections get no exemption. */
+function woff2(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
+  if (buf.length < 48 || buf.readUInt32BE(8) !== buf.length || buf.toString("latin1", 4, 8) === "ttcf") return false;
+  const directory = woff2Directory(buf);
+  if (!directory) return false;
+  const { tables, at } = directory;
   const end = at + buf.readUInt32BE(20);
   if (end > buf.length) return false;
   const stream = budget.decompress(buf.subarray(at, end), true);
@@ -349,6 +382,51 @@ function woff2(buf: Buffer, budget: Budget, parts: MediaParts): boolean {
     parts.text.push(meta);
   }
   return true;
+}
+
+/**
+ * What a malformed file's compressed parts decode to, found without trusting the structure that failed
+ * (Codex round 2 re-check: one bad chunk, or one byte after a zlib stream, hid every compressed part). A
+ * PNG's text chunks and IDAT stream are found by chunk name wherever they are, a WOFF's tables through its
+ * directory whatever their declared lengths, a WOFF2's table stream after its directory; each stream is
+ * decoded as far as it goes (Budget.salvage).
+ */
+function recovered(buf: Buffer, budget: Budget): Buffer[] {
+  const out: Buffer[] = [];
+  const head = buf.toString("latin1", 0, 4);
+  if (head === "\x89PNG") {
+    const idat: Buffer[] = [];
+    for (const type of ["zTXt", "iCCP", "iTXt", "IDAT"]) {
+      for (let p = buf.indexOf(type, 12, "latin1"); p >= 0; p = buf.indexOf(type, p + 1, "latin1")) {
+        const data = buf.subarray(p + 4, Math.min(buf.length, p + 4 + buf.readUInt32BE(p - 4)));
+        if (type === "IDAT") {
+          idat.push(data);
+          continue;
+        }
+        // keyword\0 then (zTXt, iCCP) method and zlib data, or (iTXt) flag, method, language\0, keyword\0, text.
+        const k = data.indexOf(0);
+        if (k < 0 || (type === "iTXt" && data[k + 1] !== 1)) continue;
+        const language = type === "iTXt" ? data.indexOf(0, k + 3) : -1;
+        const body = type !== "iTXt" ? k + 2 : language < 0 ? -1 : data.indexOf(0, language + 1) + 1;
+        if (body > 0) out.push(budget.salvage(data.subarray(body)));
+      }
+    }
+    if (idat.length) out.push(budget.salvage(Buffer.concat(idat)));
+  } else if (head === "wOFF" && buf.length >= 44) {
+    // The metadata block, and every table stored at other than its original length (zlib data).
+    const blocks: [number, number][] = [[buf.readUInt32BE(24), buf.readUInt32BE(28)]];
+    const count = Math.min(buf.readUInt16BE(12), MAX_TABLES, Math.floor((buf.length - 44) / 20));
+    for (let entry = 44; entry < 44 + 20 * count; entry += 20) {
+      if (buf.readUInt32BE(entry + 8) !== buf.readUInt32BE(entry + 12)) blocks.push([buf.readUInt32BE(entry + 4), buf.readUInt32BE(entry + 8)]);
+    }
+    for (const [start, length] of blocks) if (length && start < buf.length) out.push(budget.salvage(buf.subarray(start, start + length)));
+  } else if (head === "wOF2" && buf.length >= 48) {
+    const directory = woff2Directory(buf);
+    if (directory) out.push(budget.salvage(buf.subarray(directory.at, directory.at + buf.readUInt32BE(20)), true));
+    const [metaStart, metaLength] = [buf.readUInt32BE(28), buf.readUInt32BE(32)];
+    if (metaLength && metaStart < buf.length) out.push(budget.salvage(buf.subarray(metaStart, metaStart + metaLength), true));
+  }
+  return out;
 }
 
 /** Printable ASCII, UTF-16LE and UTF-16BE runs of at least `min` characters. */
@@ -390,8 +468,10 @@ export function isWellFormedMedia(buf: Buffer, maxBytes = 16 * 1024 * 1024): boo
  */
 export function mediaText(buf: Buffer, maxBytes: number): string {
   const parts: MediaParts = { covered: [], text: [], pixels: [] };
-  // Malformed: every byte as text, with whatever its compressed parts decoded to.
-  if (!parse(buf, new Budget(maxBytes), parts)) return [buf, ...parts.text].flatMap((b) => printableRuns(b, MIN_RUN)).join("\n");
+  // Malformed: every byte as text, with whatever its compressed parts decode to.
+  if (!parse(buf, new Budget(maxBytes), parts)) {
+    return [...new Set([buf, ...parts.text, ...recovered(buf, new Budget(maxBytes))].flatMap((b) => printableRuns(b, MIN_RUN)))].join("\n");
+  }
   const uncovered: Buffer[] = [];
   let at = 0;
   for (const [start, end] of parts.covered.sort((a, b) => a[0] - b[0])) {

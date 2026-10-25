@@ -247,11 +247,11 @@ describe("round 2, 1: media exemptions need a well-formed file, and pixel data i
 });
 
 describe("round 2: only a well-formed file earns an exemption", () => {
-  const woff = (() => {
-    // A WOFF 1 font with a zlib name table and a stored glyf table.
+  /** A WOFF 1 font with a zlib name table (`after` follows its zlib stream, inside the table) and a stored glyf table. */
+  const woff1 = (after = Buffer.alloc(0)) => {
     const str = utf16be("Inter");
     const nameTable = Buffer.concat([u16(0), u16(1), u16(6 + 12), u16(3), u16(1), u16(0x409), u16(0), u16(str.length), u16(0), str, Buffer.alloc(64)]);
-    const packed = deflateSync(nameTable);
+    const packed = Buffer.concat([deflateSync(nameTable), after]);
     const glyf = noise("woff-glyf", 400);
     const header = Buffer.alloc(44);
     header.write("wOFF", 0, "latin1");
@@ -262,8 +262,23 @@ describe("round 2: only a well-formed file earns an exemption", () => {
     const file = Buffer.concat([header, dir, glyf, packed]);
     file.writeUInt32BE(file.length, 8);
     return file;
-  })();
+  };
+  const woff = woff1();
+  /** An sfnt with `count` four-byte tables, each inside the file and after the directory. */
+  const fontWithTables = (count: number) => {
+    const data = 12 + 16 * count;
+    const dir = Array.from({ length: count }, (_, i) => Buffer.concat([Buffer.from(`t${String(i).padStart(3, "0")}`), u32(0), u32(data + 4 * i), u32(4)]));
+    return Buffer.concat([u32(0x00010000), u16(count), u16(0), u16(0), u16(0), ...dir, noise("tables", 4 * count)]);
+  };
   const gifImage = Buffer.concat([Buffer.from([0x2c, 0, 0, 0, 0, 16, 0, 16, 0, 0, 2]), subBlocks(noise("lzw", 400))]);
+
+  it("refuses a short credential after the zlib stream of a WOFF table", () => {
+    expect(scan("font.woff", woff1(Buffer.from("\0password = q8Zr2vLm0Tx\0")))).toContain('credential literal "password"');
+  });
+
+  it("accepts a font with as many tables as the limit", () => {
+    expect(isWellFormedMedia(fontWithTables(512))).toBe(true);
+  });
 
   it("accepts the well-formed fixtures the keep cases use", () => {
     for (const [label, bytes] of [["png", png(text("Software", "x"))], ["jpeg", jpeg()], ["gif", gif("hello")], ["webp", webp()], ["ttf", ttf("Inter")], ["woff", woff], ["woff2", woff2("Inter")]] as const) {
@@ -277,7 +292,8 @@ describe("round 2: only a well-formed file earns an exemption", () => {
     ["a PNG with no IEND", png().subarray(0, -12)],
     ["a PNG whose IDAT inflates to the wrong size", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(noise("idat", PIXELS - 1))), chunk("IEND", Buffer.alloc(0))])],
     ["a PNG with bytes after its IDAT stream", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", Buffer.concat([deflateSync(noise("idat", PIXELS)), Buffer.from("x")])), chunk("IEND", Buffer.alloc(0))])],
-    ["a PNG with an invalid bit depth", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", Buffer.concat([u32(64), u32(64), Buffer.from([3, 2, 0, 0, 0])])), chunk("IDAT", deflateSync(noise("idat", PIXELS))), chunk("IEND", Buffer.alloc(0))])],
+    // Its IDAT inflates to the size a 3-bit RGB image would have, so only the header's validity rejects it.
+    ["a PNG with an invalid bit depth", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", Buffer.concat([u32(64), u32(64), Buffer.from([3, 2, 0, 0, 0])])), chunk("IDAT", deflateSync(noise("idat", 64 * (1 + Math.ceil((64 * 3 * 3) / 8))))), chunk("IEND", Buffer.alloc(0))])],
     ["a JPEG with no EOI", jpeg().subarray(0, -2)],
     ["a GIF with no trailer", gif("hello").subarray(0, -1)],
     ["a GIF with a truncated image", Buffer.concat([Buffer.from("GIF89a"), Buffer.from([16, 0, 16, 0, 0, 0, 0]), gifImage.subarray(0, 100)])],
@@ -289,6 +305,9 @@ describe("round 2: only a well-formed file earns an exemption", () => {
     ["a font table with an unprintable tag", (() => { const b = ttf("Inter"); b[12 + 16] = 0; return b; })()],
     ["a WOFF with the wrong length", (() => { const b = Buffer.from(woff); b.writeUInt32BE(b.length + 1, 8); return b; })()],
     ["a WOFF table that does not inflate to its length", (() => { const b = Buffer.from(woff); b.writeUInt32BE(b.readUInt32BE(44 + 20 + 12) + 1, 44 + 20 + 12); return b; })()],
+    ["a WOFF table with bytes after its zlib stream", woff1(Buffer.from("x"))],
+    ["a font with no tables", Buffer.concat([u32(0x00010000), u16(0), u16(0), u16(0), u16(0), noise("tables", 64)])],
+    ["a font with more tables than any real font", fontWithTables(513)],
     ["a WOFF2 with a corrupted table directory", (() => { const b = woff2("Inter"); return Buffer.concat([b.subarray(0, 48), Buffer.from([0xc0 | 10, 0x01]), b.subarray(50)]); })()],
   ])("rejects %s", (_label, bytes) => {
     expect(isWellFormedMedia(bytes)).toBe(false);
@@ -332,4 +351,68 @@ describe("round 2, 4: wrapped DER candidates are bounded", () => {
     const hits = JSON.parse(r.stdout) as string[];
     expect(hits).toContain("wrapped base64 candidate limit; needs review");
   }, 60_000);
+});
+
+/**
+ * Round 2 re-check: a malformed file is scanned whole, so what its compressed parts hold must be decoded
+ * too. A structural error before a zTXt chunk, or one byte after a zlib stream, hid every compressed part.
+ */
+describe("round 2: a malformed file's compressed parts are still decoded", () => {
+  const ztxtRaw = (stream: Buffer) => chunk("zTXt", Buffer.concat([Buffer.from("Comment\0\0", "latin1"), stream]));
+  const badCrc = Buffer.concat([u32(1), Buffer.from("tEXt"), Buffer.from("x"), u32(0)]);
+  const pngOf = (...chunks: Buffer[]) => Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), ...chunks, chunk("IDAT", deflateSync(noise("idat", PIXELS))), chunk("IEND", Buffer.alloc(0))]);
+  /** A zlib stream damaged near its end, so that decoding it whole fails: it decodes up to the damage. */
+  const damaged = (data: Buffer) => { const z = Buffer.from(deflateSync(data)); z.writeUInt8(z.readUInt8(z.length - 30) ^ 0xff, z.length - 30); return z; };
+  const woffOf = (table: Buffer, stored: Buffer, original = table.length) => {
+    const header = Buffer.alloc(44);
+    header.write("wOFF", 0, "latin1");
+    header.writeUInt32BE(0x00010000, 4);
+    header.writeUInt16BE(1, 12);
+    const file = Buffer.concat([header, Buffer.from("name"), u32(64), u32(stored.length), u32(original), u32(0), stored]);
+    file.writeUInt32BE(file.length, 8);
+    return file;
+  };
+  /** A WOFF2 font whose directory declares one name table of `declared` bytes, over `stream` compressed. */
+  const woff2Of = (stream: Buffer, declared: number) => {
+    const packed = brotliCompressSync(stream);
+    const header = Buffer.alloc(48);
+    header.write("wOF2", 0, "latin1");
+    header.writeUInt32BE(0x00010000, 4);
+    header.writeUInt16BE(1, 12);
+    header.writeUInt32BE(12 + 16 + declared, 16);
+    header.writeUInt32BE(packed.length, 20);
+    const file = Buffer.concat([header, Buffer.from([5, declared]), packed]);
+    file.writeUInt32BE(file.length, 8);
+    return file;
+  };
+  const nameK = Buffer.concat([Buffer.alloc(18), Buffer.from(K), Buffer.alloc(40)]);
+
+  it.each([
+    ["a zTXt PEM followed by one more byte", "logo.png", pngOf(ztxtRaw(Buffer.concat([deflateSync(pemK), Buffer.from("x")])))],
+    ["a zTXt PEM after a chunk with a bad CRC", "logo.png", pngOf(badCrc, ztxt("Comment", pemK))],
+    ["a truncated zTXt PEM stream", "logo.png", pngOf(ztxtRaw(deflateSync(pemK).subarray(0, -6)))],
+    ["a damaged zTXt stream, the PEM before the damage", "logo.png", pngOf(ztxtRaw(damaged(Buffer.from(pemK + "padding ".repeat(400)))))],
+    ["a compressed iTXt PEM in a PNG with no IEND", "logo.png", pngOf(itxt("XML:com.adobe.xmp", pemK, true)).subarray(0, -12)],
+    ["an IDAT stream holding a PEM, before a chunk with a bad CRC", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(pemK)), badCrc, chunk("IEND", Buffer.alloc(0))])],
+    ["a WOFF zlib table holding a key, with the wrong original length", "font.woff", woffOf(nameK, deflateSync(nameK), nameK.length + 1)],
+    ["a WOFF zlib table holding a key, followed by one more byte", "font.woff", woffOf(nameK, Buffer.concat([deflateSync(nameK), Buffer.from("x")]))],
+    ["a WOFF2 stream holding a key after its declared table", "font.woff2", woff2Of(Buffer.concat([Buffer.alloc(40), Buffer.from(K)]), 40)],
+    ["a WOFF2 stream shorter than its declared table, holding a key", "font.woff2", woff2Of(Buffer.concat([Buffer.alloc(8), Buffer.from(K)]), 120)],
+  ])("refuses %s", (_label, name, bytes) => {
+    expect(isWellFormedMedia(bytes)).toBe(false);
+    expect(refused(name, bytes)).toBe(true);
+  });
+
+  it("refuses a short credential in a WOFF2 stream past its declared table", () => {
+    const font = woff2Of(Buffer.concat([Buffer.alloc(40), Buffer.from("\0password = q8Zr2vLm0Tx\0")]), 40);
+    expect(isWellFormedMedia(font)).toBe(false);
+    expect(scan("font.woff2", font)).toContain('credential literal "password"');
+  });
+
+  it("keeps the well-formed versions", () => {
+    for (const [name, bytes] of [["logo.png", pngOf(ztxt("Comment", "hello"))], ["font.woff", woffOf(Buffer.alloc(80), deflateSync(Buffer.alloc(80)))], ["font.woff2", woff2Of(Buffer.alloc(40), 40)]] as const) {
+      expect(isWellFormedMedia(bytes), name).toBe(true);
+      expect(scan(name, bytes), name).toEqual([]);
+    }
+  });
 });

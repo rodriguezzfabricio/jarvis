@@ -97,7 +97,7 @@ it("captures only sanitized scanner output through the installed worker", async 
   const bin = join(root, "fake-scanner");
   const raw = JSON.stringify([{ RuleID: "dummy", File: "app.ts", StartLine: 1, Secret: dummy, Match: dummy }]);
   writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') ? '8.28.0' : ${JSON.stringify(raw)});`, { mode: 0o700 });
-  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { gitleaks: { bin, version: "8.28.0", args: ["dir", "--redact=100", "."] } } });
+  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { gitleaks: { bin, version: "8.28.0", args: pinnedSecurityScanners().gitleaks!.args } } });
   store.approve(ledger, "approved scanner");
   const observed = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "gitleaks"], cwd: root, env: { JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(observed.code).toBe(0);
@@ -113,6 +113,7 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   const outputs = { gitleaks: [], semgrep: { results: [], errors: [] }, "osv-scanner": { results: [] } };
   const pins: ScannerPins = {};
   const defaults = pinnedSecurityScanners();
+  defaults.semgrep = { ...defaults.semgrep!, args: [...defaults.semgrep!.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] };
   for (const [tool, output] of Object.entries(outputs)) {
     const bin = join(root, tool);
     writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') || process.argv.includes('--version') ? '1.2.3' : ${JSON.stringify(JSON.stringify(output))});`, { mode: 0o700 });

@@ -6,7 +6,7 @@ export const OSV_ECOSYSTEMS = ["npm", "Go", "PyPI"] as const;
 export type OsvEcosystem = (typeof OSV_ECOSYSTEMS)[number];
 export interface OsvDatabaseManifest {
   schema: 1;
-  scannerVersion: "2.7.0";
+  scannerVersion: string;
   fetchedAt: string;
   ecosystems: OsvEcosystem[];
   files: { path: string; sha256: string }[];

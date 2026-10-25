@@ -18,7 +18,7 @@ Jarvis is a thin orchestrator around Claude Code: research, one round of questio
 - **Full model IDs** (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`), never aliases.
 - **When a doc and reality disagree,** stop, record a new or superseding decision in `docs/01-decisions.md`, then adjust. Don't silently work around it.
 - **Scaffolding that exists because of a model or harness weakness** gets a line in `docs/harness-assumptions.md`.
-- **Small commits with clear messages.** The repo is private until stage 7.
+- **Small commits with clear messages.** The repo is public for portfolio review (decision 112); v1 is still experimental and stage proofs remain required.
 - **Jarvis runs only Fabricio's own work on his own plan** (decision 65).
 
 ## Permanent safety requirements (decisions 59, 60, 68, 69)

@@ -1,147 +1,129 @@
 # Jarvis
 
-Jarvis is a thin layer around Claude Code. You describe what you want once. Jarvis researches the options, asks one round of questions (each with a recommended default), writes a spec, and then builds on its own for hours, in fresh sessions, inside Claude Code's sandbox. It calls something "done" only when checks it runs itself pass on the committed code, never because the model says so.
+A local orchestrator for AI coding agents, built in TypeScript.
 
-It has two parts:
+Describe a feature or bug in Claude Code. Jarvis turns the request into a workflow: research and questions when the scope needs them, a plan, isolated coding sessions, then checks and review before accepting changes. A Node.js runner keeps the work moving between sessions and records what happened.
 
-- **The Jarvis plugin for Claude Code**: the `/jarvis` command, skills and safety hooks. This is what you talk to.
-- **The `jarvis` CLI**: a TypeScript program that runs the checks, keeps the ledger, holds credentials in a broker, and later drives the unattended build loop.
+I’m building Jarvis for my own projects. The starting problem was a recruiter-finder feature: the coding agent began implementing before researching existing tools or understanding the workflow. I wanted a way to make those steps repeatable, and to check the resulting software instead of trusting a completion message.
 
-Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker, the protected checks and the unattended runner (`jarvis run`) work today. `jarvis setup` covers the one-time setup.
+**Status: experimental, under active development.** The build loop has completed a live bug fix that passed hidden tests. A later run reported completion but failed a hidden check. Reliability, broader task coverage, and installation on another machine are still being evaluated. This is a public development repository, not a finished v1 release.
 
-## Requirements
+[Getting started](docs/getting-started.md) · [Architecture](docs/03-architecture.md) · [Evaluation](docs/evaluation.md) · [Decisions](docs/01-decisions.md)
 
-- **macOS.** v1 runs on macOS only.
-- **Node 24** (`node --version` prints `v24.x`). For example: `brew install node@24`.
-- **pnpm**, through corepack, which comes with Node: `corepack enable pnpm`.
-- **Claude Code 2.1.309**, at exactly `~/.local/share/claude/versions/2.1.309`. Jarvis calls this file by its absolute path and never uses whatever `claude` is on your `PATH`. Install Claude Code with Anthropic's native installer if you don't have it yet, then run `claude install 2.1.309`. This may also switch your everyday `claude` to that version. Sign in with your own Claude account: Jarvis never shares a login.
-- **codex-cli 0.164.0** (optional), at `~/.npm-global/bin/codex`. Codex reviews Jarvis's work; without it, a Claude reviewer takes over. To install: `npm config set prefix ~/.npm-global`, then `npm install -g @openai/codex@0.164.0`, then `codex login`.
-- **The ntfy app** on your phone ([ntfy.sh](https://ntfy.sh)), so Jarvis can send you questions and approval requests while you're away. Install it yourself; nothing checks for it.
-- About **20 GB of free disk**. Below that, `jarvis doctor` refuses unattended runs.
+## What it does
 
-The installer checks macOS, Node, pnpm and the two pinned binaries, and `jarvis doctor` checks disk space. It never installs Claude Code or Codex for you and never touches their logins. The phone app is the one prerequisite nothing checks.
+The entry point is a Claude Code plugin:
 
-## Install
+```text
+/jarvis feature: find the recruiter for each job I apply to
+/jarvis fix: the citizenship filter is missing some jobs
+```
 
-Clone the repo somewhere that iCloud doesn't sync (not inside Desktop or Documents if "Desktop & Documents" sync is on):
+The request determines the workflow. A small bug can go straight to debugging. A new product needs research, questions with recommended defaults, and a versioned spec before the build starts.
+
+During a build, Jarvis runs tasks in fresh Claude Code sessions. It checks the committed code, requests a separate review, and sends failures back for repair. Accepted changes move onto the run branch. If a task cannot finish, the runner records it as blocked. You can inspect progress, leave a steering note, or read the report afterwards.
 
 ```sh
-git clone <this repo> ~/Developer/jarvis
+jarvis status
+jarvis steer "Keep the existing API response format"
+jarvis report
+```
+
+## How it works
+
+```mermaid
+flowchart TD
+    A[Request in Claude Code] --> B[Triage]
+    B --> C[Research, intake and spec when needed]
+    B --> D[Task plan]
+    C --> D
+    D --> E[Node.js runner]
+    E --> F[Fresh coding session in an isolated worktree]
+    F --> G[Protected checks on the committed revision]
+    G --> H[Separate review]
+    H --> I[Accept changes or request a repair]
+    I --> E
+    E --> J[Ledger and progress report]
+```
+
+The plugin handles the conversation. The runner owns execution, evidence, and state. Claude-specific integration lives behind an adapter in `packages/cli/src/harness/claude/`.
+
+A few engineering choices shape the implementation:
+
+- **Checks outside the agent’s workspace.** Approved acceptance checks live in a protected store. The runner records process output and exit codes, with assertions separated from candidate code.
+- **Completion tied to a revision.** Checks and reviews must pass on the exact revision being accepted. Concurrent changes are checked again after integration.
+- **State that survives interruption.** An append-only, hash-chained ledger records task transitions, approvals and evidence references. The runner uses it to rebuild state.
+- **An approval broker for outside actions.** Task sessions cannot read stored credentials. Requests for supported actions go through a broker with approval records. Adapter coverage is still in development.
+- **Model routing with escalation.** Builders start on Sonnet 5.5 and can escalate to Opus 5.5 after a failed check or review. Exploration uses Haiku 5.5. Codex is available for cross-model review; current benchmark runs use a Claude reviewer.
+
+The sandbox must be available before unattended work starts. A live canary checks the pinned Claude Code installation and its safety settings. These boundaries have tests and mutation checks, but the project’s remaining validation work is tracked openly.
+
+## What is built, and what is left
+
+| Area | Implemented | Still being validated or completed |
+|---|---|---|
+| Intake | Request triage, research/design skills, questions, versioned specs and a decision register | Consistent research before questions, reliable defaults and repeated intake evaluations |
+| Build loop | Task scheduling, isolated worktrees, repair attempts, model escalation, usage-limit waits and detached runs | Repeated success on real tasks and final stage evidence |
+| Verification | Protected checks, separate review, evidence recording, security scanners and browser QA components | Full security/design/browser evaluations and sandboxed native app testing |
+| Shipping and recovery | Release-state, smoke-test, rollback, memory and reporting components | Live shipping proofs and overnight tests with forced crashes and usage pauses |
+| Distribution | CLI, Claude Code plugin, installer and MIT license | A clean installation on a second machine or fresh user account |
+
+The current runtime targets macOS and Claude Code. Broader Codex and DeepSeek execution adapters are planned. Codex’s existing review integration does not make it a general task-execution backend.
+
+## Try it locally
+
+You need macOS, Node.js 24, pnpm 11.7.0, and an authenticated Claude Code 2.1.309 installation at `~/.local/share/claude/versions/2.1.309`. Jarvis checks exact binary versions. It requires at least 20 GB free disk; below 40 GB it limits writing tasks to one at a time.
+
+```sh
+git clone https://github.com/rodriguezzfabricio/jarvis.git ~/Developer/jarvis
 cd ~/Developer/jarvis
-scripts/install.sh --dry-run   # shows what it would do, changes nothing
+scripts/install.sh --dry-run
 scripts/install.sh
 ```
 
-The installer:
+The installer adds a `jarvis` launcher and installs the Claude Code plugin. Then run these in your terminal:
 
-1. checks macOS, Node 24, pnpm, and the pinned Claude Code and Codex;
-2. runs `pnpm install --frozen-lockfile`;
-3. writes a small `jarvis` launcher to `~/.local/bin/jarvis` (use `--prefix DIR` for `DIR/bin`). It points at this checkout, so keep the checkout where it is;
-4. adds this checkout as a Claude Code plugin marketplace and installs the `jarvis@jarvis` plugin for your user, using the pinned Claude Code with a clean environment;
-5. runs `jarvis doctor`.
+```sh
+jarvis setup
+jarvis doctor --live
+```
 
-It is safe to run again: steps that are already done are skipped. It never uses `sudo`. Other options: `--offline`, `--no-plugin`, `--no-doctor`, `--node PATH`. Run `scripts/install.sh --help` for details.
+The live check uses your Claude account’s usage allowance. Open a disposable project in Claude Code, restart Claude Code if the plugin was just installed, and try `/jarvis fix: <your bug>`. Unattended builds require an approved plan and protected checks; setup alone does not prepare every project for a build.
 
-If `~/.local/bin` isn't on your `PATH`, the installer tells you. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a new terminal.
+See [getting started](docs/getting-started.md) for prerequisites, notifications, commands and troubleshooting. Use a disposable project while the remaining safety and recovery proofs are unfinished.
 
-## First run
+## How I’m evaluating it
 
-1. **Set up:** run `jarvis setup` in a terminal. It checks the pinned Claude Code, prepares the secrets file, walks through the house-stack accounts (each one skippable; tokens are typed into a hidden prompt and stored only in `~/.jarvis/secrets/`), creates your ntfy topics (an existing `~/.jarvis/notify.json` is kept), offers the taste profile once, and installs the plugin copy that build sessions use. Running it again skips finished steps; `--redo <step>` repeats one. Subscribe to both printed topics in the ntfy app, then try `jarvis setup --send-test`. Anyone who knows a topic name can read it or post to it, so treat the names like passwords. Without ntfy, intake still works; you just answer in the session.
+Jarvis and plain Claude Code get sanitized copies of the same project. Hidden checks grade the final code from each run. Tests cover planted bugs and a recruiter-finder feature, with a wider set planned for intake, UI, security and overnight work.
 
-2. **Check everything**, including the live probe:
+The comparison records incorrect completion claims, hidden-test results, quality ratings, wall time and usage. Plain Claude uses Opus 5.5 in one session. Jarvis can use several sessions and models, so this measures the workflow with its additional compute, not an equal-budget model comparison.
 
-   ```sh
-   jarvis doctor --live
-   ```
+Results are preliminary. The project has both passing and failing live runs, and two repetitions per task are insufficient to establish general reliability. The private evaluation repository contains personal project snapshots and hidden checks, so outsiders cannot currently reproduce the complete benchmark. [Evaluation methodology and limitations](docs/evaluation.md).
 
-   `--live` starts the pinned Claude Code once with Jarvis's generated settings and checks that the sandbox and the other safety settings really took effect. It uses a little of your plan's usage. Every line should say `ok`, apart from `broker` (it runs only during a run) and `codex_pinned` if you skipped Codex. Jarvis won't run anything unattended until the live probe passes.
+## Explore the code
 
-3. **Use it.** Open a project in Claude Code (the CLI or the desktop app) and type:
-
-   ```
-   /jarvis build: a habit tracker for my phone
-   ```
-
-   `/jarvis` sorts the request first (new product, feature, bug, refactor, question, review or release), and only the steps that type needs run. A first word with a colon (`fix:`, `build:`, `feature:`, `ask:`) forces the type. Without the colon, the word is read as ordinary text.
-
-## How it stays safe
-
-Jarvis lets the agent work without asking permission for every step, so the safety comes from structure, not from the model behaving well:
-
-- **The sandbox.** Every build session runs the pinned Claude Code inside its sandbox, in its own git worktree. It can write only to that worktree and can read almost nothing outside it. The network is closed apart from a short allowlist (package registries, docs, localhost, the preview host).
-- **The broker.** Sessions hold no credentials. Anything that leaves your Mac (sending email, deploying, pushing to a protected branch, spending money, deleting data) is a request to the broker. The broker checks your approval, does exactly that one operation with a credential the session can't see, and writes a receipt. Spending money always needs your approval.
-- **Protected checks.** The acceptance tests are written from the spec and locked by hash in `~/.jarvis/`, outside anything a session can touch. After each session the runner runs them on a fresh copy of the committed revision and records the results in a hash-chained ledger. Editing a check, or the evidence, is detected.
-- **Tripwires.** The plugin's hooks catch obvious mistakes early by matching recognizable command forms (a `git push --force`, an `npm publish`, a `--prod` deploy flag, a Keychain read). A command written another way can slip past them. They are a warning layer. The walls are the sandbox and the broker.
-
-Six requirements hold for every build session. Each has a test, and `jarvis doctor --live` checks them on the real binary:
-
-1. The sandbox must be available, or the session doesn't start. Commands can't opt out of it.
-2. Claude Code runs in restricted mode with an explicit tool list, so your own settings, project hooks and plugins don't load.
-3. There are no permission prompts (anything not allowed is refused), only Jarvis's own MCP servers are allowed, and the transcript isn't saved to your history.
-4. Claude Code's auto-memory is off.
-5. Reads outside the worktree are blocked, apart from a private toolchain cache.
-6. The live canary probe passes before any unattended run.
-
-Your interactive Claude Code sessions are different: they run with your normal Claude Code permissions. Jarvis adds no credentials to them.
-
-**What the plugin changes in your everyday Claude Code.** The plugin is installed for your user, so its tripwire runs in every Claude Code session you open, in any project. In those sessions the tripwire stops Claude's commands that look like a `git push`, a package publish or a `--prod` deploy, and its tool calls on `~/.jarvis` paths. It matches the usual ways of writing these, not every possible one. Your own terminal is unaffected. To turn the plugin off: `~/.local/share/claude/versions/2.1.309 plugin disable jarvis@jarvis`.
-
-## Commands
-
-From `jarvis --help` today:
-
-| Command | What it does |
+| Path | Responsibility |
 |---|---|
-| `jarvis setup [--redo <step>] [--send-test]` | One-time, resumable setup: Claude Code check, secrets backend, account tokens (hidden prompt, never sent anywhere), ntfy topics, taste profile, plugin copy for build sessions |
-| `jarvis doctor [--live] [--json]` | Preflight: pinned binaries, clean environment, disk, iCloud, ledgers, plugin, checks sandbox. `--live` adds the canary probe |
-| `jarvis triage "<request>"` | Classifies a request and prints its pipeline. `/jarvis` calls it first |
-| `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints (decisions 45, 53) |
-| `jarvis intake send\|answer\|answers` | Intake rounds: shown in the session, mirrored to ntfy; `answers --wait` waits for your reply |
-| `jarvis taste save <file>` | Saves your design taste profile |
-| `jarvis spec check` | Checks the structure and references of `docs/spec/vN.md` |
-| `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register |
-| `jarvis why <query>` | Answers from the decision register, with sources |
-| `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
-| `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
-| `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
-| `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
-| `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
-| `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
-| `jarvis eval baseline <tasks…>` | Runs plain Claude Code on golden tasks, as the baseline Jarvis must beat |
-| `jarvis eval jarvis\|grade\|compare\|rate <task…>` | Runs golden tasks through Jarvis, grades both arms on the hidden checks, compares them (decision 97) |
-| `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
-| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence (decision 98) |
-| `jarvis mode explain\|quiet` | Teach-me mode on or off |
-| `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
+| [`packages/cli/src/runner/`](packages/cli/src/runner/) | Scheduling, worktrees, retries, model routing and task state |
+| [`packages/cli/src/checks/`](packages/cli/src/checks/) and [`ledger/`](packages/cli/src/ledger/) | Protected execution and recorded evidence |
+| [`packages/cli/src/broker/`](packages/cli/src/broker/) and [`harness/claude/`](packages/cli/src/harness/claude/) | Approvals, credentials and Claude Code isolation |
+| [`plugin/`](plugin/) and [`skills/`](skills/) | The `/jarvis` entry point and workflow instructions |
+| [`tests/`](tests/) | Unit tests, integration tests and optional live probes |
 
-## Troubleshooting
+For local development:
 
-Start with `jarvis doctor`. Each line is `ok`, `warn` or `FAIL`, and any `FAIL` blocks unattended runs.
+```sh
+pnpm install --frozen-lockfile
+pnpm test
+pnpm typecheck
+```
 
-- **`jarvis: command not found`.** `~/.local/bin` (or your `--prefix`) isn't on your `PATH`. See [Install](#install).
-- **`Jarvis needs Node 24`.** Install Node 24, or pass `--node /path/to/node` to the installer.
-- **`jarvis` stops working after you upgrade, move or uninstall Node.** The launcher calls the exact Node path it was installed with (for example `/opt/homebrew/bin/node`). Run `scripts/install.sh` again after any Node change; it rewrites the launcher.
-- **pnpm asks to download itself.** That's corepack fetching the pnpm version this repo pins. Answer yes, or run `corepack enable pnpm` first.
-- **The install needs the network the first time, even with `--offline`.** pnpm 11 checks the lockfile against the registry's supply-chain policies (release age, trust) before installing, and on a machine that has never installed Jarvis it has no cached result, so `--offline` stalls or fails there. Run the first install online. `--offline` only works once the pnpm store and that check's cache already hold everything.
-- **`FAIL claude_pinned`.** The file `~/.local/share/claude/versions/2.1.309` is missing or reports another version. Run `claude install 2.1.309`, then run the installer again so it can install the plugin.
-- **`warn codex_pinned`.** Codex is missing or a different version. That's fine; a Claude reviewer takes over.
-- **`FAIL child_env_clean`, or `warn parent_env`.** Your shell sets something like `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_*`, a `*_BASE_URL` or `CLAUDE_CONFIG_DIR`. Jarvis keeps these out of build sessions, because they could send work to another provider or bill an API key instead of your plan. Remove them from your shell startup files if doctor fails.
-- **`FAIL disk_free`.** Under 20 GB free. Under 40 GB, Jarvis runs one build task at a time.
-- **`FAIL icloud_sync`.** The checkout is inside a folder iCloud syncs. Move it (for example to `~/Developer/jarvis`) and run the installer again.
-- **`FAIL checks_sandbox`.** Anthropic's sandbox runtime didn't hold in its self-test. Run `pnpm install --frozen-lockfile` again in the checkout.
-- **`FAIL canary_probe`.** The generated settings didn't take effect on the pinned Claude Code. Check that you're on exactly 2.1.309. If the probe hit a usage limit, doctor says so; try again after the reset.
-- **`warn broker`.** Normal. The broker runs only while a run is active.
-- **"a Claude Code marketplace named 'jarvis' already points at …".** You installed from another checkout before. Remove it with `~/.local/share/claude/versions/2.1.309 plugin marketplace remove jarvis`, then run the installer again.
-- **`/jarvis` doesn't show up in Claude Code.** Restart Claude Code after installing. Check with `~/.local/share/claude/versions/2.1.309 plugin list`: `jarvis@jarvis` should be listed and enabled.
-- **After `git pull`, Claude Code still uses the old plugin.** Run `~/.local/share/claude/versions/2.1.309 plugin update jarvis@jarvis` and restart Claude Code.
+Unit tests use a fake Claude process. Live probes require an authenticated account and consume usage. Mutation checks deliberately break safeguards to verify the tests detect them; they are substantially slower than the unit suite. Contributor rules are in [AGENTS.md](AGENTS.md).
 
-## More
+## Built with AI assistance
 
-- `docs/00-brief.md`: what Jarvis is for.
-- `docs/01-decisions.md`: every decision and why.
-- `docs/03-architecture.md`: how it's built.
-- `AGENTS.md`: how to work on Jarvis itself.
+I’m developing Jarvis with Claude Code and Codex. The repository includes design decisions, review findings and follow-up work so readers can inspect the process alongside the implementation. AI-generated work is subject to checks and separate review; live evaluation failures remain part of the project’s record.
 
 ## License
 
-MIT (see `LICENSE`), as accepted in the decision register's answered questions (Oct 23). Pieces borrowed from other projects keep their own licenses and credits (`skills/CREDITS.md`).
+[MIT](LICENSE). Adapted skills and their licenses are listed in [credits](skills/CREDITS.md).

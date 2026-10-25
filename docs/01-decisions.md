@@ -1519,3 +1519,12 @@ The golden tasks and their snapshots of your job automation live in a separate p
   - [Octoverse 2025](https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/)
   - [Vercel AGENTS.md eval](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals)
   - [Claude Code's default picks](https://amplifying.ai/research/claude-code-picks)
+
+
+### 112. Publish the development repository before v1 is complete (Oct 25, 2026; Fabricio; supersedes the private-until-stage-7 restriction in decision 36)
+
+Fabricio explicitly requested a public GitHub repository and a README for recruiters and engineers, as part of his software engineering and AI engineering portfolio. Publication is authorized before stage 7. It does not approve unfinished stages or declare v1 complete.
+
+The public README describes the implemented components, incomplete proofs, installation requirements and evaluation limits. Do not claim a general benchmark win or equal-compute comparison. Preserve the existing development history after reviewing its secret-scan findings. The personal evaluation repository, local account credentials and notification settings remain private.
+
+The initial public repository is `rodriguezzfabricio/jarvis`, with the existing MIT license and adapted-skill credits.

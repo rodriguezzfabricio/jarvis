@@ -1,0 +1,84 @@
+{
+  "verdict": "FAIL",
+  "summary": "Lane D reviewed revision e85023ff9096a69f04c17d0b4877957518d12c81. One new high finding meets decision 84’s blocking bar: gate candidate programs retain access to system temporary files, providing a concrete credential-leak path.\n\n1. Prior findings: the original lane-D critical/high reproductions have corresponding fixes and regression assertions. R1 #1: restricted arguments exclude project hooks (args/probe/live tests). R1 #2: task outside reads are restricted (settings/probe tests). R1 #3: web tools are excluded and denied (args/settings tests). R1 #4: rejected preflight prevents baseline launch (baseline tests). R1 #6 and R2 #4: network proof requires connectivity and a policy-denial record (probe tests and live negative controls). R2 #3: caches are private and removed (baseline tests). R5 #2: signals are preserved (checks tests). R5 #3: pack-transport cloning verifies objects (substituted-object test). R5 #4: complete-write loops reject zero progress (ledger tests). R5 #5: instance-bound reclamation serializes writers (ledger/fault tests). R6 #1: broker claims are atomic (concurrent call/socket/instance/process tests). R6 #3 and R7 #1: assertions are isolated and observations come from runner-captured process output (checks tests). R16 D1: wrappers are constructed with a clean environment (effective-child-environment test). R16 D2: phases use private temporary storage and shared temporary writes are denied (srt and surviving-daemon gate tests). These assertions address the original failures; the supplied mutation run did not reach any mutations, so current confirmation evidence is absent.\n\n2. I established no concurrent-writer corruption or loss of an acknowledged ledger entry. All four supplied ledger fault tests passed. Two additional recovery tests failed. I established no new broker approval bypass, cross-project socket substitution, or reviewer environment inheritance. Scenario-mode fake Claude does not enforce PreToolUse hooks and cannot establish plugin safety; the regular probe tests exercise real hook code and include negative modes and positive controls.\n\n3. Neither stage’s proof is complete in this lane, even excluding baselines and the user-assisted desktop check. Typecheck passed independently. Supplied unit evidence reports 3 failures, 1820 passes and 14 skips; live evidence reports 1 failure and 6 passes; mutation checking exits 2 at its control run. Doctor --live passes. Filesystem-writing suites and a complete gate temporary-credential reproduction could not be rerun in this read-only sandbox; the blocking finding follows from the gate policy and the pinned runtime’s default-allow read implementation.",
+  "remaining_for_stage0": [
+    "Fix the blocking gate temporary-file read boundary; add a synthetic credential-canary regression, positive controls and mutation coverage.",
+    "Resolve the failed recovery and live-safety tests, repair mutation control selection, and capture passing revision-linked stage 0–1 confirmation evidence.",
+    "Record all nonblocking findings in docs/backlog.md and save the independent lane reviews.",
+    "After approval, record the required baselines for tasks 1, 2 and 11. Stage 1 additionally needs the user-assisted desktop plugin check."
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Gate candidates can read credentials from system temporary folders",
+      "file": "packages/cli/src/checks/gate.ts",
+      "line": 142,
+      "scenario": "The candidate policy denies only jarvisHome, the real home and this gate’s verifyDir. srtConfig adds shared-temp write denials but no corresponding read denials. The pinned runtime begins its read policy with '(allow file-read*)', so /private/tmp, /private/var/tmp and the runner’s usual /private/var/folders temporary directory remain readable. Reproduction: plant an owner-readable synthetic credential in the runner’s system temp folder, outside jarvisHome; have candidate code read that file, print it and exit 1. The credential enters runner-captured case evidence and can subsequently enter the repair prompt through failureEvidence/repairPrompt. Moving TMPDIR into the phase’s home does not close reads of other temporary folders. This is blocking under decision 84: it exposes credentials through the sandbox boundary, independently of snapshot scanning.",
+      "fix": "Deny reads of all system temp roots, both macOS spellings, and the runner’s actual temporary root for candidate and verifier sandboxes. Reopen only each phase’s required private directories. Add a full gate credential-canary regression that proves unrelated temp files are unreadable while private TMPDIR and fixtures remain usable."
+    },
+    {
+      "severity": "medium",
+      "title": "An intentionally skipped unit test prevents every mutation proof",
+      "file": "scripts/mutation-classify.mjs",
+      "line": 44,
+      "scenario": "runSuite selects all tests/unit files except anchor-applicability tests. This includes security-gitleaks-live.test.ts, whose test is skipped unless JARVIS_SECURITY_LIVE=1 and the binary exists. classify rejects any skipped assertion before considering the control clean. The supplied mutation-check.log reproduces the result: 'control run is not clean: error: 1 test(s) did not finish (skipped)', exit 2. Thus the standard documented mutation command cannot produce confirmation evidence.",
+      "fix": "Keep opt-in live tests outside the mutation unit selection, or explicitly preserve and compare baseline skip identities without allowing new skips under mutation. Add a regression using the actual default test selection."
+    },
+    {
+      "severity": "medium",
+      "title": "Successful mutation suites leave background processes running",
+      "file": "scripts/mutation-run.mjs",
+      "line": 86,
+      "scenario": "The normal close handler immediately calls finish, removes the run from active and clears its timeout without cleaning its process group. I reproduced runGroup('/bin/sh', ['-c', '/bin/sleep 20 >/dev/null 2>&1 &']) returning status 0 while process.kill(-leaderPid, 0) still succeeded. No setsid escape is needed. Such descendants can survive file restoration and interfere with later mutations. reapLeftovers does not reliably catch them because a generic child command need not contain the temporary-directory name.",
+      "fix": "On leader exit, clean the entire process group with bounded TERM/KILL handling before resolving or removing it from active. Add a normal-success regression with a redirected background child."
+    },
+    {
+      "severity": "medium",
+      "title": "Review status rejects successful stage-scoped mutation summaries",
+      "file": "scripts/review-status.mjs",
+      "line": 129,
+      "scenario": "summarize emits 'all N mutations caught; stage 0-1: ...' with exit 0 for successful --confirm-stage runs. inspectReviews only recognizes an otherwise empty line ending after 'mutations caught'. Using the actual summarizer and status reader with in-memory artifacts, I reproduced a successful scoped run being reported as 'Missing positive mutation completion summary'. Therefore review-run --confirm-stage cannot finish successfully even when its evidence and lanes pass.",
+      "fix": "Parse and validate the stage-scoped completion format, including its confirmation counts and scope. Add an end-to-end review-run/status regression using the real summarizer output."
+    },
+    {
+      "severity": "medium",
+      "title": "The live foundation test no longer activates the publishing tripwire",
+      "file": "tests/live/safety.live.test.ts",
+      "line": 82,
+      "scenario": "Decision 96 requires JARVIS_SESSION=1 or a workspace marker. This test supplies neither before its publishing attempt: the worktree has only a git repository and selftest.sh. The supplied live log shows npm publish --dry-run actually executing and failing because package.json is absent, followed by the failed tripwire assertion. Execution stops before the approval-and-exactly-once assertions, so the current live test does not establish stage 1’s complete proof.",
+      "fix": "Launch with JARVIS_SESSION=1 as production does, require the specific linked tripwire denial, and rerun through the approval and duplicate assertions. Retain a negative control showing that disabling the hook fails the test."
+    },
+    {
+      "severity": "medium",
+      "title": "Task harness settings omit access needed by jarvis act",
+      "file": "packages/cli/src/harness/claude/task.ts",
+      "line": 120,
+      "scenario": "prepareTask never supplies readOnlyDirs. With the documented installation under ~/Desktop/jarvis and a workspace under ~/.jarvis-work/worktrees, the generated outside-read boundary does not reopen the installed CLI source. The launcher consequently cannot load cli.ts and its imports to execute jarvis act. The live foundation test explicitly supplies readOnlyDirs: [repoRoot], so its successful broker-client path does not cover the task harness configuration.",
+      "fix": "Pass a validated runner-owned installation directory into the task settings as read-only, outside all agent-writable roots. Add a sandboxed harness test that invokes the installed jarvis act and receives pending from its bound broker."
+    },
+    {
+      "severity": "medium",
+      "title": "Repeated crash recovery exhausts its deadline while unwinding markers",
+      "file": "packages/cli/src/ledger/ledger.ts",
+      "line": 382,
+      "scenario": "reclaim removes one deepest dead marker and returns, causing acquisition to restart the descent from the root. A depth-d stranded chain therefore requires quadratic traversal work plus repeated durable claim creation. The supplied full-suite evidence reproduces failure of the 40-marker recovery case at its 3000 ms deadline and of the legacy/bounded recovery case at 150 ms after the live competitor is removed. Existing entries remain intact, but the claimed recovery proof fails.",
+      "fix": "Avoid repeatedly traversing the whole dead chain, while preserving exclusive ownership and replacement protection, or use a crash-released locking primitive. Establish deterministic recovery budgets and rerun both failing regressions in the full suite."
+    },
+    {
+      "severity": "low",
+      "title": "Review status still treats every high finding as blocking",
+      "file": "scripts/review-status.mjs",
+      "line": 148,
+      "scenario": "A completed lane with verdict PASS and a high finding explicitly lacking a credential-leak or outside-broker action path is unconditionally marked failed. I reproduced this through inspectReviews with otherwise successful artifacts. This retains decision 74’s old severity-only gate and contradicts decision 84.",
+      "fix": "Represent blocking applicability explicitly in review artifacts and apply decision 84 when aggregating current rounds, while preserving historical review interpretation."
+    },
+    {
+      "severity": "low",
+      "title": "Relative Bash paths bypass the universal runner-home tripwire",
+      "file": "plugin/hooks/tripwire.mjs",
+      "line": 95,
+      "scenario": "Bash uses only RUNNER_HOME_BASH’s spelling-based regex; it does not apply the cwd-aware path resolution used for file tools. I reproduced check({cwd: HOME, tool_name: 'Bash', tool_input: {command: 'cat .jarvis/secrets/p.env'}}, {HOME, JARVIS_SESSION: '1'}) returning allowed. In an ordinary interactive session the task sandbox is absent, so this fails decision 96’s stated runner-home tripwire behavior. Task-session sandbox denials still protect their runner home.",
+      "fix": "Recognize straightforward relative runner-home operands using cwd-aware normalization and add relative-path regressions. Keep the documented distinction between this advisory tripwire and the task sandbox boundary."
+    }
+  ]
+}

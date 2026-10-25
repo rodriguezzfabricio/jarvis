@@ -32,7 +32,7 @@
   {
     "name": "scanner short base64 wrapping",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "      add(wrapped.join(\"\"), !even);\n",
+    "anchor": "    const whole = decode(lines.join(\"\"), !even);\n    if (whole) yield whole;\n",
     "replacement": ""
   },
   {
@@ -44,7 +44,7 @@
   {
     "name": "scanner recursive encoded inspection",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "for (const payload of encodedPayloads(text)) visit(\"decoded.txt\", payload, depth + 1);",
+    "anchor": "for (const payload of encodedPayloads(text, wrappedBudget, file === MEDIA_TEXT)) visit(\"decoded.txt\", payload, depth + 1);",
     "replacement": "void text;"
   },
   {
@@ -188,14 +188,14 @@
   {
     "name": "scanner base64 payload run plausibility",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "for (const m of matches) if (isPlausibleBase64(m[0], MIN_PAYLOAD_RUN)) add(m[0], false);",
-    "replacement": "for (const m of matches) add(m[0], false);"
+    "anchor": "if (isPlausibleBase64(run, MIN_PAYLOAD_RUN) && !seen.has(run)) {",
+    "replacement": "if (!seen.has(run)) {"
   },
   {
     "name": "scanner decoded payload plausibility",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "if (isPlausiblePayload(data, strict)) yield data;",
-    "replacement": "yield data;"
+    "anchor": "return isPlausiblePayload(data, strict) ? data : undefined;",
+    "replacement": "return data;"
   },
   {
     "name": "scanner media data",
@@ -272,14 +272,14 @@
   {
     "name": "scanner media text decoding",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "visit(\"media.txt\", Buffer.from(text), depth + 1);",
+    "anchor": "visit(MEDIA_TEXT, Buffer.from(text), depth + 1);",
     "replacement": "void text;"
   },
   {
     "name": "scanner media unparsed bytes",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "  if (at < buf.length) unparsed.push(buf.subarray(at));\n  return [",
-    "replacement": "  return ["
+    "anchor": "  if (at < buf.length) uncovered.push(buf.subarray(at));\n",
+    "replacement": ""
   },
   {
     "name": "scanner media UTF-16 runs",
@@ -296,32 +296,32 @@
   {
     "name": "scanner JPEG segments",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "    parts.payloads.push(buf.subarray(at + 4, at + 2 + length));\n",
+    "anchor": "    parts.text.push(buf.subarray(at + 4, at + 2 + length));\n",
     "replacement": ""
   },
   {
     "name": "scanner GIF extensions",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "      parts.payloads.push(chain.data);\n",
+    "anchor": "      parts.text.push(chain.data);\n",
     "replacement": ""
   },
   {
     "name": "scanner WebP chunks",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "else if (id !== \"VP8 \" && id !== \"VP8L\" && id !== \"ALPH\") parts.payloads.push(buf.subarray(start, start + size));",
-    "replacement": "else void id;"
+    "anchor": "    else parts.text.push(buf.subarray(start, start + size));\n",
+    "replacement": ""
   },
   {
     "name": "scanner font tables",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "if (!GLYPH_TABLES.has(buf.toString(\"latin1\", entry, entry + 4))) parts.payloads.push(buf.subarray(offset, offset + length));",
-    "replacement": "void entry;"
+    "anchor": "    (GLYPH_TABLES.has(t.tag) ? parts.pixels : parts.text).push(buf.subarray(t.start, t.end));",
+    "replacement": "    void t;"
   },
   {
     "name": "scanner WOFF2 tables",
     "file": "packages/cli/src/eval/snapshot-media.ts",
-    "anchor": "if (!GLYPH_TABLES.has(t.tag)) parts.payloads.push(stream.subarray(offset, offset + t.length));",
-    "replacement": "void t;"
+    "anchor": "    (GLYPH_TABLES.has(t.tag) ? parts.pixels : parts.text).push(stream.subarray(offset, offset + t.length));",
+    "replacement": "    void t;"
   },
   {
     "name": "scanner decoded Brotli probe",
@@ -332,8 +332,8 @@
   {
     "name": "scanner wrapped DER lengths",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "        if (der !== undefined) add(der, true);\n",
-    "replacement": ""
+    "anchor": "      const span = wrappedDer(lines, ends, i);\n",
+    "replacement": "      const span = undefined as number | undefined;\n"
   },
   {
     "name": "scanner random letters",
@@ -370,5 +370,185 @@
     "file": "packages/cli/src/eval/snapshot.ts",
     "anchor": "return LOGIN_CONTEXT.test(line) &&",
     "replacement": "return (LOGIN_CONTEXT.test(line) || true) &&"
+  },
+  {
+    "name": "scanner PNG chunk CRCs",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    if (crc32(buf.subarray(at + 4, end)) !== buf.readUInt32BE(end)) return false;\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner PNG IEND required",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (at + 12 > buf.length) return false; // no IEND",
+    "replacement": "if (at + 12 > buf.length) break;"
+  },
+  {
+    "name": "scanner PNG image size",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    return r.buffer.length === image && r.engine.bytesWritten === stream.length;",
+    "replacement": "    return r.engine.bytesWritten === stream.length;"
+  },
+  {
+    "name": "scanner PNG trailing stream bytes",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "r.buffer.length === image && r.engine.bytesWritten === stream.length;",
+    "replacement": "r.buffer.length === image;"
+  },
+  {
+    "name": "scanner PNG malformed stream text",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    if (idat.length) out.push(budget.salvage(Buffer.concat(idat)));\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner JPEG EOI required",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "      if (at < 0 || at + 1 >= buf.length) return false;\n",
+    "replacement": "      if (at < 0 || at + 1 >= buf.length) return true;\n"
+  },
+  {
+    "name": "scanner GIF trailer required",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "  }\n  return false;\n}\n\n/** RIFF chunks",
+    "replacement": "  }\n  return true;\n}\n\n/** RIFF chunks"
+  },
+  {
+    "name": "scanner WebP chunk bounds",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": " || start + size > end) return false;\n    parts.covered.push([start, start + size]);",
+    "replacement": ") return false;\n    parts.covered.push([start, start + size]);"
+  },
+  {
+    "name": "scanner font table validation",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "  if (!validTables(tables, directories, buf.length)) return false;\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner font table overlaps",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "return sorted.every((r, i) => i === 0 || sorted[i - 1]![1] <= r[0]);",
+    "replacement": "return sorted.length >= 0;"
+  },
+  {
+    "name": "scanner font directory overlaps",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "  if (ranges.some((r) => reserved.some((d) => overlaps(r, d)))) return false;\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner font table tags",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (tables.some((t) => !/^[\\x20-\\x7e]{4}$/.test(t.tag) || t.start > t.end",
+    "replacement": "if (tables.some((t) => t.start > t.end"
+  },
+  {
+    "name": "scanner WOFF length",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (buf.length < 44 || buf.readUInt32BE(8) !== buf.length) return false;",
+    "replacement": "if (buf.length < 44) return false;"
+  },
+  {
+    "name": "scanner WOFF table lengths",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (!table || table.length !== t.original) return false;",
+    "replacement": "if (!table) return false;"
+  },
+  {
+    "name": "scanner WOFF2 stream fill",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": " || tables.reduce((n, t) => n + t.length, 0) !== stream.length) return false;",
+    "replacement": ") return false;"
+  },
+  {
+    "name": "scanner media whole-file long runs",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "const long = [...parts.pixels, buf].flatMap",
+    "replacement": "const long = [...parts.pixels].flatMap"
+  },
+  {
+    "name": "scanner media pixel long runs",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "const long = [...parts.pixels, buf].flatMap",
+    "replacement": "const long = [buf].flatMap"
+  },
+  {
+    "name": "scanner media UTF-16 literal views",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "        for (const view of utf16Views(buf)) for (const h of findCredentialPatterns(view)) hits.add(h);\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner embedded DER in media text",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "      if (embedded) {\n",
+    "replacement": "      if (false) {\n"
+  },
+  {
+    "name": "scanner short last column line",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "      if (joins) wrapped.push(run);\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner wrapped candidate budget",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "      spend(ends[span]! - (i ? ends[i - 1]! : 0));\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner PNG header fields",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "!depths[color]?.includes(depth)",
+    "replacement": "!depths[color]"
+  },
+  {
+    "name": "scanner font table counts",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (count === 0 || count > MAX_TABLES || end > buf.length) return false;",
+    "replacement": "if (end > buf.length) return false;"
+  },
+  {
+    "name": "scanner compressed media trailing bytes",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "      if (r.engine.bytesWritten !== data.length) return undefined;\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner malformed media recovery",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": ", ...recovered(buf, new Budget(maxBytes))]",
+    "replacement": "]"
+  },
+  {
+    "name": "scanner PNG text chunk recovery",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    for (const type of [\"zTXt\", \"iCCP\", \"iTXt\", \"IDAT\"]) {",
+    "replacement": "    for (const type of [\"IDAT\"]) {"
+  },
+  {
+    "name": "scanner WOFF table recovery",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "      if (buf.readUInt32BE(entry + 8) !== buf.readUInt32BE(entry + 12)) blocks.push(",
+    "replacement": "      if (false) blocks.push("
+  },
+  {
+    "name": "scanner WOFF2 stream recovery",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    if (directory) out.push(budget.salvage(buf.subarray(directory.at, directory.at + buf.readUInt32BE(20)), true));\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner lenient stream ends",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "finishFlush: brotli ? constants.BROTLI_OPERATION_FLUSH : constants.Z_SYNC_FLUSH",
+    "replacement": "finishFlush: brotli ? constants.BROTLI_OPERATION_FINISH : constants.Z_FINISH"
+  },
+  {
+    "name": "scanner damaged stream prefix",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "        if (prefix) [out, lo] = [prefix, mid + 1];",
+    "replacement": "        if (prefix) [out, lo] = [out, mid + 1];"
   }
 ]

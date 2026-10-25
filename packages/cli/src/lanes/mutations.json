@@ -242,8 +242,8 @@
   {
     "name": "review job metadata is called template chrome",
     "file": "packages/cli/src/lanes/tells.ts",
-    "anchor": "/\\bA\\s+\u00b7\\s+B\\s+\u00b7\\s+C\\b/g",
-    "replacement": "/\\b[A-Za-z]+\\s+\u00b7\\s+[A-Za-z]+\\s+\u00b7\\s+[A-Za-z]+\\b/g"
+    "anchor": "/\\bA\\s+·\\s+B\\s+·\\s+C\\b/g",
+    "replacement": "/\\b[A-Za-z]+\\s+·\\s+[A-Za-z]+\\s+·\\s+[A-Za-z]+\\b/g"
   },
   {
     "name": "review unapproved rehashed QA toolchain accepted",
@@ -610,5 +610,23 @@
     "file": "packages/cli/src/lanes/desktop-process.ts",
     "anchor": "      if ((error as NodeJS.ErrnoException).code !== \"ESRCH\") throw error;\n      if (!exit) throw new Error(\"desktop process group missing while its child is alive\");",
     "replacement": ""
+  },
+  {
+    "name": "QA review 1 probes natively without a sandboxed launcher",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "    if (!deps.probe) return { status: \"not run\", reason: \"not run: desktop (no sandboxed native launcher)\", result };",
+    "replacement": "    if (false) return { status: \"not run\", reason: \"not run: desktop (no sandboxed native launcher)\", result };"
+  },
+  {
+    "name": "QA review 1 native probe proceeds without a sandboxed launcher",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "  if (!deps.launch) throw new Error(\"native probe needs a sandboxed native launcher; none is available\");",
+    "replacement": "  if (false) throw new Error(\"native probe needs a sandboxed native launcher; none is available\");"
+  },
+  {
+    "name": "QA review 1 counts a build exit 0 without an app bundle",
+    "file": "packages/cli/src/lanes/desktop-build.ts",
+    "anchor": "return builtBundle(repo, plan.bundle) ? { ...raw, status: \"observed\" }",
+    "replacement": "return true ? { ...raw, status: \"observed\" }"
   }
 ]

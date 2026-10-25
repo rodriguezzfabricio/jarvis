@@ -71,12 +71,14 @@ describe("/jarvis command", () => {
     for (const skill of dispatched) expect(skillRefs.filter((r) => r.name === skill).length, skill).toBe(1);
   });
 
+  // Stages overlap (decision 84), so a later stage's skill can land early: a skill that exists is built
+  // and named plainly; one that doesn't yet is marked with the stage that brings it.
   it("every skill it names exists, or is marked with the later stage that brings it", () => {
     expect(skillRefs.length).toBeGreaterThan(0);
     for (const ref of skillRefs) {
       expect(Object.keys(SKILL_STAGES), ref.name).toContain(ref.name);
       const stage = SKILL_STAGES[ref.name]!;
-      if (stage <= CURRENT_STAGE) {
+      if (stage <= CURRENT_STAGE || existsSync(`${repoRoot}skills/${ref.name}/SKILL.md`)) {
         expect(ref.stage, `${ref.name} is built now; don't mark it`).toBeUndefined();
         expect(existsSync(`${repoRoot}skills/${ref.name}/SKILL.md`), `skills/${ref.name}/SKILL.md`).toBe(true);
       } else {

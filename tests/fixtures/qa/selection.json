@@ -1,0 +1,1 @@
+{"type":"bug","changes":[{"path":"internal/handlers/jobs.go","added":2,"deleted":1}],"facts":{}}

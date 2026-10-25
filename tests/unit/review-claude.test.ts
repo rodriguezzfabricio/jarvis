@@ -45,7 +45,7 @@ describe("fresh Claude review sessions", () => {
     const cacheRoot = realpathSync(s.options.cacheRoot);
     const cache = settings.sandbox.filesystem.allowRead.find((p: string) => p.startsWith(`${cacheRoot}/`))!;
     const sessionTmpDir = spec.env.CLAUDE_CODE_TMPDIR!;
-    expect(sessionTmpDir).toMatch(/^\/private\/tmp\/jt-/);
+    expect(sessionTmpDir ?? "<missing>").toMatch(/^\/private\/tmp\/jt-/);
     expect(settings).toEqual(buildTaskSettings({ worktree: s.input.workspace, jarvisHome: s.options.jarvisHome, cacheDir: cache, sessionTmpDir, allowedDomains: [] }));
     expect(existsSync(sessionTmpDir)).toBe(false); // removed after the session
     expect(settings.sandbox.failIfUnavailable).toBe(true);
@@ -58,12 +58,12 @@ describe("fresh Claude review sessions", () => {
   });
   it("refuses a failed live preflight without starting a process", async () => {
     const s = setup(); s.preflight.mockResolvedValue({ ok: false });
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/preflight/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/preflight/);
     expect(s.specs).toHaveLength(0);
   });
   it("cannot turn a write tool attempt into a passing verdict", async () => {
     const s = setup([{ event: { type: "assistant", message: { content: [{ type: "tool_use", id: "evil", name: "Write", input: { file_path: "owned" } }] } } }, { result: { text: '{"findings":[]}' } }]);
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/read-only/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/read-only/);
     expect(existsSync(join(s.input.workspace, "owned"))).toBe(false);
   });
   it.each([{ steps: [{ hang: true }] }, { steps: [{ result: { text: "garbage" } }] }, { steps: [{ rateLimit: { status: "rejected" } }, { result: { text: '{"findings":[]}' } }] }])("fails or returns invalid text for fault %j", async ({ steps }) => {
@@ -73,7 +73,7 @@ describe("fresh Claude review sessions", () => {
   });
   it("validates the final args after appending effort, before spawning", async () => {
     const s = setup(); s.input.effort = "--resume" as ReviewerInput["effort"];
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/must not contain --resume/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/must not contain --resume/);
     expect(s.specs).toHaveLength(0);
   });
   it("resolves HOME before passing it to a reviewer", async () => {
@@ -84,21 +84,21 @@ describe("fresh Claude review sessions", () => {
   });
   it.each(["workRoot", "cacheRoot", "jarvisHome"] as const)("rejects HOME in %s before spawning", async (root) => {
     const s = setup(); s.options.home = s.options[root];
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/home/i);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/home/i);
     expect(s.specs).toHaveLength(0);
   });
   it.each([{ FAKE_CLAUDE_VERSION: "2.1.310" }, { FAKE_CLAUDE_MODE: "memory-on" }])("rejects unsafe init %j", async (env) => {
     const s = setup(undefined, env);
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/initialization mismatch/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/initialization mismatch/);
   });
   it("rejects a success result followed by a hang even when shutdown exits zero", async () => {
     const s = setup([{ result: { text: '{"findings":[]}' } }, { hang: true }], {}, true);
     s.input.timeoutMs = 500;
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/timed out/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/timed out/);
   });
   it("rejects output paths in the checkout", async () => {
     const s = setup(); s.input.outputDir = s.input.workspace;
-    expect((await createClaudeReviewer(s.options)(s.input)).error).toMatch(/runner/);
+    expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/runner/);
     expect(s.specs).toHaveLength(0);
   });
 });

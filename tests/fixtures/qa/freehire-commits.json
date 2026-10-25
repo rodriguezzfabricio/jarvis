@@ -1,0 +1,7 @@
+{
+  "source": "safeGit show --format= --name-only in Fabricio's local FreeHire repository",
+  "e29e084": ["Dockerfile", "docker-compose.yml"],
+  "4f7e73a": ["internal/candidate/personalrules/personalrules.go", "internal/candidate/personalrules/personalrules_test.go", "internal/dict/location/eligibility.go", "internal/dict/location/eligibility_test.go"],
+  "4fa1a40": ["web/src/lib/enrichment.test.ts", "web/src/lib/enrichment.ts"],
+  "971efc2": ["internal/application/outreach/approval/approval.go", "internal/application/outreach/approval/approval_test.go", "internal/application/outreach/discover/discover.go", "internal/application/outreach/discover/discover_test.go", "internal/application/outreach/draft.go", "internal/application/outreach/draft_test.go"]
+}

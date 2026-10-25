@@ -22,6 +22,7 @@ const MAP = [
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
+  [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
   // Folder rules.
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],

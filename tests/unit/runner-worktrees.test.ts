@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
@@ -12,7 +12,8 @@ import { buildLease, rebuildState } from "../../packages/cli/src/runner/state.ts
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jrw-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing every repo this file made can outlast the default 10 s hook limit under a loaded full run.
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const git = (cwd: string, ...args: string[]) => safeGit(cwd, args, { home: root }).toString().trim();
 let n = 0;
 function project() {
@@ -135,7 +136,73 @@ describe("independent task workspaces", () => {
     const outside = join(root, `outside-link${n}`);
     writeFileSync(outside, "outside fixture, never a credential");
     linkSync(outside, join(w.path, "leak"));
-    expect(() => commitCandidate(w)).toThrow(/hardlink|multiple links/i);
+    const calls: string[] = [];
+    const injected: typeof safeGit = (cwd, args, opts) => { calls.push(args[0]!); return safeGit(cwd, args, opts); };
+    expect(() => commitCandidate(w, { git: injected })).toThrow(/hardlink|multiple links/i);
+    expect(calls).not.toContain("add");
+    expect(git(p.repoPath, "for-each-ref", "refs/heads/jarvis/candidates/")).toBe("");
+  });
+
+  it.each(["hardlink", "symlink", "content"])("refuses a %s swap after write-tree before importing a candidate", (swap) => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    const value = join(w.path, "value");
+    const target = join(root, `race-target${n}`);
+    writeFileSync(target, "base");
+    const injected: typeof safeGit = (cwd, args, opts) => {
+      const output = safeGit(cwd, args, opts);
+      if (args[0] === "write-tree") {
+        if (swap === "content") writeFileSync(value, "changed after staging");
+        else {
+          rmSync(value);
+          if (swap === "hardlink") linkSync(target, value);
+          else symlinkSync(".gitignore", value);
+        }
+      }
+      return output;
+    };
+    expect(() => commitCandidate(w, { git: injected })).toThrow(/hardlink|multiple links|ELOOP|symlink|blob|content/i);
+    expect(git(p.repoPath, "for-each-ref", "refs/heads/jarvis/candidates/")).toBe("");
+    expect(git(p.repoPath, "rev-parse", "run")).toBe(p.baseRevision);
+  });
+
+  it("does not follow a swapped symlink even when its target has the expected blob contents", () => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    writeFileSync(join(w.path, "same"), "base");
+    const injected: typeof safeGit = (cwd, args, opts) => {
+      const output = safeGit(cwd, args, opts);
+      if (args[0] === "write-tree") { rmSync(join(w.path, "value")); symlinkSync("same", join(w.path, "value")); }
+      return output;
+    };
+    expect(() => commitCandidate(w, { git: injected })).toThrow(/ELOOP|symlink/i);
+    expect(git(p.repoPath, "for-each-ref", "refs/heads/jarvis/candidates/")).toBe("");
+  });
+
+  it.each(["value", "mounted"])("refuses another device at %s during the workspace walk before staging", (name) => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    mkdirSync(join(w.path, "mounted"));
+    const calls: string[] = [];
+    const injected: typeof safeGit = (cwd, args, opts) => { calls.push(args[0]!); return safeGit(cwd, args, opts); };
+    expect(() => commitCandidate(w, { git: injected, files: { lstat: (path) => {
+      const st = lstatSync(path);
+      return path === join(w.path, name) ? Object.assign(st, { dev: st.dev + 1 }) : st;
+    } } })).toThrow(/device|filesystem|mount/i);
+    expect(calls).not.toContain("add");
+    expect(git(p.repoPath, "for-each-ref", "refs/heads/jarvis/candidates/")).toBe("");
+  });
+
+  it.each(["device", "links", "type"])("checks the opened file's %s after write-tree even if the walk was safe", (fault) => {
+    const p = project();
+    const w = createWorkspace(p.options);
+    const ino = lstatSync(join(w.path, "value")).ino;
+    expect(() => commitCandidate(w, { files: { fstat: (fd) => {
+      const st = fstatSync(fd);
+      if (st.ino !== ino) return st;
+      if (fault === "type") st.isFile = () => false;
+      return Object.assign(st, fault === "device" ? { dev: st.dev + 1 } : fault === "links" ? { nlink: 0 } : {});
+    } } })).toThrow(/device|filesystem|mount|regular|link/i);
     expect(git(p.repoPath, "for-each-ref", "refs/heads/jarvis/candidates/")).toBe("");
   });
 

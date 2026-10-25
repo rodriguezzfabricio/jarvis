@@ -34,3 +34,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Compound Engineering
+
+- **Source:** https://github.com/EveryInc/compound-engineering-plugin, by EveryInc.
+- **License:** MIT.
+- **Used in:**
+  - `compound`: the durable-learning test ("would losing it mean rediscovering it?"), one learning per solved problem, and the refresh pass that retires notes that drifted.
+  - `sweep`: the pattern of a scheduled sweep that reports and proposes instead of editing.
+- **What changed:** ideas only, rewritten for Jarvis; no text or code was copied, so no license notice is reproduced. Learnings go to Jarvis's memory files through the CLI instead of a `docs/solutions/` folder, need a runner-written source (decision 49), and a lesson seen twice becomes a rule the user approves (decision 28).
+
+## Ideas only (no text copied)
+
+- **OpenAI, "harness engineering" post:** an `AGENTS.md` of about 100 lines used as a table of contents into `docs/`, which is the system of record, and recurring cleanup agents. Used in `onboard` (the `AGENTS.md` cleanup task) and `sweep`.
+- **Claude Code's auto-memory format** (https://code.claude.com/docs/en/memory): a `MEMORY.md` index capped at about 200 lines plus typed notes (`user`, `feedback`, `project`, `reference`). Used in `compound` (decision 27).

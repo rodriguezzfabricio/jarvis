@@ -8,7 +8,8 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jtk-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing every repo this file made can outlast the default 10 s hook limit under a loaded full run.
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: root, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
 let n = 0;
 

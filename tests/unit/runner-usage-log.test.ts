@@ -46,7 +46,7 @@ describe("session usage entries", () => {
       failure: null, status: "finished",
       tokens: { input: 1000, output: 2000, cacheRead: 30000, cacheWrite: 4000 },
       costUsd: 0.5, durationMs: 60_000, turns: 6, complete: true,
-      windows: { five_hour: { before: 0.1, after: 0.3, resetsAt: 5000 }, seven_day: { before: 0.02, after: 0.04, resetsAt: 9000 } },
+      windows: { five_hour: [{ before: 0.1, after: 0.3, resetsAt: 5000 }], seven_day: [{ before: 0.02, after: 0.04, resetsAt: 9000 }] },
       problems: [],
     });
   });
@@ -192,6 +192,37 @@ describe("usage summary", () => {
     expect(text).toContain("unknown");
     expect(text).toMatch(/five_hour.*60%.*most of a window/);
     expect(text).toMatch(/\| Builder \| 1 \|/);
+  });
+
+  it("keeps observations in their own reset periods when one session spans a reset", () => {
+    const samples = [[0.8, 5000], [0.95, 5000], [0.05, 9000], [0.1, 9000]].map(([utilization, resetsAt]) => ({ windows: { five_hour: { utilization: utilization!, resetsAt: resetsAt! } } }));
+    const list = entries([runStarted("r1"), session("A", "a", { outcome: outcome({ usage: samples }) })]);
+    const [window] = summarizeUsage(list).windows;
+    expect(window).toMatchObject({ key: "five_hour", first: 0.8, last: 0.1, peak: 0.95 });
+    expect(window!.consumed).toBeCloseTo(0.2);
+    const report = usageReportLines(list).join("\n");
+    expect(report).toContain("used 20%");
+    expect(report).not.toContain("most of a window");
+  });
+
+  it("reads legacy single-period entries alongside sessions spanning resets without double counting", () => {
+    const old = session("A", "a");
+    old.data = { ...dataOf(old), windows: { five_hour: { before: 0.8, after: 0.95, resetsAt: 5000 } } };
+    const samples = [[0.85, 5000], [0.9, 5000], [0.05, 9000], [0.1, 9000]].map(([utilization, resetsAt]) => ({ windows: { five_hour: { utilization: utilization!, resetsAt: resetsAt! } } }));
+    const ledger = freshLedger();
+    for (const entry of [runStarted("r1"), old, session("B", "b", { outcome: outcome({ usage: samples }) })]) ledger.append(entry);
+    const summary = summarizeUsage(Ledger.open(ledger.dir).entries());
+    expect(summary.skipped).toBe(0);
+    expect(summary.total.sessions).toBe(2);
+    expect(summary.windows[0]!.consumed).toBeCloseTo(0.2);
+  });
+
+  it("labels dollar figures as estimates rather than subscription charges", () => {
+    const report = usageReportLines(entries([runStarted("r1"), session("T1", "a1"), passed("T1", "a1")])).join("\n");
+    expect(report).toContain("$0.50");
+    expect(report).toContain("API-equivalent");
+    expect(report).toContain("not billed on a subscription");
+    expect(report).toMatch(/cost.*estimate/i);
   });
 
   it("does not warn when a run used less than half a window", () => {

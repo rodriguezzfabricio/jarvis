@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
@@ -55,6 +55,8 @@ export interface GateInput {
   taskId: string;
   attemptId: string;
   extraEnv?: Record<string, string>;
+  /** Test seam: removes the run's scratch folder after the result is recorded. */
+  cleanup?: (dir: string) => void;
 }
 
 export type GateStatus = "pass" | "fail" | "tampered" | "error";
@@ -102,7 +104,36 @@ export async function runGate(g: GateInput): Promise<GateResult> {
   const shape = checkShape(g.check);
   if (shape) return { status: "error", entry: record("error", { problems: [shape] }), evidenceDir };
 
-  const gateDir = join(g.workRoot, "checks", `${g.attemptId}-${g.check.name}-${stamp}`);
+  return execute(g, evidenceDir, `${g.attemptId}-${g.check.name}-${stamp}`, v.lockHash, (runDir, checkout) => {
+    // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
+    // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
+    // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
+    // No separate fsck afterwards: index-pack already checked everything it would (decision 75).
+    safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
+    safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
+    const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
+    return head === g.revision ? undefined : `checkout is at ${head}`;
+  }, (outcome) => ({ status: outcome.status, entry: record(outcome.status, outcome.data), evidenceDir }));
+}
+
+/** What running a check needs, whoever keeps the result: the runner records it, feedback doesn't. */
+interface RunInput {
+  store: ChecksStore;
+  jarvisHome: string;
+  workRoot: string;
+  check: GateCheck;
+  extraEnv?: Record<string, string>;
+  cleanup?: (dir: string) => void;
+}
+interface Outcome { status: GateStatus; data: Record<string, unknown> }
+
+/**
+ * Runs the cases and the verify phase on a checkout `prepare` fills (a returned problem stops with error).
+ * `settle` keeps the outcome before the scratch folder is removed, so a cleanup fault never loses a
+ * recorded result (Codex review of the commands branch, medium 4).
+ */
+async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockHash: string | undefined, prepare: (runDir: string, checkout: string) => string | undefined, settle: (outcome: Outcome) => R): Promise<R> {
+  const gateDir = join(g.workRoot, "checks", label);
   const runDir = join(gateDir, "run");
   const checkout = join(runDir, "checkout");
   const home = join(runDir, "home");
@@ -113,14 +144,8 @@ export async function runGate(g: GateInput): Promise<GateResult> {
   const fixtures = join(g.store.checksDir, "fixtures");
   for (const d of [home, cache, obsDir, verifyHome]) mkdirSync(d, { recursive: true, mode: 0o700 });
   try {
-    // A fresh clone of the committed objects: no working-tree edits, no hooks, no repo config.
-    // --no-local goes through the pack transport, where index-pack recomputes every object's hash,
-    // so an agent can't swap a loose object's contents under its old name (Codex stage 0 review 5).
-    // No separate fsck afterwards: index-pack already checked everything it would (decision 75).
-    safeGit(runDir, ["-c", "protocol.file.allow=always", "-c", "transfer.fsckObjects=true", "clone", "--quiet", "--no-local", "--no-checkout", g.repoPath, checkout], { home: homedir() });
-    safeGit(checkout, ["checkout", "--quiet", "--detach", g.revision], { home: homedir() });
-    const head = safeGit(checkout, ["rev-parse", "HEAD"], { home: homedir() }).toString().trim();
-    if (head !== g.revision) return { status: "error", entry: record("error", { problems: [`checkout is at ${head}`] }), evidenceDir };
+    const problem = prepare(runDir, checkout);
+    if (problem !== undefined) return settle({ status: "error", data: { problems: [problem] } });
 
     const real = (p: string) => realpathSync(p);
     const commonEnv = { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", CI: "1" };
@@ -198,20 +223,108 @@ export async function runGate(g: GateInput): Promise<GateResult> {
     // Pass only if every case finished, every observation was judged, and the assertions exited 0
     // and ran to the end.
     const status: GateStatus = allFinished && withinCap && verifyOk && complete ? "pass" : "fail";
-    const entry = record(status, {
+    return settle({ status, data: {
       caseResults,
       verifyExitCode: ver.code,
       verifyTimedOut: ver.timedOut,
       completed: complete,
       ...(withinCap ? {} : { observationsOverCap: true }),
-      checksLock: v.lockHash,
+      checksLock: lockHash,
       evidence: { dir: evidenceDir, files: { ...files } },
-    });
-    return { status, entry, evidenceDir };
+    } });
   } catch (err) {
-    return { status: "error", entry: record("error", { problems: [String(err)] }), evidenceDir };
+    return settle({ status: "error", data: { problems: [String(err)] } });
   } finally {
-    rmSync(gateDir, { recursive: true, force: true });
+    (g.cleanup ?? ((dir) => rmSync(dir, { recursive: true, force: true })))(gateDir);
+  }
+}
+
+export interface FeedbackInput extends RunInput {
+  /** Verified ledger entries, read without a writer. Feedback is never given a ledger to append to. */
+  entries: readonly LedgerEntry[];
+  /** The working tree to judge: edits and untracked files count; ignored files, .git and .jarvis don't. */
+  workTree: string;
+  /** Test seam: runs between staging the working tree and materializing the staged tree. */
+  afterStage?: () => void;
+}
+export interface FeedbackCase { id: string; code: number | null; timedOut: boolean; stdoutTail: string; stderrTail: string }
+export interface FeedbackResult { check: string; status: GateStatus; problems: string[]; cases: FeedbackCase[] }
+const TAIL_BYTES = 2000;
+
+function tailOf(path: string): string {
+  if (!existsSync(path)) return "";
+  const bytes = readFileSync(path);
+  // Candidate output reaches a terminal: no control characters besides newlines and tabs.
+  return bytes.subarray(Math.max(0, bytes.length - TAIL_BYTES)).toString("utf8").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "?");
+}
+
+/** Lexically inside the tree and never into .git: relative links only, as for the runner's candidates. */
+function linkStaysInside(path: string, link: string): boolean {
+  if (link === "" || link.startsWith("/") || link.includes("\0")) return false;
+  const target = posix.normalize(posix.join(posix.dirname(path), link));
+  return target !== ".." && !target.startsWith("../") && !/^\.git(?:\/|$)/i.test(target);
+}
+
+/**
+ * Stages what `git add --all` would take (tracked and untracked, not ignored, never .jarvis) into a
+ * runner-private index and object store, checks the tree, then checks it out into the copy. Nothing
+ * reads the live tree after staging, and git refuses paths beyond a symlink while staging, so swapping
+ * a parent for a symlink can't put outside files in the copy (Codex review of the commands branch, high 1).
+ */
+function copyWorkTree(workTree: string, checkout: string, stage: string, afterStage?: () => void): void {
+  const objects = join(stage, "objects");
+  mkdirSync(objects, { recursive: true, mode: 0o700 });
+  const env = { GIT_INDEX_FILE: join(stage, "index"), GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: "", GIT_NO_REPLACE_OBJECTS: "1" };
+  const git = (args: readonly string[], extra: Record<string, string> = {}, input?: Buffer) =>
+    safeGit(workTree, args, { home: homedir(), env: { ...env, ...extra }, ...(input ? { input } : {}) }).toString();
+  const runnerPath = (p: string) => /^\.jarvis$/i.test(p.split("/")[0]!);
+  // Tracked paths come from the project's own index, so a tracked file .gitignore matches still counts.
+  const tracked = safeGit(workTree, ["ls-files", "-z", "--cached"], { home: homedir() }).toString().split("\0")
+    .filter((p) => p !== "" && !runnerPath(p) && lstatSync(join(workTree, p), { throwIfNoEntry: false }) !== undefined);
+  const untracked = git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0").filter((p) => p !== "" && !runnerPath(p));
+  for (const p of [...tracked, ...untracked]) {
+    const st = lstatSync(join(workTree, p), { throwIfNoEntry: false });
+    if (st?.isFile() && st.nlink !== 1) throw new Error(`working tree file is hard-linked: ${p}`);
+  }
+  if (tracked.length) git(["add", "--all", "--force", "--pathspec-from-file=-", "--pathspec-file-nul"], { GIT_LITERAL_PATHSPECS: "1" }, Buffer.from(tracked.join("\0")));
+  git(["add", "--all", "--", ".", ":(exclude,icase).jarvis"]);
+  const tree = git(["write-tree"]).trim();
+  for (const entry of git(["ls-tree", "-r", "-z", "--full-tree", tree]).split("\0").filter(Boolean)) {
+    const tab = entry.indexOf("\t");
+    const [mode, , oid] = entry.slice(0, tab).split(" ");
+    const path = entry.slice(tab + 1);
+    if (path.split("/").some((part) => /^\.git[. ]*$/i.test(part) || /^git~[0-9]+$/i.test(part)) || runnerPath(path)) throw new Error(`working tree touches git or runner internals: ${path}`);
+    if (mode === "160000") throw new Error(`nested repositories are not supported: ${path}`);
+    if (mode === "120000" && !linkStaysInside(path, git(["cat-file", "blob", oid!]))) throw new Error(`symlink leaves the working tree: ${path}`);
+  }
+  afterStage?.();
+  git(["checkout-index", "--all", `--prefix=${checkout}/`]);
+}
+
+/**
+ * Decision 49: a gate run from inside a session is feedback only. The same cases and verify phase run
+ * on a copy of the working tree; nothing is recorded and nothing is kept. The observations live in a
+ * scratch folder that is removed before this returns. Only the cases' own output is shown: the verify
+ * phase's output can carry the expectations (decision 76).
+ */
+export async function runFeedbackGate(f: FeedbackInput): Promise<FeedbackResult> {
+  const checked = f.store.verify({ entries: () => [...f.entries] });
+  if (!checked.ok) return { check: f.check.name, status: "tampered", problems: checked.problems, cases: [] };
+  const shape = checkShape(f.check);
+  if (shape) return { check: f.check.name, status: "error", problems: [shape], cases: [] };
+  const label = `feedback-${f.check.name}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(4).toString("hex")}`;
+  const scratch = join(f.workRoot, "feedback", label);
+  mkdirSync(scratch, { recursive: true, mode: 0o700 });
+  try {
+    const outcome = await execute(f, scratch, label, checked.lockHash, (runDir, checkout) => { copyWorkTree(f.workTree, checkout, join(dirname(runDir), "stage"), f.afterStage); return undefined; }, (o) => o);
+    const results = (outcome.data.caseResults ?? []) as { id: string; code: number | null; timedOut: boolean }[];
+    const tail = (id: string, name: string) => tailOf(join(scratch, "cases", id, name));
+    return {
+      check: f.check.name, status: outcome.status, problems: (outcome.data.problems ?? []) as string[],
+      cases: results.map((c) => ({ id: c.id, code: c.code, timedOut: c.timedOut, stdoutTail: tail(c.id, "stdout"), stderrTail: tail(c.id, "stderr") })),
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 

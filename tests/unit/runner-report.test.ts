@@ -33,6 +33,23 @@ function run() {
 const stateOf = (ledger: Ledger) => rebuildState(ledger.entries(), { now });
 
 describe("shared-state morning report", () => {
+  it("shows the rebuilt blocked reason when a tampered gate blocks without a blocked entry", () => {
+    const ledger = run();
+    ledger.append({ kind: "gate_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { revision, status: "tampered", check: "unit" } });
+    ledger.append({ kind: "decision", actor: "runner", task_id: "T1", data: { reason: "unrelated reason" } });
+    ledger.append({ kind: "decision", actor: "runner", task_id: "T2", data: { reason: "unrelated reason" } });
+    ledger.append({ kind: "blocked", actor: "broker", task_id: "T2", data: { reason: "forged blocked reason" } });
+    const state = stateOf(ledger);
+    expect(state.tasks.T1!.blockedReason).toBe("protected check changed");
+    const report = renderReport(state, ledger.entries());
+    expect(report).toContain("- T1: protected check changed");
+    expect(report).not.toContain("unrelated reason");
+    expect(report).not.toContain("forged blocked reason");
+    state.tasks.T2!.blockedReason = null;
+    expect(renderReport(state, ledger.entries())).toContain("- T2: Needs approved provider");
+    expect(renderReport(state, [])).toContain("- T2: No reason recorded");
+  });
+
   it("uses isDone and required named reviewers, with revision-bound evidence and Taste first", () => {
     const ledger = run(); const state = stateOf(ledger);
     expect(isDone(state.tasks.T1!)).toBe(true);

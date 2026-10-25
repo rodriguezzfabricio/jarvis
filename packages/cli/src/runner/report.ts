@@ -97,7 +97,7 @@ function taskLines(state: RunState, entries: readonly LedgerEntry[], verify: Evi
     else if (task.status === "passed") result.left.push(`- Unverified completion: ${line(task.id)} — evidence changed or missing, or required checks/reviews absent.`);
     else if (task.status === "blocked") {
       const blocked = entries.filter(runnerAuthored).filter((e) => e.task_id === task.id && e.kind === "blocked").at(-1);
-      result.blocked.push(`- ${line(task.id)}: ${line(blocked ? dataOf(blocked).reason : "No reason recorded")}`);
+      result.blocked.push(`- ${line(task.id)}: ${line(task.blockedReason ?? (blocked ? dataOf(blocked).reason : "No reason recorded"))}`);
     } else {
       const dependencies = task.definition.dependencies.filter((id) => !done.get(id));
       result.left.push(`- ${line(task.id)}: ${line(task.definition.title)} (${task.status}). ${dependencies.length ? `Waiting on ${dependencies.map(line).join(", ")}` : line(task.interruption ?? "Not completed")}`);

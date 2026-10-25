@@ -1,0 +1,68 @@
+[
+  {
+    "name": "runner-backlog report ignores rebuilt blocked reason",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "task.blockedReason ?? ",
+    "replacement": ""
+  },
+  {
+    "name": "runner-backlog report accepts nonblocked fallback reasons",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "e.task_id === task.id && e.kind === \"blocked\"",
+    "replacement": "e.task_id === task.id"
+  },
+  {
+    "name": "runner-backlog archive failures are not recorded",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "const skipped = recordArchiveFailure(ledger, file);",
+    "replacement": "const skipped = undefined;"
+  },
+  {
+    "name": "runner-backlog archive failure stops later notes",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (skipped) result.skipped.push(skipped);",
+    "replacement": "if (skipped) { result.skipped.push(skipped); break; }"
+  },
+  {
+    "name": "runner-backlog skipped archive is retried",
+    "file": "packages/cli/src/runner/inbox.ts",
+    "anchor": "if (skippedItem(ledger.entries(), file)) continue;",
+    "replacement": "if (false) continue;"
+  },
+  {
+    "name": "runner-backlog walk permits mounted entries",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (st.dev !== device) throw new Error(`workspace crosses a device boundary: ${path}`);",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-backlog candidate open follows symlinks",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "const flags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;",
+    "replacement": "const flags = constants.O_RDONLY | constants.O_NONBLOCK;"
+  },
+  {
+    "name": "runner-backlog candidate descriptor accepts nonfiles",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (!st.isFile()) throw new Error(`candidate must be a regular file: ${path}`);",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-backlog candidate descriptor accepts multiple links",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (st.nlink !== 1) throw new Error(`candidate has multiple links or was unlinked: ${path}`);",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-backlog candidate descriptor accepts another device",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (st.dev !== device) throw new Error(`candidate file crosses a device boundary: ${path}`);",
+    "replacement": "// mutation"
+  },
+  {
+    "name": "runner-backlog staged blob content is unchecked",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (hash.digest(\"hex\") !== blob)",
+    "replacement": "if (false)"
+  }
+]

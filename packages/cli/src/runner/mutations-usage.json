@@ -178,5 +178,29 @@
     "file": "packages/cli/src/runner/routing-tuning.ts",
     "anchor": "  if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(\"refusing to write through a symlink\");\n",
     "replacement": ""
+  },
+  {
+    "name": "runner-backlog one session collapses reset periods",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "const seen = periods.find((period) => period.resetsAt === resetsAt);",
+    "replacement": "const seen = periods[0];"
+  },
+  {
+    "name": "runner-backlog summary omits later reset periods",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "for (const w of observations) {",
+    "replacement": "for (const w of observations.slice(0, 1)) {"
+  },
+  {
+    "name": "runner-backlog dollar estimate label omitted",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "Reported cost estimate ${usd(t.costUsd)}",
+    "replacement": "Reported cost ${usd(t.costUsd)}"
+  },
+  {
+    "name": "runner-backlog subscription disclaimer omitted",
+    "file": "packages/cli/src/runner/usage-log.ts",
+    "anchor": "; not billed on a subscription",
+    "replacement": ""
   }
 ]

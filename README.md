@@ -102,21 +102,22 @@ From `jarvis --help` today:
 | `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
-| `jarvis status` | The current run, rebuilt from its ledger |
+| `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline <tasks…>` | Runs plain Claude Code on golden tasks, as the baseline Jarvis must beat |
+| `jarvis eval jarvis\|grade\|compare\|rate <task…>` | Runs golden tasks through Jarvis, grades both arms on the hidden checks, compares them (decision 97) |
+| `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
+| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence (decision 98) |
+| `jarvis mode explain\|quiet` | Teach-me mode on or off |
+| `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
 
 Coming:
 
 | Command | What it will do |
 |---|---|
 | `jarvis run [--detach]` | The unattended build loop. It keeps working after you close Claude Code |
-| `jarvis report [--open]` | The morning report |
-| `jarvis gate <name>` | Runs a protected check by hand (feedback only, never evidence) |
-| `jarvis mode explain\|quiet` | Teach-me mode on or off |
-| `jarvis eval <task>` | Golden task with Jarvis and with the baseline, side by side |
 
 ## Troubleshooting
 

@@ -1,16 +1,16 @@
 import { randomInt } from "node:crypto";
-import { cpSync, lstatSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { envFileSecretsWriter, isStorableSecret, type SecretsWriter } from "../broker/secrets.ts";
 import { pinnedClaudeBin, CLAUDE_CODE_VERSION } from "../config/pins.ts";
-import { refuseSymlink, writePrivateAtomic } from "../config/private-file.ts";
+import { checkTrustedDir, checkTrustedTree, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import { checkClaudePinned } from "../doctor/doctor.ts";
-import { checkPlugin } from "../doctor/foundation.ts";
 import { notifyConfigSchema } from "../intake/commands.ts";
 import { saveTaste } from "../intake/taste.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
 import { ACCOUNTS, DEPLOY, type AccountSpec } from "./accounts.ts";
+import { installPlugin } from "./plugin.ts";
 import { ACCOUNT_STEPS, STEPS, isFinished, jarvisHome, loadState, saveState, type SetupState, type StepName, type StepRecord } from "./state.ts";
 import type { Tty } from "./tty.ts";
 
@@ -31,6 +31,8 @@ export interface SetupDeps {
   now?: () => Date;
   /** Fault injection for state saves. */
   rename?: typeof renameSync;
+  /** Test seam for ownership checks; defaults to process.getuid(). */
+  uid?: number;
 }
 export interface SetupOptions { redo?: readonly string[]; sendTest?: boolean }
 export interface SetupResult { ok: boolean; state: SetupState; pending: StepName[] }
@@ -60,6 +62,20 @@ export function generateTopics(pick: (max: number) => number = randomInt): { top
   return { topic, replyTopic: `${topic}-reply` };
 }
 
+/**
+ * Before anything is asked: every existing runner folder setup writes or trusts must be ours and writable only
+ * by us, and an installed plugin must be a trusted tree (Codex review of setup, finding 1). jarvisHome has
+ * already checked the home folder and ~/.jarvis.
+ */
+function checkRunnerFolders(jarvis: string, trust: TrustOptions): void {
+  for (const rel of ["secrets", "memory", join("memory", "user")]) {
+    const path = join(jarvis, rel);
+    if (lstatSync(path, { throwIfNoEntry: false })) checkTrustedDir(path, trust);
+  }
+  const plugin = join(jarvis, "plugin");
+  if (lstatSync(plugin, { throwIfNoEntry: false })) checkTrustedTree(plugin, trust);
+}
+
 type Outcome = Omit<StepRecord, "at">;
 interface Context {
   deps: SetupDeps;
@@ -68,15 +84,18 @@ interface Context {
   secrets: SecretsWriter;
   redo: Set<StepName>;
   state: SetupState;
+  trust: TrustOptions;
 }
 const yes = (answer: string) => /^y(es)?$/i.test(answer.trim());
 const SKIPPED_ACCOUNT = "skipped; Jarvis develops against local services (SQLite, or Postgres in Docker) until this account exists (decision 43)";
 
 export async function runSetup(deps: SetupDeps, options: SetupOptions = {}): Promise<SetupResult> {
   const redo = parseRedo(options.redo ?? []);
-  const jarvis = jarvisHome(deps.home);
+  const trust: TrustOptions = deps.uid !== undefined ? { uid: deps.uid } : {};
+  const jarvis = jarvisHome(deps.home, trust);
+  checkRunnerFolders(jarvis, trust);
   let state = loadState(jarvis);
-  const ctx: Context = { deps, home: deps.home, jarvis, secrets: deps.secrets ?? envFileSecretsWriter(accountsSecretsPath(jarvis)), redo, state };
+  const ctx: Context = { deps, home: deps.home, jarvis, secrets: deps.secrets ?? envFileSecretsWriter(accountsSecretsPath(jarvis), trust), redo, state, trust };
   const print = deps.print;
   for (const step of STEPS) {
     const prior = state.steps[step];
@@ -89,7 +108,7 @@ export async function runSetup(deps: SetupDeps, options: SetupOptions = {}): Pro
     print(`${step}: ${outcome.status}. ${outcome.detail}`);
     state = { ...state, steps: { ...state.steps, [step]: { ...outcome, at: (deps.now ?? (() => new Date()))().toISOString() } } };
     ctx.state = state;
-    saveState(jarvis, state, deps.rename ? { rename: deps.rename } : {});
+    saveState(jarvis, state, { ...trust, ...(deps.rename ? { rename: deps.rename } : {}) });
   }
   let ok = true;
   if (options.sendTest) ok = (await sendTest(ctx)) && ok;
@@ -195,7 +214,7 @@ function printSubscribe(config: { topic: string; replyTopic: string }, print: (t
 }
 
 function readNotifyConfig(path: string): NtfyOptions {
-  const config = notifyConfigSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  const config = notifyConfigSchema.parse(JSON.parse(readNoFollow(path)));
   new NtfyNotifier({ baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic });
   return { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic };
 }
@@ -216,7 +235,7 @@ function ntfyStep(ctx: Context): Outcome {
   const config = { baseUrl: NTFY_BASE_URL, ...generateTopics(ctx.deps.randomInt) };
   new NtfyNotifier(config);
   try {
-    writePrivateAtomic(path, `${JSON.stringify(config, null, 2)}\n`);
+    writePrivateAtomic(path, `${JSON.stringify(config, null, 2)}\n`, ctx.trust);
   } catch (error) {
     return { status: "failed", detail: (error as Error).message };
   }
@@ -274,51 +293,20 @@ async function tasteStep(ctx: Context): Promise<Outcome> {
   return { status: "failed", detail: "the taste profile wasn't valid after three tries" };
 }
 
-function hasSymlink(dir: string): boolean {
-  return readdirSync(dir, { withFileTypes: true }).some((e) => e.isSymbolicLink() || (e.isDirectory() && hasSymlink(join(dir, e.name))));
-}
-
-/** Copies the repo's plugin to ~/.jarvis/plugin, where task sessions load it with --plugin-dir (architecture §5). */
-function installPlugin(source: string, jarvisDir: string): string {
-  const dest = join(jarvisDir, "plugin");
-  refuseSymlink(dest);
-  const sourceCheck = checkPlugin(source);
-  if (sourceCheck.level !== "pass") throw new Error(`the repo's plugin at ${source} is incomplete: ${sourceCheck.detail}`);
-  const staging = mkdtempSync(join(jarvisDir, ".plugin-new-"));
-  const old = `${staging.replace(".plugin-new-", ".plugin-old-")}`;
-  try {
-    cpSync(source, join(staging, "plugin"), { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
-    if (hasSymlink(join(staging, "plugin"))) throw new Error("the plugin may not contain symlinks");
-    const existing = lstatSync(dest, { throwIfNoEntry: false });
-    if (existing) renameSync(dest, old);
-    try {
-      renameSync(join(staging, "plugin"), dest);
-    } catch (error) {
-      if (existing) renameSync(old, dest);
-      throw error;
-    }
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-    rmSync(old, { recursive: true, force: true });
-  }
-  return dest;
-}
-
 function pluginStep(ctx: Context): Outcome {
   let dest: string;
   try {
-    dest = installPlugin(ctx.deps.pluginSource, ctx.jarvis);
+    dest = installPlugin(ctx.deps.pluginSource, ctx.jarvis, ctx.trust);
   } catch (error) {
     return { status: "failed", detail: (error as Error).message };
   }
-  const check = checkPlugin(dest);
-  if (check.level !== "pass") return { status: "failed", detail: `doctor's plugin check failed on the installed copy: ${check.detail}` };
   ctx.deps.print([
-    `Installed the Jarvis plugin at ${dest}; task sessions load it with --plugin-dir.`,
+    `Installed the Jarvis plugin at ${dest}, with its skills copied in as real files.`,
+    "Task sessions never load this folder directly: each session gets its own copy with only the build and debug skills, and only that copy is passed to --plugin-dir.",
     "For your interactive Claude Code and the desktop app (intake), enable it from the Jarvis marketplace yourself (decision 80):",
     `  /plugin marketplace add ${ctx.deps.repoRoot}`,
     "  /plugin install jarvis@jarvis",
     "Then check it with: node scripts/desktop-plugin-check.mjs prepare (docs/desktop-plugin-check.md).",
   ].join("\n"));
-  return { status: "done", detail: check.detail };
+  return { status: "done", detail: `${dest}: doctor's plugin check passed, the build and debug skills are present, and every file is yours and writable only by you` };
 }

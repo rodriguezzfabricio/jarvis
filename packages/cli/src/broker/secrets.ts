@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, statSync, type renameSync } from "node:fs";
 import { dirname } from "node:path";
-import { privateDir, refuseSymlink, writePrivateAtomic } from "../config/private-file.ts";
+import { privateDir, readNoFollow, refuseSymlink, writePrivateAtomic } from "../config/private-file.ts";
 import type { SecretsBackend } from "./broker.ts";
 
 const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
@@ -41,39 +41,41 @@ export function isStorableSecret(value: string): boolean {
 
 const MARKER = "# broker-only: ";
 
-function checkOwnerOnly(path: string, what: string): void {
+function checkOwnerOnly(path: string, what: string, uid: number | undefined): void {
   const existing = lstatSync(path, { throwIfNoEntry: false });
   if (!existing) return;
   if ((existing.mode & 0o077) !== 0) throw new Error(`${path}: the secrets ${what} must be owner only (it is ${(existing.mode & 0o777).toString(8)})`);
-  if (typeof process.getuid === "function" && existing.uid !== process.getuid()) throw new Error(`${path} must belong to the current user`);
+  if (uid !== undefined && existing.uid !== uid) throw new Error(`${path} must belong to the current user`);
 }
 
 /** Writes KEY=value lines into the env file envFileSecrets reads: owner-only folder and file, atomic replace, no symlinks. */
-export function envFileSecretsWriter(path: string, options: { rename?: typeof renameSync } = {}): SecretsWriter {
+export function envFileSecretsWriter(path: string, options: { rename?: typeof renameSync; /** Test seam for ownership. */ uid?: number } = {}): SecretsWriter {
   const directory = dirname(path);
+  const uid = options.uid ?? process.getuid?.();
+  const trust = uid !== undefined ? { uid } : {};
   const check = () => {
     refuseSymlink(directory);
     refuseSymlink(path);
-    checkOwnerOnly(directory, "folder");
-    checkOwnerOnly(path, "file");
+    checkOwnerOnly(directory, "folder", uid);
+    checkOwnerOnly(path, "file", uid);
   };
   return {
     location: path,
     prepare() {
       check();
-      privateDir(directory);
+      privateDir(directory, trust);
       check();
     },
     set(key, value, meta) {
       if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(key)) throw new Error("Secret key names are upper-case letters, digits and underscores");
       if (!isStorableSecret(value)) throw new Error(`Refusing to store ${key}: a token is 8 to 4096 printable ASCII characters with no spaces or quotes`);
       check();
-      privateDir(directory);
-      const lines = lstatSync(path, { throwIfNoEntry: false }) ? readFileSync(path, "utf8").split("\n") : [];
+      privateDir(directory, trust);
+      const lines = lstatSync(path, { throwIfNoEntry: false }) ? readNoFollow(path).split("\n") : [];
       const kept = lines.filter((line) => line !== "" && line !== `${MARKER}${key}` && LINE.exec(line)?.[1] !== key);
       if (meta.brokerOnly) kept.push(`${MARKER}${key}`);
       kept.push(`${key}=${value}`);
-      writePrivateAtomic(path, `${kept.join("\n")}\n`, options);
+      writePrivateAtomic(path, `${kept.join("\n")}\n`, { ...trust, ...(options.rename ? { rename: options.rename } : {}) });
     },
   };
 }

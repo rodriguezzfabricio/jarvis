@@ -1,7 +1,7 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { privateDir, refuseSymlink, writePrivateAtomic, type PrivateWriteOptions } from "../config/private-file.ts";
+import { checkTrustedDir, privateDir, readNoFollow, refuseSymlink, writePrivateAtomic, type PrivateWriteOptions, type TrustOptions } from "../config/private-file.ts";
 
 /** The steps of jarvis setup, in the order they run (architecture §3.2, decision 43). */
 export const STEPS = ["claude", "secrets", "accounts.github", "accounts.deploy", "accounts.neon", "accounts.cloudflare", "accounts.expo", "accounts.oauth", "ntfy", "taste", "plugin"] as const;
@@ -26,11 +26,11 @@ export function isFinished(record: StepRecord | undefined): boolean {
   return record?.status === "done" || record?.status === "skipped";
 }
 
-/** ~/.jarvis, created owner-only if missing; a symlink there is refused. */
-export function jarvisHome(home: string): string {
+/** ~/.jarvis, created owner-only if missing. The home folder and ~/.jarvis must be ours and writable only by us. */
+export function jarvisHome(home: string, options: TrustOptions = {}): string {
   const root = resolve(home);
-  refuseSymlink(root);
-  return privateDir(join(root, ".jarvis"));
+  checkTrustedDir(root, options);
+  return privateDir(join(root, ".jarvis"), options);
 }
 
 export const statePath = (jarvisHomeDir: string) => join(jarvisHomeDir, "setup-state.json");
@@ -42,7 +42,7 @@ export function loadState(jarvisHomeDir: string): SetupState {
   if (!st) return { version: 1, steps: {} };
   if (!st.isFile()) throw new Error(`${path} must be a regular file`);
   try {
-    return stateSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+    return stateSchema.parse(JSON.parse(readNoFollow(path)));
   } catch {
     throw new Error(`${path} is not a valid setup state; fix or remove it (finished steps would otherwise run again)`);
   }

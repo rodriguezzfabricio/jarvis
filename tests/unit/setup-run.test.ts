@@ -343,9 +343,10 @@ it("a broken plugin source fails the plugin step and leaves no half-installed co
   const other = makeHome(); mkdirSync(join(other, ".jarvis"), { mode: 0o700 });
   const elsewhere = join(other, "elsewhere"); mkdirSync(elsewhere);
   symlinkSync(elsewhere, join(other, ".jarvis", "plugin"));
-  const o = deps(other, fakeTty(["n", "", "", "", "", "", "n"], []).tty, { secrets: fakeSecrets().backend });
-  expect((await runSetup(o.d, {})).ok).toBe(false);
-  expect(state(other).steps.plugin?.detail).toMatch(/symlink/i);
+  // An installed plugin that is a symlink is refused before anything is asked (Codex review, finding 1).
+  const otherTty = fakeTty(["n", "", "", "", "", "", "n"], []);
+  expect(String(await failure(runSetup(deps(other, otherTty.tty, { secrets: fakeSecrets().backend }).d, {})))).toMatch(/symlink/i);
+  expect(otherTty.calls).toEqual([]);
   expect(readdirSync(elsewhere)).toEqual([]);
 });
 

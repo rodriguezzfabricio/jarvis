@@ -17,6 +17,14 @@ export interface RunContext {
   /** `--plan onboard|sweep`: read that session-owned plan instead of .jarvis/plan.json. */
   planKind?: SessionPlanKind;
 }
+/** A run ready to start, and what it hosts for its own duration (architecture §3.4). */
+export interface PreparedRun {
+  loop: RunLoopOptions;
+  /** Stops what the run hosts (the broker). Called once the loop returns or throws. */
+  close(): Promise<void>;
+  /** The finished notification: the loop's result, or undefined when it threw. Never throws. */
+  finished(result: RunLoopResult | undefined): Promise<void>;
+}
 export interface DetachedChild {
   pid?: number | undefined;
   unref(): unknown;
@@ -28,8 +36,10 @@ export interface RunCommandOptions {
   env?: Partial<Pick<NodeJS.ProcessEnv, "JARVIS_PROJECT">>;
   output?: (text: string) => void;
   probe?: () => Promise<{ ok: boolean }>;
-  /** The composition root supplies checks, plan, the harness factory and the fresh read-only reviewer. */
-  prepareRun?: (context: RunContext) => Promise<RunLoopOptions>;
+  /** The composition root supplies checks, plan, the harness factory, the fresh read-only reviewer, the hosted broker and the notifier. */
+  prepareRun?: (context: RunContext) => Promise<PreparedRun>;
+  /** Test seam for the loop a prepared run drives. */
+  runLoop?: (options: RunLoopOptions) => Promise<RunLoopResult>;
   run?: (context: RunContext) => Promise<RunLoopResult>;
   spawn?: (bin: string, args: string[], options: SpawnOptions) => DetachedChild;
   entrypoint?: string;
@@ -63,6 +73,24 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
   } finally { closeSync(fd); }
 }
 
+/** Drives the loop; what the run hosts comes down whether it returns or throws, then the finished notice goes out. */
+async function hosted(run: PreparedRun, loop: (options: RunLoopOptions) => Promise<RunLoopResult>): Promise<RunLoopResult> {
+  let result: RunLoopResult | undefined;
+  let failed = false;
+  try {
+    result = await loop(run.loop);
+    return result;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try { await run.close(); } catch (error) {
+      if (!failed) throw error;
+      console.error(`Stopping the run's broker also failed: ${error instanceof Error ? error.message : String(error)}`); // the loop's own error wins
+    } finally { await run.finished(result); }
+  }
+}
+
 export function register(program: Command, seams: RunCommandOptions = {}): void {
   program.command("run").description("Run ready tasks through protected checks and independent review")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
@@ -84,7 +112,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       if (!(await probe()).ok) throw new Error("live canary probe failed; refusing unattended run"); // safety requirement 6
       if (options.detach) return detach(context, seams);
       (seams.keepAwake ?? ((pid) => caffeinate(pid)))(process.pid);
-      const result = seams.run ? await seams.run(context) : await runLoop(await seams.prepareRun!(context));
+      const result = seams.run ? await seams.run(context) : await hosted(await seams.prepareRun!(context), seams.runLoop ?? runLoop);
       (seams.output ?? console.log)(`Run ${result.status}: ${result.done.length} done, ${result.blocked.length} blocked`);
     });
 }

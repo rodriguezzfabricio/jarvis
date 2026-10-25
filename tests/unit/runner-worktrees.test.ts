@@ -12,7 +12,8 @@ import { buildLease, rebuildState } from "../../packages/cli/src/runner/state.ts
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jrw-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing every repo this file made can outlast the default 10 s hook limit under a loaded full run.
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const git = (cwd: string, ...args: string[]) => safeGit(cwd, args, { home: root }).toString().trim();
 let n = 0;
 function project() {

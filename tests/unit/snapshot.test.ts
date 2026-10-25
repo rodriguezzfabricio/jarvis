@@ -1,13 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import { afterAll, describe, expect, it } from "vitest";
 import { createSnapshot, findCredentials, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jts-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing ~100 repositories and snapshots can take longer than the default 10 s hook limit under a
+// loaded full run (a file-level "Hook timed out" error in mutation controls).
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
 
 function sourceRepo(): { repo: string; base: string; fix: string } {
@@ -50,7 +53,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(() => readFileSync(join(dest, "untracked.env"))).toThrow();
     expect(m.redactions).toEqual([{ file: "ext/.env.production", keys: ["WXT_GA_API_SECRET"] }]);
     expect(m.commit).toMatch(/^[0-9a-f]{40}$/);
-  });
+  }, 60_000);
 
   it("undoes a planted fix in the files, with no trace of it in git", async () => {
     const dest = join(root, "snap2");
@@ -58,7 +61,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(readFileSync(join(dest, "app.go"), "utf8")).toContain("// buggy");
     expect(git(dest, "log", "--all", "--format=%B")).not.toContain("the fix");
     expect(m.reverted).toEqual([fix]);
-  });
+  }, 60_000);
 
   it("makes an empty starting folder for new products", async () => {
     const dest = join(root, "snap3");
@@ -66,7 +69,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(git(dest, "rev-list", "--count", "HEAD")).toBe("1");
     expect(git(dest, "ls-files")).toBe("");
     expect(m.sourceRev).toBeNull();
-  });
+  }, 60_000);
 
   // Codex review 1, high: multi-line values, credential URLs and real keys must not survive.
   it("redacts quoted multi-line secrets entirely", () => {
@@ -144,7 +147,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(existsSync(join(root, "snapF"))).toBe(false);
     const m = await createSnapshot({ sourceRepo: repo2, rev: "HEAD", dest: join(root, "snapG"), allowSecretsIn: ["deploy.yaml"] });
     expect(m.commit).toMatch(/^[0-9a-f]{40}$/);
-  });
+  }, 60_000);
 
   it("fails closed on credentials hidden in UTF-16, binary or unterminated env files", async () => {
     const repo4 = join(root, "src4");
@@ -161,7 +164,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(err).toContain("notes.txt (GitHub token)");
     expect(err).toContain("blob.bin (AWS access key)");
     expect(err).toContain(".env (unterminated");
-  });
+  }, 60_000);
 
   // Codex review 3, high: binary credentials, and the size boundary.
   it("refuses binary private keys and credential containers, and files over the size limit", async () => {
@@ -185,7 +188,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     expect(err).not.toContain("just-under.txt");
     const ok = await createSnapshot({ sourceRepo: repo5, rev: "HEAD", dest: join(root, "snapK2"), maxScanBytes: 2000, allowSecretsIn: ["signing.bin", "release.p12", "just-over.txt"] });
     expect(ok.commit).toMatch(/^[0-9a-f]{40}$/);
-  });
+  }, 60_000);
 
   // Codex reviews 3 and 4: snapshot-level regressions, not just the helper.
   it("refuses snapshots carrying real keys or passwords in any of these forms", async () => {
@@ -214,7 +217,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapX-${name}`) }).then(() => "", (e: Error) => e.message);
       expect(err, name).toContain(name);
     }
-  });
+  }, 60_000);
 
   // Codex review 6, high: credentials encoded by their containing format, and credential-named fields.
   it("refuses credentials hidden by JSON, YAML or percent encoding, and literal credential fields", async () => {
@@ -328,20 +331,29 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
       "kubeconfig-literal.yaml": "users:\n  - user:\n      client-key-data: Synthetic9qvM2\n",
       "alias-bomb.yaml": `a: &a [${Array(10).fill("x").join(",")}]\nb: &b [${Array(10).fill("*a").join(",")}]\nc: &c [${Array(10).fill("*b").join(",")}]\nd: [${Array(10).fill("*c").join(",")}]\n`,
     };
-    for (const [name, content] of Object.entries(cases)) {
-      const slug = name.replaceAll("/", "_");
-      const repo = join(root, `srcE-${slug}`);
-      mkdirSync(dirname(join(repo, name)), { recursive: true });
-      git(repo, "init", "-q", "-b", "main");
-      git(repo, "config", "user.email", "t@t");
-      git(repo, "config", "user.name", "t");
-      writeFileSync(join(repo, name), name === "utf16.json" ? Buffer.from(content, "latin1") : content);
-      git(repo, "add", "-A");
-      git(repo, "commit", "-qm", "c");
-      const err = await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, `snapE-${slug}`) }).then(() => "", (e: Error) => e.message);
-      expect(err, name).toContain(name);
-    }
-  }, 120_000); // ~60 cases, each its own repo and snapshot
+    // Four cases at a time, each in its own worker thread (snapshot-case-worker.mjs builds the case's
+    // repo and snapshots it): createSnapshot and git block the thread, so only threads overlap them.
+    const runCase = (name: string, content: string) =>
+      new Promise<string>((resolve, reject) => {
+        const w = new Worker(new URL("./snapshot-case-worker.mjs", import.meta.url), { workerData: { root, name, content } });
+        w.once("message", resolve);
+        w.once("error", reject);
+        w.once("exit", (code) => reject(new Error(`case ${name}: worker exited ${code} without a result`)));
+      });
+    const entries = Object.entries(cases);
+    const errs: string[] = [];
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: 4 }, async () => {
+        while (next < entries.length) {
+          const i = next++;
+          const [name, content] = entries[i]!;
+          errs[i] = await runCase(name, content);
+        }
+      }),
+    );
+    for (const [i, [name]] of entries.entries()) expect(errs[i], name).toContain(name);
+  }, 120_000); // ~95 cases, each its own repo and snapshot, four at a time
 
   it("keeps configuration whose credential fields are empty, references or placeholders", async () => {
     const repo = join(root, "srcInert");
@@ -380,7 +392,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");
     await expect(createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapInert") })).resolves.toMatchObject({ redactions: [] });
-  });
+  }, 60_000);
 
   it("redacts URLs whose password contains an apostrophe, in .env files", () => {
     const r = redactEnvText("CONNECTION_URL=rediss://:Syn'thetic9qvM2@cache.prod.acme.net:6380/0\nDB=postgres://svc:N7q'4QmV8@db.prod.acme.net/app\n");
@@ -400,7 +412,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     git(repo, "commit", "-qm", "c");
     await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest: join(root, "snapR") });
     expect(readFileSync(join(root, "snapR", ".env"), "utf8")).not.toContain("Synthetic9qvM2");
-  });
+  }, 60_000);
 
   it("removes symlinks that point outside the snapshot", async () => {
     const repo3 = join(root, "src3");
@@ -416,12 +428,12 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     const m = await createSnapshot({ sourceRepo: repo3, rev: "HEAD", dest: join(root, "snapL") });
     expect(m.removedSymlinks).toEqual(["out"]);
     expect(existsSync(join(root, "snapL", "in"))).toBe(true);
-  });
+  }, 60_000);
 
   it("refuses a destination that isn't empty", async () => {
     const dest = join(root, "snap4");
     mkdirSync(dest);
     writeFileSync(join(dest, "x"), "x");
     await expect(createSnapshot({ dest })).rejects.toThrow(/empty/);
-  });
+  }, 60_000);
 });

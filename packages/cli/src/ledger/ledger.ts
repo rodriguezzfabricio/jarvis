@@ -174,13 +174,22 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/** Time as the writer lock sees it: the deadline and the backoff between attempts. */
+export interface LockClock {
+  now(): number;
+  sleep(ms: number): void;
+}
+const WALL_CLOCK: LockClock = { now: () => Date.now(), sleep: sleepMs };
+
 export interface LedgerOptions {
   /** Test seam: the low-level write used for the ledger and head files. */
   write?: WriteFn;
   /** Test seam: called between lock-protocol steps, to interleave competing writers deterministically. */
-  onLockStep?: (step: "reclaim-claimed" | "before-unlink" | "legacy-observed") => void;
+  onLockStep?: (step: "reclaim-claimed" | "before-unlink" | "legacy-observed" | "unwound") => void;
   /** How long to wait for the writer lock (default 30 s). */
   lockTimeoutMs?: number;
+  /** Test seam: the lock's clock, so deadlines can be tested without wall-clock timing. */
+  clock?: LockClock;
   /** Test seam: called between verify's ledger and head reads, outside the lock, to interleave a writer. */
   afterLedgerRead?: () => void;
 }
@@ -188,9 +197,11 @@ export interface LedgerOptions {
 export class Ledger {
   readonly dir: string;
   private readonly opts: LedgerOptions;
+  private readonly clock: LockClock;
   private constructor(dir: string, opts: LedgerOptions) {
     this.dir = dir;
     this.opts = opts;
+    this.clock = opts.clock ?? WALL_CLOCK;
   }
 
   static open(dir: string, opts: LedgerOptions = {}): Ledger {
@@ -304,13 +315,13 @@ export class Ledger {
     const lock = join(this.dir, LOCK);
     const nonce = randomBytes(12).toString("hex");
     const timeout = this.opts.lockTimeoutMs ?? 30_000;
-    const deadline = Date.now() + timeout;
+    const deadline = this.clock.now() + timeout;
     for (;;) {
-      if (Date.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
+      if (this.clock.now() > deadline) throw new Error(`ledger lock not acquired within ${timeout} ms`);
       if (this.createOwned(lock, nonce)) break;
       const h = readOwner(lock);
       if (h && !pidAlive(h.pid)) this.reclaim(lock, h, deadline);
-      else sleepMs(2 + Math.floor(Math.random() * 5));
+      else this.clock.sleep(2 + Math.floor(Math.random() * 5));
     }
     try {
       return fn();
@@ -347,7 +358,7 @@ export class Ledger {
   private reclaim(path: string, h: Owner, deadline: number): void {
     const rootNonce = h.nonce;
     let depth = 0;
-    while (Date.now() <= deadline) {
+    while (this.clock.now() <= deadline) {
       const legacy = `${path}.reclaim.${h.nonce}`;
       const digest = createHash("sha256").update(`${basename(path)}\0${h.nonce}`).digest("hex");
       // Existing installations may have stranded nested markers. Observe them without ever
@@ -363,7 +374,7 @@ export class Ledger {
           depth++;
           continue;
         }
-        sleepMs(2 + Math.floor(Math.random() * 5));
+        this.clock.sleep(2 + Math.floor(Math.random() * 5));
         return;
       }
       const marker = depth === 0
@@ -375,7 +386,10 @@ export class Ledger {
           if (depth === 0) this.opts.onLockStep?.("reclaim-claimed");
           const again = readOwner(path);
           if (depth === 0) this.opts.onLockStep?.("before-unlink");
-          if (again && again.nonce === h.nonce) rmSync(path, { force: true });
+          if (again && again.nonce === h.nonce) {
+            rmSync(path, { force: true });
+            if (depth > 0) this.opts.onLockStep?.("unwound");
+          }
         } finally {
           if (readOwner(marker)?.nonce === mine) rmSync(marker, { force: true });
         }
@@ -387,7 +401,7 @@ export class Ledger {
         h = m;
         depth++;
       } else {
-        sleepMs(2 + Math.floor(Math.random() * 5));
+        this.clock.sleep(2 + Math.floor(Math.random() * 5));
         return;
       }
     }

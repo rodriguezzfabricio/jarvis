@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runDoctor, doctorExitCode } from "../../packages/cli/src/doctor/doctor.ts";
 import { toolDoctorChecks } from "../../packages/cli/src/doctor/tools.ts";
 import { fakeToolchain } from "../fixtures/qa/toolchain.ts";
-import { pinnedMaestroBin } from "../../packages/cli/src/config/pins.ts";
+import { pinnedMaestroBin, pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 
 const roots: string[] = [];
 const temp = () => { const p = mkdtempSync(join(tmpdir(), "doctor-tools-")); roots.push(p); return p; };
@@ -30,14 +30,15 @@ describe("optional lane tools in doctor", () => {
     expect(checks.find(c => c.name === "qa_toolchain")).toMatchObject({ level: "pass", detail: expect.stringContaining("Playwright 1.58.0; axe 4.10.3") });
     expect(exec.mock.calls.every(([bin]) => bin.startsWith("/"))).toBe(true);
   });
-  it("warns for optional missing tools and fails only tools explicitly required by a lane", async () => {
+  it("fails missing security scanners and warns for other optional tools", async () => {
     const { options } = setup();
     const missing = { ...options, exists: () => false, exec: () => { throw Error("missing"); }, scannerPins: {}, toolchain: undefined };
     const checks = await toolDoctorChecks(missing);
     expect(checks.map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "xcode_clt", "tauri", "qa_toolchain"]);
-    expect(checks.every(c => c.level === "warn")).toBe(true); expect(doctorExitCode(checks)).toBe(0);
+    expect(checks.filter(c => c.name.startsWith("security.")).every(c => c.level === "fail")).toBe(true);
+    expect(checks.filter(c => !c.name.startsWith("security.")).every(c => c.level === "warn")).toBe(true); expect(doctorExitCode(checks)).toBe(1);
     const required = await toolDoctorChecks({ ...missing, required: ["maestro", "security.semgrep", "qa_toolchain"] });
-    expect(required.filter(c => c.level === "fail").map(c => c.name)).toEqual(["security.semgrep", "maestro", "qa_toolchain"]);
+    expect(required.filter(c => c.level === "fail").map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "qa_toolchain"]);
   });
   it("does not mistake malformed output or a tampered manifest for an installed tool", async () => {
     const { options, approved } = setup();
@@ -60,7 +61,7 @@ describe("optional lane tools in doctor", () => {
   it("wires optional tools into runDoctor without requiring the tools block", async () => {
     const checks = await runDoctor({ home: "/fake-home", repoPath: temp(), platform: "linux", env: {}, exists: () => false, exec: () => { throw Error("missing"); }, freeBytes: () => 100 * 1024 ** 3 });
     expect(checks.find(c => c.name === "maestro")?.level).toBe("warn");
-    expect(checks.find(c => c.name === "security.osv-scanner")?.level).toBe("warn");
+    expect(checks.find(c => c.name === "security.osv-scanner")?.level).toBe("fail");
   });
 });
 
@@ -74,5 +75,38 @@ describe("review: read-only doctor ledger access", () => {
       expect((await toolDoctorChecks(options)).find(c => c.name === "qa_toolchain")).toMatchObject({ level: "pass" });
       expect(open).not.toHaveBeenCalled(); expect(entries).not.toHaveBeenCalled();
     } finally { open.mockRestore(); entries.mockRestore(); }
+  });
+});
+
+describe("doctor scanner pins (backlog 95)", () => {
+  it("probes only pinned paths once and accepts OSV's labelled version among two versions", async () => {
+    const { scannerPins: _pins, scannerDeps: _deps, ...options } = setup().options; const pins = pinnedSecurityScanners();
+    const exec = vi.fn((bin: string, _args: string[], _env?: Record<string, string>) => {
+      const tool = Object.keys(pins).find(tool => pins[tool as keyof typeof pins]?.bin === bin);
+      if (tool === "osv-scanner") return "osv-scanner version: 2.7.0\nOSV-Scalibr version: 0.4.1\n";
+      return tool ? pins[tool as keyof typeof pins]!.version : "unavailable";
+    });
+    const checks = await toolDoctorChecks({ ...options, exec });
+    expect(checks.filter(c => c.name.startsWith("security.")).map(c => c.level)).toEqual(["pass", "pass", "pass"]);
+    for (const [tool, pin] of Object.entries(pins)) {
+      expect(exec.mock.calls.filter(([bin]) => bin === pin!.bin).map(([bin, args]) => [bin, args])).toEqual([[pin!.bin, [tool === "gitleaks" ? "version" : "--version"]]]);
+    }
+    expect(exec.mock.calls.some(([bin]) => bin.startsWith("/fake-home/.local/bin/"))).toBe(false);
+    expect(exec.mock.calls.find(([bin]) => bin === pins.semgrep!.bin)?.[2]).toMatchObject({ SSL_CERT_FILE: "/etc/ssl/cert.pem", SEMGREP_ENABLE_VERSION_CHECK: "0" });
+  });
+  it("fails mismatched versions without required flags and reports expected and found", async () => {
+    const { scannerPins: _pins, scannerDeps: _deps, ...options } = setup().options;
+    const checks = await toolDoctorChecks({ ...options, exec: () => "9.9.9" });
+    for (const [tool, pin] of Object.entries(pinnedSecurityScanners())) {
+      expect(checks.find(c => c.name === `security.${tool}`)).toMatchObject({ level: "fail", detail: expect.stringContaining(`expected ${pin!.version}; found 9.9.9`) });
+    }
+  });
+  it("fails missing pinned binaries even when alternate installations exist", async () => {
+    const { scannerPins: _pins, scannerDeps: _deps, ...options } = setup().options; const exec = vi.fn((_bin: string, _args: string[]) => "9.9.9");
+    const checks = await toolDoctorChecks({ ...options, exists: path => !path.startsWith("/opt/homebrew/bin/"), exec });
+    for (const [tool, pin] of Object.entries(pinnedSecurityScanners())) {
+      expect(checks.find(c => c.name === `security.${tool}`)).toMatchObject({ level: "fail", detail: expect.stringContaining(`expected ${pin!.version}; found unavailable`) });
+    }
+    expect(exec.mock.calls.some(([bin]) => /gitleaks|semgrep|osv-scanner/.test(bin))).toBe(false);
   });
 });

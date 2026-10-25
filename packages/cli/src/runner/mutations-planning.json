@@ -490,5 +490,17 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "  return { tasks: planTasks(plan) };",
     "replacement": "  return { tasks: plan.tasks.map((task) => ({ ...task })) };"
+  },
+  {
+    "name": "planning skill allows other keys",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "It refuses a plan with any other key, at the top or in a task, so a feature name, a summary or a comment has no place in the file. ",
+    "replacement": ""
+  },
+  {
+    "name": "planning skill example without notes",
+    "file": "skills/architect/SKILL.md",
+    "anchor": "  \"notes\": [\"Reuse the existing file store; add no dependencies.\"],\n",
+    "replacement": ""
   }
 ]

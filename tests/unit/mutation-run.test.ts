@@ -10,7 +10,6 @@ import { active, jobPlan, runAndRead, runGroup, runPool, stopAll, suiteEnv } fro
 
 const dir = mkdtempSync(join(tmpdir(), "jarvis-mutrun-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const fast = { timeoutMs: 400, graceMs: 200 };
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -23,8 +22,13 @@ const gone = async (pid: number) => {
   for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
   return !alive(pid);
 };
+// Readiness, not a clock: resolves once a process has written `file` (written by rename, so never
+// half-written). The test's own timeout bounds the wait.
+const fileReady = async (file: string) => {
+  while (!existsSync(file)) await new Promise((r) => setTimeout(r, 10));
+};
 const pidIn = async (file: string) => {
-  for (let i = 0; i < 50 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 20));
+  await fileReady(file);
   return Number(readFileSync(file, "utf8").trim());
 };
 
@@ -61,9 +65,16 @@ describe("suite processes", () => {
     expect(proc.error?.code).toBe("ENOENT");
   });
 
+  it("times out on its own clock when no deadline is given", async () => {
+    const proc = await runGroup("/bin/sleep", ["30"], { timeoutMs: 100, graceMs: 200 });
+    expect(proc.error?.message).toMatch(/ETIMEDOUT/);
+    expect(proc.signal).toBe("SIGTERM");
+  });
+
   it("kills a whole TERM-ignoring group on timeout, descendants included", async () => {
     const pidFile = join(dir, "group.pid");
-    const proc = await runGroup("/bin/sh", ["-c", `trap '' TERM; sleep 30 & echo $! > ${pidFile}; wait`], fast);
+    // The run times out once the descendant exists, not after a fixed time it may not have reached.
+    const proc = await runGroup("/bin/sh", ["-c", `trap '' TERM; sleep 30 & echo $! > ${pidFile}.tmp; mv ${pidFile}.tmp ${pidFile}; wait`], { graceMs: 200, deadline: fileReady(pidFile) });
     expect(proc.error?.message).toMatch(/ETIMEDOUT/);
     expect(proc.signal).toBe("SIGKILL");
     expect(await gone(await pidIn(pidFile))).toBe(true);
@@ -72,13 +83,27 @@ describe("suite processes", () => {
 
   it("doesn't wait forever on a pipe held by a descendant that left the group", async () => {
     const pidFile = join(dir, "daemon.pid");
-    const daemon = `use POSIX qw(setsid); exit if fork; setsid(); open my $f, ">", "${pidFile}"; print $f "$$\\n"; close $f; sleep 30`;
-    const started = Date.now();
-    const proc = await runGroup("/usr/bin/perl", ["-e", daemon], fast);
+    // The leader exits only once the daemon has left the group (setsid) and written its pid, so the
+    // group reaping at the leader's exit can't catch the daemon before it is outside the group.
+    const daemon = [
+      "use POSIX qw(setsid);",
+      "pipe(my $r, my $w) or die;",
+      "if (fork) { close $w; <$r>; exit 0 }",
+      "close $r; setsid();",
+      `open my $f, ">", "${pidFile}.tmp"; print $f "$$\\n"; close $f; rename "${pidFile}.tmp", "${pidFile}";`,
+      'print $w "ready\\n"; close $w; sleep 30',
+    ].join(" ");
+    let timedOutAt = 0;
+    const deadline = fileReady(pidFile).then(() => {
+      timedOutAt = Date.now();
+    });
+    const proc = await runGroup("/usr/bin/perl", ["-e", daemon], { graceMs: 200, deadline });
     const pid = await pidIn(pidFile);
     try {
       expect(proc.error?.message).toMatch(/ETIMEDOUT/);
-      expect(Date.now() - started).toBeLessThan(5_000);
+      // Bounded after the deadline, although the daemon still holds the run's output pipes.
+      expect(Date.now() - timedOutAt).toBeLessThan(5_000);
+      expect(alive(pid)).toBe(true);
     } finally {
       process.kill(pid, "SIGKILL");
     }

@@ -332,10 +332,12 @@ describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120
     const p = project();
     const c = check("ro", "mkdir -p ro/a/b && touch ro/a/b/f && chmod -R a-w ro\nexit 0\n", p);
     p.store.approve(p.ledger, "v1");
-    const r = await gate(p, c);
-    expect(r.status).toBe("pass");
-    expect(p.ledger.entries().at(-1)).toMatchObject({ kind: "gate_result", data: { check: "ro", status: "pass" } });
-    expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
+    try {
+      const r = await gate(p, c);
+      expect(r.status).toBe("pass");
+      expect(p.ledger.entries().at(-1)).toMatchObject({ kind: "gate_result", data: { check: "ro", status: "pass" } });
+      expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
+    } finally { execFileSync("/bin/chmod", ["-R", "u+w", p.workRoot]); } // so a leftover never breaks the suite's own cleanup
   });
 
   it("makes the run folder writable without following a symlink out of it", async () => {

@@ -112,9 +112,10 @@ describe("review: runner-owned locked QA toolchain", () => {
 describe("review: axe runs in an isolated world", () => {
   it("never evaluates axe in the page world and records the final URL", async () => {
     let finalUrl = "http://localhost:3000/";
-    const send = vi.fn(async (method: string) => method === "Page.getFrameTree" ? { frameTree: { frame: { id: "frame-1" } } } : method === "Page.createIsolatedWorld" ? { executionContextId: 7 } : method === "Runtime.evaluate" ? { result: { value: { version: "4.10.3", violations: [], incomplete: [] } } } : {});
+    const send = vi.fn(async (method: string) => method === "Page.getFrameTree" ? { frameTree: { frame: { id: "frame-1", url: "http://localhost:3000/", loaderId: "loader" } } } : method === "Page.createIsolatedWorld" ? { executionContextId: 7 } : method === "Runtime.evaluate" ? { result: { value: { version: "4.10.3", violations: [], incomplete: [] } } } : method === "Target.getTargets" ? { targetInfos: [] } : {});
     const detach = vi.fn(async () => {});
     const page = {
+      frames: () => [{ url: () => "http://localhost:3000/", parentFrame: () => null, frameElement: async () => ({ getAttribute: async () => null }) }],
       goto: async () => { finalUrl = "http://localhost:3000/"; }, url: () => finalUrl,
       locator: () => ({ ariaSnapshot: async () => "tree" }),
       context: () => ({ newCDPSession: async () => ({ send, detach }) }),

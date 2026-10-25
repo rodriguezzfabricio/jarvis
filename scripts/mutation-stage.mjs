@@ -20,6 +20,7 @@ const MAP = [
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^packages\/cli\/src\/eval\/mutations-jarvis\.json$/, "3"],
   [/^packages\/cli\/src\/eval\/mutations-network\.json$/, "0-1"],
+  [/^packages\/cli\/src\/checks\/mutations-gate-cleanup\.json$/, "0-1"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],

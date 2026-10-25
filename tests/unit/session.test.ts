@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, createWriteStream, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { EvidenceCaptureError, SessionStartError, runSession } from "../../packages/cli/src/harness/claude/session.ts";
 import { shortTmp } from "../helpers.ts";
 
@@ -228,6 +229,58 @@ describe("session lifecycle hooks: onSpawn and onGroupExit (stage 3 runner loop)
     expect(groupGone(spawned)).toBe(true);
     expect(exits).toEqual([spawned]);
   }, 20_000);
+
+  // Codex review 19 (A, B, D, medium): a parent-side SIGSTOP after spawn races the payload. The payload
+  // must never exec before onSpawn approves, so a shell script's very first command can't run either.
+  for (const refusal of ["returns false", "throws"] as const) {
+    it(`a payload whose first action writes a marker leaves none when onSpawn ${refusal}`, async () => {
+      const marker = join(dir, `first-action-${refusal.replace(" ", "-")}.ran`);
+      const payload = join(dir, `first-action-${refusal.replace(" ", "-")}`);
+      writeFileSync(payload, `#!/bin/sh\n: > ${marker}\nsleep 5\n`);
+      chmodSync(payload, 0o755);
+      const onSpawn = () => { busyWait(500); if (refusal === "throws") throw new Error("refused"); return false; };
+      const run = runSession({ ...base, bin: payload, onSpawn });
+      if (refusal === "throws") await expect(run).rejects.toThrow("refused"); else await run;
+      await new Promise((res) => setTimeout(res, 500));
+      expect(existsSync(marker)).toBe(false);
+    }, 20_000);
+  }
+
+  it("has not executed the payload yet when onSpawn runs: the group's leader is still the hold", async () => {
+    const payload = join(dir, "not-yet-execed");
+    writeFileSync(payload, "#!/bin/sh\nexit 0\n");
+    chmodSync(payload, 0o755);
+    let command = "";
+    await runSession({ ...base, bin: payload, onSpawn: (id) => {
+      command = execFileSync("/bin/ps", ["-o", "command=", "-p", String(id)], { encoding: "utf8" }).trim();
+      return true;
+    } });
+    expect(command.startsWith(payload)).toBe(false); // the payload is only an argument of the hold so far
+    expect(command).toMatch(/^\/bin\/sh -c read _ <&3 /);
+  });
+
+  it("passes argv through unchanged and adds nothing to the payload's environment", async () => {
+    const script = "console.log(JSON.stringify({ argv: process.argv.slice(1), env: process.env }))";
+    const args = ["-e", script, "a b", "$HOME", "'q'", "", "-u", "X=1", "--"];
+    const out = await runSession({ ...base, bin: process.execPath, args, env: { ONLY: "this", PATH: "/usr/bin:/bin" }, onSpawn: () => true });
+    const seen = JSON.parse(out.stdout) as { argv: string[]; env: Record<string, string> };
+    expect(seen.argv).toEqual(["a b", "$HOME", "'q'", "", "-u", "X=1", "--"]);
+    delete seen.env.__CF_USER_TEXT_ENCODING; // macOS adds this to every process it starts
+    expect(seen.env).toEqual({ ONLY: "this", PATH: "/usr/bin:/bin" });
+  });
+
+  it("keeps the session's process group identity: the payload is the group leader onSpawn saw", async () => {
+    let seen = 0;
+    const out = await runSession({ ...base, bin: "/bin/sh", args: ["-c", "echo $$; /bin/ps -o pgid= -p $$"], onSpawn: (id) => { seen = id; return true; } });
+    const [pid, pgid] = out.stdout.trim().split("\n").map((s) => Number(s.trim()));
+    expect(pid).toBe(seen); expect(pgid).toBe(seen);
+  });
+
+  it("still rejects a held session whose binary can't be started", async () => {
+    const onSpawn = vi.fn(() => true);
+    await expect(runSession({ ...base, bin: join(dir, "no-such-held-claude"), onSpawn })).rejects.toBeInstanceOf(SessionStartError);
+    expect(onSpawn).not.toHaveBeenCalled();
+  });
 
   it("never calls onGroupExit while something in the group is still alive", async () => {
     const { leader } = writer("alive");

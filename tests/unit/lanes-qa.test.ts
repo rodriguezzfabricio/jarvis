@@ -116,12 +116,14 @@ describe("runner-owned browser observations", () => {
   it("reads the accessibility tree first, runs axe and captures three viewport sizes", async () => {
     const events: string[] = [];
     const page = {
+      frames: () => [{ url: () => "http://localhost:3000/", parentFrame: () => null, frameElement: async () => ({ getAttribute: async () => null }) }],
       goto: vi.fn(async () => { events.push("goto"); }),
       locator: () => ({ ariaSnapshot: async () => { events.push("tree"); return "- button Record observation"; } }),
       url: () => "http://localhost:3000/",
       context: () => ({ newCDPSession: async () => ({
         send: async (method: string) => {
-          if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
+          if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main", url: "http://localhost:3000/", loaderId: "loader" } } };
+          if (method === "Target.getTargets") return { targetInfos: [] };
           if (method === "Page.createIsolatedWorld") { events.push("axe-world"); return { executionContextId: 1 }; }
           if (method === "Runtime.evaluate") { events.push("axe"); return { result: { value: { version: "4.10.3", violations: [{ id: "color-contrast", impact: "serious" }] } } }; }
           return {};

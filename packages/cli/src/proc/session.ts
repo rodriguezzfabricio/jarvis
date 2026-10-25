@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
-import { appendFileSync, createWriteStream } from "node:fs";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { accessSync, constants, appendFileSync, createWriteStream } from "node:fs";
+import { isAbsolute } from "node:path";
 import type { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 
@@ -20,9 +21,10 @@ export interface SessionSpec {
   /** Combined stdout and stderr bytes captured before the session is stopped (Codex stage 0 review 16). */
   maxOutputBytes?: number;
   /**
-   * Called synchronously at spawn with the session's process group ID, while the group is stopped
-   * (SIGSTOP): nothing in it runs until this returns true. False or a throw kills the group before it
-   * runs; a throw is rethrown once the group is gone. The runner records the group's identity here.
+   * Called synchronously at spawn with the session's process group ID, before the payload exists: the
+   * group's leader is a hold (HOLD_SHELL) that execs `bin` only after this returns true. False or a
+   * throw closes the hold's pipe and kills the group, so the payload never runs; a throw is rethrown
+   * once the group is gone. The runner records the group's identity here.
    */
   onSpawn?: (groupId: number) => boolean;
   /** Called once, and only once every process in the group is gone; never while any of it is alive. */
@@ -44,13 +46,21 @@ export class EvidenceCaptureError extends Error {}
 /** The session process could not be started at all (missing binary, EAGAIN, permissions). */
 export class SessionStartError extends Error {}
 
-function signalGroup(groupId: number, sig: NodeJS.Signals): boolean {
-  try {
-    process.kill(-groupId, sig);
-    return true;
-  } catch {
-    return false;
-  }
+/** The hold, by absolute path, with no environment of its own beyond the session's (Codex review 19). */
+export const HOLD_SHELL = "/bin/sh";
+const HOLD_ENV = "/usr/bin/env";
+/** Variables the shell adds for the programs it starts; removed unless the session set them itself. */
+const SHELL_ADDED = ["PWD", "SHLVL", "OLDPWD", "_"] as const;
+
+/**
+ * Blocks on fd 3 until the parent writes a line, then execs `bin` with its argv unchanged (same PID, so
+ * the group's identity holds). EOF (the parent closed or died) exits 125 without running anything.
+ */
+function holdArgs(spec: SessionSpec): string[] {
+  if (!isAbsolute(spec.bin) || spec.bin.includes("=")) throw new SessionStartError(`a held session needs an absolute binary path without '=': ${spec.bin}`);
+  try { accessSync(spec.bin, constants.X_OK); } catch (e) { throw new SessionStartError(`could not start ${spec.bin}: ${(e as Error).message}`); }
+  const unset = SHELL_ADDED.filter((name) => !Object.hasOwn(spec.env, name)).flatMap((name) => ["-u", name]).join(" ");
+  return ["-c", `read _ <&3 || exit 125; exec 3<&-; exec ${HOLD_ENV} ${unset} "$@"`, "jarvis-hold", spec.bin, ...spec.args];
 }
 
 export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
@@ -58,9 +68,13 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
   const grace = spec.killGraceMs ?? 10_000;
   const open = spec.openSink ?? ((p: string) => createWriteStream(p, { mode: 0o600 }));
   // Its own process group, so shutdown reaches everything the session started (Bash children too).
-  const child = spawn(spec.bin, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: ["ignore", "pipe", "pipe"], detached: true });
-  // spawn returns after exec, so the group exists: hold it still until onSpawn has accepted it.
-  const held = spec.onSpawn !== undefined && child.pid !== undefined && signalGroup(child.pid, "SIGSTOP");
+  // With onSpawn, the payload is exec'd by a hold only after onSpawn approves it (never before).
+  const hold = spec.onSpawn ? holdArgs(spec) : undefined;
+  const child = (hold
+    ? spawn(HOLD_SHELL, hold, { cwd: spec.cwd, env: spec.env, stdio: ["ignore", "pipe", "pipe", "pipe"], detached: true })
+    : spawn(spec.bin, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: ["ignore", "pipe", "pipe"], detached: true })) as unknown as ChildProcessWithoutNullStreams;
+  const release = (child.stdio as unknown[])[3] as Writable | undefined;
+  release?.on("error", () => { /* the hold is gone; the exit handler reports it */ });
   const killGroup = (sig: NodeJS.Signals) => {
     if (child.pid === undefined) return;
     try {
@@ -152,11 +166,12 @@ export async function runSession(spec: SessionSpec): Promise<SessionOutcome> {
     } catch (e) {
       observerError = e;
     }
-    // A refused group never ran: SIGKILL works on a stopped process, and there is nothing to let finish.
+    // A refused group never ran its payload: close the hold (it exits on EOF) and kill the group.
     if (!accepted) {
       shuttingDown = true;
+      release?.destroy();
       killGroup("SIGKILL");
-    } else if (held) killGroup("SIGCONT");
+    } else release?.end("\n");
   }
 
   // React to the leader's *exit*, not to its pipes closing: a background descendant can hold the

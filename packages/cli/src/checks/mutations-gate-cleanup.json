@@ -1,0 +1,20 @@
+[
+  {
+    "name": "gate cleanup skips chmod",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "  makeRemovable(dir);\n  rmSync(dir, { recursive: true, force: true });",
+    "replacement": "  rmSync(dir, { recursive: true, force: true });"
+  },
+  {
+    "name": "gate cleanup follows links out of the run",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "  if (!st?.isDirectory()) return;\n  const fd = openSync(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);",
+    "replacement": "  if (!st || (!st.isDirectory() && !st.isSymbolicLink())) return;\n  const fd = openSync(path, constants.O_RDONLY | constants.O_DIRECTORY);"
+  },
+  {
+    "name": "gate cleanup failure replaces the result",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "try { (g.cleanup ?? removeRunDir)(gateDir); } catch { /* left behind; the recorded result stands */ }",
+    "replacement": "(g.cleanup ?? removeRunDir)(gateDir);"
+  }
+]

@@ -23,7 +23,7 @@ describe("doctor's version checks", () => {
     stub(pinnedClaudeBin(home));
     stub(pinnedCodexBin(home), "--as-codex");
     const env = { HOME: home, USER: "tester", PATH: "/untrusted", JARVIS_LEAK_CANARY: "leaked", CLAUDE_CONFIG_DIR: "/untrusted/config", NODE_OPTIONS: "--invalid" };
-    const checks = await runDoctor({ home, env, platform: "linux", freeBytes: () => 100 * 1024 ** 3, live: false });
+    const checks = await runDoctor({ home, env, platform: "linux", exists: path => path === pinnedClaudeBin(home) || path === pinnedCodexBin(home), freeBytes: () => 100 * 1024 ** 3, live: false });
     const level = (name: string) => checks.find((c) => c.name === name)?.level;
     expect(level("claude_pinned")).toBe("pass");
     expect(level("codex_pinned")).toBe("pass");

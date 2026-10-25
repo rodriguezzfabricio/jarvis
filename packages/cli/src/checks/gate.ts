@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { safeGit } from "../eval/git.ts";
@@ -238,8 +238,25 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
   } catch (err) {
     return settle({ status: "error", data: { problems: [String(err)] } });
   } finally {
-    (g.cleanup ?? ((dir) => rmSync(dir, { recursive: true, force: true })))(gateDir);
+    // The result is already settled: a folder that won't go away is left for the run's cleanup sweep,
+    // never turned into an exception a candidate could choose (golden-task run, read-only Go module trees).
+    try { (g.cleanup ?? removeRunDir)(gateDir); } catch { /* left behind; the recorded result stands */ }
   }
+}
+
+/** `chmod -R u+rwx` over directories only, opened without following links, so no link leads out of the run. */
+function makeRemovable(path: string): void {
+  const st = lstatSync(path, { throwIfNoEntry: false });
+  if (!st?.isDirectory()) return;
+  const fd = openSync(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { fchmodSync(fd, (fstatSync(fd).mode & 0o7777) | 0o700); } finally { closeSync(fd); }
+  for (const name of readdirSync(path)) makeRemovable(join(path, name));
+}
+
+/** Removes a run folder candidate code may have left read-only. */
+export function removeRunDir(dir: string): void {
+  makeRemovable(dir);
+  rmSync(dir, { recursive: true, force: true });
 }
 
 export interface FeedbackInput extends RunInput {

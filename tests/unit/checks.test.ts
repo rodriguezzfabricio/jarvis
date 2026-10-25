@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -325,6 +325,32 @@ describe("gates: evidence made by the runner (decisions 49, 76)", { timeout: 120
     p.store.approve(p.ledger, "v1");
     const r = await gate({ ...p, revision }, c);
     expect(r.status).not.toBe("pass");
+  });
+
+  // A golden-task run: Go's module extraction leaves read-only trees, and a candidate can chmod one on purpose.
+  it("removes a read-only tree the candidate left, and still returns the recorded status", async () => {
+    const p = project();
+    const c = check("ro", "mkdir -p ro/a/b && touch ro/a/b/f && chmod -R a-w ro\nexit 0\n", p);
+    p.store.approve(p.ledger, "v1");
+    try {
+      const r = await gate(p, c);
+      expect(r.status).toBe("pass");
+      expect(p.ledger.entries().at(-1)).toMatchObject({ kind: "gate_result", data: { check: "ro", status: "pass" } });
+      expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
+    } finally { execFileSync("/bin/chmod", ["-R", "u+w", p.workRoot]); } // so a leftover never breaks the suite's own cleanup
+  });
+
+  it("makes the run folder writable without following a symlink out of it", async () => {
+    const p = project();
+    const outside = join(root, `locked-${n}`); mkdirSync(join(outside, "inner"), { recursive: true }); chmodSync(outside, 0o500);
+    try {
+      const c = check("link", `ln -s "${outside}" out\nmkdir ro && chmod a-w ro\nexit 0\n`, p);
+      p.store.approve(p.ledger, "v1");
+      expect((await gate(p, c)).status).toBe("pass");
+      expect(statSync(outside).mode & 0o777).toBe(0o500);
+      expect(existsSync(join(outside, "inner"))).toBe(true);
+      expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
+    } finally { chmodSync(outside, 0o700); }
   });
 
   it("never runs git hooks the agent planted in its repo", async () => {

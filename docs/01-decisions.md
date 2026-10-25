@@ -980,7 +980,7 @@ The Opus review of the runner loop found that two tasks started from the same he
 - **A merge conflict is a stale base, not a failure:** the attempt ends uncharged, a `stale_base` record says why, and the task is redone from the new head with a line in its prompt saying so.
 - **A task is passed only once it is promoted:** `state_reached passed` is written after the fast-forward, so dependents never start on a task that isn't on the run branch. A promotion that git refuses blocks the task and never crashes the run or its restart.
 - **Reviews from the review service are recorded by the service.** The loop reads the verdict back from the ledger for that reviewer and revision. `investigate` blocks the task for a person; `error` is retried once and then blocks; neither is ever a builder repair.
-- **Process groups are held stopped (SIGSTOP) at spawn until the runner has recorded their identity;** a refusal kills the group before it runs. A group counts as exited only once it is empty, and SIGKILL stays armed until then.
+- **A session's payload never runs before the runner has recorded its process group** (Codex review 19 found a parent-side SIGSTOP raced it). The group's leader is a hold, `/bin/sh -c 'read _ <&3 || exit 125; exec 3<&-; exec /usr/bin/env -u PWD -u SHLVL -u OLDPWD -u _ "$@"'` by absolute path, with the session's own environment and argv passed through unchanged; it execs the payload (same PID, so the identity holds) only after the runner writes a line to fd 3. A refusal closes the pipe and kills the group, and if the runner dies the hold reads EOF and exits. A group counts as exited only once it is empty, and SIGKILL stays armed until then.
 - **A lease holder is identified by PID and start time,** so a reused PID can't hold a dead run's lease.
 - **The main checkout's `.git/info/exclude` gets `/.jarvis/`,** so `REPORT.md` never makes the next promotion refuse a dirty tree.
 - **Session plans** (`.jarvis/onboard/plan.json`, `.jarvis/sweep/plan.json`) are read only with `jarvis run --plan onboard|sweep`. Their tasks carry no criteria or stories, and every check they name must be installed.
@@ -990,6 +990,16 @@ The Opus review of the runner loop found that two tasks started from the same he
 
 ### 101. In golden task 02, the baseline gets the same approved spec as Jarvis (new; Oct 24; the integrator under decision 81's thresholds; Fabricio can veto; tightens 47, 97)
 Task 02's hidden checks drive a command-line contract that the approved spec defines (built from task 01's defaults). A baseline that only sees the original request can't know that contract, so it would fail the black-box checks by construction, and a claimed done would count as a false done. That would measure what the baseline was told, not how well it builds. So the baseline's prompt for task 02 includes the same approved spec text, pasted after the request. Jarvis's edge then has to come from the build loop: checks, review, repair. The two baseline runs of task 02 recorded before this decision are kept as history but aren't counted for the stage 3 proof; two new runs replace them.
+
+### 102. A built desktop app runs only in a sandbox; until a sandboxed launcher exists, native smoke is "not run" (new; Oct 25; the Opus review of QA follow-up 1; Fabricio can veto; tightens 18, 76)
+QA follow-up 1 (Codex) builds the Tauri app as a protected gate case, then had the runner launch the copied `.app` with a plain spawn: no sandbox, the runner's own user, full disk and network. The app is candidate code, so that was a path to the runner's secrets and to actions outside the broker. Codex also proposed an `afterCases` callback in `runGate` to hand the built bundle to the runner before checkout cleanup. Settled:
+- **The native probe has no default launcher.** `probeDesktop` refuses to start without an injected launcher, and `runDesktop` reports **not run: desktop (no sandboxed native launcher)** unless one is given. The unsandboxed launcher was removed.
+- **The `afterCases` hook isn't added to `runGate` yet.** It's only useful once a sandboxed launcher exists, and `checks/gate.ts` is a stage 0–1 safety file. Until then a missing handoff is also **not run**, never a pass.
+- **The build check needs the bundle:** an exit 0 that leaves no real `.app` directory (with `Contents/Info.plist` and `Contents/MacOS`, no links) at the plan's path is a failed build.
+- **What the launcher must do** (backlog): start the app under the sandbox runtime with the runner home, the system temp folders and the network denied, keep the app's own PID visible to the fixed osascript probes, and prove with a canary that a launched app can't read a denied file.
+
+So golden task 12 reports a built, verified bundle with native smoke **not run**, as decision 18 already requires when a native test isn't possible.
+*From:* the Opus review of QA follow-up 1 (lane `qa-2`), Oct 25.
 
 ## 6. Models, effort and cost
 

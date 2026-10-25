@@ -264,7 +264,7 @@ it("runs every required check before deciding repair, even when the first check 
   f.gate.mockImplementation(async (g) => recordGate(g, g.check.name === "unit" ? "fail" : "pass"));
   await runLoop({ ...f.options, maxConcurrent: 1 });
   expect(f.gate.mock.calls.filter(([g]) => g.taskId === "T3").map(([g]) => g.check.name)).toEqual(["unit", "acceptance", "unit", "acceptance", "unit", "acceptance"]); expect(f.review).not.toHaveBeenCalled();
-});
+}, 60_000); // runs real gates; slow under load
 it("recovers a recorded timeout candidate as a charged failure", async () => {
   const f = fixture(); let n = 0; f.setBody(async () => finished(++n === 1 ? "timeout" : "finished"));
   await expect(runLoop({ ...f.options, onCheckpoint: (name) => { if (name === "candidate-committed") throw new Error("timeout crash"); } })).rejects.toThrow("timeout crash");

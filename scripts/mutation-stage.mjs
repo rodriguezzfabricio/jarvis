@@ -23,6 +23,7 @@ const MAP = [
   [/^packages\/cli\/src\/checks\/mutations-gate-cleanup\.json$/, "0-1"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
+  [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],

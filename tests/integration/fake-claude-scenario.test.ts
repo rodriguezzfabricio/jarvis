@@ -151,4 +151,14 @@ describe("fake claude scenario mode", { timeout: 60_000 }, () => {
     expect(rateLimits(r.events)).toEqual([]);
     expect(r.events.some((e) => e.type === "result")).toBe(false);
   });
+
+  it("runs an exec step's command for real, in the session's own environment and cwd, as a Bash call", async () => {
+    const command = `printf 'home=%s cache=%s\\n' "$HOME" "$GOCACHE"; exit 3`;
+    const p = project({ sessions: [{ name: "T1-exec", task: "T1", rateLimitAtStart: false, steps: [{ exec: command, saveAs: "exec.out" }] }] });
+    const r = await launch(p, "T1");
+    expect(r.code, r.stderrText).toBe(0);
+    const saved = readFileSync(join(r.cwd, "exec.out"), "utf8");
+    expect(saved).toMatch(new RegExp(`^home=${p.home} cache=\\S+/go/build\\nEXIT:3\\n$`));
+    expect(toolCalls(r.events).map((c) => [c.name, (c.input as { command?: string }).command])).toEqual([["Bash", command]]);
+  });
 });

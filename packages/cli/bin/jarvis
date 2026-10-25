@@ -1,0 +1,10 @@
+#!/bin/sh
+# `jarvis` inside a task session (decision 12): runs this install's CLI with the Node the runner named.
+# The task harness (harness/claude/task.ts) puts this folder first on the session's PATH and sets JARVIS_NODE;
+# the sandbox reopens the install read-only, so a session can run it but never change it.
+# At your own terminal, use the launcher scripts/install.sh writes instead.
+case "$0" in
+  */*) bin=${0%/*} ;;
+  *) bin=. ;;
+esac
+exec "${JARVIS_NODE:?jarvis: JARVIS_NODE is not set; this launcher is for Jarvis task sessions}" "$bin/../src/cli.ts" "$@"

@@ -82,6 +82,25 @@ describe("jarvis status --json (for compound)", () => {
     expect(await failure(status(s.jarvisHome, ["--json"]))).toBeInstanceOf(LedgerTamperError);
   });
 
+  it.each(["altered", "deleted"] as const)("never reports passed for a completed task whose evidence was %s (Codex review, high 2)", async (fault) => {
+    const s = setup();
+    s.ledger.append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "Billing", requiredChecks: ["unit"], requiredReviews: ["code"] } });
+    s.ledger.append({ kind: "attempt_started", actor: "runner", task_id: "T2", attempt_id: "b1", data: { runId: "run" } });
+    s.ledger.append({ kind: "attempt_ended", actor: "runner", task_id: "T2", attempt_id: "b1", data: { status: "completed", candidateRevision: revision } });
+    const ev = join(s.dir, "evidence", "b1-unit"); mkdirSync(ev, { recursive: true }); writeFileSync(join(ev, "stdout"), "PASS");
+    s.ledger.append({ kind: "gate_result", actor: "runner", task_id: "T2", attempt_id: "b1", data: { check: "unit", revision, status: "pass", evidence: { dir: ev, files: { stdout: sha("PASS") } } } });
+    s.ledger.append({ kind: "review_result", actor: "runner", task_id: "T2", attempt_id: "b1", data: { reviewer: "code", revision, status: "pass" } });
+    s.ledger.append({ kind: "state_reached", actor: "runner", task_id: "T2", attempt_id: "b1", data: { state: "passed", revision } });
+    type Completion = { state: { tasks: Record<string, { status: string }> }; completion: Record<string, { verified: boolean; problems: string[] }> };
+    const intact = JSON.parse((await status(s.jarvisHome, ["--json"])).output) as Completion;
+    expect(intact.state.tasks.T2?.status).toBe("passed"); expect(intact.completion.T2).toEqual({ verified: true, problems: [] });
+    if (fault === "altered") writeFileSync(join(ev, "stdout"), "FORGED"); else rmSync(join(ev, "stdout"));
+    const parsed = JSON.parse((await status(s.jarvisHome, ["--json"])).output) as Completion;
+    expect(parsed.state.tasks.T2?.status).toBe("unverified");
+    expect(parsed.completion.T2?.verified).toBe(false);
+    expect(parsed.completion.T2?.problems.join(" ")).toMatch(fault === "altered" ? /changed after the run/ : /missing/);
+  });
+
   it("keeps the plain status output without --json", async () => {
     const s = setup();
     expect((await status(s.jarvisHome, [])).output).toMatch(/^# Jarvis report/);

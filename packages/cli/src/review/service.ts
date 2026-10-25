@@ -28,7 +28,8 @@ export interface ReviewServiceOptions {
   routing: ReviewRouting;
   resolveMaterial: (request: ReviewRequest) => Promise<ReviewMaterial>;
   claude: Reviewer;
-  codex: Reviewer;
+  /** The cross-model reviewer; null runs Claude only (evals: Codex's read-only sandbox doesn't confine reads). */
+  codex: Reviewer | null;
   home?: string;
   git?: ReviewGit;
   timeoutMs?: number;
@@ -145,7 +146,7 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
       const route = routeTask("review", material.tier, undefined, routing);
       await run(options.claude, "claude", route.model, route.effort);
       if (checkoutHash(workspace) !== before) throw new Error("review checkout changed");
-      if (route.crossModel === "codex") {
+      if (route.crossModel === "codex" && options.codex !== null) {
         const codex = await run(options.codex, "codex", routing.cross_model.codex.model, routing.cross_model.codex.effort);
         if (codex.fallbackReason) {
           codex.superseded = true;

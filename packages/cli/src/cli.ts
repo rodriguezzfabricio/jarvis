@@ -84,10 +84,17 @@ evalCmd
   .option("--repeat <n>", "runs per task", "1")
   .option("--label <s>", "added to run ids", "")
   .action(async (ids: string[], opts: { evals: string; repeat: string; label: string }) => {
+    // Hidden material is loaded (and refused if malformed) before any session, so each run's snapshot gets the same leak check as the Jarvis arm.
+    const hidden = new Map<string, string[]>();
+    for (const id of ids) {
+      if (!existsSync(join(opts.evals, "hidden", id))) continue;
+      const gate = hiddenDir(opts.evals, id, "gate");
+      hidden.set(id, [loadHiddenChecks(hiddenDir(opts.evals, id)).dir, ...(existsSync(gate) ? [loadHiddenChecks(gate).dir] : [])]);
+    }
     const out = await runSchedule(ids, Number.parseInt(opts.repeat, 10), opts.label, {
       loadTask: (id) => loadTask(opts.evals, id),
       runOne: async (task, runId) => {
-        const r = await runBaseline(task, { preflight: livePreflight, runId });
+        const r = await runBaseline(task, { preflight: livePreflight, runId, hiddenDirs: hidden.get(task.id) ?? [] });
         await gradeAfter(opts.evals, task, r);
         return r;
       },

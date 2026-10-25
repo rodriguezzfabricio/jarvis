@@ -2,10 +2,12 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { verifyEvidence } from "../../packages/cli/src/checks/gate.ts";
+import { loadTask, runBaseline } from "../../packages/cli/src/eval/baseline.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
-import { assertHiddenAbsent, gradeRecordedRun, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks } from "../../packages/cli/src/eval/hidden.ts";
+import { assertHiddenAbsent, assertHiddenDisjoint, gradeRecordedRun, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, suiteFingerprint } from "../../packages/cli/src/eval/hidden.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
-import { BUGGY, createEvalFixture, FIXED, type EvalFixture } from "./eval-jarvis-fixture.ts";
+import { fakeClaudeBin } from "../helpers.ts";
+import { addTask, BUGGY, createEvalFixture, FIXED, HIDDEN_TEST, type EvalFixture } from "./eval-jarvis-fixture.ts";
 
 const fixtures: EvalFixture[] = [];
 afterEach(() => fixtures.splice(0).forEach((f) => f.cleanup()));
@@ -36,7 +38,8 @@ describe("eval grading: the hidden checks on a run's final revision, on the real
     expect(good).toMatchObject({ pass: true, revision: fixed, checks: [{ name: "unit", status: "pass" }] });
     const bad = await gradeRun({ runDir, repoPath: repo, revision: buggy, hidden, jarvisHome: fx.jarvisHome, workRoot: fx.workRoot });
     expect(bad).toMatchObject({ pass: false, checks: [{ name: "unit", status: "fail" }] });
-    expect(JSON.parse(readFileSync(join(runDir, "grade.json"), "utf8"))).toMatchObject({ pass: false, revision: buggy });
+    expect(JSON.parse(readFileSync(join(runDir, "grade.json"), "utf8"))).toMatchObject({ pass: false, revision: buggy, suite: good.suite });
+    expect(good.suite).toMatch(/^[0-9a-f]{64}$/);
     for (const grade of [good, bad]) {
       expect(grade.projectDir.startsWith(join(runDir, "grade"))).toBe(true);
       const results = Ledger.open(grade.projectDir).entries().filter((e) => e.kind === "gate_result");
@@ -61,6 +64,24 @@ describe("eval grading: the hidden checks on a run's final revision, on the real
   });
 });
 
+describe("eval baseline: the same hidden-file leak check before its session", () => {
+  it("refuses a snapshot holding a hidden test and never starts the session; passes a clean one", async () => {
+    const fx = fixture();
+    const bin = fakeClaudeBin(fx.root);
+    const hiddenDirs = [loadHiddenChecks(hiddenDir(fx.evalsRepo, "05-citizenship")).dir, loadHiddenChecks(hiddenDir(fx.evalsRepo, "05-citizenship", "gate")).dir];
+    const run = (task: ReturnType<typeof loadTask>, runId: string, marker: string) => runBaseline(task, { preflight: async () => ({ ok: true }), claudeBin: bin, jarvisHome: fx.jarvisHome, workRoot: fx.workRoot, runId, parentEnv: { HOME: fx.home, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: "baseline", FAKE_CLAUDE_MARKER: marker }, hiddenDirs });
+    writeFileSync(join(fx.sourceRepo, "hidden.test.mjs"), HIDDEN_TEST);
+    safeGit(fx.sourceRepo, ["add", "-A"], { home: fx.home });
+    safeGit(fx.sourceRepo, ["commit", "-q", "-m", "fix tests"], { home: fx.home });
+    addTask(fx, "05-leaky", "The citizenship filter is missing some jobs.", { rev: safeGit(fx.sourceRepo, ["rev-parse", "HEAD"], { home: fx.home }).toString().trim(), revert: [fx.fixRev] });
+    const marker = join(fx.root, "baseline-started");
+    await expect(run(loadTask(fx.evalsRepo, "05-leaky"), "baseline-leak", marker)).rejects.toThrow(/hidden check files are in the snapshot: hidden\.test\.mjs/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(fx.workRoot, "cache-runs", "05-leaky", "baseline-leak"))).toBe(false);
+    await expect(run(loadTask(fx.evalsRepo, "05-citizenship"), "baseline-ok", marker)).resolves.toMatchObject({ started: true });
+  });
+});
+
 describe("eval hidden checks: loading and installing", () => {
   it("installs an exact copy as approved protected checks, so a later edit reads as tampered", () => {
     const fx = fixture();
@@ -74,6 +95,25 @@ describe("eval hidden checks: loading and installing", () => {
     writeFileSync(join(store.checksDir, "verify.sh"), "echo JARVIS-CHECK-COMPLETE x\n");
     expect(store.verify(ledger)).toMatchObject({ ok: false, problems: ["check changed: verify.sh"] });
     expect(() => installHiddenChecks(projectDir, ledger, hidden, "again")).toThrow(/fresh/);
+  });
+
+  it("fingerprints the whole suite: any changed, added or removed file gives a different suite", () => {
+    const base = { "unit.check.json": "1".repeat(64), "verify.sh": "2".repeat(64) };
+    const f = suiteFingerprint(base);
+    expect(suiteFingerprint({ "verify.sh": "2".repeat(64), "unit.check.json": "1".repeat(64) })).toBe(f);
+    expect(suiteFingerprint({ ...base, "verify.sh": "3".repeat(64) })).not.toBe(f);
+    expect(suiteFingerprint({ ...base, "expected/a.txt": "4".repeat(64) })).not.toBe(f);
+    expect(suiteFingerprint({ "unit.check.json": "1".repeat(64) })).not.toBe(f);
+  });
+
+  it("keeps the gate checks disjoint from the grading checks (decision 97)", () => {
+    const fx = fixture();
+    const grading = loadHiddenChecks(hiddenDir(fx.evalsRepo, "05-citizenship"));
+    const gate = loadHiddenChecks(hiddenDir(fx.evalsRepo, "05-citizenship", "gate"));
+    expect(() => assertHiddenDisjoint(gate, grading)).not.toThrow();
+    expect(() => assertHiddenDisjoint(grading, grading)).toThrow(/different folders/);
+    writeFileSync(join(gate.dir, "expected.txt"), readFileSync(join(grading.dir, "verify.sh")));
+    expect(() => assertHiddenDisjoint(gate, grading)).toThrow(/expected\.txt \(= grading verify\.sh\)/);
   });
 
   it("refuses symlinks, misnamed or malformed check files, and an empty folder", () => {

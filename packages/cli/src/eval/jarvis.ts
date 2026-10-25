@@ -3,9 +3,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
-import { createClaudeReviewer } from "../harness/claude/review.ts";
+import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
-import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type Review, type ReviewMaterial } from "../review/index.ts";
+import { createReviewService, DEFAULT_REVIEW_ROUTING, type Review, type ReviewMaterial } from "../review/index.ts";
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
@@ -17,7 +17,7 @@ import { checkSpec, type Spec } from "../spec/index.ts";
 import { triage, type Triage } from "../triage/triage.ts";
 import { checkEvalDomains, EXCLUDE, type GoldenTask } from "./baseline.ts";
 import { safeGit } from "./git.ts";
-import { assertHiddenAbsent, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
+import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
 
@@ -30,8 +30,10 @@ import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
  * Bug and refactor tasks (golden tasks 4 and 5) go triage → singleTaskPlan → the build loop. Feature and
  * new-product tasks (task 2) take the evals repo's written spec as the approved spec, run one planner
  * session, and read its plan against the runner's copy of that spec and the installed checks (decision
- * 91). The loop's protected checks are the evals repo's hidden checks, installed in a runner-owned folder
- * no session can read. Every run's final revision is graded on the same hidden checks as the baseline's.
+ * 91). The loop's protected checks are the project's own suite from hidden/<task>/gate/ (decision 97),
+ * installed in a runner-owned folder no session can read. The grading checks (hidden/<task>/checks/) never
+ * enter the loop, its ledger or any prompt: they run only after the run ends, in their own folder, on
+ * the final revision, exactly as for the baseline. Reviews are Claude-only in evals (no Codex).
  */
 
 // ---- The loop's interface (runner/loop.ts, integrated on another branch) ---------------------------
@@ -72,6 +74,8 @@ export type Pipeline = "single-task" | "spec";
 
 /** Seams for the production Claude harness (tests point it at the fake claude). */
 export type HarnessSeams = Partial<Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "sessionTmpDir" | "home" | "parentEnv" | "cleanup">>;
+/** Seams for the production Claude reviewer (tests point it at a fake reviewer process). */
+export type ReviewerSeams = Partial<Pick<ClaudeReviewerOptions, "session" | "binaryRealpath" | "sessionTmpDir">>;
 
 export interface JarvisEvalOptions {
   /** The same live preflight as the baseline (a live doctor); must pass before any session (decision 59). */
@@ -82,7 +86,8 @@ export interface JarvisEvalOptions {
   /** Default: the production Claude harness, with the live preflight before every session. */
   harness?: Harness;
   harnessSeams?: HarnessSeams;
-  /** Default: the production review service (fresh Claude review, Codex cross-model; decision 88). */
+  reviewerSeams?: ReviewerSeams;
+  /** Default: the review service with a fresh Claude reviewer only (decision 88). No Codex in evals: its read-only sandbox doesn't confine reads. */
   review?: Review;
   /** Grading seam; production is the protected-check gate. */
   gate?: (input: GateInput) => Promise<GateResult>;
@@ -116,8 +121,6 @@ export interface JarvisRunResult {
   workspace: string;
   pipeline: Pipeline;
   triage: { type: Triage["type"]; tier: Triage["tier"] };
-  /** "hidden" when the loop gated on the grading checks; "gate" when the evals repo gave separate ones. */
-  loopChecks: "hidden" | "gate";
   outcome: JarvisOutcome;
   error?: string;
   loop: RunLoopResult | null;
@@ -287,8 +290,10 @@ function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, a
     routing: DEFAULT_REVIEW_ROUTING,
     home: p.home,
     resolveMaterial: async (r) => material(r.taskId, r.attemptId),
-    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }) }),
-    codex: createCodexReviewer({ home: p.home }),
+    // The Claude reviewer runs under the task-session settings: reads outside its checkout are blocked and the
+    // runner-owned folder is denied. Codex's --sandbox read-only confines writes, not reads, so evals never use it.
+    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams ?? {}) }),
+    codex: null,
   }).review;
 }
 
@@ -304,9 +309,12 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const pipeline = pipelineFor(t.type);
   const grading = loadHiddenChecks(hiddenDir(opts.evalsRepo, task.id, "checks"));
   const gateDir = hiddenDir(opts.evalsRepo, task.id, "gate");
-  const loopChecks = existsSync(gateDir) ? loadHiddenChecks(gateDir) : grading;
+  // Decision 97: the loop gates on the project's own suite; the hidden checks only grade, after the loop.
+  if (!existsSync(gateDir)) throw new Error(`${task.id}: the Jarvis arm needs hidden/${task.id}/gate/ (the project's own suite, for the loop); hidden/${task.id}/checks/ only grades (decision 97)`);
+  const loopChecks = loadHiddenChecks(gateDir);
+  assertHiddenDisjoint(loopChecks, grading);
   const approved = pipeline === "spec" ? loadApprovedSpec(opts.evalsRepo, task.id, loopChecks) : undefined;
-  if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a hidden check named "unit" (singleTaskPlan's required check)`);
+  if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -320,7 +328,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     ...(task.source ? { sourceRepo: task.source.repo, rev: task.source.rev, revert: task.source.revert ?? [], allowSecretsIn: task.source.allowSecretsIn ?? [] } : {}),
   });
   writeFileSync(join(p.workspace, ".git", "info", "exclude"), `${EXCLUDE.join("\n")}\n`);
-  assertHiddenAbsent(p.workspace, [...new Set([grading.dir, loopChecks.dir])]);
+  assertHiddenAbsent(p.workspace, [grading.dir, loopChecks.dir]);
 
   let baseRevision = snapshot.commit;
   const specPath = "docs/spec/v1.md";
@@ -335,7 +343,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   }
 
   const ledger = Ledger.open(p.projectDir);
-  installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: ${loopChecks === grading ? "hidden checks" : "hidden gate checks"} from the evals repo`);
+  installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   const harness = opts.harness ?? productionHarness(task, p, routing, opts);
   const tier: TaskTier = t.tier ?? 1;
@@ -343,7 +351,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const review = opts.review ?? productionReview(p, ledger, material, opts);
   writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
-    loopChecks: loopChecks === grading ? "hidden" : "gate", checks: Object.keys(loopChecks.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
+    checks: Object.keys(loopChecks.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
     workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, startedAt: new Date(started).toISOString(),
   }, null, 2)}\n`);
@@ -400,7 +408,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const sessionsStarted = metrics.sessions.total > 0 || metrics.usage.sessions > 0;
   const out: JarvisRunResult = {
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
-    loopChecks: loopChecks === grading ? "hidden" : "gate", outcome, ...(error !== undefined ? { error } : {}), loop,
+    outcome, ...(error !== undefined ? { error } : {}), loop,
     claimedDone: outcome === "complete", baseRevision, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot,
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,

@@ -6,7 +6,8 @@
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { GateInput, GateResult } from "../../packages/cli/src/checks/gate.ts";
+import { runGate, type GateInput, type GateResult } from "../../packages/cli/src/checks/gate.ts";
+import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { RunLoop, RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
 import type { GoldenTask } from "../../packages/cli/src/eval/baseline.ts";
@@ -32,9 +33,12 @@ export const HIDDEN_TEST = [
   "",
 ].join("\n");
 const OWN_TEST = "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { requiresCitizenship } from \"../src/citizen.mjs\";\ntest(\"plain text\", () => assert.equal(requiresCitizenship(\"US citizen\"), true));\n";
+/** Printed by the grading verifier: grading output must reach no prompt, session input or loop ledger (decision 97). */
+export const GRADE_CANARY = "GRADE-CANARY-51d0e2";
 const VERIFY = [
   "#!/bin/sh",
-  "# Every case must exit 0; the completion line comes last (decision 76).",
+  "# Grading: every case must exit 0; the completion line comes last (decision 76).",
+  `echo "${GRADE_CANARY}: expected requiresCitizenship(US&nbsp;citizen) = true"`,
   "for c in \"$JARVIS_OUT\"/*/; do",
   "  [ \"$(cat \"$c/code\")\" = \"0\" ] || { echo \"case $(basename \"$c\") failed\"; exit 1; }",
   "done",
@@ -73,6 +77,15 @@ export const SPEC = [
   "## Open questions", "None.", "",
 ].join("\n");
 
+/** The gate's verifier: the project's own suite, judged on its exit code; it shares no byte with grading. */
+const GATE_VERIFY = [
+  "#!/bin/sh",
+  "# Gate (the project's own suite, decision 97): the case must exit 0.",
+  "[ \"$(cat \"$JARVIS_OUT/unit/code\")\" = \"0\" ] || { echo \"project tests failed\"; exit 1; }",
+  "echo \"JARVIS-CHECK-COMPLETE $(cat \"$JARVIS_COMPLETION_FILE\")\"",
+  "",
+].join("\n");
+
 export function createEvalFixture(): EvalFixture {
   const root = shortTmp("jtj-");
   const home = join(root, "home");
@@ -93,6 +106,7 @@ export function createEvalFixture(): EvalFixture {
   const fx: EvalFixture = { root, sourceRepo, fixRev, evalsRepo, jarvisHome, workRoot, home, cleanup: () => rmSync(root, { recursive: true, force: true }) };
   addTask(fx, "05-citizenship", BUG_PROMPT, { revert: [fixRev] });
   addHidden(fx, "05-citizenship", "checks", { unit: [] });
+  addHidden(fx, "05-citizenship", "gate", { unit: [] });
   return fx;
 }
 
@@ -105,15 +119,19 @@ export function addTask(fx: EvalFixture, id: string, prompt: string, o: { revert
   return { ...task, prompt } as GoldenTask;
 }
 
-/** hidden/<id>/<kind>/: one check per entry (name → criteria), each running the hidden test as a black box on its exit code. */
+/**
+ * hidden/<id>/<kind>/: one check per entry (name → criteria). Grading checks (checks/) run the hidden test
+ * as a black box and print the canary; gate checks (gate/) run the project's own suite only.
+ */
 export function addHidden(fx: EvalFixture, id: string, kind: "checks" | "gate", checks: Record<string, string[]>): string {
   const dir = join(fx.evalsRepo, "hidden", id, kind);
-  const files: Record<string, string> = { "verify.sh": VERIFY, "fixtures/hidden.test.mjs": HIDDEN_TEST };
+  const grading = kind === "checks";
+  const files: Record<string, string> = grading ? { "verify.sh": VERIFY, "fixtures/hidden.test.mjs": HIDDEN_TEST } : { "gate-verify.sh": GATE_VERIFY };
   for (const [name, criteria] of Object.entries(checks)) {
     files[`${name}.check.json`] = JSON.stringify({
       name, criteria,
-      cases: [{ id: name, command: "mkdir -p test && cp \"$JARVIS_FIXTURES/hidden.test.mjs\" test/hidden.test.mjs && node --test" }],
-      verify: "sh \"$JARVIS_CHECKS/verify.sh\"", timeoutMs: 60_000,
+      cases: [{ id: "unit", command: grading ? "mkdir -p test && cp \"$JARVIS_FIXTURES/hidden.test.mjs\" test/hidden.test.mjs && node --test" : "node --test" }],
+      verify: grading ? "sh \"$JARVIS_CHECKS/verify.sh\"" : "sh \"$JARVIS_CHECKS/gate-verify.sh\"", timeoutMs: 60_000,
     }, null, 2);
   }
   put(dir, files);
@@ -221,6 +239,42 @@ export function harnessLoop(calls: RunLoopOptions[] = []): RunLoop {
     ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", revision: rev, status: await o.review({ taskId: "T1", attemptId: "a1", revision: rev }) } });
     ledger.append({ kind: "state_reached", actor: "runner", task_id: "T1", attempt_id: "a1", data: { state: "passed", revision: rev } });
     git(o.repoPath, home, ["tag", "-f", "last-green", rev]);
+    return { status: "complete", done: ["T1"], blocked: [] };
+  };
+}
+
+/**
+ * A loop that judges T1 the way the real one does: the fix committed as a candidate, every required check
+ * run on the real gate against the loop's own checks (o.checks, installed in o.projectDir), then o.review,
+ * which the production review service answers from that runner evidence.
+ */
+export function realGateLoop(files: Record<string, string> = { "src/citizen.mjs": FIXED }, calls: RunLoopOptions[] = []): RunLoop {
+  return async (o) => {
+    calls.push(o);
+    const ledger = Ledger.open(o.projectDir);
+    const store = new ChecksStore(o.projectDir);
+    const home = o.gitHome ?? process.env.HOME ?? "/";
+    const g = (args: string[]) => git(o.repoPath, home, args);
+    const base = g(["rev-parse", "HEAD"]);
+    ledger.append({ kind: "run_started", actor: "runner", data: { runId: "loop-1", pid: process.pid } });
+    ledger.append({ kind: "attempt_started", actor: "runner", task_id: "T1", attempt_id: "a1", data: { runId: "loop-1", baseRevision: base } });
+    g(["checkout", "-q", "-b", "jarvis/candidates/T1/a1"]);
+    put(o.repoPath, files);
+    g(["add", "-A"]);
+    g(["commit", "-q", "-m", "T1 candidate"]);
+    const rev = g(["rev-parse", "HEAD"]);
+    g(["checkout", "-q", o.runBranch]);
+    ledger.append({ kind: "attempt_ended", actor: "runner", task_id: "T1", attempt_id: "a1", data: { status: "completed", candidateRevision: rev } });
+    const def = ledger.entries().find((e) => e.kind === "task_created" && e.task_id === "T1")!.data as { requiredChecks: string[] };
+    let passed = true;
+    for (const name of def.requiredChecks) {
+      const r = await runGate({ ledger, store, projectDir: o.projectDir, jarvisHome: o.jarvisHome, workRoot: o.workRoot, repoPath: o.repoPath, revision: rev, check: o.checks[name]!, taskId: "T1", attemptId: "a1" });
+      passed &&= r.status === "pass";
+    }
+    if (!passed || (await o.review({ taskId: "T1", attemptId: "a1", revision: rev })) !== "pass") return { status: "blocked", done: [], blocked: ["T1"] };
+    g(["merge", "-q", "--ff-only", rev]);
+    ledger.append({ kind: "state_reached", actor: "runner", task_id: "T1", attempt_id: "a1", data: { state: "passed", revision: rev } });
+    g(["tag", "-f", "last-green", rev]);
     return { status: "complete", done: ["T1"], blocked: [] };
   };
 }

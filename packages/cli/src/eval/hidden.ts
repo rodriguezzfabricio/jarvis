@@ -13,8 +13,8 @@ import { Ledger } from "../ledger/ledger.ts";
  *   hidden/<task>/checks/   the golden task's own success criteria, in the runner's protected-check format
  *                           (decision 76): <name>.check.json files, plus fixtures/, expected/ and verify
  *                           scripts. The runner applies them to each run's final revision, for both arms.
- *   hidden/<task>/gate/     optional: the protected checks the Jarvis loop gates on. Without it the loop
- *                           gates on checks/ (see the eval-jarvis proposed decision on grader feedback).
+ *   hidden/<task>/gate/     the protected checks the Jarvis loop gates on: the project's own suite
+ *                           (decision 97). Required by the Jarvis arm; it shares no file with checks/.
  *
  * Sessions never see either folder: they are copied into a runner-owned project folder under ~/.jarvis,
  * which task settings deny, and the evals repo is outside every working directory (decision 69).
@@ -101,6 +101,24 @@ export function installHiddenChecks(projectDir: string, ledger: Ledger, hidden: 
   return store;
 }
 
+/**
+ * The identity of a grading suite: a hash over every file's path and content hash. Two grades compare
+ * only when their suites match (compare.ts), so a relaxed check can't make one arm look better.
+ */
+export function suiteFingerprint(fileHashes: Readonly<Record<string, string>>): string {
+  const lines = Object.keys(fileHashes).sort().map((f) => `${f} ${fileHashes[f]}`);
+  return createHash("sha256").update(JSON.stringify(lines)).digest("hex");
+}
+
+/** The gate checks the loop sees must hold no file of the grading suite (decision 97: hidden checks only grade). */
+export function assertHiddenDisjoint(gate: HiddenChecks, grading: HiddenChecks): void {
+  if (gate.dir === grading.dir) throw new Error("the gate checks and the grading checks must be different folders (decision 97)");
+  const graded = new Map<string, string>();
+  for (const [f, h] of Object.entries(hashTree(grading.dir))) if (lstatSync(join(grading.dir, f)).size >= MIN_LEAK_BYTES) graded.set(h, f);
+  const shared = Object.entries(hashTree(gate.dir)).flatMap(([f, h]) => (graded.has(h) ? [`${f} (= grading ${graded.get(h)})`] : []));
+  if (shared.length) throw new Error(`refused: the gate checks hold grading files, which would reach the loop and its reviewers: ${shared.join(", ")}`);
+}
+
 /** Files shorter than this are too generic to call a leak (an empty JSON object, a one-word fixture). */
 export const MIN_LEAK_BYTES = 16;
 
@@ -145,6 +163,8 @@ export function assertHiddenAbsent(workspace: string, hiddenDirs: readonly strin
 export interface GradeCheck { name: string; status: GateStatus }
 export interface Grade {
   revision: string;
+  /** suiteFingerprint of the grading suite as installed for this grade. */
+  suite: string;
   gradedAt: string;
   /** Every hidden check passed on the revision. */
   pass: boolean;
@@ -186,13 +206,14 @@ export async function gradeRun(g: GradeInput): Promise<Grade> {
   mkdirSync(projectDir, { recursive: true, mode: 0o700 });
   const ledger = Ledger.open(projectDir);
   const store = installHiddenChecks(projectDir, ledger, g.hidden, "golden task hidden checks (grading)");
+  const suite = suiteFingerprint(store.hashAll());
   const gate = g.gate ?? runGate;
   const checks: GradeCheck[] = [];
   for (const name of Object.keys(g.hidden.checks).sort()) {
     const r = await gate({ ledger, store, projectDir, jarvisHome: g.jarvisHome, workRoot: g.workRoot, repoPath: g.repoPath, revision: g.revision, check: g.hidden.checks[name]!, taskId: "grade", attemptId: "g1" });
     checks.push({ name, status: r.status });
   }
-  const grade: Grade = { revision: g.revision, gradedAt: new Date().toISOString(), pass: checks.length > 0 && checks.every((c) => c.status === "pass"), checks, projectDir };
+  const grade: Grade = { revision: g.revision, suite, gradedAt: new Date().toISOString(), pass: checks.length > 0 && checks.every((c) => c.status === "pass"), checks, projectDir };
   const tmp = join(g.runDir, `.grade.json.${process.pid}`);
   writeFileSync(tmp, `${JSON.stringify(grade, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, join(g.runDir, "grade.json"));

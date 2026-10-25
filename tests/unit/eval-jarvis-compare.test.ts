@@ -37,6 +37,9 @@ describe("jarvis eval compare: both arms, run for run", () => {
     writeFileSync(join(evals, TASK, "baseline-r3", "manifest.json"), JSON.stringify({ variant: "baseline-plain-claude-code" })); // a run that died before its summary
 
     const rows = readRuns(evals, TASK);
+    // Every grade carries the same suite fingerprint: both arms were graded on identical hidden checks.
+    expect(new Set(rows.filter((r) => r.counted).map((r) => r.suite)).size).toBe(1);
+    expect(rows[0]!.suite).toMatch(/^[0-9a-f]{64}$/);
     expect(rows.map((r) => [r.arm, r.runId, r.counted, r.hidden, r.claimedDone, r.falseDone])).toEqual([
       ["baseline", "baseline-r1", true, "fail", true, true],
       ["baseline", "baseline-r2", true, "fail", true, true],
@@ -52,8 +55,8 @@ describe("jarvis eval compare: both arms, run for run", () => {
     expect(armStats(rows, "jarvis")).toMatchObject({ runs: 2, graded: 2, hiddenPass: 2, claimedDone: 2, falseDone: 0 });
 
     const text = formatCompare(TASK, rows);
-    expect(text).toMatch(/^arm\s+run\s+counted\s+outcome\s+hidden\s+claimed done\s+false done\s+wall\s+waited\s+sessions\s+repairs\s+tokens in\/out\s+cost\s+rating\s+vetoes$/m);
-    expect(text).toMatch(/^jarvis\s+jarvis-r1\s+yes\s+complete\s+pass\s+yes\s+no\s+/m);
+    expect(text).toMatch(/^arm\s+run\s+counted\s+outcome\s+hidden\s+suite\s+claimed done\s+false done\s+wall\s+waited\s+sessions\s+repairs\s+tokens in\/out\s+cost\s+rating\s+vetoes$/m);
+    expect(text).toMatch(/^jarvis\s+jarvis-r1\s+yes\s+complete\s+pass\s+[0-9a-f]{8}\s+yes\s+no\s+/m);
     expect(text).toMatch(/^baseline\s+baseline-r3\s+no\s+incomplete \(no summary\)\s+ungraded/m);
     expect(text).toContain(">=120.0k/8.0k");
     expect(text).toContain("Beats the baseline: UNDECIDED (baseline has 2 unrated run(s) (jarvis eval rate); jarvis has 2 unrated run(s) (jarvis eval rate))");
@@ -65,7 +68,7 @@ describe("jarvis eval compare: both arms, run for run", () => {
 
 describe("the beats-the-baseline rule (proposed; decision 47 names rating and false-done rate)", () => {
   const row = (arm: "baseline" | "jarvis", o: Partial<RunRow> = {}): RunRow => ({
-    arm, runId: `${arm}-x`, counted: true, outcome: "x", hidden: "pass", claimedDone: true, falseDone: false, wallMs: 1, waitMs: 0, sessions: 1, repairs: 0,
+    arm, runId: `${arm}-x`, counted: true, outcome: "x", hidden: "pass", suite: "a".repeat(64), claimedDone: true, falseDone: false, wallMs: 1, waitMs: 0, sessions: 1, repairs: 0,
     inputTokens: null, outputTokens: null, costUsd: null, usagePartial: false, rating: 3, vetoes: 0, ...o,
   });
   const two = (arm: "baseline" | "jarvis", o: Partial<RunRow> = {}) => [row(arm, o), row(arm, o)];
@@ -75,6 +78,13 @@ describe("the beats-the-baseline rule (proposed; decision 47 names rating and fa
     expect(verdict([...two("baseline"), row("jarvis", { rating: 5 }), row("jarvis", { counted: false, rating: 5 })]).verdict).toBe("undecided");
     expect(verdict([...two("baseline"), row("jarvis", { rating: 5 }), row("jarvis", { rating: null })]).reasons).toEqual(["jarvis has 1 unrated run(s) (jarvis eval rate)"]);
     expect(verdict([...two("baseline"), row("jarvis", { rating: 5 }), row("jarvis", { hidden: "ungraded", falseDone: null, rating: 5 })]).reasons).toEqual(["jarvis has 1 ungraded run(s) (jarvis eval grade)"]);
+  });
+
+  it("is undecided when counted runs were graded with different suites (a relaxed check can't decide it)", () => {
+    const v = verdict([...two("baseline"), row("jarvis", { rating: 5 }), row("jarvis", { rating: 5, suite: "b".repeat(64) })]);
+    expect(v.verdict).toBe("undecided");
+    expect(v.reasons[0]).toMatch(/^graded with different suites: aaaaaaaaaaaa, bbbbbbbbbbbb/);
+    expect(formatCompare(TASK, [...two("baseline"), row("jarvis", { rating: 5 }), row("jarvis", { rating: 5, suite: "b".repeat(64) })])).toContain("Beats the baseline: UNDECIDED (graded with different suites");
   });
 
   it("beats only with a higher rating, a false-done rate no higher, and a hidden pass rate no lower", () => {
@@ -87,6 +97,19 @@ describe("the beats-the-baseline rule (proposed; decision 47 names rating and fa
     expect(verdict([...two("baseline", honestFail), row("jarvis", { ...honestFail, rating: 5 }), row("jarvis", { rating: 5, hidden: "fail", falseDone: true })]).verdict).toBe("does not beat");
     // A blocked-but-honest stop is not a false done: Jarvis can lose on hidden checks without lying.
     expect(verdict([...two("baseline", { hidden: "fail", falseDone: true }), row("jarvis", { rating: 4, hidden: "fail", claimedDone: false, falseDone: false }), row("jarvis", { rating: 4 })]).verdict).toBe("beats");
+  });
+
+  it("treats a grade without a suite fingerprint (or with a malformed one) as ungraded", () => {
+    const fx = createEvalFixture();
+    fixtures.push(fx);
+    const evals = join(fx.jarvisHome, "evals");
+    for (const [run, grade] of [["jarvis-old", { pass: true }], ["jarvis-bad", { pass: true, suite: "x" }], ["jarvis-new", { pass: true, suite: "c".repeat(64) }]] as const) {
+      mkdirSync(join(evals, TASK, run), { recursive: true });
+      writeFileSync(join(evals, TASK, run, "manifest.json"), JSON.stringify({ variant: "jarvis" }));
+      writeFileSync(join(evals, TASK, run, "summary.json"), JSON.stringify({ started: true, outcome: "complete", claimedDone: true }));
+      writeFileSync(join(evals, TASK, run, "grade.json"), JSON.stringify(grade));
+    }
+    expect(readRuns(evals, TASK).map((r) => [r.runId, r.hidden, r.suite, r.falseDone])).toEqual([["jarvis-bad", "ungraded", null, null], ["jarvis-new", "pass", "c".repeat(64), false], ["jarvis-old", "ungraded", null, null]]);
   });
 
   it("does not count a usage-limited or never-started baseline run", () => {

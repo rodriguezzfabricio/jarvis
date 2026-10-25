@@ -7,7 +7,7 @@ import { runJarvis, type JarvisEvalOptions, type RunLoopOptions } from "../../pa
 import { runSchedule } from "../../packages/cli/src/eval/schedule.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import type { Harness, TaskInput, TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
-import { addHidden, addTask, createEvalFixture, FEATURE_PROMPT, fakeLoop, HIDDEN_MARKER, HIDDEN_TEST, markerGate, SPEC, type EvalFixture } from "./eval-jarvis-fixture.ts";
+import { addHidden, addTask, createEvalFixture, FEATURE_PROMPT, fakeLoop, GRADE_CANARY, HIDDEN_MARKER, HIDDEN_TEST, markerGate, SPEC, type EvalFixture } from "./eval-jarvis-fixture.ts";
 
 const fixtures: EvalFixture[] = [];
 afterEach(() => fixtures.splice(0).forEach((f) => f.cleanup()));
@@ -30,7 +30,7 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     const task = loadTask(fx.evalsRepo, "05-citizenship");
     const r = await runJarvis(task, options(fx, { runLoop: fakeLoop("fix", undefined, calls), gate: g.gate, runId: "jarvis-r1" }));
 
-    expect(r).toMatchObject({ outcome: "complete", claimedDone: true, pipeline: "single-task", triage: { type: "bug" }, loopChecks: "hidden", started: true, usageLimited: false });
+    expect(r).toMatchObject({ outcome: "complete", claimedDone: true, pipeline: "single-task", triage: { type: "bug" }, started: true, usageLimited: false });
     expect(r.grade).toMatchObject({ pass: true, checks: [{ name: "unit", status: "pass" }] });
     expect(r.finalCommit).toBe(r.lastGreen);
     expect(r.diffStat).toContain("1 file changed");
@@ -43,6 +43,7 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     const o = calls[0]!;
     expect(o).toMatchObject({ runBranch: "main", repoPath: r.workspace, taskTimeoutMs: 2 * 60_000, maxTurns: 20, gitHome: fx.home });
     expect(Object.keys(o.checks)).toEqual(["unit"]);
+    expect(o.checks.unit!.verify).toContain("gate-verify.sh"); // the project's own suite, never the grading checks (decision 97)
     expect(o.projectDir).toBe(join(r.resultsDir, "project"));
     expect(o.projectDir.startsWith(o.jarvisHome)).toBe(true);
     expect(o.worktreeRoot.startsWith(`${r.workspace}/`)).toBe(false);
@@ -85,8 +86,9 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     const fx = fixture();
     const pre = counter();
     addTask(fx, "05-nounit", "The citizenship filter is missing some jobs.");
-    addHidden(fx, "05-nounit", "checks", { smoke: [] });
-    await expect(runJarvis(loadTask(fx.evalsRepo, "05-nounit"), options(fx, { runLoop: fakeLoop("fix"), preflight: pre.fn }))).rejects.toThrow(/"unit"/);
+    addHidden(fx, "05-nounit", "checks", { unit: [] });
+    addHidden(fx, "05-nounit", "gate", { smoke: [] });
+    await expect(runJarvis(loadTask(fx.evalsRepo, "05-nounit"), options(fx, { runLoop: fakeLoop("fix"), preflight: pre.fn }))).rejects.toThrow(/gate check named "unit"/);
     addTask(fx, "03-review", "Review the outreach code before I ship it.");
     addHidden(fx, "03-review", "checks", { unit: [] });
     await expect(runJarvis(loadTask(fx.evalsRepo, "03-review"), options(fx, { runLoop: fakeLoop("fix"), preflight: pre.fn }))).rejects.toThrow(/not a build-loop task/);
@@ -95,15 +97,35 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     expect(pre.count).toBe(0);
   });
 
-  it("gates the loop on hidden/<task>/gate/ when the evals repo gives one, and still grades on hidden/<task>/checks/", async () => {
+  it("refuses to run without hidden/<task>/gate/, before the preflight: the grading checks never gate the loop (decision 97)", async () => {
     const fx = fixture();
-    addHidden(fx, "05-citizenship", "gate", { unit: [], lint: [] });
+    const pre = counter();
+    addTask(fx, "05-nogate", "The citizenship filter is missing some jobs.");
+    addHidden(fx, "05-nogate", "checks", { unit: [] });
+    const calls: RunLoopOptions[] = [];
+    await expect(runJarvis(loadTask(fx.evalsRepo, "05-nogate"), options(fx, { runLoop: fakeLoop("fix", undefined, calls), preflight: pre.fn }))).rejects.toThrow(/needs hidden\/05-nogate\/gate\//);
+    expect(pre.count).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses gate checks that hold any grading file, before the preflight", async () => {
+    const fx = fixture();
+    const pre = counter();
+    writeFileSync(join(fx.evalsRepo, "hidden", "05-citizenship", "gate", "copied.test.mjs"), HIDDEN_TEST);
+    await expect(runJarvis(loadTask(fx.evalsRepo, "05-citizenship"), options(fx, { runLoop: fakeLoop("fix"), preflight: pre.fn }))).rejects.toThrow(/gate checks hold grading files.*copied\.test\.mjs/);
+    expect(pre.count).toBe(0);
+  });
+
+  it("grades on hidden/<task>/checks/ only after the loop, in its own folder: none of it is in the loop's project folder", async () => {
+    const fx = fixture();
     const calls: RunLoopOptions[] = [];
     const g = markerGate();
     const r = await runJarvis(loadTask(fx.evalsRepo, "05-citizenship"), options(fx, { runLoop: fakeLoop("fix", undefined, calls), gate: g.gate }));
-    expect(r.loopChecks).toBe("gate");
-    expect(Object.keys(calls[0]!.checks).sort()).toEqual(["lint", "unit"]);
     expect(g.calls.map((c) => c.check.name)).toEqual(["unit"]);
+    expect(g.calls[0]!.check.verify).toContain("$JARVIS_CHECKS/verify.sh");
+    const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+    for (const f of walk(calls[0]!.projectDir)) expect(readFileSync(f).includes(GRADE_CANARY), f).toBe(false);
+    expect(r.grade?.pass).toBe(true);
   });
 });
 
@@ -117,10 +139,12 @@ describe("eval jarvis: the hidden tests never reach a session", () => {
     for (const rev of revs) expect(() => safeGit(r.workspace, ["grep", "-q", HIDDEN_MARKER, rev], { home: fx.home }), rev).toThrow();
     const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
     for (const f of walk(r.workspace)) expect(readFileSync(f).includes(HIDDEN_MARKER), f).toBe(false);
-    // Installed for the loop under the runner-owned home, which task settings deny (decision 69).
+    // The loop's checks are the gate's, installed under the runner-owned home, which task settings deny (decision 69);
+    // the grading checks and their hidden test are not among them (decision 97).
     const checksDir = join(calls[0]!.projectDir, "checks");
-    expect(readFileSync(join(checksDir, "fixtures", "hidden.test.mjs"), "utf8")).toBe(HIDDEN_TEST);
+    expect(existsSync(join(checksDir, "gate-verify.sh"))).toBe(true);
     expect(checksDir.startsWith(`${fx.jarvisHome}/`)).toBe(true);
+    for (const f of walk(checksDir)) expect(readFileSync(f).includes(HIDDEN_MARKER), f).toBe(false);
   });
 
   it("refuses, before any session, a snapshot that already contains a hidden test (a source revision with the fix's tests)", async () => {
@@ -131,6 +155,7 @@ describe("eval jarvis: the hidden tests never reach a session", () => {
     const rev = safeGit(fx.sourceRepo, ["rev-parse", "HEAD"], { home: fx.home }).toString().trim();
     addTask(fx, "05-leaky", "The citizenship filter is missing some jobs.", { rev, revert: [fx.fixRev] });
     addHidden(fx, "05-leaky", "checks", { unit: [] });
+    addHidden(fx, "05-leaky", "gate", { unit: [] });
     const calls: RunLoopOptions[] = [];
     await expect(runJarvis(loadTask(fx.evalsRepo, "05-leaky"), options(fx, { runLoop: fakeLoop("fix", undefined, calls) }))).rejects.toThrow(/hidden check files are in the snapshot: hidden\.test\.mjs/);
     expect(calls).toHaveLength(0);
@@ -201,9 +226,10 @@ describe("eval jarvis: task 2 takes the written spec, then the planning path", (
       return outcome;
     } } };
   }
-  function featureTask(fx: EvalFixture, spec: string | null = SPEC, checks: Record<string, string[]> = { unit: [], greet: ["AC1", "AC2"] }) {
+  function featureTask(fx: EvalFixture, spec: string | null = SPEC, gate: Record<string, string[]> = { unit: [], greet: ["AC1", "AC2"] }) {
     addTask(fx, "02-greet", FEATURE_PROMPT, { revert: [fx.fixRev], ...(spec ? { spec } : {}) });
-    addHidden(fx, "02-greet", "checks", checks);
+    addHidden(fx, "02-greet", "checks", { greet: ["AC1", "AC2"] });
+    addHidden(fx, "02-greet", "gate", gate);
     return loadTask(fx.evalsRepo, "02-greet");
   }
 

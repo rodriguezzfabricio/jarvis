@@ -22,6 +22,8 @@ export interface RunRow {
   /** Why a run isn't counted, or the arm's outcome. */
   outcome: string;
   hidden: "pass" | "fail" | "ungraded";
+  /** The grading suite's fingerprint (hidden.ts suiteFingerprint); null when ungraded. */
+  suite: string | null;
   claimedDone: boolean | null;
   falseDone: boolean | null;
   wallMs: number | null;
@@ -52,9 +54,11 @@ function armOf(runId: string, manifest: Record<string, unknown> | undefined): Ar
   return undefined;
 }
 
-function hiddenOf(dir: string): RunRow["hidden"] {
+/** A grade counts only with its suite's fingerprint: an older grade without one is ungraded. */
+function hiddenOf(dir: string): Pick<RunRow, "hidden" | "suite"> {
   const g = readJson(join(dir, "grade.json"));
-  return g === undefined || typeof g.pass !== "boolean" ? "ungraded" : g.pass ? "pass" : "fail";
+  if (g === undefined || typeof g.pass !== "boolean" || typeof g.suite !== "string" || !/^[0-9a-f]{64}$/.test(g.suite)) return { hidden: "ungraded", suite: null };
+  return { hidden: g.pass ? "pass" : "fail", suite: g.suite };
 }
 
 function ratingOf(dir: string): { rating: number | null; vetoes: number | null } {
@@ -62,7 +66,7 @@ function ratingOf(dir: string): { rating: number | null; vetoes: number | null }
   return { rating: num(r?.rating), vetoes: num(r?.vetoes) };
 }
 
-const empty = { claimedDone: null, falseDone: null, wallMs: null, waitMs: 0, sessions: null, repairs: null, inputTokens: null, outputTokens: null, costUsd: null, usagePartial: false };
+const empty = { suite: null, claimedDone: null, falseDone: null, wallMs: null, waitMs: 0, sessions: null, repairs: null, inputTokens: null, outputTokens: null, costUsd: null, usagePartial: false };
 
 /** Plain Claude Code's own claim of done: a finished session with a success result (it can't say more headless). */
 function baselineRow(dir: string, runId: string, s: Record<string, unknown>): Omit<RunRow, "hidden" | "rating" | "vetoes"> {
@@ -111,9 +115,9 @@ export function readRuns(evalsHome: string, taskId: string): RunRow[] {
     const base = summary === undefined
       ? { ...empty, arm, runId, counted: false, outcome: "incomplete (no summary)" }
       : arm === "baseline" ? baselineRow(runDir, runId, summary) : jarvisRow(runId, summary);
-    const hidden = hiddenOf(runDir);
+    const { hidden, suite } = hiddenOf(runDir);
     const falseDone = base.claimedDone === null || hidden === "ungraded" ? null : base.claimedDone && hidden === "fail";
-    rows.push({ ...base, hidden, falseDone, ...ratingOf(runDir) });
+    rows.push({ ...base, hidden, suite, falseDone, ...ratingOf(runDir) });
   }
   return rows;
 }
@@ -156,6 +160,9 @@ export function verdict(rows: readonly RunRow[]): Verdict {
   const b = armStats(rows, "baseline");
   const j = armStats(rows, "jarvis");
   const missing: string[] = [];
+  // Grades compare only on one suite: a relaxed or changed check must not decide the comparison.
+  const suites = [...new Set(rows.filter((r) => r.counted && r.suite !== null).map((r) => r.suite!))];
+  if (suites.length > 1) missing.push(`graded with different suites: ${suites.map((x) => x.slice(0, 12)).join(", ")} (regrade every run with jarvis eval grade)`);
   for (const [name, s] of [["baseline", b], ["jarvis", j]] as const) {
     if (s.runs < MIN_RUNS) missing.push(`${name} has ${s.runs} counted run(s); needs ${MIN_RUNS}`);
     else {
@@ -181,9 +188,9 @@ const atLeast = (r: RunRow) => (r.usagePartial ? ">=" : "");
 const tok = (r: RunRow) => (r.inputTokens === null || r.outputTokens === null ? "-" : `${atLeast(r)}${formatTokens(r.inputTokens)}/${formatTokens(r.outputTokens)}`);
 
 export function formatCompare(taskId: string, rows: readonly RunRow[]): string {
-  const header = ["arm", "run", "counted", "outcome", "hidden", "claimed done", "false done", "wall", "waited", "sessions", "repairs", "tokens in/out", "cost", "rating", "vetoes"];
+  const header = ["arm", "run", "counted", "outcome", "hidden", "suite", "claimed done", "false done", "wall", "waited", "sessions", "repairs", "tokens in/out", "cost", "rating", "vetoes"];
   const body = rows.map((r) => [
-    r.arm, r.runId, r.counted ? "yes" : "no", r.outcome, r.hidden, yes(r.claimedDone), yes(r.falseDone), dur(r.wallMs), r.waitMs ? dur(r.waitMs) : "-",
+    r.arm, r.runId, r.counted ? "yes" : "no", r.outcome, r.hidden, r.suite === null ? "-" : r.suite.slice(0, 8), yes(r.claimedDone), yes(r.falseDone), dur(r.wallMs), r.waitMs ? dur(r.waitMs) : "-",
     r.sessions === null ? "-" : String(r.sessions), r.repairs === null ? "-" : String(r.repairs), tok(r), r.costUsd === null ? "-" : `${atLeast(r)}$${r.costUsd.toFixed(2)}`,
     r.rating === null ? "-" : String(r.rating), r.vetoes === null ? "-" : String(r.vetoes),
   ]);

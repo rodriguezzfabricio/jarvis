@@ -59,9 +59,14 @@ it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/osv-scanner") || !db || !ex
   try {
     const checkout = join(root, "checkout"); mkdirSync(checkout);
     writeFileSync(join(checkout, "package-lock.json"), JSON.stringify({ name: "jarvis-canary", lockfileVersion: 3, packages: { "": { name: "jarvis-canary", version: "1.0.0" }, "node_modules/lodash": { version: "4.17.20", resolved: "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz" } } }));
+    // A nested osv-scanner.toml next to a lockfile must not hide its package (the pinned --config=/dev/null override).
+    mkdirSync(join(checkout, "nested"));
+    writeFileSync(join(checkout, "nested", "package-lock.json"), JSON.stringify({ name: "jarvis-canary-nested", lockfileVersion: 3, packages: { "": { name: "jarvis-canary-nested", version: "1.0.0" }, "node_modules/lodash": { version: "4.17.20", resolved: "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz" } } }));
+    writeFileSync(join(checkout, "nested", "osv-scanner.toml"), '[[PackageOverrides]]\nname = "lodash"\nignore = true\n');
     const pin = pinnedSecurityScanners()["osv-scanner"]!;
     const path = resolve(db!);
     const result = await runScanner("osv-scanner", { ...pin, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: path } }, checkout, { fixturesDir: dirname(path), timeoutMs: 90_000 });
     expect(result.status).toBe("fail"); expect(result.findings.length).toBeGreaterThan(0);
+    expect(result.findings.some((finding) => finding.file.endsWith("nested/package-lock.json"))).toBe(true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 120_000);

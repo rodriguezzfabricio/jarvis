@@ -25,7 +25,8 @@ function setup() {
 }
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-const suppression: [Scanner, string][] = [["gitleaks", ".gitleaksignore"], ["semgrep", ".semgrepignore"], ["osv-scanner", "osv-scanner.toml"], ["osv-scanner", ".osv-scanner.toml"]];
+// gitleaks replaces its whole ruleset with <source>/.gitleaks.toml when no --config is given (live-checked on 8.28.0).
+const suppression: [Scanner, string][] = [["gitleaks", ".gitleaksignore"], ["gitleaks", ".gitleaks.toml"], ["semgrep", ".semgrepignore"], ["osv-scanner", "osv-scanner.toml"], ["osv-scanner", ".osv-scanner.toml"]];
 it.each(suppression.flatMap(([tool, file]) => ["file", "directory", "symlink"].map((kind) => ({ tool, file, kind }))))("refuses $tool suppression $file as $kind without deleting it", async ({ tool, file, kind }) => {
   const { checkout, home, pin, spawn } = setup(); const path = join(checkout, file);
   if (kind === "directory") mkdirSync(path);

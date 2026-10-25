@@ -250,5 +250,23 @@
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "harness, checks: gate.checks, review,",
     "replacement": "harness, checks: loopChecks.checks, review,"
+  },
+  {
+    "name": "eval jarvis review errors reach the loop as errors",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "return { status: result.verdict, recorded: true };",
+    "replacement": "return result.verdict === \"pass\" ? \"pass\" : \"fail\";"
+  },
+  {
+    "name": "eval jarvis metrics count only reviewers that ran",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "return n + (Array.isArray(data?.reviews) ? data.reviews.length : 1);",
+    "replacement": "return n + (Array.isArray(data?.reviews) && data.reviews.length ? data.reviews.length : 1);"
+  },
+  {
+    "name": "eval jarvis metrics skip session-failure markers",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (data?.reviewer === \"session\") return n;",
+    "replacement": ""
   }
 ]

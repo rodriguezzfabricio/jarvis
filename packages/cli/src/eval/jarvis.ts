@@ -5,7 +5,7 @@ import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
-import { createReviewService, DEFAULT_REVIEW_ROUTING, type Review, type ReviewMaterial } from "../review/index.ts";
+import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type ReviewRequest } from "../review/index.ts";
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
@@ -52,7 +52,7 @@ export interface RunLoopOptions {
   workRoot: string;
   harness: Harness;
   checks: Readonly<Record<string, GateCheck>>;
-  review: Review;
+  review: LoopReview;
   taskTimeoutMs?: number;
   maxTurns?: number;
   maxConcurrent?: number;
@@ -65,6 +65,11 @@ export interface RunLoopOptions {
 }
 export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[] }
 export type RunLoop = (opts: RunLoopOptions) => Promise<RunLoopResult>;
+/**
+ * The loop's review function (runner/loop.ts's ReviewVerdict): a plain verdict, which the loop records,
+ * or one the review service already recorded, whose "error" means no verdict (an infrastructure failure).
+ */
+export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promise<"pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true }>;
 
 // ---- Options and results ----------------------------------------------------------------------------
 
@@ -88,7 +93,7 @@ export interface JarvisEvalOptions {
   harnessSeams?: HarnessSeams;
   reviewerSeams?: ReviewerSeams;
   /** Default: the review service with a fresh Claude reviewer only (decision 88). No Codex in evals yet (decisions 97, 110). */
-  review?: Review;
+  review?: LoopReview;
   /** Grading seam; production is the protected-check gate. */
   gate?: (input: GateInput) => Promise<GateResult>;
   jarvisHome?: string;
@@ -210,9 +215,12 @@ export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plan
   }
   const runner = entries.filter((e) => e.actor === "runner");
   const build = runner.filter((e) => e.kind === "attempt_started").length;
+  // Reviewer sessions that ran: the service lists them (none when it failed before any reviewer, decision 111);
+  // a plain verdict the loop recorded is one review; the loop's "session" marker for a failed build session is none.
   const review = runner.filter((e) => e.kind === "review_result").reduce((n, e) => {
-    const reviews = (e.data as { reviews?: unknown } | null)?.reviews;
-    return n + (Array.isArray(reviews) && reviews.length ? reviews.length : 1);
+    const data = e.data as { reviews?: unknown; reviewer?: unknown } | null;
+    if (data?.reviewer === "session") return n;
+    return n + (Array.isArray(data?.reviews) ? data.reviews.length : 1);
   }, 0);
   const waits = runner.filter((e) => e.kind === "usage_wait");
   const waitMs = waits.reduce((n, e) => {
@@ -287,8 +295,14 @@ export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRe
   };
 }
 
-function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, attemptId: string) => ReviewMaterial, opts: JarvisEvalOptions): Review {
-  return createReviewService({
+/**
+ * The review service as the loop takes it: the service records its own review_result and the loop reads
+ * that verdict back, so an infrastructure "error" stays an error, retried and never a code failure
+ * (decisions 100, 111). The service reviews as "code" only; another named reviewer gets no recorded
+ * verdict and the loop blocks the task, as in `jarvis run` (commands/run-compose.ts).
+ */
+function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, attemptId: string) => ReviewMaterial, opts: JarvisEvalOptions): LoopReview {
+  const service = createReviewService({
     ledger,
     projectDir: p.projectDir,
     workRoot: p.reviewRoot,
@@ -300,7 +314,12 @@ function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, a
     // until a decision adds Codex back to the eval arm (decision 97).
     claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams ?? {}) }),
     codex: null,
-  }).review;
+  });
+  return async (input) => {
+    if (input.reviewer !== undefined && input.reviewer !== "code") return { status: "error", recorded: true };
+    const result = await service.reviewDetailed({ taskId: input.taskId, attemptId: input.attemptId, revision: input.revision });
+    return { status: result.verdict, recorded: true };
+  };
 }
 
 const ms = (minutes: number) => minutes * 60_000;

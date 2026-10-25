@@ -1,0 +1,5 @@
+[
+{"name":"runner review errors block instead of becoming a new attempt","file":"packages/cli/src/runner/loop.ts","anchor":"if (status === \"error\") return this.block(task, `review infrastructure error: ${this.reviewError(task, reviewer, candidate.revision)}`);","replacement":"if (status === \"error\") return;"},
+{"name":"runner review errors block with the recorded reason","file":"packages/cli/src/runner/loop.ts","anchor":"const reason = recorded ? dataOf(recorded).error ?? dataOf(recorded).summary : undefined;","replacement":"const reason = recorded ? undefined : undefined;"},
+{"name":"runner review errors are retried, not only missing verdicts","file":"packages/cli/src/runner/loop.ts","anchor":"(status === undefined || status === \"error\"); tries++)","replacement":"status === undefined; tries++)"}
+]

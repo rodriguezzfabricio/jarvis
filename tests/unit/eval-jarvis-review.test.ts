@@ -1,11 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { pinnedCodexBin } from "../../packages/cli/src/config/pins.ts";
 import { loadTask } from "../../packages/cli/src/eval/baseline.ts";
-import { runJarvis, type RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
+import { jarvisMetrics, runJarvis, type RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
 import { runSession, type SessionSpec } from "../../packages/cli/src/harness/claude/session.ts";
-import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
+import { Ledger, type LedgerEntry } from "../../packages/cli/src/ledger/ledger.ts";
 import { sessionCalls, writeFakeClaudeShim } from "../integration/e2e-helpers.ts";
 import { createEvalFixture, GRADE_CANARY, HIDDEN_MARKER, realGateLoop, type EvalFixture } from "./eval-jarvis-fixture.ts";
 
@@ -91,10 +91,45 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     const r = await s.run();
     expect(s.reviewerSpecs).toHaveLength(0);
     expect(r).toMatchObject({ outcome: "blocked", claimedDone: false });
+    // The infrastructure error reaches the loop as the service's recorded verdict, never as a code "fail" (decision 111).
     const results = reviewResults(s.calls[0]!.projectDir);
     expect(results.map((d) => d.status)).toEqual(["error"]);
     expect(results[0]!.reviews.map((x) => x.reviewer)).toEqual(["claude"]);
     expect(JSON.stringify(results[0])).toMatch(/live preflight failed/);
     expect(existsSync(s.codexMarker)).toBe(false);
+    expect(r.metrics.repairs).toBe(0);
+  });
+
+  it("reviews a gate whose log is several MB from a bounded excerpt, and the task completes (the Oct 25 live run)", async () => {
+    const s = setup(async () => ({ ok: true }));
+    // The project's own suite prints a few MB, as FreeHire's `go test -json ./...` printed 5 MB.
+    const check = join(s.fx.evalsRepo, "hidden", "05-citizenship", "gate", "unit.check.json");
+    const def = JSON.parse(readFileSync(check, "utf8")) as { cases: { id: string; command: string }[] };
+    def.cases[0]!.command = "node --test && node -e 'for (let i = 0; i < 60000; i++) console.log(\"suite line \" + i + \" \" + \"x\".repeat(40)); console.log(\"GATE-TAIL-MARKER\")'";
+    writeFileSync(check, JSON.stringify(def));
+    const r = await s.run();
+    expect(r).toMatchObject({ outcome: "complete", claimedDone: true, grade: { pass: true } });
+    const gate = Ledger.open(s.calls[0]!.projectDir).entries().find((e) => e.kind === "gate_result")!.data as { status: string; evidence: { dir: string } };
+    expect(gate.status).toBe("pass");
+    expect(statSync(join(gate.evidence.dir, "cases", "unit", "stdout")).size).toBeGreaterThan(2 * 1024 * 1024);
+    expect(s.reviewerSpecs).toHaveLength(1);
+    const prompt = s.reviewerSpecs[0]!.args[s.reviewerSpecs[0]!.args.indexOf("-p") + 1]!;
+    expect(Buffer.byteLength(prompt)).toBeLessThan(256 * 1024);
+    expect(prompt).toContain("GATE-TAIL-MARKER");
+    expect(reviewResults(s.calls[0]!.projectDir).map((d) => [d.status, d.reviews.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
+  });
+});
+
+describe("eval jarvis: review sessions in the run metrics", () => {
+  const entry = (seq: number, data: Record<string, unknown>): LedgerEntry => ({ seq, ts: "2026-10-25T00:00:00Z", kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data, prev_hash: "", hash: "" });
+  it("counts the reviewer sessions that ran: none for an infrastructure error before any reviewer, none for a session-failure marker", () => {
+    const m = jarvisMetrics([
+      entry(1, { reviewer: "code", status: "error", reviews: [] }),
+      entry(2, { reviewer: "code", status: "pass", reviews: [{ reviewer: "claude" }] }),
+      entry(3, { reviewer: "code", status: "fail", reviews: [{ reviewer: "claude" }, { reviewer: "codex" }] }),
+      entry(4, { reviewer: "session", status: "fail", summary: "task timeout" }),
+      entry(5, { reviewer: "code", status: "pass" }), // a plain verdict recorded by the loop: one review
+    ], 0, 0);
+    expect(m.sessions.review).toBe(4);
   });
 });

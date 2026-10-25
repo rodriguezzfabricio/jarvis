@@ -122,8 +122,8 @@
   {
     "name": "QA skips accessibility-tree-first workflow",
     "file": "packages/cli/src/lanes/browser.ts",
-    "anchor": "const accessibilityTree = await page.locator(\"body\").ariaSnapshot();\n        const axe = await isolatedAxe(page, runtime.axeSource);",
-    "replacement": "const axe = await isolatedAxe(page, runtime.axeSource);\n        const accessibilityTree = await page.locator(\"body\").ariaSnapshot();"
+    "anchor": "const accessibilityTree = await page.locator(\"body\").ariaSnapshot();\n        const axe = await isolatedFrames(page, runtime.axeSource);",
+    "replacement": "const axe = await isolatedFrames(page, runtime.axeSource);\n        const accessibilityTree = await page.locator(\"body\").ariaSnapshot();"
   },
   {
     "name": "QA drops responsive screenshots",
@@ -283,7 +283,7 @@
   },
   {
     "name": "review axe evaluates without isolated context",
-    "file": "packages/cli/src/lanes/browser.ts",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
     "anchor": "contextId: world.executionContextId",
     "replacement": "contextId: undefined"
   },
@@ -358,5 +358,257 @@
     "file": "packages/cli/src/lanes/source.ts",
     "anchor": "mask(i, last); i = last - 1;",
     "replacement": "if (!line) mask(i, last); i = last - 1;"
+  },
+  {
+    "name": "QA round 2 skips nested frames",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "for (const child of node.childFrames ?? []) walk(child, frame.id);",
+    "replacement": "for (const child of []) walk(child, frame.id);"
+  },
+  {
+    "name": "QA round 2 trusts iframe axe messages",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "iframes: false",
+    "replacement": "iframes: true"
+  },
+  {
+    "name": "QA round 2 ignores frame tree changes",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "    if (!same([...before.frames.keys()], [...after.frames.keys()])) throw new Error(\"frame tree changed during accessibility checks\");\n    for (const frame of before.frames.values()) {\n      const current = after.frames.get(frame.id)!;\n      if (frame.url !== current.url || frame.loaderId !== current.loaderId || frame.parentId !== current.parentId) throw new Error(\"frame document changed during accessibility checks\");\n    }\n",
+    "replacement": ""
+  },
+  {
+    "name": "QA round 2 accepts incomplete frame coverage",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "    verifyFrames(page, expected, problems);",
+    "replacement": "    void page;"
+  },
+  {
+    "name": "QA round 2 skips child frame assertions",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "    verifyAxe(frame.axe, expected, `${page.width} frame ${frame.id}`, problems);",
+    "replacement": "    void frame;"
+  },
+  {
+    "name": "QA round 2 skips desktop survival interval",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "while (now() - started < policy.stayUpMs)",
+    "replacement": "while (false)"
+  },
+  {
+    "name": "QA round 2 fabricates native menu item",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "raw.menuBar = good(menu) && menu.stdout.trim() === \"true\";",
+    "replacement": "raw.menuBar = true;"
+  },
+  {
+    "name": "QA round 2 accepts unclean native shutdown",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "if (raw.shutdown.code !== 0 || raw.shutdown.signal !== null)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA round 2 continues after failed desktop build",
+    "file": "packages/cli/src/lanes/desktop-build.ts",
+    "anchor": "if (build.code === 0 && !build.timedOut && !build.overflowed)",
+    "replacement": "if (true)"
+  },
+  {
+    "name": "QA round 2 leaks desktop children",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "finally { if (app) await app.stop(); }",
+    "replacement": "finally { void app; }"
+  },
+  {
+    "name": "QA round 2 inherits unsafe desktop environment",
+    "file": "packages/cli/src/lanes/desktop-build.ts",
+    "anchor": "if (Object.keys(env).some(k => !ENV.has(k)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA round 2 launches a bundle outside runner output",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "!insideTree(root, realpathSync(bundlePath))",
+    "replacement": "false"
+  },
+  {
+    "name": "QA round 2 turns a failed native gate into pass",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "{ status: result.status, result }",
+    "replacement": "{ status: \"pass\", result }"
+  },
+  {
+    "name": "QA round 2 allows a failed native driver to complete",
+    "file": "packages/cli/src/lanes/desktop-verify.ts",
+    "anchor": "if (readFileSync(join(dir, \"code\"), \"utf8\").trim() !== \"0\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA round 2 passes failed desktop assertions",
+    "file": "packages/cli/src/lanes/desktop-verify.ts",
+    "anchor": "  return { ok: problems.length === 0, problems };\n}\n\n/** Runs with observations only",
+    "replacement": "  return { ok: true, problems };\n}\n\n/** Runs with observations only"
+  },
+  {
+    "name": "QA round 2 does not enforce lane-required tools",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "deps.required?.includes(name) ? \"fail\" : \"warn\"",
+    "replacement": "\"warn\""
+  },
+  {
+    "name": "QA round 2 fails on optional missing tools",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "deps.required?.includes(name) ? \"fail\" : \"warn\"",
+    "replacement": "\"fail\""
+  },
+  {
+    "name": "QA round 2 accepts unknown native tool versions",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "if (!exact) throw new Error(\"exact version unavailable\");",
+    "replacement": "if (false) throw new Error(\"exact version unavailable\");"
+  },
+  {
+    "name": "QA round 2 quits an unrelated process",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "spec([\"-l\", \"JavaScript\", \"-e\", QUIT_SCRIPT, String(app.pid)])",
+    "replacement": "spec([\"-l\", \"JavaScript\", \"-e\", QUIT_SCRIPT, \"124\"])"
+  },
+  {
+    "name": "QA round 2 loses protected desktop not-run status",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "raw.kind === \"qa-desktop-build\" && raw.status === \"not run\"",
+    "replacement": "false"
+  },
+  {
+    "name": "QA round 2 omits home project QA manifests",
+    "file": "packages/cli/src/doctor/doctor.ts",
+    "anchor": "projectsRoot: join(deps.foundation?.jarvisHome ?? join(home, \".jarvis\"), \"projects\")",
+    "replacement": "projectsRoot: join(home, \".no-projects\")"
+  },
+  {
+    "name": "QA round 2 passes unreadable QA discovery",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "add(\"qa_toolchain\", false, `QA manifest discovery unavailable: ${String(error)}`)",
+    "replacement": "add(\"qa_toolchain\", true, `QA manifest discovery unavailable: ${String(error)}`)"
+  },
+  {
+    "name": "QA round 2 runs native gate without Tauri",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "if ((deps.platform ?? process.platform) !== \"darwin\" || !(deps.exists ?? existsSync)(plan.tauriBin))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA round 2 accepts unbounded desktop timing",
+    "file": "packages/cli/src/lanes/desktop-types.ts",
+    "anchor": "if (![plan.stayUpMs, plan.shutdownMs, plan.buildTimeoutMs].every(validDuration))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 omits OOP iframe attachment",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "for (const frame of page.frames().filter(frame => frame.parentFrame() !== null))",
+    "replacement": "for (const frame of [])"
+  },
+  {
+    "name": "QA follow-up 1 accepts mismatched Playwright frames",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "if (!same(playwright, cdp))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 ignores unlisted iframe targets",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "if (!same(iframeTargets, attached))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 ignores frame document URL changes",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "frame.url !== current.url",
+    "replacement": "false"
+  },
+  {
+    "name": "QA follow-up 1 ignores frame loader changes",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "frame.loaderId !== current.loaderId",
+    "replacement": "false"
+  },
+  {
+    "name": "QA follow-up 1 tests a src frame while blank",
+    "file": "packages/cli/src/lanes/browser-frames.ts",
+    "anchor": "frame.url() === \"about:blank\"",
+    "replacement": "false"
+  },
+  {
+    "name": "QA follow-up 1 copies escaping bundle source files",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!insideTree(root, real))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 permits installed symlinks",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "if (stat.isSymbolicLink()) throw new Error(\"QA toolchain files may not be symlinks\");",
+    "replacement": "if (stat.isSymbolicLink()) continue;"
+  },
+  {
+    "name": "QA follow-up 1 installs a browser after failed launch",
+    "file": "packages/cli/src/lanes/chromium-install.ts",
+    "anchor": "if (launch.code !== 0 || launch.timedOut || launch.overflowed)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 allows build dependency downloads",
+    "file": "packages/cli/src/lanes/desktop-build.ts",
+    "anchor": "CARGO_NET_OFFLINE: \"true\", npm_config_offline: \"true\", YARN_ENABLE_NETWORK: \"0\"",
+    "replacement": "CARGO_NET_OFFLINE: \"false\", npm_config_offline: \"false\", YARN_ENABLE_NETWORK: \"1\""
+  },
+  {
+    "name": "QA follow-up 1 misreports offline download requirements",
+    "file": "packages/cli/src/lanes/desktop-build.ts",
+    "anchor": "status: \"not run\", reason: \"not run: desktop build needs network\"",
+    "replacement": "status: \"fail\", reason: \"desktop build failed\""
+  },
+  {
+    "name": "QA follow-up 1 passes a build without native artifact handoff",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "if (!artifact) return { status: \"not run\", reason: \"not run: desktop (protected build artifact handoff unavailable)\", result };",
+    "replacement": "if (!artifact) return { status: \"pass\", result };"
+  },
+  {
+    "name": "QA follow-up 1 launches native app after failed build verification",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "if (result.status !== \"pass\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA follow-up 1 runs candidate text as an Apple Event script",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "spec([\"-e\", MENU_SCRIPT, String(app.pid)])",
+    "replacement": "spec([\"-e\", bundlePath, String(app.pid)])"
+  },
+  {
+    "name": "QA follow-up 1 opens writer ledger from doctor foundation",
+    "file": "packages/cli/src/doctor/foundation.ts",
+    "anchor": "const v = (d.ledgerVerify ?? verifyLedger)(dir);",
+    "replacement": "const v = (await import(\"../ledger/ledger.ts\")).Ledger.open(dir).verify();"
+  },
+  {
+    "name": "QA follow-up 1 uses a locking writer to inspect checks",
+    "file": "packages/cli/src/doctor/read-only.ts",
+    "anchor": "import { verifyLedger, type Ledger } from \"../ledger/ledger.ts\";\n\n/** Adapt an already verified snapshot to the store's read-only entries call; never create a Ledger writer. */\nexport function verifyChecksReadOnly(store: ChecksStore, verify: typeof verifyLedger = verifyLedger): ReturnType<ChecksStore[\"verify\"]> {\n  const snapshot = verify(dirname(store.checksDir));",
+    "replacement": "import { verifyLedger, Ledger } from \"../ledger/ledger.ts\";\n\n/** Adapt an already verified snapshot to the store's read-only entries call; never create a Ledger writer. */\nexport function verifyChecksReadOnly(store: ChecksStore, verify: typeof verifyLedger = verifyLedger): ReturnType<ChecksStore[\"verify\"]> {\n  const snapshot = Ledger.open(dirname(store.checksDir)).verify();"
+  },
+  {
+    "name": "QA follow-up 1 does not detach the native process group",
+    "file": "packages/cli/src/lanes/desktop-process.ts",
+    "anchor": "detached: true",
+    "replacement": "detached: false"
+  },
+  {
+    "name": "QA follow-up 1 swallows native group kill failures",
+    "file": "packages/cli/src/lanes/desktop-process.ts",
+    "anchor": "      if ((error as NodeJS.ErrnoException).code !== \"ESRCH\") throw error;\n      if (!exit) throw new Error(\"desktop process group missing while its child is alive\");",
+    "replacement": ""
   }
 ]

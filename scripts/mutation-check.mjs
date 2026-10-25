@@ -165,6 +165,10 @@ const mutations = [
   ["successful mutation suites leave their group running", "scripts/mutation-run.mjs", "      reaped = reapGroup(child, graceMs);", "      reaped = Promise.resolve();"],
   ["subset controls ignore the full control's skips", "scripts/mutation-select.mjs", " && same(skippedIds(r.report), idsForFiles(full.skipped, files))", ""],
   ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
+  // Vitest shows every error in a .rejects/.resolves chain as "Error: <message>"; only the reporter's name record tells an assertion from a runtime error.
+  ["promise-chain errors count without their recorded name", "scripts/mutation-classify.mjs", '  return promiseErrors?.[promiseErrorKey(message)] === "AssertionError";', "  return true;"],
+  ["reporter records no promise-chain error names", "scripts/unhandled-reporter.mjs", "promiseErrors: promiseErrorNames(modules) }", "promiseErrors: {} }"],
+  ["reporter trusts one of two names for a shared message", "scripts/unhandled-reporter.mjs", 'names[key] = key in names && names[key] !== name ? "conflicting names" : name;', "names[key] = name;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).
   ["public path replacement", "packages/cli/src/broker/server.ts", "    linkSync(privatePath, socketPath);", "    rmSync(socketPath, {force:true}); linkSync(privatePath, socketPath);"],
   ["close removes replacement", "packages/cli/src/broker/server.ts", "if (current?.dev === owned.dev && current.ino === owned.ino)", "if (current)"],

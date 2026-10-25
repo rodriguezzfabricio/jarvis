@@ -29,7 +29,9 @@ describe("desktop build and runner native observations", () => {
   });
   it("does not run a gate for missing tools or tampered checks", async () => {
     const projectDir = temp(); const store = new ChecksStore(projectDir); const ledger = Ledger.open(projectDir); installDesktopChecks(store, plan); store.approve(ledger, "reviewed");
-    const input = { projectDir, store, ledger, workRoot: temp(), repoPath: temp(), jarvisHome: temp(), revision: "a".repeat(40), taskId: "task", attemptId: "one" }; const gate = vi.fn();
+    const input = { projectDir, store, ledger, workRoot: temp(), repoPath: temp(), jarvisHome: temp(), revision: "a".repeat(40), taskId: "task", attemptId: "one" };
+    // A gate that answers (a failed build), so a mutated platform check fails an assertion instead of crashing.
+    const gate = vi.fn(async () => ({ status: "fail" as const, evidenceDir: temp() }));
     expect((await runDesktop(input, { gate, platform: "darwin", exists: () => false })).status).toBe("not run"); writeFileSync(join(store.checksDir, "desktop/plan.json"), "{}"); expect((await runDesktop(input, { gate })).status).toBe("tampered"); expect(gate).not.toHaveBeenCalled();
   });
   it.each([{ code: 1 }, { code: null }, { timedOut: true }, { overflowed: true }])("fails bounded build outcomes %j", async change => {

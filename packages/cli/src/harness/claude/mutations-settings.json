@@ -94,5 +94,17 @@
     "file": "packages/cli/src/checks/gate.ts",
     "anchor": "denyRead: [real(g.jarvisHome), real(homedir()), real(runDir), ...systemTemp],",
     "replacement": "denyRead: [real(g.jarvisHome), real(homedir()), real(runDir)],"
+  },
+  {
+    "name": "settings task session can't read the Jarvis install",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    ...(locations.installDir ? { readOnlyDirs: [locations.installDir] } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "settings Jarvis install may overlap agent folders",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  for (const root of roots) if (under(installDir, root) || under(root, installDir)) throw",
+    "replacement": "  for (const root of roots) if (false) throw"
   }
 ]

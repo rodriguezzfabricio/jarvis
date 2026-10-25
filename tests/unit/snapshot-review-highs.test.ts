@@ -1,8 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { brotliCompressSync, crc32, deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { findCredentials, findSnapshotCredentials } from "../../packages/cli/src/eval/snapshot.ts";
 import { isCredentialShaped } from "../../packages/cli/src/eval/snapshot-literals.ts";
+import { isWellFormedMedia } from "../../packages/cli/src/eval/snapshot-media.ts";
 
 /**
  * Codex review of the false-positive narrowing (decision 79): six inputs the narrowed scanner let through.
@@ -28,8 +30,11 @@ const u16 = (n: number) => { const b = Buffer.alloc(2); b.writeUInt16BE(n); retu
 const u32le = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
 const chunk = (type: string, data: Buffer) => Buffer.concat([u32(data.length), Buffer.from(type, "latin1"), data, u32(crc32(Buffer.concat([Buffer.from(type, "latin1"), data])))]);
 const ihdr = Buffer.concat([u32(64), u32(64), Buffer.from([8, 2, 0, 0, 0])]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** 64x64 RGB, not interlaced: 64 rows of a filter byte and 192 sample bytes. */
+const PIXELS = 64 * (1 + 64 * 3);
 function png(...extra: Buffer[]): Buffer {
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), ...extra, chunk("IDAT", deflateSync(noise("idat", 20_000))), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), ...extra, chunk("IDAT", deflateSync(noise("idat", PIXELS))), chunk("IEND", Buffer.alloc(0))]);
 }
 const text = (keyword: string, value: string | Buffer) => chunk("tEXt", Buffer.concat([Buffer.from(`${keyword}\0`, "latin1"), Buffer.from(value)]));
 const ztxt = (keyword: string, value: string) => chunk("zTXt", Buffer.concat([Buffer.from(`${keyword}\0\0`, "latin1"), deflateSync(value)]));
@@ -193,4 +198,138 @@ describe("6. short padded base64 logins in a credential context", () => {
   it("keeps short padded base64 outside a credential context", () => {
     expect(scan("hash.ts", 'const digest = "dTpxOFpyMg==";\n')).toEqual([]);
   });
+});
+
+/** Codex round 2 re-check: four more inputs, against findings 1 and 3. K is the review's base64 key. */
+const K = KEY_B64;
+const pemK = `-----BEGIN PRIVATE KEY-----\n${K}\n-----END PRIVATE KEY-----\n`;
+
+describe("round 2, 1: media exemptions need a well-formed file, and pixel data is not a hiding place", () => {
+  it.each([
+    ["UTF-16 PEM in an IDAT with no IHDR", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IDAT", Buffer.from(pemK, "utf16le")), chunk("IEND", Buffer.alloc(0))])],
+    ["UTF-16BE PEM in an IDAT with no IHDR", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IDAT", utf16be(pemK)), chunk("IEND", Buffer.alloc(0))])],
+    ["a base64 key in an IDAT that does not inflate to the image's size", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.from(K))), chunk("IEND", Buffer.alloc(0))])],
+    ["a base64 key after the zlib stream inside an IDAT", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", Buffer.concat([deflateSync(noise("idat", PIXELS)), Buffer.from(K)])), chunk("IEND", Buffer.alloc(0))])],
+    ["a base64 key in a chunk with a bad CRC", "logo.png", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), Buffer.concat([u32(64), Buffer.from("IDAT"), Buffer.from(K), u32(0)]), chunk("IEND", Buffer.alloc(0))])],
+    ["a UTF-16 base64 key inside JPEG scan data", "photo.jpg", Buffer.concat([Buffer.from([0xff, 0xd8]), segment(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])), scanData(5000), Buffer.from(K, "utf16le"), scanData(5000), Buffer.from([0xff, 0xd9])])],
+    ["a base64 key inside GIF image data", "anim.gif", (() => {
+      const lzw = Buffer.concat([noise("lzw", 2000), Buffer.from(K), noise("lzw2", 2000)]);
+      return Buffer.concat([Buffer.from("GIF89a"), Buffer.from([16, 0, 16, 0, 0, 0, 0]), Buffer.from([0x2c, 0, 0, 0, 0, 16, 0, 16, 0, 0, 2]), subBlocks(lzw), Buffer.from([0x3b])]);
+    })()],
+  ])("refuses %s", (_label, name, bytes) => {
+    expect(refused(name, bytes)).toBe(true);
+  });
+
+  it("refuses a UTF-16 AWS key id (shorter than a long run) inside JPEG scan data", () => {
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8]), segment(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])), scanData(5000), Buffer.from("AKIAQ8ZR2VLM0TXSYN7K", "utf16le"), scanData(5000), Buffer.from([0xff, 0xd9])]);
+    expect(isWellFormedMedia(jpg)).toBe(true);
+    expect(scan("photo.jpg", jpg)).toContain("AWS access key");
+  });
+
+  // Shorter than a long run (32), so only the format's own text extraction can find it.
+  const SHORT = "password = q8Zr2vLm0Tx";
+  it.each([
+    ["after a PNG's IEND", "logo.png", Buffer.concat([png(), Buffer.from(`\0${SHORT}\0`)])],
+    ["in a PNG tEXt chunk", "logo.png", png(text("Comment", SHORT))],
+    ["in a JPEG comment", "photo.jpg", jpeg(segment(0xfe, Buffer.from(SHORT)))],
+    ["in a GIF comment", "anim.gif", gif(SHORT)],
+    ["in WebP XMP", "hero.webp", webp(riff("XMP ", Buffer.from(SHORT)))],
+    ["in a TrueType name table", "font.ttf", ttf(SHORT)],
+    ["in a WOFF2 name table", "font.woff2", woff2(SHORT)],
+  ])("refuses a short credential assignment %s", (_label, name, bytes) => {
+    expect(isWellFormedMedia(bytes)).toBe(true);
+    expect(scan(name, bytes)).toContain('credential literal "password"');
+  });
+
+  it("keeps a well-formed PNG whose pixels are noise", () => {
+    expect(scan("screenshot.png", png())).toEqual([]);
+  });
+});
+
+describe("round 2: only a well-formed file earns an exemption", () => {
+  const woff = (() => {
+    // A WOFF 1 font with a zlib name table and a stored glyf table.
+    const str = utf16be("Inter");
+    const nameTable = Buffer.concat([u16(0), u16(1), u16(6 + 12), u16(3), u16(1), u16(0x409), u16(0), u16(str.length), u16(0), str, Buffer.alloc(64)]);
+    const packed = deflateSync(nameTable);
+    const glyf = noise("woff-glyf", 400);
+    const header = Buffer.alloc(44);
+    header.write("wOFF", 0, "latin1");
+    header.writeUInt32BE(0x00010000, 4);
+    header.writeUInt16BE(2, 12);
+    const at = 44 + 40;
+    const dir = Buffer.concat([Buffer.from("glyf"), u32(at), u32(glyf.length), u32(glyf.length), u32(0), Buffer.from("name"), u32(at + glyf.length), u32(packed.length), u32(nameTable.length), u32(0)]);
+    const file = Buffer.concat([header, dir, glyf, packed]);
+    file.writeUInt32BE(file.length, 8);
+    return file;
+  })();
+  const gifImage = Buffer.concat([Buffer.from([0x2c, 0, 0, 0, 0, 16, 0, 16, 0, 0, 2]), subBlocks(noise("lzw", 400))]);
+
+  it("accepts the well-formed fixtures the keep cases use", () => {
+    for (const [label, bytes] of [["png", png(text("Software", "x"))], ["jpeg", jpeg()], ["gif", gif("hello")], ["webp", webp()], ["ttf", ttf("Inter")], ["woff", woff], ["woff2", woff2("Inter")]] as const) {
+      expect(isWellFormedMedia(bytes), label).toBe(true);
+    }
+  });
+
+  it.each([
+    ["a PNG with no IHDR", Buffer.concat([PNG_SIGNATURE, chunk("IDAT", deflateSync(noise("idat", PIXELS))), chunk("IEND", Buffer.alloc(0))])],
+    ["a PNG with a bad CRC", (() => { const b = png(); b.writeUInt8(b.readUInt8(b.length - 13) ^ 1, b.length - 13); return b; })()],
+    ["a PNG with no IEND", png().subarray(0, -12)],
+    ["a PNG whose IDAT inflates to the wrong size", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(noise("idat", PIXELS - 1))), chunk("IEND", Buffer.alloc(0))])],
+    ["a PNG with bytes after its IDAT stream", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", Buffer.concat([deflateSync(noise("idat", PIXELS)), Buffer.from("x")])), chunk("IEND", Buffer.alloc(0))])],
+    ["a PNG with an invalid bit depth", Buffer.concat([PNG_SIGNATURE, chunk("IHDR", Buffer.concat([u32(64), u32(64), Buffer.from([3, 2, 0, 0, 0])])), chunk("IDAT", deflateSync(noise("idat", PIXELS))), chunk("IEND", Buffer.alloc(0))])],
+    ["a JPEG with no EOI", jpeg().subarray(0, -2)],
+    ["a GIF with no trailer", gif("hello").subarray(0, -1)],
+    ["a GIF with a truncated image", Buffer.concat([Buffer.from("GIF89a"), Buffer.from([16, 0, 16, 0, 0, 0, 0]), gifImage.subarray(0, 100)])],
+    ["a WebP chunk past the RIFF end", (() => { const b = webp(riff("XMP ", Buffer.from("<x/>"))); b.writeUInt32LE(b.readUInt32LE(4) - 2, 4); return b; })()],
+    ["the review's forged font directory", Buffer.concat([Buffer.from("0001000000040000ff000000", "hex"), Buffer.from(K)])],
+    ["a font table past the end of the file", (() => { const b = ttf("Inter"); b.writeUInt32BE(b.length, 12 + 16 + 8); return b; })()],
+    ["overlapping font tables", (() => { const b = ttf("Inter"); b.writeUInt32BE(b.readUInt32BE(12 + 8) + 4, 12 + 16 + 8); return b; })()],
+    ["a font table over its directory", (() => { const b = ttf("Inter"); b.writeUInt32BE(0, 12 + 16 + 8); return b; })()],
+    ["a font table with an unprintable tag", (() => { const b = ttf("Inter"); b[12 + 16] = 0; return b; })()],
+    ["a WOFF with the wrong length", (() => { const b = Buffer.from(woff); b.writeUInt32BE(b.length + 1, 8); return b; })()],
+    ["a WOFF table that does not inflate to its length", (() => { const b = Buffer.from(woff); b.writeUInt32BE(b.readUInt32BE(44 + 20 + 12) + 1, 44 + 20 + 12); return b; })()],
+    ["a WOFF2 with a corrupted table directory", (() => { const b = woff2("Inter"); return Buffer.concat([b.subarray(0, 48), Buffer.from([0xc0 | 10, 0x01]), b.subarray(50)]); })()],
+  ])("rejects %s", (_label, bytes) => {
+    expect(isWellFormedMedia(bytes)).toBe(false);
+  });
+});
+
+describe("round 2, 3: font directories are validated before anything is exempt", () => {
+  it("refuses the review's forged directory: four entries with invalid offsets, the key in the directory", () => {
+    expect(refused("font.ttf", Buffer.concat([Buffer.from("0001000000040000ff000000", "hex"), Buffer.from(K)]))).toBe(true);
+  });
+
+  it("refuses a key inside a table declared as glyphs", () => {
+    const font = ttf("Inter");
+    const glyf = font.indexOf(noise("glyf", 64));
+    expect(refused("font.ttf", Buffer.concat([font.subarray(0, glyf + 100), Buffer.from(K), font.subarray(glyf + 100 + K.length)]))).toBe(true);
+  });
+
+  it("refuses overlapping or out-of-file tables, and a directory that runs past the file", () => {
+    const font = ttf("Inter");
+    const name = Buffer.from(font);
+    name.writeUInt32BE(font.length + 4, 12 + 16 + 8); // the name table's offset, past the end
+    expect(refused("font.ttf", Buffer.concat([name, Buffer.from(K)]))).toBe(true);
+    const short = Buffer.concat([Buffer.from("00010000ffff0000ff000000", "hex"), Buffer.from(K)]);
+    expect(refused("font.ttf", short)).toBe(true);
+  });
+});
+
+describe("round 2, 2: wrapped columns keep a short last line", () => {
+  it.each([7, 9])("refuses a key wrapped at %i characters (last line shorter than 4)", (width) => {
+    expect(scan("notes.md", `${K.match(new RegExp(`.{1,${width}}`, "g"))!.join("\n")}\n`)).toContain("binary private key");
+  });
+});
+
+describe("round 2, 4: wrapped DER candidates are bounded", () => {
+  it("refuses, within a 128 MB heap, 14,000 lines that each announce a 64 KB DER value", () => {
+    const lines = Array.from({ length: 14_000 }, (_, i) => Buffer.from([0x30, 0x82, 0xff, 0xf8, i >> 8, i & 255]).toString("base64")).join("\n");
+    const module = new URL("../../packages/cli/src/eval/snapshot.ts", import.meta.url).pathname;
+    const code = `const { findSnapshotCredentials } = await import(${JSON.stringify(module)}); const hits = findSnapshotCredentials("notes.md", Buffer.from(process.argv[1])); console.log(JSON.stringify(hits));`;
+    const r = spawnSync(process.execPath, ["--max-old-space-size=128", "--input-type=module", "-e", code, lines], { encoding: "utf8", timeout: 60_000 });
+    expect(r.status, r.stderr).toBe(0);
+    const hits = JSON.parse(r.stdout) as string[];
+    expect(hits).toContain("wrapped base64 candidate limit; needs review");
+  }, 60_000);
 });

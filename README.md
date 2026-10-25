@@ -7,7 +7,7 @@ It has two parts:
 - **The Jarvis plugin for Claude Code**: the `/jarvis` command, skills and safety hooks. This is what you talk to.
 - **The `jarvis` CLI**: a TypeScript program that runs the checks, keeps the ledger, holds credentials in a broker, and later drives the unattended build loop.
 
-Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker and the protected checks work today. The unattended runner (`jarvis run`) and `jarvis setup` are still coming. Commands that don't exist yet are marked "coming" below.
+Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker, the protected checks and the unattended runner (`jarvis run`) work today. `jarvis setup` is still coming. Commands that don't exist yet are marked "coming" below.
 
 ## Requirements
 
@@ -110,6 +110,7 @@ From `jarvis --help` today:
 | `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
+| `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
 | `jarvis status` | The current run, rebuilt from its ledger |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
@@ -121,7 +122,6 @@ Coming:
 | Command | What it will do |
 |---|---|
 | `jarvis setup` | One-time setup: accounts, secrets, ntfy topics, taste profile |
-| `jarvis run [--detach]` | The unattended build loop. It keeps working after you close Claude Code |
 | `jarvis report [--open]` | The morning report |
 | `jarvis gate <name>` | Runs a protected check by hand (feedback only, never evidence) |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off |

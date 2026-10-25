@@ -163,7 +163,7 @@ describe("e2e: the runner loop on the fake claude (decision 84)", { timeout: 600
     const p = project("repair");
     await run(p);
     // A passing repair built on a head that T2's promotion moved past is merged and gated again
-    // (decision 96), so a second pass may follow; nothing fails after the first attempt.
+    // (decision 97), so a second pass may follow; nothing fails after the first attempt.
     const [first, ...rest] = gateStatuses(p, "T1", "ac1");
     expect(first).toBe("fail");
     expect(rest.length).toBeGreaterThan(0);
@@ -198,7 +198,7 @@ describe("e2e: the runner loop on the fake claude (decision 84)", { timeout: 600
     expect(clock.slept.length).toBeGreaterThan(0);
     expectNoFailures(p, "T1");
     // The limited session's work was never judged: one attempt, and every gate on it passed (a re-gate
-    // of its candidate merged onto T2's promotion may add a second pass, decision 96).
+    // of its candidate merged onto T2's promotion may add a second pass, decision 97).
     expect(gateStatuses(p, "T1", "ac1").length).toBeGreaterThan(0);
     expect(gateStatuses(p, "T1", "ac1").every((s) => s === "pass")).toBe(true);
     expect(new Set(taskEntries(p, "T1", "attempt_started").map((e) => e.attempt_id)).size).toBe(1);

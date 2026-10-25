@@ -313,7 +313,7 @@ export function expectLastGreenMoved(p: E2EProject, from: string | null, path?: 
 
 /**
  * Every revision the run branch moved to, and last-green, was gated and reviewed as that exact revision:
- * every check of the task it completed passed there, and its review passed there (decision 96).
+ * every check of the task it completed passed there, and its review passed there (decision 97).
  */
 export function expectPromotionsGated(p: E2EProject): void {
   const chain = git(p, p.repoPath, ["rev-list", "--first-parent", `${p.baseRevision}..${p.runBranch}`]).split("\n").filter(Boolean);

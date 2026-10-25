@@ -20,6 +20,37 @@ function deadPid(): number {
   const r = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
   return Number.parseInt(r.stdout, 10);
 }
+/**
+ * Lock time that passes only when the lock reads its clock (`tick` per read) or sleeps, never because the
+ * machine is loaded: a deadline then means "this much lock work", deterministically.
+ */
+function virtualClock(tick = 1): { t: number; now: () => number; sleep: (ms: number) => void } {
+  const c = { t: 0, now: () => (c.t += tick), sleep: (ms: number) => void (c.t += ms) };
+  return c;
+}
+const ROOT_NONCE = "ab".repeat(12);
+/**
+ * A dead lock with `count` stranded bounded reclaim markers below it, as repeated reclaimer crashes leave
+ * them. Every owner is `dead` except marker number `liveAt`, owned by this (live) process.
+ * Returns [lock, marker 1, ..., marker count] and the owner nonce of each.
+ */
+function strandedChain(dir: string, count: number, dead: number, liveAt = -1): { paths: string[]; owners: string[] } {
+  let path = join(dir, "ledger.lock");
+  let owner = ROOT_NONCE;
+  writeFileSync(path, `${dead} ${owner}`);
+  const paths = [path];
+  const owners = [owner];
+  for (let depth = 0; depth < count; depth++) {
+    const digest = createHash("sha256").update(`${path.split("/").at(-1)!}\0${owner}`).digest("hex");
+    path = join(dir, depth === 0 ? `ledger.lock.reclaim.${owner}` : `ledger.lock.reclaim.${ROOT_NONCE}.${digest}`);
+    owner = depth.toString(16).padStart(24, "0");
+    writeFileSync(path, `${depth + 1 === liveAt ? process.pid : dead} ${owner}`);
+    paths.push(path);
+    owners.push(owner);
+  }
+  return { paths, owners };
+}
+const lockFiles = (dir: string) => readdirSync(dir).filter((f) => f.startsWith("ledger.lock"));
 const lines = (dir: string) => readFileSync(join(dir, "ledger.jsonl"), "utf8").trimEnd().split("\n");
 
 describe("ledger (decisions 41, 49)", () => {
@@ -214,28 +245,73 @@ describe("ledger (decisions 41, 49)", () => {
   it("recovers repeated crashed reclaimers with bounded names and respects a live deepest owner", () => {
     const dead = deadPid();
     const { dir } = fresh(2);
-    const rootNonce = "ab".repeat(12);
-    let path = join(dir, "ledger.lock");
-    let owner = rootNonce;
-    writeFileSync(path, `${dead} ${owner}`);
-    const markerNames: string[] = [];
-    for (let depth = 0; depth < 40; depth++) {
-      const basename = path.split("/").at(-1)!;
-      const digest = createHash("sha256").update(`${basename}\0${owner}`).digest("hex");
-      path = join(dir, depth === 0 ? `ledger.lock.reclaim.${owner}` : `ledger.lock.reclaim.${rootNonce}.${digest}`);
-      owner = depth.toString(16).padStart(24, "0");
-      writeFileSync(path, `${depth === 39 ? process.pid : dead} ${owner}`);
-      markerNames.push(path.split("/").at(-1)!);
-    }
-    expect(Math.max(...markerNames.map((name) => Buffer.byteLength(name)))).toBeLessThan(256);
-    const quick = Ledger.open(dir, { lockTimeoutMs: 100 });
+    const { paths, owners } = strandedChain(dir, 40, dead, 40);
+    expect(Math.max(...paths.map((p) => Buffer.byteLength(p.split("/").at(-1)!)))).toBeLessThan(256);
+    const before = paths.map((p) => readFileSync(p, "utf8"));
+    const quick = Ledger.open(dir, { lockTimeoutMs: 100, clock: virtualClock() });
     expect(() => quick.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
-    expect(readFileSync(join(dir, "ledger.lock"), "utf8")).toBe(`${dead} ${rootNonce}`);
-    expect(readFileSync(path, "utf8")).toBe(`${process.pid} ${owner}`);
-    writeFileSync(path, `${dead} ${owner}`);
-    expect(Ledger.open(dir, { lockTimeoutMs: 3000 }).append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    // The live deepest owner is respected, and so is every dead marker above it: nothing was unwound.
+    expect(paths.map((p) => readFileSync(p, "utf8"))).toEqual(before);
+    expect(readFileSync(paths[40]!, "utf8")).toBe(`${process.pid} ${owners[40]}`);
+    writeFileSync(paths[40]!, `${dead} ${owners[40]}`);
+    expect(Ledger.open(dir, { lockTimeoutMs: 3000, clock: virtualClock() }).append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
     expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
-    expect(readdirSync(dir).filter((f) => f.startsWith("ledger.lock"))).toEqual([]);
+    expect(lockFiles(dir)).toEqual([]);
+  });
+
+  // Codex round 18 D: recovery restarted its descent from the root after every marker, so unwinding a
+  // stranded chain cost quadratic steps and one durable claim per marker, all charged to the deadline.
+  it("unwinds a long stranded chain without charging its slow durable claims to the lock deadline", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    strandedChain(dir, 40, dead);
+    // Each marker removal costs 100 ms, as an fsynced claim can on a loaded disk: 4 s of unwinding.
+    const clock = virtualClock();
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 1000, clock, onLockStep: (step) => void (step === "unwound" && (clock.t += 100)) });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(clock.t).toBeGreaterThan(4000);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(lockFiles(dir)).toEqual([]);
+  });
+
+  it("descends a stranded chain once, not once per marker", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    strandedChain(dir, 40, dead);
+    // One tick per clock read: a descent per marker needs about 40 * 41 / 2 reads, a single descent about 41.
+    const ledger = Ledger.open(dir, { lockTimeoutMs: 200, clock: virtualClock(1) });
+    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(lockFiles(dir)).toEqual([]);
+  });
+
+  it("stops unwinding when a live competitor claims the next parent mid-unwind, and never removes it", () => {
+    const dead = deadPid();
+    const { dir } = fresh(2);
+    const { paths } = strandedChain(dir, 5, dead);
+    const before = paths.map((p) => readFileSync(p, "utf8"));
+    const rival = `${process.pid} ${"12".repeat(12)}`;
+    let raced = false;
+    const ledger = Ledger.open(dir, {
+      lockTimeoutMs: 100,
+      clock: virtualClock(),
+      onLockStep: (step) => {
+        if (step !== "unwound" || raced) return;
+        raced = true;
+        // The deepest marker is gone; its name is the claim on its parent. A live rival takes it first.
+        expect(existsSync(paths[5]!)).toBe(false);
+        writeFileSync(paths[5]!, rival);
+      },
+    });
+    expect(() => ledger.append({ kind: "steer", actor: "runner", data: {} })).toThrow(/not acquired/);
+    expect(raced).toBe(true);
+    expect(paths.slice(0, 5).map((p) => readFileSync(p, "utf8"))).toEqual(before.slice(0, 5));
+    expect(readFileSync(paths[5]!, "utf8")).toBe(rival);
+    expect(verifyLedger(dir).entries).toHaveLength(2);
+    writeFileSync(paths[5]!, `${dead} ${"12".repeat(12)}`); // the rival dies holding its claim
+    expect(Ledger.open(dir, { clock: virtualClock() }).append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
+    expect(lockFiles(dir)).toEqual([]);
   });
 
   it("never recreates a legacy descendant after it disappears while a bounded competitor claims the parent", () => {
@@ -254,6 +330,7 @@ describe("ledger (decisions 41, 49)", () => {
     let raced = false;
     const ledger = Ledger.open(dir, {
       lockTimeoutMs: 150,
+      clock: virtualClock(),
       onLockStep: (step) => {
         if (step !== "legacy-observed" || raced) return;
         raced = true;

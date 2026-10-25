@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { verifyWebObservation } from "../../packages/cli/src/lanes/verify.ts";
 
 const url = "http://localhost:3000/habits";
-const observation = () => ({ kind: "qa-browser", url, pages: [375, 768, 1440].map(width => ({ width, url, accessibilityTree: "- button Add habit", axe: { version: "4.10.3", violations: [] as { id: string; impact: string }[], incomplete: [] }, screenshot: Buffer.from("fake-image").toString("base64") })) });
+const observation = () => ({ kind: "qa-browser", url, pages: [375, 768, 1440].map(width => ({ width, url, frameCount: 1, frameIds: ["main"], frames: [{ id: "main", axe: { version: "4.10.3", violations: [], incomplete: [] } }], accessibilityTree: "- button Add habit", axe: { version: "4.10.3", violations: [] as { id: string; impact: string }[], incomplete: [] }, screenshot: Buffer.from("fake-image").toString("base64") })) });
 
 describe("protected browser verification", () => {
   it("accepts complete browser observations for the exact local target", () => {

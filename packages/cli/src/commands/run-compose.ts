@@ -17,6 +17,7 @@ import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from "../review/index.ts";
 import { readInstalledChecks, type AuthoredCheck } from "../runner/checks-author.ts";
+import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions } from "../runner/loop.ts";
 import { readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
 import { rebuildState } from "../runner/state.ts";
@@ -108,6 +109,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
       preflight: async () => ({ ok: await preflight() }),
     }),
     review, reprobe,
+    footprint: createFootprintLog({ worktrees: worktreeRoot, caches: [cacheRoot], evidence: join(context.projectDir, "evidence") }),
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
   };

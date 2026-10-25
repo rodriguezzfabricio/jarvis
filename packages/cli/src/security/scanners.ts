@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { runSession, type SessionSpec, type SessionOutcome } from "../proc/session.ts";
+import { offlineArgs, osvCacheReady, reportedScannerVersion } from "./offline.ts";
 import { scannerEnvironment, withScannerRuntime, type ScannerRuntime } from "./runtime.ts";
 
 export const SCANNERS = ["gitleaks", "semgrep", "osv-scanner"] as const;
@@ -12,6 +13,8 @@ export interface ScannerPin {
   /** Reviewed, offline CLI arguments. @rules is replaced with the protected rules file. */
   args: readonly string[];
   rulesFile?: string;
+  /** Downloaded cache source, copied into protected fixtures at installation. */
+  databaseDir?: string;
   /** Approved cache configuration; database paths must resolve inside the read-only fixtures. */
   env?: Record<string, string>;
 }
@@ -121,10 +124,11 @@ export function scannerNotRun(tool: Scanner): ScanResult {
 }
 
 async function scannerVersion(tool: Scanner, pin: ScannerPin, cwd: string, deps: ScannerDeps & ScannerRuntime): Promise<{ ok: boolean; version?: string }> {
-  const spec = session(pin, cwd, [tool === "gitleaks" ? "version" : "--version"], deps.timeoutMs ?? 10_000, deps);
+  const versionPin = { ...pin, env: Object.fromEntries(Object.entries(pin.env ?? {}).filter(([key]) => key !== "OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY")) };
+  const spec = session(versionPin, cwd, [tool === "gitleaks" ? "version" : "--version"], deps.timeoutMs ?? 10_000, deps);
   try {
     const r = await (deps.spawn ?? runSession)(spec);
-    const versions = Array.from(r.stdout.matchAll(/(?<![\w.+-])v?(\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![\w.+-])/g), (m) => m[1]);
+    const versions = reportedScannerVersion(tool, r.stdout);
     return { ok: r.code === 0 && !r.timedOut && !r.overflowed && versions.length === 1 && versions[0] === pin.version, ...(versions.length === 1 ? { version: versions[0]! } : {}) };
   } catch { return { ok: false }; }
 }
@@ -136,10 +140,15 @@ export async function runScanner(tool: Scanner, pin: ScannerPin | undefined, cwd
   if (suppressionPresent(tool, cwd)) return error("suppression file present");
   if (tool === "gitleaks" && !fullyRedacted(pin.args)) return error("gitleaks requires full redaction");
   return withScannerRuntime(cwd, deps, async (runtime) => {
+    if (Object.keys(pin.env ?? {}).some((key) => key !== "OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY")) scannerEnvironment(pin, runtime);
+    let approvedArgs: readonly string[];
+    try { approvedArgs = offlineArgs(tool, pin, cwd, runtime); }
+    catch { return error(`invalid offline ${tool === "osv-scanner" ? "osv" : tool} configuration`); }
+    if (tool === "osv-scanner" && !osvCacheReady(pin, cwd, runtime)) return { tool, status: "not_run", detail: "not run: osv database missing", findings: [] };
     if (!(await scannerVersion(tool, pin, cwd, runtime)).ok) return scannerNotRun(tool);
     const reportDir = tool === "gitleaks" ? mkdtempSync(join(runtime.tmpDir, "gitleaks-report-")) : undefined;
     const reportPath = reportDir ? join(reportDir, "report.json") : undefined;
-    const args = tool === "semgrep" ? [...pin.args, "--disable-nosem"] : pin.args.map((a) => reportPath ? a.replaceAll("/dev/stdout", reportPath).replaceAll("@report", reportPath) : a);
+    const args = approvedArgs.map((a) => reportPath ? a.replaceAll("/dev/stdout", reportPath).replaceAll("@report", reportPath) : a);
     try {
       const r = await (runtime.spawn ?? runSession)(session(pin, cwd, args, runtime.timeoutMs ?? 120_000, runtime));
       if (r.timedOut) return error("timeout");

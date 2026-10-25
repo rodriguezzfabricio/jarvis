@@ -988,6 +988,9 @@ The Opus review of the runner loop found that two tasks started from the same he
 
 *From:* the Opus review of loop.ts and the integration of lane 11, Oct 24.
 
+### 101. In golden task 02, the baseline gets the same approved spec as Jarvis (new; Oct 24; the integrator under decision 81's thresholds; Fabricio can veto; tightens 47, 97)
+Task 02's hidden checks drive a command-line contract that the approved spec defines (built from task 01's defaults). A baseline that only sees the original request can't know that contract, so it would fail the black-box checks by construction, and a claimed done would count as a false done. That would measure what the baseline was told, not how well it builds. So the baseline's prompt for task 02 includes the same approved spec text, pasted after the request. Jarvis's edge then has to come from the build loop: checks, review, repair. The two baseline runs of task 02 recorded before this decision are kept as history but aren't counted for the stage 3 proof; two new runs replace them.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

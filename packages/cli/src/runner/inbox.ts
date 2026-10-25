@@ -139,6 +139,21 @@ function readItem(path: string): { note: string } | { reason: string } {
   finally { if (fd !== undefined) closeSync(fd); }
 }
 
+function skippedItem(entries: readonly LedgerEntry[], file: string): boolean {
+  return entries.some((e) => e.actor === "runner" && e.kind === "reconciled"
+    && (e.data as { type?: unknown } | null)?.type === "inbox_skipped"
+    && (e.data as { inboxItem?: unknown }).inboxItem === file);
+}
+
+function recordArchiveFailure(ledger: Ledger, file: string): InboxIssue | undefined {
+  return ledger.transact((entries, add) => {
+    if (skippedItem(entries, file)) return undefined;
+    const reason = "could not archive inbox item";
+    add({ kind: "reconciled", actor: "runner", data: { type: "inbox_skipped", file, reason, inboxItem: file } });
+    return { id: file, reason };
+  });
+}
+
 /** Ledger acknowledgment precedes archival; replay after a crash cannot duplicate a file's entry. */
 export function ingestSteerNotes(projectDir: string, ledger: Ledger, options: IngestSteerOptions = {}): InboxIngestion {
   if (resolve(projectDir) !== resolve(ledger.dir)) throw new Error("inbox project must match the ledger root");
@@ -149,6 +164,7 @@ export function ingestSteerNotes(projectDir: string, ledger: Ledger, options: In
   const archiveDir = join(dir, "ingested");
   mkdirSync(archiveDir, { recursive: true, mode: 0o700 }); plainDirectory(archiveDir);
   for (const file of readdirSync(dir).filter((name) => !name.startsWith(".") && name.endsWith(".json")).sort()) {
+    if (skippedItem(ledger.entries(), file)) continue;
     const item = readItem(join(dir, file));
     const entry = ledger.transact((entries, add) => {
       if (entries.some((e) => e.actor === "runner" && (e.kind === "steer" || e.kind === "reconciled") && (e.data as { inboxItem?: unknown } | null)?.inboxItem === file)) return undefined;
@@ -158,8 +174,13 @@ export function ingestSteerNotes(projectDir: string, ledger: Ledger, options: In
     });
     if (entry?.kind === "steer") result.entries.push(entry);
     if (entry?.kind === "reconciled" && "reason" in item) result.skipped.push({ id: file, reason: item.reason });
-    (options.archive ?? renameSync)(join(dir, file), join(archiveDir, file));
-    syncDirectory(archiveDir); syncDirectory(dir);
+    try {
+      (options.archive ?? renameSync)(join(dir, file), join(archiveDir, file));
+      syncDirectory(archiveDir); syncDirectory(dir);
+    } catch {
+      const skipped = recordArchiveFailure(ledger, file);
+      if (skipped) result.skipped.push(skipped);
+    }
   }
   return result;
 }

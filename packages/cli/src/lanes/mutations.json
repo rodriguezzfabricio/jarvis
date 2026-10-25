@@ -1,0 +1,362 @@
+[
+  {
+    "name": "standards UI lane ignores changed-file scope",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "add(\"UX/UI\", p => ui(p, input.facts));",
+    "replacement": "add(\"UX/UI\", () => true);"
+  },
+  {
+    "name": "standards read-only triage activates build lanes",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "if ([\"question\", \"review\", \"release\"].includes(input.type)) return [];",
+    "replacement": "if (false) return [];"
+  },
+  {
+    "name": "standards paths allow traversal",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "p.split(\"/\").every(s => s !== \"\" && s !== \".\" && s !== \"..\")",
+    "replacement": "true"
+  },
+  {
+    "name": "design duplicate token overwrites approved value",
+    "file": "packages/cli/src/lanes/design-format.ts",
+    "anchor": "if (values.has(key) || groups.has(key))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "design broken token reference accepted",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (!doc.values.has(target) && !doc.groups.has(target))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "design raw hex bypasses tokens",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "add(match.index, \"raw-color\", \"Use a color token instead of a raw hex color\")",
+    "replacement": "void match"
+  },
+  {
+    "name": "design off-scale dimensions accepted",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (!scale.includes(kind === \"spacing\" ? Math.abs(value) : value))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "design low contrast accepted",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "contrast(foreground, background) < 4.5",
+    "replacement": "false"
+  },
+  {
+    "name": "AI tell exception has no reviewed source",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "if (!exception.reason.trim() || !exception.source.trim())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "AI tells scan inherited lines",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "if (options.changedLines && !(options.changedLines[source.path] ?? []).some(r => f.line >= r.start && f.line <= r.end)) return;",
+    "replacement": "if (false) return;"
+  },
+  {
+    "name": "QA accepts external browser target",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "![\"localhost\", \"127.0.0.1\", \"[::1]\"].includes(url.hostname)",
+    "replacement": "false"
+  },
+  {
+    "name": "QA permits credentials in browser URL",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": " || url.username || url.password",
+    "replacement": ""
+  },
+  {
+    "name": "QA test path becomes command option",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "p.startsWith(\"-\") || ",
+    "replacement": ""
+  },
+  {
+    "name": "QA accepts credential and runtime injection environment",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "if (Object.keys(options.env).some(k => !ENV.has(k)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA accepts timed-out or truncated output",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "outcome.code === 0 && !outcome.timedOut && !outcome.overflowed",
+    "replacement": "outcome.code === 0"
+  },
+  {
+    "name": "QA Maestro is resolved through PATH",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "if (options.maestroBin && !isAbsolute(options.maestroBin))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA agent output becomes verified evidence",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "return { status, verified: false, checks };",
+    "replacement": "return { status, verified: true, checks };"
+  },
+  {
+    "name": "QA missing native target looks tested",
+    "file": "packages/cli/src/lanes/qa.ts",
+    "anchor": "status: webCovered ? \"web-only\" : \"not run\"",
+    "replacement": "status: \"observed\""
+  },
+  {
+    "name": "QA missing protected definition passes",
+    "file": "packages/cli/src/lanes/gates.ts",
+    "anchor": "results.push({ check, status: \"not run\", reason: \"no protected definition\" });",
+    "replacement": "results.push({ check, status: \"pass\", reason: \"no protected definition\" });"
+  },
+  {
+    "name": "QA ignores gate tampering verdict",
+    "file": "packages/cli/src/lanes/gates.ts",
+    "anchor": "results.push({ check, status: result.status, result });",
+    "replacement": "results.push({ check, status: \"pass\", result });"
+  },
+  {
+    "name": "QA skips accessibility-tree-first workflow",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "const accessibilityTree = await page.locator(\"body\").ariaSnapshot();\n        const axe = await isolatedAxe(page, runtime.axeSource);",
+    "replacement": "const axe = await isolatedAxe(page, runtime.axeSource);\n        const accessibilityTree = await page.locator(\"body\").ariaSnapshot();"
+  },
+  {
+    "name": "QA drops responsive screenshots",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "for (const width of [375, 768, 1440])",
+    "replacement": "for (const width of [375])"
+  },
+  {
+    "name": "QA serious accessibility issues accepted",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "item.impact === \"serious\" || item.impact === \"critical\" || item.impact === null",
+    "replacement": "false"
+  },
+  {
+    "name": "review UI helpers escape screen checks",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "(script && (root || frameworkSource))",
+    "replacement": "false"
+  },
+  {
+    "name": "review UI extensions escape checks by naming",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "/\\.(?:tsx|jsx|svelte|vue|html?|css|scss|sass|less|swift|xib|storyboard|dart)$/i.test(p)",
+    "replacement": "false"
+  },
+  {
+    "name": "review compose-only change escapes security",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "/(^|\\/)[\\w.-]*compose[\\w.-]*\\.ya?ml$/i.test(p)",
+    "replacement": "false"
+  },
+  {
+    "name": "review explicit security scope ignored",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": " || input.facts.securityFiles?.includes(p) === true",
+    "replacement": ""
+  },
+  {
+    "name": "review UI gate drops Impeccable source scan",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "[\"impeccable-source\", \"ai-tells\"",
+    "replacement": "[\"ai-tells\""
+  },
+  {
+    "name": "review UI gate drops Impeccable URL scan",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "[\"impeccable-url\", \"axe\", \"playwright\"]",
+    "replacement": "[\"axe\", \"playwright\"]"
+  },
+  {
+    "name": "review Expo dependency misclassifies web path",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "  return \"web\";\n}\n\nfunction ui",
+    "replacement": "  return facts.dependencies?.expo ? \"ios\" : \"web\";\n}\n\nfunction ui"
+  },
+  {
+    "name": "review CSS double slash hides UI findings",
+    "file": "packages/cli/src/lanes/source.ts",
+    "anchor": "if (/\\.(?:[cm]?[jt]sx?|swift|kt|kts)$/i.test(path))",
+    "replacement": "if (true)"
+  },
+  {
+    "name": "review locale affects finding order",
+    "file": "packages/cli/src/lanes/source.ts",
+    "anchor": "a < b ? -1 : a > b ? 1 : 0",
+    "replacement": "a.localeCompare(b)"
+  },
+  {
+    "name": "review token findings escape changed line scope",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (options.changedLines && !(options.changedLines[source.path] ?? []).some(r => f.line >= r.start && f.line <= r.end)) return;",
+    "replacement": "if (false) return;"
+  },
+  {
+    "name": "review plain text mistaken for hex color",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (colorContext(text, match.index, match[0]))",
+    "replacement": "if (true)"
+  },
+  {
+    "name": "review border and responsive dimensions treated as tokens",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (/\\b(?:max-width|maxWidth)\\s*:/.test(prefix) || (Number(match[1]) === 1 && /\\bborder(?:-(?:top|bottom|left|right|width))?\\s*:/.test(prefix))) continue;",
+    "replacement": "if (false) continue;"
+  },
+  {
+    "name": "review media query dimensions treated as spacing",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": ".replace(/@(?:media|container)[^{]+/g, s => s.replace(/[^\\r\\n]/g, \" \"))",
+    "replacement": ""
+  },
+  {
+    "name": "review domain size mistaken for type size",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "if (match[3] && (!source.path.endsWith(\".swift\") || !/\\.(?:font|custom|system)\\([^;\\n]*$/.test(text.slice(Math.max(0, match.index - 200), match.index)))) continue;",
+    "replacement": "if (false) continue;"
+  },
+  {
+    "name": "review indigo hex escapes tells",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "r > g * 0.9",
+    "replacement": "r > g * 1.15"
+  },
+  {
+    "name": "review RGB purple escapes tells",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "if (purpleRgb(Number(m[1]) * (m[2] ? 2.55 : 1), Number(m[3]) * (m[4] ? 2.55 : 1), Number(m[5]) * (m[6] ? 2.55 : 1)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review oklch purple escapes tells",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "if (chroma >= 0.08 && hue >= 255 && hue <= 325)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review job metadata is called template chrome",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "/\\bA\\s+\u00b7\\s+B\\s+\u00b7\\s+C\\b/g",
+    "replacement": "/\\b[A-Za-z]+\\s+\u00b7\\s+[A-Za-z]+\\s+\u00b7\\s+[A-Za-z]+\\b/g"
+  },
+  {
+    "name": "review unapproved rehashed QA toolchain accepted",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "if (!verified.ok)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review browser manifest digest ignored",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "sha(manifestPath) !== manifestHash",
+    "replacement": "false"
+  },
+  {
+    "name": "review browser tool hashes ignored",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "sha(path) !== files[key]",
+    "replacement": "false"
+  },
+  {
+    "name": "review driver loads toolchain from candidate",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "if (inside(realpathSync(repo), root))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review browser driver can come from candidate",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "if (inside(candidate, real) || !inside(realpathSync(fixtures), real))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review toolchain package version pin ignored",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "(JSON.parse(readFileSync(child(root, pin.package), \"utf8\")) as {version?: unknown}).version !== pin.version",
+    "replacement": "false"
+  },
+  {
+    "name": "review axe evaluates without isolated context",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "contextId: world.executionContextId",
+    "replacement": "contextId: undefined"
+  },
+  {
+    "name": "review axe version pin ignored",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "if (!nonempty(expected.axeVersion) || axe.version !== expected.axeVersion)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review final URL redirect ignored",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "if (page.url !== url)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "review web component code escapes security",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "code(p) || /\\.(?:tsx|jsx|svelte|vue)$/i.test(p)",
+    "replacement": "(code(p) && !/\\.(?:tsx|jsx|svelte|vue)$/i.test(p))"
+  },
+  {
+    "name": "review JSX emoji escapes icon scan",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "(?:\\{\\s*[\"'])?",
+    "replacement": ""
+  },
+  {
+    "name": "review obsolete facts silently accepted",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "    performanceFiles: z.array(path).optional(), securityFiles: z.array(path).optional(),\n  }).strict(),",
+    "replacement": "    performanceFiles: z.array(path).optional(), securityFiles: z.array(path).optional(),\n  }).passthrough(),"
+  },
+  {
+    "name": "review browser executable comes from writable cache",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": ", executablePath: verified.chromiumExecutable",
+    "replacement": ""
+  },
+  {
+    "name": "review broader root hides native target",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": ".sort((a, b) => b.root.length - a.root.length)",
+    "replacement": ".sort((a, b) => a.root.length - b.root.length)"
+  },
+  {
+    "name": "review URL captured before screenshot redirect",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "const screenshot = (await page.screenshot({ fullPage: true })).toString(\"base64\");\n        const finalUrl = page.url();",
+    "replacement": "const finalUrl = page.url();\n        const screenshot = (await page.screenshot({ fullPage: true })).toString(\"base64\");"
+  },
+  {
+    "name": "review browser resolves candidate Playwright",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "createRequire(resolve(manifestPath))(verified.playwrightModule)",
+    "replacement": "createRequire(resolve(repo, \"package.json\"))(\"playwright\")"
+  },
+  {
+    "name": "review browser reads candidate axe source",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "readFileSync(verified.axeSource, \"utf8\")",
+    "replacement": "readFileSync(join(repo, \"node_modules\", \"axe-core\", \"index.js\"), \"utf8\")"
+  },
+  {
+    "name": "review Dockerfile-only change escapes security",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "outreach|permissions|Dockerfile",
+    "replacement": "outreach|permissions"
+  },
+  {
+    "name": "review script line comments become findings",
+    "file": "packages/cli/src/lanes/source.ts",
+    "anchor": "mask(i, last); i = last - 1;",
+    "replacement": "if (!line) mask(i, last); i = last - 1;"
+  }
+]

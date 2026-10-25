@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runGate, type GateInput, type GateResult } from "../checks/gate.ts";
@@ -35,7 +35,11 @@ export interface UntrustedTaskNotes {
   truncated: boolean;
 }
 export interface CandidateRevision { revision: string; ref: string }
-export interface GitSeams { git?: RunnerGit }
+export interface WorkspaceFileChecks {
+  lstat?: (path: string) => Stats;
+  fstat?: (fd: number) => Stats;
+}
+export interface GitSeams { git?: RunnerGit; files?: WorkspaceFileChecks }
 export interface CandidateBranchOptions extends GitSeams { home?: string }
 export interface PromoteInput extends GitSeams {
   repoPath: string;
@@ -131,12 +135,15 @@ function validateWorkspace(w: TaskWorkspace, git: RunnerGit = safeGit): void {
   requireRevision(command(git, w.path, ["rev-parse", "--verify", "HEAD^{commit}"], w.home).toString().trim());
 }
 
-function validateSymlinks(root: string): void {
+function validateSymlinks(root: string, files: WorkspaceFileChecks = {}): void {
+  const stat = files.lstat ?? lstatSync;
+  const device = stat(root).dev;
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (dir === root && entry.name === ".git") continue;
       const path = join(dir, entry.name);
-      const st = lstatSync(path);
+      const st = stat(path);
+      if (st.dev !== device) throw new Error(`workspace crosses a device boundary: ${path}`);
       if (st.isFile() && st.nlink > 1) throw new Error(`hardlink refused: ${path}`);
       if (st.isSymbolicLink()) {
         const link = readlinkSync(path);
@@ -231,7 +238,7 @@ export function readTaskNotes(w: TaskWorkspace, maxBytes = 64 * 1024): Untrusted
   }
 }
 
-function validateTree(git: RunnerGit, w: TreeContext, tree: string): void {
+function validateTree(git: RunnerGit, w: TreeContext, tree: string): string[] {
   validateRunnerChanges(git, w, tree);
   const entries = command(git, w.path, ["ls-tree", "-r", "-z", "--full-tree", tree], w.home).toString().split("\0").filter(Boolean);
   for (const entry of entries) {
@@ -240,13 +247,50 @@ function validateTree(git: RunnerGit, w: TreeContext, tree: string): void {
     if (tab < 0 || path.split("/").some((part) => /^\.git[. ]*$/i.test(part) || /^git~[0-9]+$/i.test(part))) throw new Error(`candidate touches git internals: ${path}`);
     if (entry.startsWith("160000 ")) throw new Error(`candidate submodules are not supported: ${path}`);
   }
+  return entries;
+}
+
+function regularFile(fd: number, path: string, device: number, files: WorkspaceFileChecks): Stats {
+  const st = (files.fstat ?? fstatSync)(fd);
+  if (!st.isFile()) throw new Error(`candidate must be a regular file: ${path}`);
+  if (st.nlink !== 1) throw new Error(`candidate has multiple links or was unlinked: ${path}`);
+  if (st.dev !== device) throw new Error(`candidate file crosses a device boundary: ${path}`);
+  return st;
+}
+
+function validateBlob(path: string, blob: string, device: number, files: WorkspaceFileChecks): void {
+  const flags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+  const fd = openSync(path, flags);
+  try {
+    const st = regularFile(fd, path, device, files);
+    const hash = createHash(blob.length === 64 ? "sha256" : "sha1").update(`blob ${st.size}\0`);
+    const buffer = Buffer.alloc(64 * 1024);
+    let remaining = st.size + 1;
+    while (remaining > 0) {
+      const n = readSync(fd, buffer, 0, Math.min(buffer.length, remaining), null);
+      if (n === 0) break;
+      hash.update(buffer.subarray(0, n));
+      remaining -= n;
+    }
+    regularFile(fd, path, device, files);
+    if (hash.digest("hex") !== blob) throw new Error(`candidate content does not match its blob: ${path}`);
+  } finally { closeSync(fd); }
+}
+
+/** Reopen the files after staging: the walk alone cannot detect a swap during git add. */
+function validateCandidateFiles(root: string, entries: readonly string[], files: WorkspaceFileChecks = {}): void {
+  const device = (files.lstat ?? lstatSync)(root).dev;
+  for (const entry of entries) {
+    const match = /^100(?:644|755) blob ([a-f0-9]{40}|[a-f0-9]{64})\t/.exec(entry);
+    if (match) validateBlob(join(root, entry.slice(match[0].length)), match[1]!, device, files);
+  }
 }
 
 /** Call only after the session has stopped. A single new commit discards agent-controlled history. */
 export function commitCandidate(w: TaskWorkspace, seams: GitSeams = {}): CandidateRevision {
   const git = seams.git ?? safeGit;
   validateWorkspace(w, git);
-  validateSymlinks(w.path);
+  validateSymlinks(w.path, seams.files);
   const run = (args: readonly string[]) => command(git, w.path, args, w.home).toString().trim();
   // Inspect forced additions before rebuilding the index from the trusted base.
   validateRunnerChanges(git, w);
@@ -254,7 +298,8 @@ export function commitCandidate(w: TaskWorkspace, seams: GitSeams = {}): Candida
   run(["read-tree", w.baseRevision]);
   run(["add", "--all", "--", "."]);
   const tree = run(["write-tree"]);
-  validateTree(git, w, tree);
+  const entries = validateTree(git, w, tree);
+  validateCandidateFiles(w.path, entries, seams.files);
   const revision = run(["commit-tree", tree, "-p", w.baseRevision, "-m", `Jarvis candidate ${w.taskId}/${w.attemptId}`]);
   requireRevision(revision);
   run(["update-ref", "--no-deref", "HEAD", revision]);

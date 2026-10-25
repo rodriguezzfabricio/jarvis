@@ -64,12 +64,44 @@ describe("runner-owned inbox", () => {
     expect(observed).toBe(true);
   });
 
-  it("deduplicates a crash after the ledger append but before archiving", () => {
-    const ledger = run(); submitSteer(ledger.dir, "AC1");
-    expect(() => ingestSteerNotes(ledger.dir, ledger, { archive: () => { throw new Error("crash"); } })).toThrow("crash");
+  it("records an archive failure once and advances past it on later passes", () => {
+    const ledger = run(); submitSteer(ledger.dir, "AC1", { id: () => "first" });
+    const result = ingestSteerNotes(ledger.dir, ledger, { archive: () => { throw new Error("archive unavailable"); } });
+    expect(result.entries).toHaveLength(1);
+    expect(result.skipped).toEqual([{ id: "first.json", reason: "could not archive inbox item" }]);
     expect(ingestSteerNotes(ledger.dir, Ledger.open(ledger.dir)).entries).toEqual([]);
     expect(ledger.entries().filter((e) => e.kind === "steer")).toHaveLength(1);
-    expect(readdirSync(join(ledger.dir, "inbox", "ingested"))).toHaveLength(1);
+    expect(ledger.entries().filter((e) => e.kind === "reconciled")).toMatchObject([{ actor: "runner", data: { type: "inbox_skipped", inboxItem: "first.json" } }]);
+    expect(readdirSync(join(ledger.dir, "inbox", "ingested"))).toEqual([]);
+  });
+
+  it("continues after an archive destination is a folder and persists cursor advancement", () => {
+    const ledger = run();
+    submitSteer(ledger.dir, "AC1", { id: () => "a" });
+    submitSteer(ledger.dir, "AC4", { id: () => "b" });
+    const dir = join(ledger.dir, "inbox");
+    mkdirSync(join(dir, "ingested", "a.json"), { recursive: true });
+    const result = ingestSteerNotes(ledger.dir, ledger);
+    expect(result.entries).toHaveLength(2);
+    expect(result.skipped).toEqual([{ id: "a.json", reason: "could not archive inbox item" }]);
+    expect(readdirSync(join(dir, "ingested"))).toEqual(["a.json", "b.json"]);
+    const entries = ledger.entries();
+    const batch = readInbox(entries, origin, rebuildState(entries, { now: 0 }));
+    expect(batch.skipped).toEqual(result.skipped);
+    saveInboxCursor(ledger.dir, batch.cursor, entries);
+    expect(readInbox(entries, loadInboxCursor(ledger.dir, entries), rebuildState(entries, { now: 0 })).actions).toEqual([]);
+    let retries = 0;
+    expect(ingestSteerNotes(ledger.dir, ledger, { archive: () => { retries++; throw new Error("must not retry"); } })).toEqual({ entries: [], skipped: [] });
+    expect(retries).toBe(0);
+    expect(ledger.entries()).toEqual(entries);
+  });
+
+  it("deduplicates a crash after the ledger append but before archiving", () => {
+    const ledger = run(); submitSteer(ledger.dir, "AC1", { id: () => "crashed" });
+    ledger.append({ kind: "steer", actor: "runner", data: { note: "AC1", inboxItem: "crashed.json" } });
+    expect(ingestSteerNotes(ledger.dir, Ledger.open(ledger.dir))).toEqual({ entries: [], skipped: [] });
+    expect(ledger.entries().filter((e) => e.kind === "steer")).toHaveLength(1);
+    expect(readdirSync(join(ledger.dir, "inbox", "ingested"))).toEqual(["crashed.json"]);
   });
 
   it("refuses a colliding exclusive temp file without overwriting it", () => {

@@ -1,0 +1,356 @@
+[
+  {
+    "name": "security: relative scanner binary accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (!isAbsolute(pin.bin)) throw new Error(\"Scanner binary must be absolute\");",
+    "replacement": "if (false) throw new Error(\"Scanner binary must be absolute\");"
+  },
+  {
+    "name": "security: mismatched scanner version accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "versions[0] === pin.version",
+    "replacement": "true"
+  },
+  {
+    "name": "security: unavailable scanner marked pass",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "return { tool, status: \"not_run\", detail: `not run: ${tool} missing`, findings: [] };",
+    "replacement": "return { tool, status: \"pass\", detail: `not run: ${tool} missing`, findings: [] };"
+  },
+  {
+    "name": "security: secret value emitted in normalized finding",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "return finding(\"gitleaks\", rule, file, at, \"high\", \"Potential secret\", identity);",
+    "replacement": "return finding(\"gitleaks\", rule, file, at, \"high\", String(r.Secret), identity);"
+  },
+  {
+    "name": "security: malformed scanner output treated as empty",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "} catch { return invalid(); }",
+    "replacement": "} catch { return []; }"
+  },
+  {
+    "name": "security: nonzero scanner exit ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.code !== 0 && r.code !== 1) return error(\"exit code\");",
+    "replacement": "if (false) return error(\"exit code\");"
+  },
+  {
+    "name": "security: scanner timeout marked pass",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.timedOut) return error(\"timeout\");",
+    "replacement": "if (r.timedOut) return { tool, status: \"pass\", findings: [] };"
+  },
+  {
+    "name": "security: scanner output overflow ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.overflowed) return error(\"output limit\");",
+    "replacement": "if (false) return error(\"output limit\");"
+  },
+  {
+    "name": "security: scanner home no longer isolated",
+    "file": "packages/cli/src/security/runtime.ts",
+    "anchor": "return await run({ ...deps, homeDir, tmpDir });",
+    "replacement": "return await run({ ...deps, homeDir: cwd, tmpDir: cwd });"
+  },
+  {
+    "name": "security: protected definitions not verified",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "if (!input.store.verify(input.ledger).ok) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "security: absent scan implicitly exempted",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "Boolean(exemptions[tool]?.trim())",
+    "replacement": "true"
+  },
+  {
+    "name": "security: flagged candidate can skip hostile trial",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "(!trifecta.required || trial.status === \"pass\")",
+    "replacement": "true"
+  },
+  {
+    "name": "security: trifecta detection disabled",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "required: kinds.size === 3",
+    "replacement": "required: false"
+  },
+  {
+    "name": "security: symlink scan silently complete",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "if (st.isSymbolicLink()) { complete = false; continue; }",
+    "replacement": "if (st.isSymbolicLink()) { continue; }"
+  },
+  {
+    "name": "security: hostile trial without benign control",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "if (controlActions !== 1) throw Error(\"Control did not fire\");\n    await pause(settleMs);\n    if (await count() !== 1) throw Error(\"Control produced extra actions\");",
+    "replacement": "await pause(settleMs);"
+  },
+  {
+    "name": "security: hostile actions marked safe",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "result = { ...result, hostileActions, status: hostileActions === 0 ? \"pass\" : \"fail\" };",
+    "replacement": "result = { ...result, hostileActions, status: \"pass\" };"
+  },
+  {
+    "name": "security: trial app not stopped",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "if (running) try { await bounded(() => running.stop(), timeout); } catch { result = { status: \"error\" }; }",
+    "replacement": ""
+  },
+  {
+    "name": "security: trial permits remote HTTP targets",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "if (url.protocol !== \"http:\" || ![\"127.0.0.1\", \"localhost\", \"[::1]\"].includes(url.hostname) || url.username || url.password || url.hash) throw new Error(\"Trial targets must be HTTP loopback URLs\");",
+    "replacement": ""
+  },
+  {
+    "name": "security: stalled HTTP timeout delayed",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "timer = setTimeout(() => reject(new Error(\"Trial timeout\")), ms);",
+    "replacement": "timer = setTimeout(() => reject(new Error(\"Trial timeout\")), ms + 1000);"
+  },
+  {
+    "name": "security: verifier ignores failed case exit",
+    "file": "packages/cli/src/security/verify.ts",
+    "anchor": "if (readFileSync(join(observation, \"code\"), \"utf8\").trim() !== \"0\") throw Error(\"Driver failed\");",
+    "replacement": "if (false) throw Error(\"Driver failed\");"
+  },
+  {
+    "name": "security: verifier accepts failed scanner",
+    "file": "packages/cli/src/security/verify.ts",
+    "anchor": "result.status !== \"pass\"",
+    "replacement": "false"
+  },
+  {
+    "name": "security: verifier accepts incomplete detector",
+    "file": "packages/cli/src/security/verify.ts",
+    "anchor": "result.complete !== true",
+    "replacement": "false"
+  },
+  {
+    "name": "security: reviewer may change source and protected evidence",
+    "file": "skills/security/SKILL.md",
+    "anchor": "Do not change source, checks, scanner rules, ignore lists or evidence.",
+    "replacement": "Change source, checks, scanner rules, ignore lists and evidence as needed."
+  },
+  {
+    "name": "security: sink reset sent over candidate-accessible HTTP",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "const reset = () => bounded(() => deps.resetSink(), timeout);",
+    "replacement": "const reset = () => ask(new URL(\"/reset\", sink).href);"
+  },
+  {
+    "name": "security: gitleaks suppression file ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "[\".gitleaksignore\"]",
+    "replacement": "[]"
+  },
+  {
+    "name": "security: semgrep suppression file ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "[\".semgrepignore\"]",
+    "replacement": "[]"
+  },
+  {
+    "name": "security: OSV suppression file ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "[\"osv-scanner.toml\", \".osv-scanner.toml\"]",
+    "replacement": "[\".osv-scanner.toml\"]"
+  },
+  {
+    "name": "security: hidden OSV suppression file ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "[\"osv-scanner.toml\", \".osv-scanner.toml\"]",
+    "replacement": "[\"osv-scanner.toml\"]"
+  },
+  {
+    "name": "security: dangling suppression symlink accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "try { lstatSync(join(cwd, file)); return true; }",
+    "replacement": "try { return existsSync(join(cwd, file)); }"
+  },
+  {
+    "name": "security: approved scanner environment dropped",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "...(pin.env ? { env: { ...pin.env } } : {})",
+    "replacement": "...{}"
+  },
+  {
+    "name": "security: candidate OSV database allowed",
+    "file": "packages/cli/src/security/runtime.ts",
+    "anchor": "if (!inside(fixtures, path)) throw Error(\"Not protected\");",
+    "replacement": "if (false) throw Error(\"Not protected\");"
+  },
+  {
+    "name": "security: scanner HOME override accepted",
+    "file": "packages/cli/src/security/runtime.ts",
+    "anchor": "if (key !== \"OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY\" || !runtime.fixturesDir) throw Error(\"Invalid scanner environment\");",
+    "replacement": "if (!runtime.fixturesDir) throw Error(\"Invalid scanner environment\");"
+  },
+  {
+    "name": "security: semgrep nosem disabling omitted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "\"--disable-nosem\"",
+    "replacement": "\"--metrics=off\""
+  },
+  {
+    "name": "security: pinned scanner exemption accepted",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "for (const tool of SCANNERS) if (plan.scanners[tool] && plan.exemptions?.[tool] !== undefined) throw Error(\"Cannot exempt a pinned scanner\");",
+    "replacement": ""
+  },
+  {
+    "name": "security: runtime missing pinned scanner exemptible",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "if (configured && raw?.status === \"not_run\") return { tool, status: \"error\", findings: [], detail: \"pinned scanner unavailable\" };",
+    "replacement": ""
+  },
+  {
+    "name": "security: failed gate stdout pass accepted",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "if (raw.status !== \"pass\" || gate.status === \"pass\") return raw;",
+    "replacement": "return raw;"
+  },
+  {
+    "name": "security: NUL file silently complete",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "if (content.includes(0)) { complete = false; continue; }",
+    "replacement": "if (content.includes(0)) continue;"
+  },
+  {
+    "name": "security: Flask form input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "formData|form|args|get_json|POST",
+    "replacement": "formData|args|get_json|POST"
+  },
+  {
+    "name": "security: Flask args input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "formData|form|args|get_json|POST",
+    "replacement": "formData|form|get_json|POST"
+  },
+  {
+    "name": "security: Flask JSON input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "formData|form|args|get_json|POST",
+    "replacement": "formData|form|args|POST"
+  },
+  {
+    "name": "security: Django POST input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "formData|form|args|get_json|POST",
+    "replacement": "formData|form|args|get_json"
+  },
+  {
+    "name": "security: Go Body input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "r\\.(?:Body|FormValue)",
+    "replacement": "r\\.(?:FormValue)"
+  },
+  {
+    "name": "security: Go FormValue input missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "r\\.(?:Body|FormValue)",
+    "replacement": "r\\.(?:Body)"
+  },
+  {
+    "name": "security: SMTP outbound missed",
+    "file": "packages/cli/src/security/trifecta.ts",
+    "anchor": "|smtplib\\b",
+    "replacement": ""
+  },
+  {
+    "name": "security: hostile nonce predictable",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "randomBytes(24).toString(\"hex\")",
+    "replacement": "\"fixed-nonce\""
+  },
+  {
+    "name": "security: hostile corpus variation ignored",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "HOSTILE_CORPUS[variant]",
+    "replacement": "HOSTILE_CORPUS[0]"
+  },
+  {
+    "name": "security: settle shorter than three control latencies",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "3 * controlLatency",
+    "replacement": "controlLatency"
+  },
+  {
+    "name": "security: settle floor can be lowered",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "settleMs = Math.max(1_000, input.settleMs ?? 0, 3 * controlLatency);",
+    "replacement": "settleMs = Math.max(0, input.settleMs ?? 0, 3 * controlLatency);"
+  },
+  {
+    "name": "security: sink not drained after stop",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "await bounded(() => deps.drainSink(), timeout);",
+    "replacement": ""
+  },
+  {
+    "name": "security: private report transport disabled",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "a.replaceAll(\"/dev/stdout\", reportPath).replaceAll(\"@report\", reportPath)",
+    "replacement": "a"
+  },
+  {
+    "name": "security: gitleaks redaction not required",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (tool === \"gitleaks\" && !fullyRedacted(pin.args)) return error(\"gitleaks requires full redaction\");",
+    "replacement": "if (false) return error(\"gitleaks requires full redaction\");"
+  },
+  {
+    "name": "security: fingerprint hashes secret",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "const identity = `${rule}:${file}:${at}`;",
+    "replacement": "const identity = String(r.Secret);"
+  },
+  {
+    "name": "security: redacted metadata hashes secret",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "out.split(secret).join(\"[REDACTED]\")",
+    "replacement": "out.split(secret).join(hash(secret))"
+  },
+  {
+    "name": "security: exit-one empty report accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.code !== 0 && findings.length === 0) return error(\"exit code\");",
+    "replacement": ""
+  },
+  {
+    "name": "security: history coverage overstated",
+    "file": "skills/security/SKILL.md",
+    "anchor": "does not scan Git history",
+    "replacement": "scans Git history"
+  },
+  {
+    "name": "security: dependency-directory coverage overstated",
+    "file": "skills/security/SKILL.md",
+    "anchor": "allowlists node_modules/",
+    "replacement": "scans node_modules/"
+  },
+  {
+    "name": "security: sink drain skipped after settle error",
+    "file": "packages/cli/src/security/trial.ts",
+    "anchor": "if (running) try { await pause(settleMs); } catch { result = { status: \"error\" }; }\n    if (running) try { await bounded(() => deps.drainSink(), timeout); } catch { result = { status: \"error\" }; }",
+    "replacement": "if (running) try { await pause(settleMs); await bounded(() => deps.drainSink(), timeout); } catch { result = { status: \"error\" }; }"
+  },
+  {
+    "name": "security: private report exceeds capture cap",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (reportPath && existsSync(reportPath) && lstatSync(reportPath).size > 4 * 1024 * 1024) return error(\"output limit\");",
+    "replacement": "if (false) return error(\"output limit\");"
+  },
+  {
+    "name": "security: private reports retained",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "finally { if (reportDir) rmSync(reportDir, { recursive: true, force: true }); }",
+    "replacement": "finally {}"
+  }
+]

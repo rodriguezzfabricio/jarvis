@@ -11,7 +11,7 @@
 // Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
 // definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
 // every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
-// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
+// Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3|4|5|6]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
 //        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -19,7 +19,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classify, summarize, testIds } from "./mutation-classify.mjs";
-import { jobPlan, runAndRead, runPool, stopAll } from "./mutation-run.mjs";
+import { jobPlan, runAndRead, runPool, stopAll, suiteEnv } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
 import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
 
@@ -69,9 +69,9 @@ const mutations = [
   ["snapshot skips binary files", N, "  if (buf.includes(0)) {\n    const le", "  if (false) {\n    const le"],
   ["usage wait ignores windows", J, "  const over = Object.values(last.windows).filter((w) => w.utilization >= threshold);", "  const over: RateLimitWindow[] = [];"],
   ["placeholder rule exempts short passwords", N, "export function isPlaceholderPassword(raw: string): boolean {\n", "export function isPlaceholderPassword(raw: string): boolean {\n  if (raw.length <= 4) return true;\n"],
-  ["snapshot ignores DER private keys", N, "    if (isDerPrivateKey(buf)) {", "    if (false) {"],
-  ["snapshot ignores format encoding", N, "    const all = [...views, ...views.flatMap(decodedViews)];", "    const all = [...views];"],
-  ["snapshot ignores credential fields", N, '        for (const h of findSecretFields(name, t)) if (i === 0 || !h.startsWith("unparseable")) hits.add(h);', "        void t;"],
+  ["snapshot ignores DER private keys", N, "if (inspect && isDerPrivateKey(buf))", "if (false && inspect && isDerPrivateKey(buf))"],
+  ["snapshot ignores format encoding", N, "const texts = [...new Set([...views, ...views.flatMap(decodedViews)])];", "const texts = views;"],
+  ["snapshot ignores credential fields", N, "if (!text.includes(\"\\u0000\")) for (const h of findSecretFields(file, text)) if (i === 0 || !h.startsWith(\"unparseable\")) hits.add(h);", "void file;"],
   ["reference defaults are trusted", N, "  if (ref) return ref[1] === undefined || isInertString(ref[1]);", "  if (ref) return true;"],
   ["config files read line by line", N, "  const structured = /\\.(json|jsonc|json5|ya?ml|toml)$/i.test(name);", "  const structured = false;"],
   ["numeric passwords exempt", N, '  if (v === "") return true;\n', '  if (v === "" || /^\\d+$/.test(v)) return true;\n'],
@@ -88,7 +88,7 @@ const mutations = [
   ["Yarn auth ident not a credential", N, "|auth_ident|", "|"],
   ["yarnrc read as INI", N, "  const yarn = /^\\.?yarnrc$/.test(name);", "  const yarn = false;"],
   ["base64 user:password not detected", N, "    if (isBase64UserPassword(m[0])) {", "    if (false) {"],
-  ["base64 user part unrestricted", N, "/^([\\w.@+~!$%&*=#|-]*):([\\x21-\\x7e]+)$/", "/^([\\x21-\\x39\\x3b-\\x7e]*):([\\x21-\\x7e]+)$/"],
+  ["base64 user part unrestricted", N, "const m = /^([\\w.@+~!$%&*=#|-]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);", "const m = /^([^\\s:]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);"],
   ["YAML merges not expanded", N, '        if (key !== "<<") return [{ key, value: p.value }];', "        return [{ key, value: p.value }];"],
   ["Docker token fields not credentials", N, "|identitytoken|registrytoken|", "|"],
   ["Docker auths not inspected (JSON)", N, '        if (key === "auths") for (const r of Object.values(o))', "        if (false) for (const r of Object.values(o))"],
@@ -101,8 +101,8 @@ const mutations = [
   ["Authorization headers not scanned", N, "    if (!isInertString(m[1]!) && !isPlaceholderAuth(m[1]!)) {", "    if (false) {"],
   ["Authorization field not a credential", N, "|authorization|key_data|", "|key_data|"],
   ["key data fields not credentials", N, "|authorization|key_data|", "|authorization|"],
-  ["base64 runs not decoded", N, "    const hits = new Set([...all.flatMap(findCredentials), ...all.flatMap(findEncodedCredentials)]);", "    const hits = new Set(all.flatMap(findCredentials));"],
-  ["decoded base64 not checked for DER keys", N, '    if (isDerPrivateKey(buf)) hits.add("base64-encoded private key");', '    if (false) hits.add("base64-encoded private key");'],
+  ["base64 runs not decoded", N, "for (const payload of encodedPayloads(text)) visit(\"decoded.txt\", payload, depth + 1);", "void text;"],
+  ["decoded base64 not checked for DER keys", N, "if (inspect && isDerPrivateKey(buf))", "if (false && inspect && isDerPrivateKey(buf))"],
   ["auth placeholders flagged", N, "  return /^[\\w-]{0,8}(…|\\.\\.\\.)$/.test(v) ||", "  return false &&"],
   ["private JWK text patterns off", N, "  const hits = CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);", '  const hits = CREDENTIAL_PATTERNS.filter(([n, re]) => n !== "private JWK" && re.test(text)).map(([name]) => name);'],
   ["private JWK structure ignored (JSON)", N, '        if (typeof o.kty === "string" && JWK_PRIVATE', '        if (false && typeof o.kty === "string" && JWK_PRIVATE'],
@@ -215,9 +215,36 @@ const mutations = [
   ["broker treats adapter crashes as failures", BR, '        result = { outcome: "unknown", detail: { reason: `adapter error', '        result = { outcome: "failed", detail: { reason: `adapter error'],
   ["broker auto-allows everything", BR, "    if (!spec.autoAllow) {", "    if (false) {"],
   ["broker ignores ledger tampering", BR, '      if (err instanceof LedgerTamperError) return { status: "error"', '      if (err instanceof LedgerTamperError) return { status: "succeeded"'],
-  ["tripwire lets file tools write runner-home notes", TW, "SESSION_OWNED.test(path) && !RUNNER_HOME.test(path) && ", "SESSION_OWNED.test(path) && "],
+  ["tripwire lets file tools into the runner home", TW, '  if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;\n', ""],
   ["tripwire lets file tools climb out with ..", TW, " && !/(^|\\/)\\.\\.(\\/|$)/.test(path)", ""],
   ["tripwire misses publishing", TW, '  [/\\b(npm|pnpm|yarn)\\s+publish\\b/, "publishing packages is a hard stop"],\n', ""],
+  // The skills' own `.jarvis/` files: each allowed name, and the strictness that keeps the rest refused.
+  ["tripwire lets any .jarvis name through", TW, 'SESSION_FILES.join("|")', '[...SESSION_FILES, ".*"].join("|")'],
+  ["tripwire drops the end anchor", TW, '.join("|")})$`);', '.join("|")})`);'],
+  ["tripwire lets hidden names through", TW, 'const NAME = "[A-Za-z0-9_-][A-Za-z0-9._-]*";', 'const NAME = "[A-Za-z0-9._-]+";'],
+  ["tripwire refuses intake rounds", TW, '  "intake\\\\/(round|answers)-[1-9][0-9]*\\\\.json",\n', ""],
+  ["tripwire accepts round 0", TW, "(round|answers)-[1-9][0-9]*", "(round|answers)-[0-9]+"],
+  ["tripwire refuses the taste draft", TW, '  "intake\\\\/taste\\\\.json",\n', ""],
+  ["tripwire refuses mockups", TW, '  `mockups\\\\/${NAME}\\\\/${NAME}\\\\.(md|html|png)`,\n', ""],
+  ["tripwire lets mockups run scripts", TW, "\\\\.(md|html|png)`", "\\\\.(md|html|png|js)`"],
+  ["tripwire refuses the plan", TW, '  "plan\\\\.json",\n', ""],
+  ["tripwire refuses check fixtures", TW, "  `checks\\\\/(fixtures|expected)(\\\\/${NAME})+`,\n", ""],
+  ["tripwire lets checks nest anywhere", TW, "`checks\\\\/${NAME}\\\\.(check", "`checks\\\\/(${NAME}\\\\/)*${NAME}\\\\.(check"],
+  ["tripwire refuses onboard and sweep files", TW, '  "(onboard|sweep)\\\\/([0-9]{4}-[0-9]{2}-[0-9]{2}\\\\.md|plan\\\\.json)",\n', ""],
+  // Scope: hard stops only in Jarvis sessions; the runner home everywhere; anything unreadable counts as Jarvis.
+  ["tripwire enforces in every session", TW, "  if (!isJarvisSession(input, env)) return undefined;\n", ""],
+  ["tripwire ignores JARVIS_SESSION", TW, '  if (env.JARVIS_SESSION === "1") return true;\n', ""],
+  ["tripwire treats an unreadable cwd as not Jarvis", TW, "catch { return true; } // an unreadable cwd fails closed", "catch { return false; }"],
+  ["tripwire treats an unreadable marker as absent", TW, "catch { return true; } // an unreadable marker counts as present", "catch { return false; }"],
+  ["tripwire ignores symlinked markers", TW, "lstatSync(join(dir, name), { throwIfNoEntry: false }) !== undefined", 'lstatSync(join(dir, name), { throwIfNoEntry: false })?.isSymbolicLink() === false'],
+  ["tripwire checks the cwd only, not up to its toplevel", TW, '    if (marked(d, ".git")) break;\n', "    break;\n"],
+  ["tripwire walks past a repo-less cwd", TW, "{ chain.length = 1; break; }", "{ break; }"],
+  ["tripwire ignores .jarvis-routing.json", TW, ' || marked(d, ".jarvis-routing.json")', ""],
+  ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && RUNNER_HOME_BASH.test(text)) return OFF_LIMITS;\n', ""],
+  ["tripwire ignores HOME for the runner home", TW, "  if (!env.HOME || !isAbsolute(env.HOME)) return false;\n", "  return false;\n"],
+  ["tripwire scope: task sessions not marked Jarvis", "packages/cli/src/harness/claude/task.ts", '    JARVIS_SESSION: "1", // the plugin\'s tripwire enforces in Jarvis sessions only\n', ""],
+  ["tripwire scope: probe session not marked Jarvis", "packages/cli/src/harness/claude/probe.ts", ', JARVIS_SESSION: "1" });', " });"],
+  ["tripwire scope: desktop workspace not marked Jarvis", "scripts/desktop-plugin-check.mjs", "  mkdirSync(join(workspace, '.jarvis'), { mode: 0o700 });\n", ""],
   ["read-only dirs writable", S, "          ...(input.readOnlyDirs ?? []),\n        ],", "        ],"],
   ["scheduler skips limited tasks", C, "          continue; // the same task again; waiting is not a failure", "          break;"],
 ];
@@ -307,7 +334,7 @@ async function runSuite(clone, tag, files) {
       join(clone, "node_modules", ".bin", "vitest"),
       // Anchor-applicability tests (*-mutations.test.ts) fail on every mutation by design, so they never count as catching one.
       ["run", ...(files ?? ["tests/unit"]), "--exclude", "**/*-mutations.test.ts", "--reporter=json", `--outputFile=${join(work, `${id}.json`)}`, "--reporter=./scripts/unhandled-reporter.mjs", ...workerFlags],
-      { cwd: clone, env: { ...process.env, JARVIS_RUN_END_OUT: join(work, `${id}.end.json`), JARVIS_TEST_TMP: tmp } },
+      { cwd: clone, env: suiteEnv(process.env, { JARVIS_RUN_END_OUT: join(work, `${id}.end.json`), JARVIS_TEST_TMP: tmp }) },
       { report: join(work, `${id}.json`), end: join(work, `${id}.end.json`) },
     );
   } finally {

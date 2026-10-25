@@ -1,0 +1,188 @@
+[
+  {
+    "name": "scanner command assignments",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "for (const re of [assignments, flags])",
+    "replacement": "for (const re of [])"
+  },
+  {
+    "name": "scanner adjacent credential arguments",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "typeof value === \"string\" && !policy.inert(value)",
+    "replacement": "typeof value === \"string\" && false"
+  },
+  {
+    "name": "scanner commented assignments",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "for (const line of text.split(\"\\n\")) {",
+    "replacement": "for (const line of text.replace(/^\\s*[#;].*$/gm, \"\").split(\"\\n\")) {"
+  },
+  {
+    "name": "scanner source credential literals",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "for (const m of text.matchAll(assigned)) {",
+    "replacement": "for (const m of \"\".matchAll(assigned)) {"
+  },
+  {
+    "name": "scanner URL query credentials",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "for (const [key, value] of url.searchParams)",
+    "replacement": "for (const [key, value] of new URLSearchParams())"
+  },
+  {
+    "name": "scanner short base64 wrapping",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (wrapped.length > 1) runs.push(wrapped.join(\"\"));",
+    "replacement": "if (false) runs.push(wrapped.join(\"\"));"
+  },
+  {
+    "name": "scanner base64 login credentials",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "return m !== null && !isPlaceholderPassword(m[2]!);",
+    "replacement": "return false;"
+  },
+  {
+    "name": "scanner recursive encoded inspection",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "for (const payload of encodedPayloads(text)) visit(\"decoded.txt\", payload, depth + 1);",
+    "replacement": "void text;"
+  },
+  {
+    "name": "scanner hex base32 byte-array private keys",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "for (const payload of keyPayloads(text)) {",
+    "replacement": "for (const payload of [] as Buffer[]) {"
+  },
+  {
+    "name": "scanner percent encoded tokens",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (/%[0-9a-f]{2}/i.test(text)) views.push",
+    "replacement": "if (false) views.push"
+  },
+  {
+    "name": "scanner source octal escapes",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (oct !== undefined) return String.fromCodePoint(Number.parseInt(oct, 8));",
+    "replacement": "if (oct !== undefined) return oct;"
+  },
+  {
+    "name": "scanner cp037 private keys",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (buf.includes(Buffer.from([0x60, 0x60, 0x60, 0x60, 0x60, 0xc2, 0xc5, 0xc7, 0xc9, 0xd5]))) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "scanner UTF7 private keys",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (utf7 !== views[0]) views.push(utf7);",
+    "replacement": "void utf7;"
+  },
+  {
+    "name": "scanner compressed archive inspection",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "const members = containerMembers(file, buf, remaining);",
+    "replacement": "const members: ReturnType<typeof containerMembers> = undefined;"
+  },
+  {
+    "name": "scanner content credential containers",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (inspect && credentialContainer(buf))",
+    "replacement": "if (false && inspect && credentialContainer(buf))"
+  },
+  {
+    "name": "scanner source JWK inspection",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (sourcePrivateJwk(text)) hits.add(\"private JWK\");",
+    "replacement": "void sourcePrivateJwk;"
+  },
+  {
+    "name": "scanner base64 public URLs",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (/^[a-z][a-z0-9+.-]*:\\/\\//i.test(decoded)) return false;",
+    "replacement": "void decoded;"
+  },
+  {
+    "name": "scanner decoding depth limit",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "const maxDepth = limits.maxDepth ?? 6;",
+    "replacement": "const maxDepth = limits.maxDepth ?? 64;"
+  },
+  {
+    "name": "scanner expanded byte limit",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "let remaining = limits.maxExpandedBytes ?? 16 * 1024 * 1024;",
+    "replacement": "let remaining = limits.maxExpandedBytes ?? 64 * 1024 * 1024;"
+  },
+  {
+    "name": "scanner encrypted ZIP review",
+    "file": "packages/cli/src/eval/snapshot-containers.ts",
+    "anchor": "if (flags & 1) throw new Error(\"encrypted ZIP; needs review\");",
+    "replacement": "void flags;"
+  },
+  {
+    "name": "scanner reviewed fixture exemption",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (allowed.has(rel)) continue; // a person reviewed this file",
+    "replacement": "if (false && allowed.has(rel)) continue;"
+  },
+  {
+    "name": "scanner archived dotenv inspection",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (depth !== 0 || !/^\\.env(\\..+)?$/.test(file)) {",
+    "replacement": "if (!/^\\.env(\\..+)?$/.test(file)) {"
+  },
+  {
+    "name": "scanner text zlib prefix",
+    "file": "packages/cli/src/eval/snapshot-containers.ts",
+    "anchor": "if (isUtf8(buf) && (e as NodeJS.ErrnoException).code !== \"ERR_BUFFER_TOO_LARGE\") return undefined;",
+    "replacement": "void buf;"
+  },
+  {
+    "name": "scanner typed inert values",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "!policy.untyped(m[2]!)",
+    "replacement": "!policy.inert(m[2]!)"
+  },
+  {
+    "name": "scanner base64 user grammar",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "const m = /^([\\w.@+~!$%&*=#|-]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);",
+    "replacement": "const m = /^([^\\s:]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);"
+  },
+  {
+    "name": "scanner quoted assignment boundaries",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "(?<![\\\\w\"'\\x60])",
+    "replacement": ""
+  },
+  {
+    "name": "scanner shell substitution references",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "const word = `(?:\\\\$\\\\([^()]*\\\\)|${LITERAL.source}|[^\\\\s;&|]+)`;",
+    "replacement": "const word = `(?:${LITERAL.source}|[^\\\\s;&|]+)`;"
+  },
+  {
+    "name": "scanner shell backtick references",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "const value = /^[\"']/.test(m[2]!) ? body(m[2]!) : m[2]!;",
+    "replacement": "const value = /^[\"'`]/.test(m[2]!) ? body(m[2]!) : m[2]!;"
+  },
+  {
+    "name": "scanner literal backtick context",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "literalFields(text, FIELD_POLICY, shellBackticks)",
+    "replacement": "literalFields(text, FIELD_POLICY, false)"
+  },
+  {
+    "name": "scanner nested registry member names",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "visit(basename(member.name), member.data, depth + 1);",
+    "replacement": "visit(member.name, member.data, depth + 1);"
+  },
+  {
+    "name": "scanner zlib window signature",
+    "file": "packages/cli/src/eval/snapshot-containers.ts",
+    "anchor": " && (buf[0]! >>> 4) <= 7",
+    "replacement": ""
+  }
+]

@@ -149,8 +149,9 @@ describe("Claude task safety envelope", () => {
     for (const key of ["NODE_OPTIONS", "HTTPS_PROXY", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_OPENAI", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) expect(spec.env[key]).toBeUndefined();
     expect(spec.env.PATH).not.toContain("/untrusted");
     expect(spec.env.HOME).toBe(options.home);
+    expect(spec.env.JARVIS_SESSION, "the tripwire enforces in Jarvis sessions only").toBe("1");
     expect(Object.keys(specs[0]!.env).sort()).toEqual([
-      "CLAUDE_CODE_TMPDIR", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTELEMETRY", "HOME", "JARVIS_BROKER_SOCKET", "PATH", "TMPDIR", "USER", "XDG_CACHE_HOME", "npm_config_cache", "npm_config_store_dir",
+      "CLAUDE_CODE_TMPDIR", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTELEMETRY", "HOME", "JARVIS_BROKER_SOCKET", "JARVIS_SESSION", "PATH", "TMPDIR", "USER", "XDG_CACHE_HOME", "npm_config_cache", "npm_config_store_dir",
     ].sort());
     expect(spec.stdoutPath).toBe(input.logPath);
     expect(spec.stderrPath).toBe(`${input.logPath}.stderr`);

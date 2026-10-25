@@ -91,6 +91,19 @@ export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 1
   });
 }
 
+/** The mutation check's own settings: they configure this run, never the suites it starts. */
+const OWN = ["JARVIS_MUTATIONS", "JARVIS_MUTATION_CONFIRM", "JARVIS_MUTATION_JOBS"];
+
+/**
+ * The environment for a suite: the caller's, minus the mutation check's own settings, plus `extra`.
+ * A filtered run must not hand JARVIS_MUTATIONS to tests that refuse it (review-run's tests did).
+ */
+export function suiteEnv(env, extra = {}) {
+  const out = { ...env };
+  for (const k of OWN) delete out[k];
+  return { ...out, ...extra };
+}
+
 /** Stops every running group (TERM, then KILL after its grace period) and waits until each run has ended. */
 export async function stopAll() {
   await Promise.all([...active].map((e) => e.stop()));

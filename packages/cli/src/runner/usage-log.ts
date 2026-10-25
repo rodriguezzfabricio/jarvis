@@ -27,6 +27,10 @@ const text = z.string().min(1).max(256);
 const count = z.number().int().min(0).max(USAGE_LIMITS.tokens).nullable();
 const utilization = z.number().min(0).max(USAGE_LIMITS.utilization);
 const windowName = /^[a-z0-9_]{1,32}$/;
+const windowObservation = z.object({ before: utilization, after: utilization, resetsAt: z.number().finite().nullable() }).strict();
+export type WindowObservation = z.infer<typeof windowObservation>;
+const windowPeriods = z.union([z.array(windowObservation).min(1), windowObservation])
+  .transform((value) => Array.isArray(value) ? value : [value]);
 const sessionData = z.object({
   runId: text,
   role: z.enum(ROLES),
@@ -41,7 +45,7 @@ const sessionData = z.object({
   durationMs: z.number().min(0).max(USAGE_LIMITS.durationMs).nullable(),
   turns: z.number().int().min(0).max(USAGE_LIMITS.turns).nullable(),
   complete: z.boolean(),
-  windows: z.record(z.string().regex(windowName), z.object({ before: utilization, after: utilization, resetsAt: z.number().finite().nullable() }).strict()),
+  windows: z.record(z.string().regex(windowName), windowPeriods),
   problems: z.array(z.string().max(200)).max(32),
 }).strict();
 export type SessionUsageData = z.infer<typeof sessionData>;
@@ -69,18 +73,21 @@ function measured(name: string, value: number | undefined, max: number, integer:
   return value;
 }
 
-/** First and last utilization each window reported during the session (decision 62: before and after). */
+/** First and last utilization per window and reset period; a session may span several resets. */
 function windowsOf(outcome: TaskOutcome): SessionUsageData["windows"] {
-  const windows: SessionUsageData["windows"] = {};
+  const windows = new Map<string, WindowObservation[]>();
   for (const sample of outcome.usage) {
     for (const [name, w] of Object.entries(sample.windows)) {
       if (!windowName.test(name) || !utilization.safeParse(w.utilization).success) continue;
       const resetsAt = typeof w.resetsAt === "number" && Number.isFinite(w.resetsAt) ? w.resetsAt : null;
-      const seen = windows[name];
-      windows[name] = seen ? { ...seen, after: w.utilization, resetsAt } : { before: w.utilization, after: w.utilization, resetsAt };
+      const periods = windows.get(name) ?? [];
+      const seen = periods.find((period) => period.resetsAt === resetsAt);
+      if (seen) seen.after = w.utilization;
+      else periods.push({ before: w.utilization, after: w.utilization, resetsAt });
+      windows.set(name, periods);
     }
   }
-  return windows;
+  return Object.fromEntries(windows);
 }
 
 /** Throws only on caller errors (ids, role, an alias model); bad reported figures become null. */
@@ -206,11 +213,13 @@ export function latestRunId(entries: readonly LedgerEntry[]): string | null {
 function windowUse(sessions: readonly SessionUsageData[]): WindowUse[] {
   const periods = new Map<string, Map<string, number[]>>();
   for (const d of sessions) {
-    for (const [name, w] of Object.entries(d.windows)) {
+    for (const [name, observations] of Object.entries(d.windows)) {
       let byReset = periods.get(name);
       if (!byReset) periods.set(name, byReset = new Map());
-      const key = String(w.resetsAt);
-      byReset.set(key, [...(byReset.get(key) ?? []), w.before, w.after]);
+      for (const w of observations) {
+        const key = String(w.resetsAt);
+        byReset.set(key, [...(byReset.get(key) ?? []), w.before, w.after]);
+      }
     }
   }
   return [...periods.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, byReset]) => {
@@ -295,7 +304,7 @@ export function usageReportLines(entries: readonly LedgerEntry[], options: Summa
   const t = s.total;
   lines.push(`- ${s.runId === null ? "All runs" : `Run ${esc(s.runId)}`}: ${t.sessions} sessions, ${formatDuration(t.durationMs)} of session time, ${t.turns} turns.`);
   lines.push(`- Tokens: ${formatTokens(t.inputTokens)} input, ${formatTokens(t.outputTokens)} output, ${formatTokens(t.cacheReadTokens)} cache read, ${formatTokens(t.cacheWriteTokens)} cache write.`);
-  lines.push(`- Reported cost ${usd(t.costUsd)} (API-equivalent, as Claude Code reports it; not billed on a subscription).`);
+  lines.push(`- Reported cost estimate ${usd(t.costUsd)} (API-equivalent, as reported by the harness; not billed on a subscription).`);
   if (s.costPerAccepted) lines.push(`- Accepted tasks: ${s.acceptedTasks}; reported cost per accepted task ${s.costPerAccepted.complete ? "" : "at least "}${usd(s.costPerAccepted.usd)}.`);
   if (t.unknown || t.incomplete) lines.push(`- ${t.unknown} sessions have unknown figures and ${t.incomplete} ended without a final result; totals are lower bounds.`);
   if (s.skipped) lines.push(`- ${s.skipped} usage entries failed validation and are left out.`);

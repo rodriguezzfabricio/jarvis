@@ -1,0 +1,10 @@
+export { register } from "./command.ts";
+export { LANES, selectLanes, type Lane, type LaneSelection, type CheckId, type SelectionInput } from "./selection.ts";
+export { DESIGN_SECTIONS, lintDesign, lintTokens, type DesignLint, type DesignTokens, type TokenLintOptions } from "./design.ts";
+export { detectAiTells, type TellOptions, type TellRule, type TellException } from "./tells.ts";
+export { runLaneChecks, type LaneGateInput, type LaneCheckResult } from "./gates.ts";
+export { runPlaywright, runMaestro, type QaOptions, type QaResult, type QaStatus, type QaObservation, type WebTarget, type IosTarget } from "./qa.ts";
+export { observeWeb, type BrowserRuntime, type WebObservation } from "./browser.ts";
+export { verifyWebObservation, type ObservationVerification, type WebExpectation } from "./verify.ts";
+export { readQaToolchain, verifyQaToolchain, loadBrowserRuntime, type QaToolchainInput, type QaToolchainManifest, type VerifiedQaToolchain } from "./toolchain.ts";
+export type { SourceFile, Finding, LineRange } from "./source.ts";

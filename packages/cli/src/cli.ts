@@ -22,6 +22,7 @@ import { register as registerStatus } from "./commands/status.ts";
 import { register as registerRun } from "./commands/run.ts";
 import { prepareProductionRun } from "./commands/run-compose.ts";
 import * as intake from "./intake/index.ts";
+import * as lanes from "./lanes/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
 const defaultSocket = () => process.env.JARVIS_BROKER_SOCKET;
@@ -146,5 +147,6 @@ registerStatus(program);
 // jarvis run: production composition (checks, plan, harness, intake recovery, the review service).
 registerRun(program, { prepareRun: (context) => prepareProductionRun(context) });
 intake.register(program);
+lanes.register(program);
 
 await program.parseAsync();

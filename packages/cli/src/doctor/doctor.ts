@@ -49,7 +49,7 @@ const defaultFree = (p: string) => {
 const GB = 1024 ** 3;
 
 /** Pinned Claude Code, by absolute path (decision 57). Shared with jarvis setup. */
-export function checkClaudePinned(home: string, exec: (bin: string, args: string[]) => string = defaultExec, exists: (p: string) => boolean = existsSync): DoctorCheck {
+export function checkClaudePinned(home: string, exec: (bin: string, args: string[]) => string = execWithEnv(buildChildEnv({ ...process.env, HOME: process.env.HOME ?? home })), exists: (p: string) => boolean = existsSync): DoctorCheck {
   const claude = pinnedClaudeBin(home);
   if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude} (install with: claude install ${CLAUDE_CODE_VERSION})` };
   try {

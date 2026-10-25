@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
+import { STAGES } from "./mutation-stage.mjs";
 
 const CHECKS = ["typecheck", "unit-tests", "live-probe", "doctor-live", "mutation-check"];
 const SEVERITIES = ["critical", "high", "medium", "low"];
@@ -126,9 +127,23 @@ function inspectRound(root, name) {
   if (installExit !== null && installExit !== 0) problems.push(`install exited ${installExit}`);
   const install = { exitCode: installExit, detail: installLog.error ?? "informational; historical runners omit an install exit footer" };
   const mutationText = logs.get("mutation-check").text ?? "";
-  const caught = [...mutationText.matchAll(/^all (\d+) mutations caught\s*$/gm)].at(-1);
+  // The plain success line, or --confirm-stage's (decision 94): "all N mutations caught; stage S: X
+  // confirmed, Y caught in fast mode (outside stage S)", valid only for a known stage with X + Y = N.
+  const lastOf = (re) => [...mutationText.matchAll(re)].at(-1);
+  const plain = lastOf(/^all (\d+) mutations caught\s*$/gm);
+  const staged = lastOf(/^all (\d+) mutations caught; stage (\S+): (\d+) confirmed, (\d+) caught in fast mode \(outside stage (\S+)\)\s*$/gm);
+  const useStaged = staged && (!plain || staged.index > plain.index);
+  let caught = useStaged ? null : plain;
+  let scope;
+  if (useStaged) {
+    const [, n, stage, confirmed, fast, outside] = staged;
+    if (STAGES.includes(stage) && outside === stage && Number(confirmed) + Number(fast) === Number(n)) {
+      caught = staged;
+      scope = { stage, confirmed: Number(confirmed), fast: Number(fast) };
+    } else problems.push("Invalid stage-scoped mutation summary");
+  }
   const missed = [...mutationText.matchAll(/^(\d+) (?:mutation\(s\)|mutations?) not caught\s*$/gm)].at(-1);
-  const mutations = { caught: caught ? Number(caught[1]) : null, notCaught: missed ? Number(missed[1]) : caught ? 0 : null };
+  const mutations = { caught: caught ? Number(caught[1]) : null, notCaught: missed ? Number(missed[1]) : caught ? 0 : null, ...(scope ? { scope } : {}) };
   if (mutations.notCaught > 0) problems.push(`${mutations.notCaught} mutations not caught`);
   if (requireEvidence && !(mutations.caught > 0)) problems.push("Missing positive mutation completion summary");
 

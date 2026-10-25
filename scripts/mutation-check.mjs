@@ -123,6 +123,8 @@ const mutations = [
   ["review manifest ignored", RS, "    else ids = declared;", "    else ids = [\"A\", \"B\", \"C\", \"D\"];"],
   ["review required lanes ignored", RS, "    if (missing.length) problems.push", "    if (false) problems.push"],
   ["review manifest validation bypassed", RS, "    if (!match || new Set(declared).size !== declared.length) problems.push(\"invalid lane manifest\");", "    if (false) problems.push(\"invalid lane manifest\");"],
+  ["review status rejects stage-scoped success", RS, "  const useStaged = staged && (!plain || staged.index > plain.index);", "  const useStaged = false;"],
+  ["review status trusts stage-scoped counts", RS, " && Number(confirmed) + Number(fast) === Number(n)) {", ") {"],
   ["review runner inherits parent environment", RR, "const env = codexEnvironment(home);", "const env = { ...process.env, ...codexEnvironment(home) };"],
   ["review runner accepts dirty source", RR, "  if (git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'])) throw Error('repo has uncommitted changes');", ""],
   ["review runner exposes builder response", RR, "if (name.endsWith('-response.md')) unlinkSync", "if (false) unlinkSync"],

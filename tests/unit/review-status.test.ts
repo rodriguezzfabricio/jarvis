@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error standalone .mjs script, like mutation-classify.mjs
 import { inspectReviews } from "../../scripts/review-status.mjs";
+// @ts-expect-error standalone .mjs script
+import { summarize } from "../../scripts/mutation-classify.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "review-status-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -112,6 +114,25 @@ describe("review status is read-only, advisory and conservative", () => {
     const f = fixture();
     writeFileSync(join(f.evidence, "mutation-check.log"), "2 mutation(s) not caught\nexit 0\n");
     expect(read(f.base)).toMatchObject({ state: "failed", result: "FAIL", mutations: { caught: null, notCaught: 2 } });
+  });
+
+  // Round 18, lane D: a successful --confirm-stage summary was read as "missing positive summary".
+  it("accepts the summarizer's stage-scoped success line, and checks its counts and stage", () => {
+    const f = fixture();
+    const results = Array.from({ length: 5 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
+    const s = summarize({ total: 5, selected: 5, filtered: false, results, unconfirmed: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } });
+    expect(s.exitCode).toBe(0);
+    writeFileSync(join(f.evidence, "mutation-check.log"), `caught   m0 (x)\n\n${s.line}\nexit 0\n`);
+    expect(read(f.base)).toMatchObject({ state: "finished", result: "PASS", mutations: { caught: 5, notCaught: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } } });
+    for (const bad of [
+      "all 5 mutations caught; stage 0-1: 3 confirmed, 3 caught in fast mode (outside stage 0-1)",
+      "all 5 mutations caught; stage 9: 3 confirmed, 2 caught in fast mode (outside stage 9)",
+      "all 5 mutations caught; stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 2)",
+      "partial run: 5 of 9 mutations selected, all 5 caught (not a complete proof, not the gate); stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 0-1)",
+    ]) {
+      writeFileSync(join(f.evidence, "mutation-check.log"), `${bad}\nexit 0\n`);
+      expect(read(f.base).result, bad).toBe("FAIL");
+    }
   });
 
   it("requires a positive mutation summary and accepts non-blocking findings", () => {

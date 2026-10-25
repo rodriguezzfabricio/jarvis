@@ -7,6 +7,8 @@ import { afterAll, expect, it } from 'vitest';
 import { runReview, codexEnvironment, reserveLaneManifest, DEFAULT_EVIDENCE, defaultEvidence, parseCli } from '../../scripts/review-run.mjs';
 // @ts-expect-error standalone script
 import { inspectReviews } from '../../scripts/review-status.mjs';
+// @ts-expect-error standalone script
+import { summarize } from '../../scripts/mutation-classify.mjs';
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'review-run-')));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
@@ -232,4 +234,16 @@ it('CLI takes --confirm-stage', () => {
   const bad = spawnSync(process.execPath, ['scripts/review-run.mjs', '--round', 'stage0-1', '--prompts', '/nonexistent', '--schema', '/nonexistent', '--confirm-stage', '7'], { encoding: 'utf8', env: cliEnv() });
   expect(bad.status).toBe(1);
   expect(bad.stderr).toMatch(/stage/);
+});
+
+// Round 18, lane D: review status read a successful --confirm-stage summary as missing, so the run failed.
+it('passes a review whose mutation evidence is a successful --confirm-stage run, and fails a partial one', async () => {
+  const results = Array.from({ length: 7 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
+  const withMutationLine = (f: ReturnType<typeof fixture>, line: string) => f.evidence.map((c: { name: string }) => (c.name === 'mutation-check' ? { ...c, args: ['-e', `console.log(${JSON.stringify(line)})`] } : c));
+  const scoped = summarize({ total: 7, selected: 7, filtered: false, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 4, fast: 3 } });
+  const f = fixture();
+  expect((await runReview({ ...f, evidence: withMutationLine(f, scoped.line) })).exitCode).toBe(0);
+  const partial = summarize({ total: 9, selected: 7, filtered: true, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 4, fast: 3 } });
+  const g = fixture();
+  expect((await runReview({ ...g, evidence: withMutationLine(g, partial.line) })).exitCode).toBe(1);
 });

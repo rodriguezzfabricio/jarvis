@@ -234,9 +234,9 @@
     "replacement": ") hits.push(\"credential URL query\");"
   },
   {
-    "name": "scanner elided values",
+    "name": "scanner bracketed elisions",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "  if (/\\.\\.\\.|…/.test(v)) return true;\n",
+    "anchor": "  if (/[[<({](?:\\.\\.\\.|…)[\\]>)}]/.test(v)) return true;\n",
     "replacement": ""
   },
   {

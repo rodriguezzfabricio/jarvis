@@ -88,7 +88,7 @@ const mutations = [
   ["Yarn auth ident not a credential", N, "|auth_ident|", "|"],
   ["yarnrc read as INI", N, "  const yarn = /^\\.?yarnrc$/.test(name);", "  const yarn = false;"],
   ["base64 user:password not detected", N, "    if (isBase64UserPassword(m[0])) {", "    if (false) {"],
-  ["base64 user part unrestricted", N, "const m = /^([\\w.@+~!$%&*=#|-]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);", "const m = /^([^\\s:]*):([^\\s\\x00-\\x1f\\x7f]+)$/u.exec(decoded);"],
+  ["base64 user part unrestricted", N, "const m = /^([\\w.@+~!$%&*=#|-]+):([\\p{L}\\p{N}\\p{P}\\p{S}]+)$/u.exec(decoded);", "const m = /^([^\\s:]+):([\\p{L}\\p{N}\\p{P}\\p{S}]+)$/u.exec(decoded);"],
   ["YAML merges not expanded", N, '        if (key !== "<<") return [{ key, value: p.value }];', "        return [{ key, value: p.value }];"],
   ["Docker token fields not credentials", N, "|identitytoken|registrytoken|", "|"],
   ["Docker auths not inspected (JSON)", N, '        if (key === "auths") for (const r of Object.values(o))', "        if (false) for (const r of Object.values(o))"],

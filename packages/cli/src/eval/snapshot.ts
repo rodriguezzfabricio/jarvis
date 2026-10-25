@@ -393,8 +393,8 @@ export function isInertString(raw: string): boolean {
   // An Authorization value is as inert as its credential: "Bearer ${API_TOKEN}".
   const scheme = /^(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+(.+)$/i.exec(v);
   if (scheme) return isInertString(scheme[1]!) || isPlaceholderAuth(scheme[1]!);
-  // An elided example ("ExponentPushToken[...]", "sk_live_…") is not a complete credential.
-  if (/\.\.\.|…/.test(v)) return true;
+  // A bracketed elision marks a documentation example, not a complete credential: "ExponentPushToken[...]".
+  if (/[[<({](?:\.\.\.|…)[\]>)}]/.test(v)) return true;
   if (/^\$\{\{.*\}\}$/.test(v) || /^\{\{.*\}\}$/.test(v) || /^%\([A-Za-z_]\w*\)s$/.test(v)) return true;
   if (/^(env|ENV)\(|^process\.env\.|^os\.environ|^!(env|Ref|Sub|GetAtt|ImportValue)\b|^(secretref|vault|op|aws-sm|gcp-sm):/.test(v)) return true;
   if (/^(password|passwd|pass|secret|token|api[ _-]?key|changeme|example|test|testing|dummy|placeholder|redacted|your[_-][\w-]*|x{3,})$/i.test(v)) return true;

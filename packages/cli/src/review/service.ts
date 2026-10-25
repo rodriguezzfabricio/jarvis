@@ -28,7 +28,7 @@ export interface ReviewServiceOptions {
   routing: ReviewRouting;
   resolveMaterial: (request: ReviewRequest) => Promise<ReviewMaterial>;
   claude: Reviewer;
-  /** The cross-model reviewer; null runs Claude only (evals: Codex's read-only sandbox doesn't confine reads). */
+  /** The cross-model reviewer; null runs Claude only (evals, for now: decisions 97, 102). */
   codex: Reviewer | null;
   home?: string;
   git?: ReviewGit;

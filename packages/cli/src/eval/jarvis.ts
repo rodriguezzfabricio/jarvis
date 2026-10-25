@@ -87,7 +87,7 @@ export interface JarvisEvalOptions {
   harness?: Harness;
   harnessSeams?: HarnessSeams;
   reviewerSeams?: ReviewerSeams;
-  /** Default: the review service with a fresh Claude reviewer only (decision 88). No Codex in evals: its read-only sandbox doesn't confine reads. */
+  /** Default: the review service with a fresh Claude reviewer only (decision 88). No Codex in evals yet (decisions 97, 102). */
   review?: Review;
   /** Grading seam; production is the protected-check gate. */
   gate?: (input: GateInput) => Promise<GateResult>;
@@ -296,7 +296,8 @@ function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, a
     home: p.home,
     resolveMaterial: async (r) => material(r.taskId, r.attemptId),
     // The Claude reviewer runs under the task-session settings: reads outside its checkout are blocked and the
-    // runner-owned folder is denied. Codex's --sandbox read-only confines writes, not reads, so evals never use it.
+    // runner-owned folder is denied. Codex's reads are confined now (decision 102), but evals stay Claude-only
+    // until a decision adds Codex back to the eval arm (decision 97).
     claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams ?? {}) }),
     codex: null,
   }).review;

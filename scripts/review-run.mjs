@@ -8,14 +8,14 @@ import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters, parseArgs } from 'node:util';
 import { pinnedCodexBin } from '../packages/cli/src/config/pins.ts';
 import { safeGit } from '../packages/cli/src/eval/git.ts';
+import { assertConfinable, openCodexJail } from '../packages/cli/src/review/confine.ts';
 import { inspectReviews } from './review-status.mjs';
 import { STAGES } from './mutation-stage.mjs';
 
 const PATH = '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 const CHECKS = ['install', 'typecheck', 'unit-tests', 'live-probe', 'doctor-live', 'mutation-check'];
-export function codexEnvironment(home) {
-  return { HOME: join(home, '.jarvis/codex-home/home'), USER: userInfo().username, PATH, CODEX_HOME: join(home, '.jarvis/codex-home') };
-}
+// Decision 102: lanes run inside the reviewer's Seatbelt profile, with this environment and nothing else.
+export { codexEnvironment } from '../packages/cli/src/review/confine.ts';
 export function reserveLaneManifest(roundDir, lanes) {
   writeFileSync(join(roundDir, 'lanes'), `lanes ${lanes.join(',')}\n`, { flag: 'wx', mode: 0o600 });
 }
@@ -35,6 +35,13 @@ export function defaultEvidence({ confirmStage } = {}) {
   ];
 }
 export const DEFAULT_EVIDENCE = defaultEvidence();
+/** Copies a lane's verdict out of the jail: only a regular file, never through a link the lane planted. */
+function copyVerdict(from, to) {
+  let st;
+  try { st = lstatSync(from); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+  if (!st.isFile() || st.size > 2 * 1024 * 1024) throw Error(`lane verdict is not a plain file: ${from}`);
+  writeFileSync(to, readFileSync(from), { flag: 'wx', mode: 0o600 });
+}
 function inside(path, parent) { const r = relative(parent, path); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); }
 function exists(path) { try { lstatSync(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } }
 function command(bin, args, cwd, env, stdoutPath, stderrPath = stdoutPath) {
@@ -87,6 +94,8 @@ export async function runReview(options) {
   if (exists(workspace)) throw Error('workspace already exists');
   if (exists(roundDir) && readdirSync(roundDir).some(n => !/^prompt-[A-D]\.md$|^schema\.json$/.test(n))) throw Error('round already contains output; use a new round');
   const plan = { roundDir, workspace, revision, lanes, model, effort, codex };
+  // The lanes can't run unconfined, so a machine that can't confine them is refused before hours of evidence.
+  assertConfinable({ bin: codex });
   if (options.dryRun) return plan;
   mkdirSync(roundDir, { recursive: true, mode: 0o700 });
   // Exclusive manifest creation is also the reservation: concurrent starters cannot both win.
@@ -117,12 +126,23 @@ export async function runReview(options) {
     }
     writeFileSync(join(roundDir, 'workspace.txt'), `${workspace}\n`, { flag: 'wx' });
     appendFileSync(join(roundDir, 'status'), 'evidence-done\n');
-    const env = codexEnvironment(home);
-    await Promise.all(lanes.map(async l => {
-      const code = await command(codex, ['exec', '-C', workspace, '-m', model, '--sandbox', 'read-only', '--ephemeral', '--json', '-c', `model_reasoning_effort="${effort}"`, '--output-schema', schema, '-o', join(roundDir, `verdict-${l}.json`), '--', texts[l]], workspace, env, join(roundDir, `events-${l}.jsonl`), join(roundDir, `stderr-${l}.txt`));
-      appendFileSync(join(roundDir, 'status'), `lane ${l} exit ${code}\n`);
-      failed ||= code !== 0;
-    }));
+    // Codex's own sandbox is off inside the profile (a confined process can't apply a second one). The
+    // lanes write their verdicts in the jail; the runner copies each one out as a plain file.
+    const jail = await openCodexJail({ home, bin: codex, workspace, readFiles: [schema] });
+    try {
+      const env = jail.env;
+      // Every lane finishes before the jail closes, even when one of them fails.
+      const settled = await Promise.allSettled(lanes.map(async l => {
+        const verdict = join(jail.out, `verdict-${l}.json`);
+        const lane = jail.wrap(codex, ['exec', '-C', workspace, '-m', model, '--sandbox', 'danger-full-access', '--ephemeral', '--json', '-c', `model_reasoning_effort="${effort}"`, '--output-schema', schema, '-o', verdict, '--', texts[l]]);
+        const code = await command(lane.bin, lane.args, workspace, env, join(roundDir, `events-${l}.jsonl`), join(roundDir, `stderr-${l}.txt`));
+        copyVerdict(verdict, join(roundDir, `verdict-${l}.json`));
+        appendFileSync(join(roundDir, 'status'), `lane ${l} exit ${code}\n`);
+        failed ||= code !== 0;
+      }));
+      const rejected = settled.find(r => r.status === 'rejected');
+      if (rejected) throw rejected.reason;
+    } finally { await jail.close(); }
     appendFileSync(join(roundDir, 'status'), 'codex-done\n');
     const report = inspectReviews(reviewRoot).rounds.find(r => r.name === round);
     return { ...plan, exitCode: failed || report?.result !== 'PASS' ? 1 : 0 };

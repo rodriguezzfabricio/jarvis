@@ -32,8 +32,8 @@
   {
     "name": "scanner short base64 wrapping",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "if (wrapped.length > 1 && width >= MIN_PAYLOAD_RUN && ",
-    "replacement": "if (false && width >= MIN_PAYLOAD_RUN && "
+    "anchor": "      add(wrapped.join(\"\"), !even);\n",
+    "replacement": ""
   },
   {
     "name": "scanner base64 login credentials",
@@ -176,7 +176,7 @@
   {
     "name": "scanner base64 login plausibility",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "  if (!isPlausibleBase64(b64, MIN_LOGIN_RUN)) return false;\n",
+    "anchor": "  if (!isPlausibleBase64(b64, min)) return false;\n",
     "replacement": ""
   },
   {
@@ -188,13 +188,13 @@
   {
     "name": "scanner base64 payload run plausibility",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": ".filter((r) => isPlausibleBase64(r, MIN_PAYLOAD_RUN));",
-    "replacement": ";"
+    "anchor": "for (const m of matches) if (isPlausibleBase64(m[0], MIN_PAYLOAD_RUN)) add(m[0], false);",
+    "replacement": "for (const m of matches) add(m[0], false);"
   },
   {
     "name": "scanner decoded payload plausibility",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "if (isPlausiblePayload(data)) yield data;",
+    "anchor": "if (isPlausiblePayload(data, strict)) yield data;",
     "replacement": "yield data;"
   },
   {
@@ -210,9 +210,9 @@
     "replacement": "  const head"
   },
   {
-    "name": "scanner URL query local hosts",
+    "name": "scanner URL query placeholders",
     "file": "packages/cli/src/eval/snapshot.ts",
-    "anchor": "      if (LOCAL_HOSTS.test(url.hostname)) continue;\n",
+    "anchor": " && !isPlaceholderCredential(value, \"\", url.hostname)",
     "replacement": ""
   },
   {
@@ -260,7 +260,7 @@
   {
     "name": "scanner literal word segments",
     "file": "packages/cli/src/eval/snapshot-literals.ts",
-    "anchor": ".every((s) => WORD_SEGMENT.test(s));",
+    "anchor": ".every(isWordSegment);",
     "replacement": ".every(() => false);"
   },
   {
@@ -268,5 +268,107 @@
     "file": "packages/cli/src/eval/snapshot-literals.ts",
     "anchor": "  if (/^[a-z][a-z0-9+.-]*:\\/\\//i.test(v)) return false;\n",
     "replacement": ""
+  },
+  {
+    "name": "scanner media text decoding",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "visit(\"media.txt\", Buffer.from(text), depth + 1);",
+    "replacement": "void text;"
+  },
+  {
+    "name": "scanner media unparsed bytes",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "  if (at < buf.length) unparsed.push(buf.subarray(at));\n  return [",
+    "replacement": "  return ["
+  },
+  {
+    "name": "scanner media UTF-16 runs",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "for (const m of latin1.matchAll(re)) runs.push(m[0].replace(/\\x00/g, \"\"));",
+    "replacement": "void re;"
+  },
+  {
+    "name": "scanner PNG compressed text chunks",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "const text = k >= 0 && body > 0 && compressed ? budget.decompress(data.subarray(body)) : undefined;",
+    "replacement": "const text = undefined as Buffer | undefined;"
+  },
+  {
+    "name": "scanner JPEG segments",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "    parts.payloads.push(buf.subarray(at + 4, at + 2 + length));\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner GIF extensions",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "      parts.payloads.push(chain.data);\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner WebP chunks",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "else if (id !== \"VP8 \" && id !== \"VP8L\" && id !== \"ALPH\") parts.payloads.push(buf.subarray(start, start + size));",
+    "replacement": "else void id;"
+  },
+  {
+    "name": "scanner font tables",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (!GLYPH_TABLES.has(buf.toString(\"latin1\", entry, entry + 4))) parts.payloads.push(buf.subarray(offset, offset + length));",
+    "replacement": "void entry;"
+  },
+  {
+    "name": "scanner WOFF2 tables",
+    "file": "packages/cli/src/eval/snapshot-media.ts",
+    "anchor": "if (!GLYPH_TABLES.has(t.tag)) parts.payloads.push(stream.subarray(offset, offset + t.length));",
+    "replacement": "void t;"
+  },
+  {
+    "name": "scanner decoded Brotli probe",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "return !utf8 && decompresses(data, brotliDecompressSync);",
+    "replacement": "return false;"
+  },
+  {
+    "name": "scanner wrapped DER lengths",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "        if (der !== undefined) add(der, true);\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner random letters",
+    "file": "packages/cli/src/eval/snapshot-literals.ts",
+    "anchor": "return bits / (s.length - 1) >= RANDOM_LETTERS_BITS;",
+    "replacement": "return false;"
+  },
+  {
+    "name": "scanner local credential URLs",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "  if (!LOCAL_HOSTS.test(host)) return false;\n",
+    "replacement": "  if (!LOCAL_HOSTS.test(host)) return false;\n  if (host) return true;\n"
+  },
+  {
+    "name": "scanner local defaults only at local hosts",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "  if (!LOCAL_HOSTS.test(host)) return false;\n",
+    "replacement": ""
+  },
+  {
+    "name": "scanner short local passwords",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "pw.length <= 3",
+    "replacement": "pw.length <= 8"
+  },
+  {
+    "name": "scanner padded base64 logins",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "if (isBase64UserPassword(m[0]) || paddedLogin(m[0], m.index)) {",
+    "replacement": "if (isBase64UserPassword(m[0])) {"
+  },
+  {
+    "name": "scanner padded login context",
+    "file": "packages/cli/src/eval/snapshot.ts",
+    "anchor": "return LOGIN_CONTEXT.test(line) &&",
+    "replacement": "return (LOGIN_CONTEXT.test(line) || true) &&"
   }
 ]

@@ -1033,6 +1033,13 @@ Fabricio asked for as many Claude and Codex workers as the subscriptions and the
 - **The ceiling** is decision 93's 6 Claude and 5 Codex workers. The Mac (8 cores, 16 GB) is the tighter limit: full suites, mutation runs and review evidence still go through the quiet slot, and nothing else runs a full suite while review evidence is being collected.
 *Why:* review evidence collected under a load near 28 took about 4.5 minutes per mutation instead of under one, and round 20's evidence never finished.
 
+### 105. Fabricio delegated the stage 2 (and later) ratings: a stand-in runs the intake, two independent judges rate (new; Oct 25; Fabricio; changes how 47's and §8's "you rate" is carried out)
+Fabricio, Oct 25: "I'm literally just gonna let you do it and let you judge it yourself." So:
+- **The run:** a Claude worker plays Fabricio in the real interactive flow (pinned Claude Code 2.1.309, the installed plugin, `/jarvis <the task's exact prompt>`). It answers each question as Fabricio would from what the repo and his notes say, or takes the default, and never reads the rubric. It records the full transcript.
+- **The rating:** two judges that did no part of the run. One is a fresh Claude `claude-opus-5-5` worker; the other is Codex `gpt-6-astra` (read-only, confined). Each scores independently against the rubric in `jarvis-evals/rubrics/` and the GUIDE's questions, and fills the same `ratings.md` fields.
+- **The verdict:** the proof passes only when both judges pass it. If their 1–5 scores differ by more than 1 point, or one passes and one fails, Fabricio decides.
+- The integrator never rates work it orchestrated. Fabricio can still rate any run himself; his rating replaces the judges'.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

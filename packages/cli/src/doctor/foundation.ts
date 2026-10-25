@@ -27,7 +27,8 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
   for (const id of ids) {
     const dir = join(projects, id);
     const v = (d.ledgerVerify ?? verifyLedger)(dir);
-    add(`ledger.${id}`, v.ok ? "pass" : "fail", v.ok ? `${v.entries.length} entries verified${v.repairable.length ? ` (repairable: ${v.repairable.join(", ")})` : ""}` : v.problems.join("; "));
+    if (v.contended) out.push({ name: `ledger.${id}`, level: "warn", status: "busy", detail: "busy, re-run: writers kept the ledger moving; not verified" });
+    else add(`ledger.${id}`, v.ok ? "pass" : "fail", v.ok ? `${v.entries.length} entries verified${v.repairable.length ? ` (repairable: ${v.repairable.join(", ")})` : ""}` : v.problems.join("; "));
     const store = new ChecksStore(dir);
     // A project that ever approved checks must still have its lock (Codex stage 0 review 7): a missing
     // lock is a failure, not a project without checks.

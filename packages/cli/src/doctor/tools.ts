@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { ChecksStore } from "../checks/store.ts";
-import { pinnedMaestroBin } from "../config/pins.ts";
+import { pinnedMaestroBin, pinnedSecurityScanners } from "../config/pins.ts";
 import { fileHash } from "../lanes/materialize.ts";
 import { verifyChecksReadOnly } from "./read-only.ts";
 import { SCANNERS, scannerDoctorChecks, type ScannerDeps, type ScannerPins } from "../security/scanners.ts";
@@ -13,7 +13,7 @@ export interface ToolDoctorDeps {
   home?: string;
   repoPath: string;
   platform?: NodeJS.Platform;
-  exec: (bin: string, args: string[]) => string;
+  exec: (bin: string, args: string[], env?: Record<string, string>) => string;
   exists?: (path: string) => boolean;
   scannerPins?: ScannerPins;
   scannerDeps?: ScannerDeps;
@@ -34,23 +34,20 @@ export async function toolDoctorChecks(deps: ToolDoctorDeps): Promise<DoctorChec
   const checks: DoctorCheck[] = [];
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, level: ok ? "pass" : deps.required?.includes(name) ? "fail" : "warn", detail });
   const locate = (tool: string) => [join(home, ".local", "bin", tool), join("/opt/homebrew/bin", tool), join("/usr/local/bin", tool)].find(exists);
-  const pins: ScannerPins = { ...deps.scannerPins };
-  if (deps.scannerPins === undefined) for (const tool of SCANNERS) {
-    const bin = locate(tool);
-    if (!bin) continue;
-    try {
-      const found = version(deps.exec(bin, [tool === "gitleaks" ? "version" : "--version"]));
-      if (found) pins[tool] = { bin, version: found, args: [] };
-    } catch { /* Unavailable tools stay warnings unless required. */ }
-  }
+  const pins = deps.scannerPins ?? pinnedSecurityScanners();
   // Reuse the security lane's exact-version probe; no scan is run by doctor.
   const scannerDeps = deps.scannerDeps ?? { spawn: async spec => {
-    try { return { code: 0, timedOut: false, overflowed: false, durationMs: 0, stdout: deps.exec(spec.bin, [...spec.args]), stderr: "" }; }
+    try {
+      if (!exists(spec.bin)) throw new Error("binary unavailable");
+      return { code: 0, timedOut: false, overflowed: false, durationMs: 0, stdout: deps.exec(spec.bin, [...spec.args], spec.env), stderr: "" };
+    }
     catch { return { code: 1, timedOut: false, overflowed: false, durationMs: 0, stdout: "", stderr: "" }; }
   } } satisfies ScannerDeps;
   try {
-    for (const check of await scannerDoctorChecks(pins, deps.repoPath, scannerDeps)) add(check.name, check.level === "pass", check.detail);
-  } catch (error) { for (const tool of SCANNERS) add(`security.${tool}`, false, `scanner version check unavailable: ${String(error)}`); }
+    checks.push(...await scannerDoctorChecks(pins, deps.repoPath, scannerDeps));
+  } catch (error) {
+    for (const tool of SCANNERS) checks.push({ name: `security.${tool}`, level: "fail", detail: `scanner version check unavailable (expected ${pins[tool]?.version ?? "unconfigured"}; found unavailable): ${String(error)}` });
+  }
   const probe = (name: string, bin: string | undefined) => {
     try {
       if (!bin || !isAbsolute(bin) || !exists(bin)) throw new Error("binary unavailable");

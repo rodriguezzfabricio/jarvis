@@ -38,7 +38,7 @@ it("fetches only detected ecosystems through pinned OSV into a staging cache and
   expect(calls[1]!.args).toEqual(expect.arrayContaining(["--offline", "--offline-vulnerabilities", "--download-offline-databases", "--x-plugins=vulnmatch/osvlocal"]));
   expect(calls[1]!.cwd).not.toBe(projectDir);
   const inputs = calls[1]!.args.filter((arg, i, args) => args[i - 1] === "--lockfile");
-  expect(inputs.map((p) => p.split("/").at(-1)).sort()).toEqual(["go.sum", "package-lock.json"]);
+  expect(inputs.map((p) => p.split("/").at(-1)).sort()).toEqual(["go.mod", "package-lock.json"]);
   expect(manifest).toMatchObject({ schema: 1, scannerVersion: "2.7.0", fetchedAt: stamp, ecosystems: ["npm", "Go"], files: [{ path: "nested/cache.zip", sha256: createHash("sha256").update("fake downloaded database").digest("hex") }] });
   expect(JSON.parse(readFileSync(join(outputDir, "manifest.json"), "utf8"))).toEqual(manifest);
   expect(existsSync(calls[1]!.env.HOME!)).toBe(false);

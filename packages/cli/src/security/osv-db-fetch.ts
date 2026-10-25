@@ -16,7 +16,8 @@ export interface OsvFetchDeps {
 function seed(dir: string, ecosystems: OsvEcosystem[]): string[] {
   const fixtures = {
     npm: ["package-lock.json", JSON.stringify({ name: "jarvis-offline-db", lockfileVersion: 3, packages: { "": { name: "jarvis-offline-db", version: "1.0.0" }, "node_modules/lodash": { version: "4.17.20", resolved: "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz" } } })],
-    Go: ["go.sum", "golang.org/x/text v0.3.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"],
+    // OSV 2.7.0 has no extractor for a lone go.sum; it reads go.mod.
+    Go: ["go.mod", "module jarvis.invalid/offline-db\n\ngo 1.22\n\nrequire golang.org/x/text v0.3.0\n"],
     PyPI: ["requirements.txt", "requests==2.19.1\n"],
   } as const;
   return ecosystems.flatMap((ecosystem) => {

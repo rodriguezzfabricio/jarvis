@@ -1025,6 +1025,14 @@ So golden task 12 reports a built, verified bundle with native smoke **not run**
 
 *Limits:* Codex's API hosts are an exfiltration route only to OpenAI, which receives the review content anyway. **The HTTP `Host` inside TLS can't be checked without intercepting TLS**, which would mean a runner CA trusted by Codex: a client with a valid `chatgpt.com` handshake can still ask the CDN for another zone in its HTTP request, and whether that works is up to the CDN. A second ClientHello after a HelloRetryRequest isn't re-checked either. The remaining system reads hold no user data on this Mac (audited Oct 25): `/private/etc`'s secrets (`master.passwd`, `sudoers`, `krb5.keytab`, `racoon/psk.txt`, `cups/printers.conf`) are root-only, so POSIX still denies them; `hosts` is world-readable and Fabricio-edited, but holds only host names; `/private/var/db/mds` holds the Security framework's MDS tables and error strings, `timezone` the zone data, `select` one link, and `/private/var/db/dyld` doesn't exist; `/Library/Apple`, the Command Line Tools and `/usr` are root-owned system files. `/System` covers `/System/Volumes/Data`, but Seatbelt matches the firmlinked path (`/Users/...`), so a denied file stays denied through it (tested). The auth file is readable to the reviewer's commands, as it was before; its findings stay redacted and fingerprinted. Evals still use the Claude reviewer only; adding Codex back to the eval arm (decision 97) is a separate call. The integrator's hand-written `codex exec -s read-only` command is not confined; use `scripts/review-run.mjs`.
 
+### 104. Building Jarvis: workers are routed by difficulty, across both subscriptions (new; Oct 25; Fabricio; extends 84, 93)
+Fabricio asked for as many Claude and Codex workers as the subscriptions and the Mac can carry, each on the model the task needs. The integrator routes every worker:
+- **Hard (security design, adversarial review, sandbox or scanner bypasses, safety-gate fixes):** Claude `claude-opus-5-5`, or Codex `gpt-6-astra` at high or xhigh effort. Every Codex review of security code uses `gpt-6-astra`.
+- **Normal (feature lanes, wiring, ordinary fixes with tests):** Codex `gpt-6.1-sol` at high, or Claude `claude-sonnet-5-5`.
+- **Easy (mechanical edits, test splitting, docs, renumbering):** Claude `claude-sonnet-5-5` or `claude-haiku-5-5`, or Codex `gpt-6-luna`.
+- **The ceiling** is decision 93's 6 Claude and 5 Codex workers. The Mac (8 cores, 16 GB) is the tighter limit: full suites, mutation runs and review evidence still go through the quiet slot, and nothing else runs a full suite while review evidence is being collected.
+*Why:* review evidence collected under a load near 28 took about 4.5 minutes per mutation instead of under one, and round 20's evidence never finished.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

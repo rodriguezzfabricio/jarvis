@@ -26,6 +26,7 @@ export async function withScannerRuntime<T>(cwd: string, deps: ScannerDeps, run:
 export function scannerEnvironment(pin: ScannerPin, runtime: ScannerRuntime): Record<string, string> {
   const env: Record<string, string> = { PATH: "/usr/bin:/bin", HOME: runtime.homeDir, TMPDIR: runtime.tmpDir, LANG: "C", CI: "1", SEMGREP_SEND_METRICS: "off", SEMGREP_ENABLE_VERSION_CHECK: "0" };
   for (const [key, value] of Object.entries(pin.env ?? {})) {
+    if (key === "SSL_CERT_FILE" && value === "/etc/ssl/cert.pem") { env[key] = value; continue; }
     if (key !== "OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY" || !runtime.fixturesDir) throw Error("Invalid scanner environment");
     try {
       const fixtures = realpathSync(runtime.fixturesDir);

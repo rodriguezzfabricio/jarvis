@@ -1,0 +1,55 @@
+# Original Jarvis rules. These are sink checks, not a complete dataflow audit.
+rules:
+  - id: jarvis.py.sql-injection
+    languages: [python]
+    severity: ERROR
+    message: SQL built by concatenation can permit injection; use bound parameters.
+    pattern: $DB.execute($SQL + $INPUT, ...)
+  - id: jarvis.py.eval
+    languages: [python]
+    severity: ERROR
+    message: Dynamic code execution requires review.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+  - id: jarvis.py.unsafe-deserialization
+    languages: [python]
+    severity: ERROR
+    message: Deserialization may execute code; use a data-only parser.
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+      - pattern: yaml.load(...)
+      - pattern: yaml.unsafe_load(...)
+  - id: jarvis.py.command-execution
+    languages: [python]
+    severity: ERROR
+    message: Shell command execution requires review; prefer argument arrays.
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+      - pattern: subprocess.$F(..., shell=True, ...)
+  - id: jarvis.py.ssrf
+    languages: [python]
+    severity: ERROR
+    message: Request-controlled destinations need an allowlist.
+    mode: taint
+    pattern-sources:
+      - pattern: request.args.get(...)
+      - pattern: request.form.get(...)
+      - pattern: request.json.get(...)
+    pattern-sinks:
+      - pattern: requests.get($URL, ...)
+      - pattern: urllib.request.urlopen($URL, ...)
+  - id: jarvis.py.hardcoded-secret
+    languages: [python]
+    severity: ERROR
+    message: Credential-like literal requires review; use the secret backend.
+    patterns:
+      - pattern: $KEY = "$VALUE"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)^(api_?key|secret|password|token)$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: .{8,}

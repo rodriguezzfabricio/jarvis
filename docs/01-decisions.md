@@ -1050,6 +1050,40 @@ The first live `jarvis eval jarvis 05-citizenship-filter` blocked its task with 
 - **An infrastructure error stays an error (as decision 100 says).** Every caller passes the loop the service's recorded verdict: `jarvis run` already did, and the eval arm now does too. The loop retries an `error` once. If it errors again, the task blocks with `review infrastructure error: <what the service recorded>`. Neither try spends a repair or sends a fix prompt. A plain "fail" from a review function is a verdict on the code.
 - **The record says what failed:** `review_result.error` is the service's own error, or the first reviewer's. `model` lists the models that reviewed, and is `null` when none ran (it was `""`). The eval's review-session count includes only reviewers that ran.
 
+### 114. Bug tasks: sessions get their skills as text, a bug's exit condition names every path, and the reviewer checks the fix against the report (new; Oct 25; the stage 3 bug-task worker, from the failed Jarvis runs of golden tasks 4 and 5; Fabricio can veto; tightens 30, 88 and 97; the integrator may renumber)
+In the stage 3 proof runs the loop claimed done on both bug tasks while their hidden checks failed: both runs of 04-chromium-sandbox and run r1 of 05-citizenship-filter. The build and review transcripts show five gaps:
+- **No session had its skills.** Task sessions run `--restricted --tools Bash,Read,Edit,Write,Glob,Grep` (decision 68). That list has no Skill tool, so a plugin's skills are listed in `init` but can't be loaded. The eval arm didn't pass `--plugin-dir` either. Every build session ran on the bare task prompt.
+- **One refused command ended all testing.** Each first attempt ran on the fast tier: 12 to 16 turns, about a minute. Each used compound commands (`;`, pipes, heredocs) that the build skill forbids. The first refusal ("Permission to use Bash has been denied…") was read as Bash being off. No first attempt reproduced the bug or finished a test run, and each wrote "NOT verified" in its notes.
+- **Each fix covered the first trigger it found.** In 05 r1 the builder added phrase spellings without reading what the callers pass. In 04 r2 it fixed one compose service, and in 04 r1 it changed application code for a container fault. The run that passed, 05 smoke2, found the stored-data cause by comparing with a sibling function. Its own markup tests then failed in the gate, which escalated the repair to the strong tier.
+- **The gate can't see what the builder didn't test.** The loop gates on the project's own suite (decision 97). A builder's test encodes the builder's hypothesis, so a fix for a wrong or partial cause passes unless some test covers the path it missed.
+- **The reviewer checked the diff, not the report.** For a single-task plan, the review material was the request plus "reproduced, fixed, and the unit check and code review pass". Two of the three reviews took 3 or 4 turns and read only the changed files. The third said the gate couldn't show the fix works, and filed that as advisory.
+
+Settled:
+- **Every build-loop session gets the build and debug skills as text** in its runner-owned run header (`runner/session-skills.ts`). They are read from the Jarvis install, which no session can write, with the frontmatter removed. A missing, empty or oversized skill stops the loop before any session starts. This applies to `jarvis run` as well.
+- **The eval arm loads the Jarvis plugin,** as `jarvis run` does (its tripwire and SessionStart hooks), so the arm measures what production runs.
+- **The debug skill gets "Cover every path to the symptom".** Before fixing, the builder:
+  - traces every caller's real data back to where it is produced or stored;
+  - lists every configuration, service, entrypoint or platform the report covers;
+  - writes these in the notes as `Paths:`, each one marked fixed or out of scope.
+
+  The fix stays in the layer the report points at. The checks step tests the fix against the report's own words, not only against the new test. The build skill says a refusal refuses that one command, not the tool.
+- **A bug's exit condition names every path:** "The reported symptom is reproduced and its root cause is fixed on every path that produces it (every caller, input form, configuration or entrypoint the report covers), and the unit check and code review pass." The builder reads it, and the reviewer checks it as the task's criterion.
+- **A bug fix's reviewer gets a bug brief** (`review/service.ts`, when the material's `kind` is `bug`). The reviewer:
+  - lists the symptom's paths by reading the checkout;
+  - traces at least two inputs or configurations that the candidate's tests don't contain;
+  - reports a path that still shows the symptom as high, because the exit condition isn't met;
+  - reports a symptom fix outside the report's layer;
+  - files a medium finding when no evidence case exercises the symptom.
+
+  The verdict rules don't change.
+- **A session is pointed at a spec only when the checkout has one.** Otherwise its prompt says there is none, because a bug report has no spec.
+
+*Why these are general, not fixes for these two tasks:* each is a standard debugging or review practice: reproduce, trace the real input, list every trigger, fix at the cause's layer, check against the report, and review with new inputs. None names a task, file or phrase from tasks 4 or 5. The examples are generic categories (encoding, markup, case; the container, a deploy configuration, the build), but two of them match these tasks' root-cause families. That is one more reason the held-out task decides. The skill evals were not changed. The scaffolding that covers a model weakness is listed in `docs/harness-assumptions.md`.
+
+*Found, not fixed: sessions can't run these projects' tests.* The gate runs Go 1.26.10 offline from its protected module-cache fixture. A session gets an empty per-run cache, the host's Go 1.24.5 and a toolchain download that fails inside the sandbox. No session in any of the four runs, the passing one included, finished `go test`. Every Go bug task therefore falls under the debug skill's "can't reproduce" exception, and the gate is the builder's only test run. Giving sessions a read-only copy of the gate's toolchain and module cache (never its checks) is an envelope change, so it is a separate decision (backlog).
+
+*Not changed:* routing. The first attempt stays on the fast tier and escalates after a gate or review failure (decision 24); the passing smoke run shows escalation works once something fails. If a held-out bug task still gets through the gate and review with an incomplete fix, the next lever is the strong tier for bug reviews (backlog). These changes were tuned on tasks 4 and 5, so they count as general only after a bug task never used in tuning passes (backlog). The Jarvis-arm runs made before this decision measured an arm without skills. As with decision 101, they are kept as history, and new runs replace them for the proof.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

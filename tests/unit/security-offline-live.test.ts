@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect, it } from "vitest";
@@ -70,3 +70,18 @@ it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/osv-scanner") || !db || !ex
     expect(result.findings.some((finding) => finding.file.endsWith("nested/package-lock.json"))).toBe(true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 120_000);
+
+it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/semgrep"))("live Semgrep finds planted eval in a file larger than 1 MB", async () => {
+  const root = mkdtempSync(join(tmpdir(), "security-semgrep-large-live-"));
+  try {
+    const checkout = join(root, "checkout"); mkdirSync(checkout);
+    const file = join(checkout, "large.js");
+    writeFileSync(file, `/*${"padding ".repeat(160_000)}*/\neval(input);\n`);
+    expect(statSync(file).size).toBeGreaterThan(1024 * 1024);
+    const pin = pinnedSecurityScanners().semgrep!;
+    expect(pin.args).toContain("--max-target-bytes=0");
+    const result = await runScanner("semgrep", pin, checkout, { timeoutMs: 45_000 });
+    expect(result.status).toBe("fail");
+    expect(result.findings.some((finding) => finding.file.endsWith("large.js") && finding.rule.endsWith("jarvis.js.eval"))).toBe(true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}, 60_000);

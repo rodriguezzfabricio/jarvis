@@ -37,6 +37,8 @@ export interface ScanResult {
 export interface ScannerDeps {
   spawn?: (spec: SessionSpec) => Promise<SessionOutcome>;
   timeoutMs?: number;
+  /** Version checks have their own deadline, independent of the scan's timeout (default 10 s). */
+  versionTimeoutMs?: number;
   homeDir?: string;
   tmpDir?: string;
   fixturesDir?: string;
@@ -82,7 +84,11 @@ function report(raw: unknown): ObjectValue {
 }
 
 function semgrep(raw: unknown): Finding[] {
-  return array(report(raw).results).map((value) => {
+  const output = report(raw);
+  const paths = output.paths === undefined ? undefined : object(output.paths);
+  if (paths?.skipped !== undefined && array(paths.skipped).length !== 0) invalid();
+  if (output.skipped_targets !== undefined && array(output.skipped_targets).length !== 0) invalid();
+  return array(output.results).map((value) => {
     const r = object(value); const rule = string(r.check_id); const file = string(r.path);
     const at = line(object(r.start).line); const extra = object(r.extra);
     return finding("semgrep", rule, file, at, severity(extra.severity), "Static analysis finding", `${rule}:${file}:${at}`);
@@ -125,7 +131,7 @@ export function scannerNotRun(tool: Scanner): ScanResult {
 
 async function scannerVersion(tool: Scanner, pin: ScannerPin, cwd: string, deps: ScannerDeps & ScannerRuntime): Promise<{ ok: boolean; version?: string }> {
   const versionPin = { ...pin, env: Object.fromEntries(Object.entries(pin.env ?? {}).filter(([key]) => key !== "OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY")) };
-  const spec = session(versionPin, cwd, [tool === "gitleaks" ? "version" : "--version"], deps.timeoutMs ?? 10_000, deps);
+  const spec = session(versionPin, cwd, [tool === "gitleaks" ? "version" : "--version"], deps.versionTimeoutMs ?? 10_000, deps);
   try {
     const r = await (deps.spawn ?? runSession)(spec);
     const versions = reportedScannerVersion(tool, r.stdout);

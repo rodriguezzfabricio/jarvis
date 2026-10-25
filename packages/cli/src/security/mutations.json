@@ -458,7 +458,7 @@
   {
     "name": "security offline: unpinned database fetch binary accepted",
     "file": "packages/cli/src/security/osv-db-fetch.ts",
-    "anchor": "JSON.stringify(reportedScannerVersion(\"osv-scanner\", version.stdout)) !== '[\"2.7.0\"]'",
+    "anchor": "JSON.stringify(reportedScannerVersion(\"osv-scanner\", version.stdout)) !== JSON.stringify([pin.version])",
     "replacement": "false"
   },
   {
@@ -478,5 +478,77 @@
     "file": "packages/cli/src/security/offline.ts",
     "anchor": "\"--x-plugins=vulnmatch/osvlocal\", \"--config=/dev/null\", ",
     "replacement": "\"--x-plugins=vulnmatch/osvlocal\", "
+  },
+  {
+    "name": "security backlog: Semgrep unlimited size required",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "\"--json\", \"--max-target-bytes=0\"]",
+    "replacement": "\"--json\"]"
+  },
+  {
+    "name": "security backlog: Semgrep skipped paths accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (paths?.skipped !== undefined && array(paths.skipped).length !== 0) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: Semgrep skipped targets accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (output.skipped_targets !== undefined && array(output.skipped_targets).length !== 0) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: scanner errors accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.errors !== undefined && array(r.errors).length !== 0) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: gitleaks required flags ignored",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!gitleaksFlags.every((flag) => args.includes(flag))",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks unreviewed options accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!args.every((arg, index) => (configIndex >= 0 && index === configIndex + 1) || gitleaksAllowed.has(arg))",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks duplicate report paths accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "args.filter((arg) => arg.startsWith(\"--report-path=\")).length !== 1",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks candidate configuration accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "configIndex >= 0 && !protectedRules(args[configIndex + 1], pin, cwd, runtime)",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: version timeout tied to scan timeout",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "deps.versionTimeoutMs ?? 10_000",
+    "replacement": "deps.timeoutMs ?? 10_000"
+  },
+  {
+    "name": "security backlog: OSV fetch binary hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "bin: pin.bin, args: [\"--version\"]",
+    "replacement": "bin: \"/opt/homebrew/bin/osv-scanner\", args: [\"--version\"]"
+  },
+  {
+    "name": "security backlog: OSV fetch version hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "!== JSON.stringify([pin.version])",
+    "replacement": "!== '[\"2.7.0\"]'"
+  },
+  {
+    "name": "security backlog: OSV manifest version hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "scannerVersion: pin.version,",
+    "replacement": "scannerVersion: \"2.7.0\","
   }
 ]

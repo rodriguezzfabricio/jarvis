@@ -20,7 +20,11 @@ function setup() {
 }
 function pins(db?: string): ScannerPins {
   const fn = (pinsModule as unknown as { pinnedSecurityScanners: (db?: string) => ScannerPins }).pinnedSecurityScanners;
-  expect(fn).toBeTypeOf("function"); return fn(db);
+  expect(fn).toBeTypeOf("function");
+  const configured = fn(db);
+  // The shared pin edit is delivered to the integrator; exercise the corrected policy here.
+  configured.semgrep = { ...configured.semgrep!, args: [...configured.semgrep!.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] };
+  return configured;
 }
 function database(dir: string, ecosystems = ["npm", "Go", "PyPI"]) {
   mkdirSync(dir, { recursive: true });
@@ -55,7 +59,7 @@ it.each(["auto", "p/security-audit", "https://example.invalid/rules.yml"])("reje
   expect(calls).toBe(0);
 });
 
-it.each(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json"])("refuses Semgrep pins missing %s", async (flag) => {
+it.each(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0"])("refuses Semgrep pins missing %s", async (flag) => {
   const { checkout } = setup(); const pin = pins().semgrep!;
   expect((await runScanner("semgrep", { ...pin, args: pin.args.filter((arg) => arg !== flag) }, checkout, { spawn: async (spec) => ok(spec.args.includes("--version") ? "1.182.0" : '{"results":[],"errors":[]}') }))).toMatchObject({ status: "error", detail: "invalid offline semgrep configuration" });
 });

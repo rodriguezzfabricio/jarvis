@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   CLAUDE_CODE_VERSION,
   CODEX_VERSION,
@@ -10,6 +11,7 @@ import {
   pinnedCodexBin,
 } from "../config/pins.ts";
 import { buildChildEnv, findForbiddenEnv, runCanaryProbe, type ProbeOptions } from "../harness/claude/index.ts";
+import { toolDoctorChecks, type ToolDoctorDeps } from "./tools.ts";
 import { foundationChecks, type FoundationDeps } from "./foundation.ts";
 
 /** jarvis doctor, first version (decision 46; tightened by 57–60, 63, 64). */
@@ -36,6 +38,7 @@ export interface DoctorDeps {
   probe?: (opts: ProbeOptions) => ReturnType<typeof runCanaryProbe>;
   /** Stage 1 foundation checks; omitted in unit tests of the stage 0 checks. */
   foundation?: FoundationDeps;
+  tools?: Partial<Omit<ToolDoctorDeps, "exec" | "repoPath" | "home" | "platform" | "exists">>;
 }
 
 /** Binaries doctor runs get the allowlisted child environment, never this shell's (decision 58). */
@@ -113,6 +116,9 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
     if (flag === "1" && synced) add("icloud_sync", "fail", `iCloud Desktop & Documents sync is on and ${repo} is inside it`);
     else add("icloud_sync", "pass", flag === "1" ? "sync is on, but the repo is outside synced folders" : "Desktop & Documents sync is off");
   }
+
+  checks.push(...await toolDoctorChecks({ home, repoPath: deps.repoPath ?? process.cwd(), platform, exec, exists,
+    projectsRoot: join(deps.foundation?.jarvisHome ?? join(home, ".jarvis"), "projects"), ...deps.tools }));
 
   if (deps.foundation) for (const c of await foundationChecks(deps.foundation)) checks.push(c);
 

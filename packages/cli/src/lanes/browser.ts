@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isolatedFrames } from "./browser-frames.ts";
 import { loadBrowserRuntime } from "./toolchain.ts";
 
 export function localTarget(value: string): string {
@@ -8,12 +9,18 @@ export function localTarget(value: string): string {
   return url.href;
 }
 
-interface CdpSession { send(method: string, params?: Record<string, unknown>): Promise<unknown>; detach(): Promise<void> }
+export interface CdpSession { send(method: string, params?: Record<string, unknown>): Promise<unknown>; detach(): Promise<void> }
+export interface Frame {
+  url(): string;
+  parentFrame(): Frame | null;
+  frameElement(): Promise<{ getAttribute(name: string): Promise<string | null> }>;
+}
 export interface Page {
+  frames(): Frame[];
   goto(url: string, options: { waitUntil: "networkidle"; timeout: number }): Promise<unknown>;
   locator(selector: string): { ariaSnapshot(): Promise<string> };
   url(): string;
-  context(): { newCDPSession(page: Page): Promise<CdpSession> };
+  context(): { newCDPSession(target: Page | Frame): Promise<CdpSession> };
   screenshot(options: { fullPage: boolean }): Promise<Buffer>;
   close(): Promise<void>;
 }
@@ -22,7 +29,7 @@ export interface BrowserRuntime { launch(): Promise<Browser>; axeSource: string 
 export interface WebObservation {
   kind: "qa-browser";
   url: string;
-  pages: { width: number; url: string; accessibilityTree: string; axe: unknown; screenshot: string }[];
+  pages: ({ width: number; url: string; accessibilityTree: string; axe: unknown; screenshot: string } & FrameCoverage)[];
 }
 
 /** Raw browser observations only; assertions run outside the candidate sandbox (decision 76). */
@@ -36,10 +43,10 @@ export async function observeWeb(target: string, runtime: BrowserRuntime): Promi
       try {
         await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
         const accessibilityTree = await page.locator("body").ariaSnapshot();
-        const axe = await isolatedAxe(page, runtime.axeSource);
+        const axe = await isolatedFrames(page, runtime.axeSource);
         const screenshot = (await page.screenshot({ fullPage: true })).toString("base64");
         const finalUrl = page.url();
-        pages.push({ width, url: finalUrl, accessibilityTree, axe, screenshot });
+        pages.push({ width, url: finalUrl, accessibilityTree, axe: axe.frames[0]!.axe, screenshot, ...axe });
       } finally { await page.close(); }
     }
     return { kind: "qa-browser", url, pages };
@@ -53,18 +60,10 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(observation));
 }
 
-/** Chromium's isolated world has its own globals/prototypes, so page scripts cannot replace axe.run. */
-async function isolatedAxe(page: Page, source: string): Promise<unknown> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    await cdp.send("Page.enable");
-    const tree = await cdp.send("Page.getFrameTree") as { frameTree: { frame: { id: string } } };
-    const world = await cdp.send("Page.createIsolatedWorld", { frameId: tree.frameTree.frame.id, worldName: "jarvis-axe" }) as { executionContextId: number };
-    const expression = `${source}\n;(async () => { const result = await globalThis.axe.run({runOnly: {type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]}}); return {...result, version: globalThis.axe.version}; })()`;
-    const result = await cdp.send("Runtime.evaluate", { expression, contextId: world.executionContextId, awaitPromise: true, returnByValue: true }) as { result?: { value?: unknown }; exceptionDetails?: unknown };
-    if (result.exceptionDetails || result.result?.value === undefined) throw new Error("isolated axe evaluation did not complete");
-    return result.result.value;
-  } finally { await cdp.detach(); }
+export interface FrameCoverage {
+  frameCount: number;
+  frameIds: string[];
+  frames: { id: string; url: string; loaderId: string; axe: unknown }[];
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

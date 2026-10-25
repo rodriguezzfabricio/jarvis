@@ -991,6 +991,16 @@ The Opus review of the runner loop found that two tasks started from the same he
 ### 101. In golden task 02, the baseline gets the same approved spec as Jarvis (new; Oct 24; the integrator under decision 81's thresholds; Fabricio can veto; tightens 47, 97)
 Task 02's hidden checks drive a command-line contract that the approved spec defines (built from task 01's defaults). A baseline that only sees the original request can't know that contract, so it would fail the black-box checks by construction, and a claimed done would count as a false done. That would measure what the baseline was told, not how well it builds. So the baseline's prompt for task 02 includes the same approved spec text, pasted after the request. Jarvis's edge then has to come from the build loop: checks, review, repair. The two baseline runs of task 02 recorded before this decision are kept as history but aren't counted for the stage 3 proof; two new runs replace them.
 
+### 102. A built desktop app runs only in a sandbox; until a sandboxed launcher exists, native smoke is "not run" (new; Oct 25; the Opus review of QA follow-up 1; Fabricio can veto; tightens 18, 76)
+QA follow-up 1 (Codex) builds the Tauri app as a protected gate case, then had the runner launch the copied `.app` with a plain spawn: no sandbox, the runner's own user, full disk and network. The app is candidate code, so that was a path to the runner's secrets and to actions outside the broker. Codex also proposed an `afterCases` callback in `runGate` to hand the built bundle to the runner before checkout cleanup. Settled:
+- **The native probe has no default launcher.** `probeDesktop` refuses to start without an injected launcher, and `runDesktop` reports **not run: desktop (no sandboxed native launcher)** unless one is given. The unsandboxed launcher was removed.
+- **The `afterCases` hook isn't added to `runGate` yet.** It's only useful once a sandboxed launcher exists, and `checks/gate.ts` is a stage 0–1 safety file. Until then a missing handoff is also **not run**, never a pass.
+- **The build check needs the bundle:** an exit 0 that leaves no real `.app` directory (with `Contents/Info.plist` and `Contents/MacOS`, no links) at the plan's path is a failed build.
+- **What the launcher must do** (backlog): start the app under the sandbox runtime with the runner home, the system temp folders and the network denied, keep the app's own PID visible to the fixed osascript probes, and prove with a canary that a launched app can't read a denied file.
+
+So golden task 12 reports a built, verified bundle with native smoke **not run**, as decision 18 already requires when a native test isn't possible.
+*From:* the Opus review of QA follow-up 1 (lane `qa-2`), Oct 25.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

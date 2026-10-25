@@ -8,3 +8,10 @@ export { observeWeb, type BrowserRuntime, type WebObservation } from "./browser.
 export { verifyWebObservation, type ObservationVerification, type WebExpectation } from "./verify.ts";
 export { readQaToolchain, verifyQaToolchain, loadBrowserRuntime, type QaToolchainInput, type QaToolchainManifest, type VerifiedQaToolchain } from "./toolchain.ts";
 export type { SourceFile, Finding, LineRange } from "./source.ts";
+export { installDesktopChecks, desktopCheck, runDesktop, type DesktopInput, type DesktopResult, type DesktopRunDeps, type DesktopGateInput } from "./desktop.ts";
+export { observeDesktopBuild, probeDesktop, type DesktopBuildDeps, type NativeProbeDeps } from "./desktop-observe.ts";
+export { verifyDesktopObservation, verifyDesktopEvidence, verifyNativeObservation } from "./desktop-verify.ts";
+export type { DesktopPlan, DesktopBuildObservation, DesktopNativeObservation, NativeProbePolicy } from "./desktop-types.ts";
+export type { DesktopProcess } from "./desktop-process.ts";
+export { installChromiumBundle, type ChromiumInstallInput } from "./chromium-install.ts";
+export { captureDesktopBundle, type DesktopArtifact } from "./desktop-artifact.ts";

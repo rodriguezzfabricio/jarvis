@@ -101,14 +101,16 @@ describe("scanner adapters", () => {
     expect(result.status).toBe("not_run");
   });
 
+  // The timeout covers the version probe too, so it must leave room for a node start under a loaded
+  // machine: at 250 ms the probe itself timed out ("not run: gitleaks missing") during a full suite.
   it.each([
-    ["console.log('bad-json');", "invalid output"],
-    ["process.exit(2);", "exit code"],
-    ["setTimeout(() => {}, 60000);", "timeout"],
-    ["console.log('[]'); process.exit(2);", "exit code"],
-  ])("fails closed on scanner fault %s", async (body, detail) => {
+    ["console.log('bad-json');", "invalid output", 10_000],
+    ["process.exit(2);", "exit code", 10_000],
+    ["setTimeout(() => {}, 60000);", "timeout", 5_000],
+    ["console.log('[]'); process.exit(2);", "exit code", 10_000],
+  ])("fails closed on scanner fault %s", async (body, detail, timeoutMs) => {
     const { runScanner } = await import("../../packages/cli/src/security/scanners.ts");
     const { dir, pin } = fake(body);
-    expect(await runScanner("gitleaks", pin, dir, { timeoutMs: 250 })).toMatchObject({ status: "error", detail });
+    expect(await runScanner("gitleaks", pin, dir, { timeoutMs })).toMatchObject({ status: "error", detail });
   });
 });

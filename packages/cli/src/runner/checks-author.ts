@@ -164,6 +164,20 @@ function verifier(check: AuthoredCheck, files: Record<string, string>): void {
   if (!source.includes("JARVIS_COMPLETION_FILE") || !source.includes(COMPLETION_PREFIX)) throw new Error("verify needs the completion nonce protocol");
 }
 
+/** The top-level <name>.check.json definitions, schema-checked; unique names, at least one. */
+function definitions(files: Record<string, string>): AuthoredCheck[] {
+  const checks: AuthoredCheck[] = Object.keys(files).sort().filter((p) => !p.includes("/") && p.endsWith(".check.json")).map((p) => {
+    const { cases, allowLocalBinding, ...required } = Check.parse(JSON.parse(files[p]!));
+    return { ...required,
+      cases: cases.map(({ timeoutMs, ...c }) => ({ ...c, ...(timeoutMs === undefined ? {} : { timeoutMs }) })),
+      ...(allowLocalBinding === undefined ? {} : { allowLocalBinding }),
+    };
+  });
+  if (checks.length === 0) throw new Error("no authored check definitions");
+  if (new Set(checks.map((c) => c.name)).size !== checks.length) throw new Error("duplicate check names");
+  return checks;
+}
+
 /** Structural lint is deliberately not a proof of arbitrary shell/driver semantics; review is mandatory. */
 function validateFiles(input: Record<string, string>): AuthoredChecks {
   const files: Record<string, string> = Object.create(null) as Record<string, string>;
@@ -180,15 +194,7 @@ function validateFiles(input: Record<string, string>): AuthoredChecks {
     if (path.startsWith("fixtures/")) fixtureStructure(path, content);
     files[path] = content;
   }
-  const checks: AuthoredCheck[] = paths.filter((p) => !p.includes("/") && p.endsWith(".check.json")).map((p) => {
-    const { cases, allowLocalBinding, ...required } = Check.parse(JSON.parse(files[p]!));
-    return { ...required,
-      cases: cases.map(({ timeoutMs, ...c }) => ({ ...c, ...(timeoutMs === undefined ? {} : { timeoutMs }) })),
-      ...(allowLocalBinding === undefined ? {} : { allowLocalBinding }),
-    };
-  });
-  if (checks.length === 0) throw new Error("no authored check definitions");
-  if (new Set(checks.map((c) => c.name)).size !== checks.length) throw new Error("duplicate check names");
+  const checks = definitions(files);
   for (const check of checks) {
     if (new Set(check.cases.map((c) => c.id)).size !== check.cases.length) throw new Error("duplicate check case ids");
     for (const c of check.cases) {
@@ -294,7 +300,8 @@ function requireJustifications(verdict: z.infer<typeof Verdict>, changes: Return
 export function readInstalledChecks(store: ChecksStore, ledger: Ledger): AuthoredCheck[] {
   const verified = store.verify(ledger);
   if (!verified.ok) throw new Error(`protected checks are not the approved set: ${verified.problems.join("; ")}`);
-  return validateFiles(installedFiles(store)).checks;
+  // The lock, not the authoring lint, is what makes these trustworthy: they were reviewed and approved.
+  return definitions(installedFiles(store));
 }
 
 function installedFiles(store: ChecksStore): Record<string, string> {

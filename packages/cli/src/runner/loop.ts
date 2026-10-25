@@ -515,7 +515,7 @@ class Loop {
     const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
       evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
     if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
-      const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).revision === candidate.revision).at(-1);
+      const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
       // The service records its own verdict; trust only what reached the ledger for this revision.
       return recorded && dataOf(recorded).status === verdict.status && ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
     }

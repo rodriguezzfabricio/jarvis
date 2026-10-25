@@ -19,6 +19,8 @@ import * as spec from "./spec/index.ts";
 import { register as registerTriage } from "./triage/command.ts";
 import { register as registerSteer } from "./commands/steer.ts";
 import { register as registerStatus } from "./commands/status.ts";
+import { register as registerRun } from "./commands/run.ts";
+import { prepareProductionRun } from "./commands/run-compose.ts";
 import * as intake from "./intake/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
@@ -141,6 +143,8 @@ decisionWrite.register(program);
 registerTriage(program);
 registerSteer(program);
 registerStatus(program);
+// jarvis run: production composition (checks, plan, harness, intake recovery, the review service).
+registerRun(program, { prepareRun: (context) => prepareProductionRun(context) });
 intake.register(program);
 
 await program.parseAsync();

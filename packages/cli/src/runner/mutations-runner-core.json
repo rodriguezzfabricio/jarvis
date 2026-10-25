@@ -392,7 +392,7 @@
   {
     "name": "runner-core root routing policy changed",
     "file": "packages/cli/src/runner/worktrees.ts",
-    "anchor": "if (changed.some((path) => path.toLowerCase() === \".jarvis-routing.json\"))",
+    "anchor": "if (changed.some((path) => path.toLowerCase() === \".jarvis-routing.json\" || path.toLowerCase().startsWith(\".jarvis-routing.json/\")))",
     "replacement": "if (false)"
   },
   {

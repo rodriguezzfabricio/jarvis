@@ -1,4 +1,4 @@
-// Jarvis eval run tests, part 1 of 2 (bug tasks and hidden tests). The tests are split over two files so they run in parallel;
+// Jarvis eval run tests, part 1 of 4 (bug tasks and hidden tests). The tests are split over four files so they run in parallel;
 // the shared fixture is tests/unit/helpers/eval-jarvis-run-fixture.ts.
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";

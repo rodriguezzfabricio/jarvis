@@ -20,7 +20,7 @@
 {"name":"integration loop SIGKILL stays armed","file":"packages/cli/src/runner/loop.ts","anchor":"killTimer = setTimeout(","replacement":"timers[timers.length] = killTimer = setTimeout("},
 {"name":"integration loop lease holder identity by start time","file":"packages/cli/src/runner/loop.ts","anchor":"this.pidAlive(pid) && (typeof lease?.startedAt !== \"string\" || this.startTime(pid) === lease.startedAt)","replacement":"this.pidAlive(pid)"},
 {"name":"integration loop no promotion after a fatal error","file":"packages/cli/src/runner/loop.ts","anchor":"    if (this.failed) return undefined;\n    let task","replacement":"    let task"},
-{"name":"integration loop review error retried once","file":"packages/cli/src/runner/loop.ts","anchor":"tries < 2 &&","replacement":"tries < 1 &&"},
+{"name":"integration loop review error retried once","file":"packages/cli/src/runner/loop.ts","anchor":"tries < REVIEW_TRIES &&","replacement":"tries < 1 &&"},
 {"name":"integration loop investigation blocks","file":"packages/cli/src/runner/loop.ts","anchor":"if (status === \"investigate\") return this.block(","replacement":"if (false) return this.block("},
 {"name":"integration loop recorded verdict must be in the ledger","file":"packages/cli/src/runner/loop.ts","anchor":"return recorded && dataOf(recorded).status === verdict.status &&","replacement":"return verdict.status !== undefined &&"},
 {"name":"integration loop recorded verdict not recorded twice","file":"packages/cli/src/runner/loop.ts","anchor":"if (typeof verdict === \"object\" && verdict !== null && verdict.recorded === true) {","replacement":"if (false) {"},

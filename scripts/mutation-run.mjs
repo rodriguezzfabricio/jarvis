@@ -64,9 +64,11 @@ async function reapGroup(child, graceMs) {
 
 /**
  * Runs `cmd` in a new process group with spawnSync's old limits (15 minutes, 1 MB per output
- * stream) and resolves with spawnSync's { status, signal, error? }. It never rejects.
+ * stream) and resolves with spawnSync's { status, signal, error? }. It never rejects. `deadline`, a
+ * promise, replaces the timeout timer: the run times out when it resolves (tests use it to time out at a
+ * known point instead of racing a clock).
  */
-export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 10_000, maxBytes = 1024 * 1024 } = {}) {
+export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 10_000, maxBytes = 1024 * 1024, deadline } = {}) {
   return new Promise((resolve) => {
     const proc = { status: null, signal: null };
     const child = spawn(cmd, args, { cwd, env, detached: true });
@@ -81,6 +83,7 @@ export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 1
     };
     const done = new Promise((r) => child.once("close", r).once("error", r));
     const stop = (error) => {
+      if (settled) return Promise.resolve();
       if (error) proc.error ??= error;
       stopping ??= (async () => {
         signalGroup(child, "SIGTERM");
@@ -101,7 +104,9 @@ export function runGroup(cmd, args, { cwd, env, timeoutMs = 900_000, graceMs = 1
     };
     const entry = { stop };
     active.add(entry);
-    const timer = setTimeout(() => stop(new Error(`spawnSync ${cmd} ETIMEDOUT`)), timeoutMs);
+    const timeout = () => stop(new Error(`spawnSync ${cmd} ETIMEDOUT`));
+    const timer = deadline ? undefined : setTimeout(timeout, timeoutMs);
+    deadline?.then(timeout);
     child.stdin?.end();
     for (const stream of [child.stdout, child.stderr]) {
       let bytes = 0;

@@ -138,9 +138,19 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     rmSync(join(p.repo, "sub"), { recursive: true }); symlinkSync(outside, join(p.repo, "sub"));
     install(p, "unit", "cat sub/file.txt\n"); p.store.approve(p.ledger, "v1");
     const r = await gate(p, ["test"]);
-    expect(r.output).toMatch(/unit: error/); expect(r.output).toMatch(/symlink leaves the working tree: sub/);
+    // git refuses to stage the tracked path that now sits beyond a symlink.
+    expect(r.output).toMatch(/unit: error/); expect(r.output).toMatch(/beyond a symbolic link/);
     expect(r.output).not.toContain("OUTSIDE-SECRET");
     expect(readFileSync(join(outside, "file.txt"), "utf8")).toBe("OUTSIDE-SECRET\n");
+  });
+
+  it.each([["absolute", (o: string) => o], ["escaping", () => "../../.."]] as const)("refuses an %s untracked symlink out of the tree", async (_kind, target) => {
+    const p = project(); const outside = join(root, `outside-${n}`); mkdirSync(outside); writeFileSync(join(outside, "file.txt"), "OUTSIDE-SECRET\n");
+    symlinkSync(target(outside), join(p.repo, "escape"));
+    install(p, "unit", "cat escape/file.txt\nexit 0\n"); p.store.approve(p.ledger, "v1");
+    const r = await gate(p, ["test"]);
+    expect(r.output).toMatch(/unit: error/); expect(r.output).toMatch(/symlink leaves the working tree: escape/);
+    expect(r.output).not.toContain("OUTSIDE-SECRET");
   });
 
   it("an unknown gate name exits non-zero with the list of gates", async () => {

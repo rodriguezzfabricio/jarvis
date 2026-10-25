@@ -4,7 +4,7 @@ October 25, 2026. This is a record of preparation for the first public repositor
 
 ## Secret scan
 
-Gitleaks 8.28.0 scanned the local Git history with `--log-opts='--all'`, inline allow comments ignored, decode depth 3, archive depth 2, and redacted reporting. The scan returned exit 1 with 146 findings across 19 test and review-report paths. A nonzero result was reviewed rather than described as a clean automatic scan.
+Gitleaks 8.28.0 scanned the local Git history with `--log-opts='--all'`, inline allow comments ignored, decode depth 3, archive depth 2, and redacted reporting. The scan returned exit 1 with 146 findings across 18 test and review-report paths. A nonzero result was reviewed rather than described as a clean automatic scan.
 
 The flagged historical lines were inspected. They contain synthetic scanner inputs, test-only sentinel values, dummy key material, a generated test-key reproduction and a synthetic JWT. Review reports repeat those test payloads. No live account credential was identified among the reported findings. Existing tests and history were preserved, and no global scanner allowlist was added to hide the findings.
 

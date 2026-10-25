@@ -52,7 +52,7 @@ it('captures committed evidence, isolated parallel lanes and null stdin, readabl
     expect(execFileSync('/usr/bin/git', ['remote'], { cwd: result.workspace }).toString()).toBe('');
     const lanes = ['A', 'B', 'D'].map(l => JSON.parse(readFileSync(join(result.roundDir, `stderr-${l}.txt`), 'utf8').trim().split('\n').at(-1)!));
     for (const lane of lanes) {
-      // Decision 102: the jail's environment, with a private Codex home outside the runner home.
+      // Decision 110: the jail's environment, with a private Codex home outside the runner home.
       const keys = Object.keys(codexEnvironment({ codexHome: '/c', tmp: '/t', proxyPort: 1 })).sort();
       // macOS initializes this runtime key even under /usr/bin/env -i.
       const childKeys = Object.keys(lane.env).filter(k => process.platform !== 'darwin' || k !== '__CF_USER_TEXT_ENCODING');
@@ -96,7 +96,7 @@ it('never overwrites old status or workspace and fails spawn errors', async () =
   mkdirSync(rd, { recursive: true }); writeFileSync(join(rd, 'status'), 'old');
   await expect(runReview(f)).rejects.toThrow(/already|exists/);
   expect(readFileSync(join(rd, 'status'), 'utf8')).toBe('old');
-  // A lane can't run unconfined, so a missing binary is refused before anything is created (decision 102).
+  // A lane can't run unconfined, so a missing binary is refused before anything is created (decision 110).
   const g = fixture();
   await expect(runReview({ ...g, codex: join(g.home, 'missing') })).rejects.toThrow(/binary is missing/);
   expect(existsSync(join(g.home, '.jarvis'))).toBe(false);
@@ -253,7 +253,7 @@ it('passes a review whose mutation evidence is a successful --confirm-stage run,
   expect((await runReview({ ...g, evidence: withMutationLine(g, partial.line) })).exitCode).toBe(1);
 });
 
-// Decision 102: the lanes run under the reviewer's Seatbelt profile and hand back only plain verdict files.
+// Decision 110: the lanes run under the reviewer's Seatbelt profile and hand back only plain verdict files.
 it('confines every lane: it reads its workspace but not the runner home, and a planted link is refused', async () => {
   const f = fixture();
   mkdirSync(join(f.home, '.jarvis/projects'), { recursive: true });

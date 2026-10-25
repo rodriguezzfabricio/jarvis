@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createCodexReviewer } from "../../packages/cli/src/review/codex.ts";
 
 /**
- * Decision 102 on the real pinned Codex (one short prompt of Fabricio's Codex plan): inside its Seatbelt
+ * Decision 110 on the real pinned Codex (one short prompt of Fabricio's Codex plan): inside its Seatbelt
  * profile, Codex reads its checkout but not a canary planted beside it. Judged from Codex's own event
  * stream (the command outputs), never from what the model says. Only with JARVIS_CODEX_LIVE=1, so
  * `pnpm test:live` and review evidence never spend Codex usage.

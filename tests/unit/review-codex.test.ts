@@ -90,7 +90,7 @@ describe("isolated Codex reviewer", () => {
   it("refuses a PATH binary", () => expect(() => createCodexReviewer({ home: "/safe", binary: "codex" })).toThrow(/absolute/));
 });
 
-// Decision 102: the canary. Everything outside the allowed set is planted in this test's own temp folder.
+// Decision 110: the canary. Everything outside the allowed set is planted in this test's own temp folder.
 describe.skipIf(!darwin)("confined Codex reviewer reads only its checkout and inputs", () => {
   async function listener(): Promise<number> {
     const server = createServer((socket) => socket.end()); servers.push(server);

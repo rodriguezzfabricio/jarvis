@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
@@ -107,6 +107,12 @@ describe("Codex jail", () => {
     mkdirSync(join(f.home, ".jarvis"));
     await expect(openCodexJail({ home: f.home, bin: f.bin, workspace: f.home })).rejects.toThrow(/refusing to open/);
     await expect(openCodexJail({ home: f.home, bin: f.bin, workspace: f.workspace, writeDirs: [f.root] })).rejects.toThrow(/refusing to open/);
+  });
+  it.skipIf(!darwin)("refuses to open the real folder behind a linked runner home", async () => {
+    const f = fixture();
+    const real = join(f.root, "elsewhere", "jarvis"); mkdirSync(real, { recursive: true });
+    symlinkSync(real, join(f.home, ".jarvis"));
+    await expect(openCodexJail({ home: f.home, bin: f.bin, workspace: join(f.root, "elsewhere") })).rejects.toThrow(/refusing to open/);
   });
   it.skipIf(!darwin)("gives Codex a private home holding only the auth link, and removes everything on close", async () => {
     const f = fixture();

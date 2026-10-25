@@ -62,7 +62,7 @@
   {
     "name": "review confinement never opens the runner home",
     "file": "packages/cli/src/review/confine.ts",
-    "anchor": "if (dir === \"/\" || under(jarvisDir, dir)) throw",
+    "anchor": "if (dir === \"/\" || under(jarvisDir, dir) || under(lexicalJarvis, dir)) throw",
     "replacement": "if (false) throw"
   },
   {

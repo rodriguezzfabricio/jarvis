@@ -15,7 +15,7 @@ export interface CodexReviewerOptions {
   /** Test seam. Production uses the absolute pin, never PATH. */
   binary?: string;
   session?: (spec: SessionSpec) => Promise<SessionOutcome>;
-  /** Test seams for the confinement (decision 102). None of them turns it off. */
+  /** Test seams for the confinement (decision 110). None of them turns it off. */
   confinement?: Pick<CodexJailOptions, "sandboxExec" | "platform" | "proxy">;
 }
 function usageLimit(result: SessionOutcome): boolean {
@@ -43,7 +43,7 @@ export function createCodexReviewer(options: CodexReviewerOptions = {}): Reviewe
     const output = (extra: Partial<ReviewerOutput>): ReviewerOutput => ({ ...base, rawOutput: JSON.stringify(captures), ...extra });
     try {
       if (!existsSync(bin)) return output({ error: "pinned Codex binary is missing", fallbackReason: "missing_binary" });
-      // Decision 102: Codex runs only inside the Seatbelt profile. If it can't be applied, the review is refused.
+      // Decision 110: Codex runs only inside the Seatbelt profile. If it can't be applied, the review is refused.
       let jail: CodexJail;
       try { jail = await openCodexJail({ home, bin, workspace: input.workspace, writeDirs: [input.outputDir], session, ...options.confinement }); }
       catch (error) { return output({ error: `Codex confinement unavailable, review refused: ${error instanceof Error ? error.message : String(error)}` }); }

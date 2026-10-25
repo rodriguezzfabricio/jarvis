@@ -1,4 +1,4 @@
-// A fake Codex for the confined reviewer (decision 102). Tests copy it, behind a node shebang, to
+// A fake Codex for the confined reviewer (decision 110). Tests copy it, behind a node shebang, to
 // <tools>/fake-codex beside a config.json. It records its argv and environment, and on `exec` probes
 // what its confinement lets it reach: each probe's outcome is recorded, never assumed.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';

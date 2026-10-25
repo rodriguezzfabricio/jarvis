@@ -14,7 +14,7 @@ import { STAGES } from './mutation-stage.mjs';
 
 const PATH = '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 const CHECKS = ['install', 'typecheck', 'unit-tests', 'live-probe', 'doctor-live', 'mutation-check'];
-// Decision 102: lanes run inside the reviewer's Seatbelt profile, with this environment and nothing else.
+// Decision 110: lanes run inside the reviewer's Seatbelt profile, with this environment and nothing else.
 export { codexEnvironment } from '../packages/cli/src/review/confine.ts';
 export function reserveLaneManifest(roundDir, lanes) {
   writeFileSync(join(roundDir, 'lanes'), `lanes ${lanes.join(',')}\n`, { flag: 'wx', mode: 0o600 });

@@ -7,7 +7,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
 
 /**
- * The Codex reviewer's confinement (decision 102). Codex's `--sandbox read-only` stops writes, not reads,
+ * The Codex reviewer's confinement (decision 110). Codex's `--sandbox read-only` stops writes, not reads,
  * so the whole Codex process tree runs under one outer macOS Seatbelt profile instead: reads are denied
  * by default and reopened only for the system, the toolchain, the Codex package, the review checkout,
  * the inputs and outputs Jarvis names, a private CODEX_HOME holding only the auth file, and a private
@@ -218,7 +218,8 @@ export async function openCodexJail(o: CodexJailOptions): Promise<CodexJail> {
   assertConfinable(o);
   const sandboxExec = o.sandboxExec ?? SANDBOX_EXEC;
   const session = o.session ?? runSession;
-  const jarvisDir = join(realpathSync(o.home), ".jarvis");
+  const lexicalJarvis = join(realpathSync(o.home), ".jarvis");
+  const jarvisDir = existsSync(lexicalJarvis) ? realpathSync(lexicalJarvis) : lexicalJarvis;
   const root = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "jcx-")));
   let proxy: ApiProxy | undefined;
   try {
@@ -239,7 +240,7 @@ export async function openCodexJail(o: CodexJailOptions): Promise<CodexJail> {
     const readFiles = [realpathSync(o.bin), ...(o.readFiles ?? []).map((f) => realpathSync(f))];
     // A folder that holds the runner home (ledger, secrets, hidden checks) is never opened.
     for (const dir of [...readDirs, ...writeDirs, ...execDirs]) {
-      if (dir === "/" || under(jarvisDir, dir)) throw new ConfinementError(`refusing to open a folder that holds ${jarvisDir}: ${dir}`);
+      if (dir === "/" || under(jarvisDir, dir) || under(lexicalJarvis, dir)) throw new ConfinementError(`refusing to open a folder that holds ${jarvisDir}: ${dir}`);
     }
     proxy = await startApiProxy(o.proxy);
     const profile = join(root, "profile.sb");

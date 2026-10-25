@@ -95,7 +95,7 @@ describe("loop reviewer boundary", () => {
     const result = await createReviewService(s.options).reviewDetailed(s.request);
     expect(result.verdict).toBe("fail"); expect(JSON.stringify(result.entry.data)).toContain("checkout changed");
   });
-  // Decision 102: the Seatbelt profile refuses the write itself; had it landed, the checkout hash would fail the review.
+  // Decision 110: the Seatbelt profile refuses the write itself; had it landed, the checkout hash would fail the review.
   it.skipIf(process.platform !== "darwin")("a real Codex process that attempts a checkout write is refused by its confinement", async () => {
     const s = setup();
     mkdirSync(join(s.root, "tools"));

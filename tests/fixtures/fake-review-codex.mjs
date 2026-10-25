@@ -1,5 +1,5 @@
 // A fake Codex lane for scripts/review-run.mjs. It runs inside the reviewer's Seatbelt profile
-// (decision 102), so it writes only in its verdict's folder (the jail's shared output folder) and reports
+// (decision 110), so it writes only in its verdict's folder (the jail's shared output folder) and reports
 // its environment on stderr, which the runner captures in the round folder.
 // The prompt is the lane's text: "FAIL" exits 7, "wait:A,B,D" waits until those lanes have started,
 // "LINK" plants a symlink where the verdict belongs, "PROBE:<path>|<path>" reports whether each path reads.

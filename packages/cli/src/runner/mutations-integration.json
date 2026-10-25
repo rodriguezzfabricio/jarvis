@@ -1,6 +1,7 @@
 [
-{"name":"integration session group held until onSpawn accepts","file":"packages/cli/src/proc/session.ts","anchor":"  const held = spec.onSpawn !== undefined && child.pid !== undefined && signalGroup(child.pid, \"SIGSTOP\");","replacement":"  const held = false;"},
-{"name":"integration session refused group is killed","file":"packages/cli/src/proc/session.ts","anchor":"      shuttingDown = true;\n      killGroup(\"SIGKILL\");","replacement":"      killGroup(\"SIGCONT\");"},
+{"name":"integration session payload is exec'd only through the hold","file":"packages/cli/src/proc/session.ts","anchor":"  const hold = spec.onSpawn ? holdArgs(spec) : undefined;","replacement":"  const hold = undefined as string[] | undefined;"},
+{"name":"integration session refused hold never releases the payload","file":"packages/cli/src/proc/session.ts","anchor":"      release?.destroy();\n      killGroup(\"SIGKILL\");","replacement":"      release?.end(\"\\n\");"},
+{"name":"integration session hold adds nothing to the environment","file":"packages/cli/src/proc/session.ts","anchor":".flatMap((name) => [\"-u\", name]).join(\" \");","replacement":".flatMap(() => []).join(\" \");"},
 {"name":"integration session onSpawn throw is rethrown","file":"packages/cli/src/proc/session.ts","anchor":"  if (observerError !== undefined) throw observerError;","replacement":""},
 {"name":"integration session onGroupExit waits for an empty group","file":"packages/cli/src/proc/session.ts","anchor":"if (child.pid !== undefined && spec.onGroupExit && !groupAlive()) {","replacement":"if (child.pid !== undefined && spec.onGroupExit) {"},
 {"name":"integration session onGroupExit after cleanup","file":"packages/cli/src/proc/session.ts","anchor":"  await cleanupGroup();\n  // Only an empty group","replacement":"  if (child.pid !== undefined) spec.onGroupExit?.(child.pid);\n  await cleanupGroup();\n  // Only an empty group"},

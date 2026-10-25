@@ -166,7 +166,8 @@ export async function runScanner(tool: Scanner, pin: ScannerPin | undefined, cwd
 }
 
 function suppressionPresent(tool: Scanner, cwd: string): boolean {
-  const files = tool === "gitleaks" ? [".gitleaksignore"] : tool === "semgrep" ? [".semgrepignore"] : ["osv-scanner.toml", ".osv-scanner.toml"];
+  // gitleaks loads <source>/.gitleaks.toml as its whole ruleset when no --config is given.
+  const files = tool === "gitleaks" ? [".gitleaksignore", ".gitleaks.toml"] : tool === "semgrep" ? [".semgrepignore"] : ["osv-scanner.toml", ".osv-scanner.toml"];
   return files.some((file) => {
     try { lstatSync(join(cwd, file)); return true; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }

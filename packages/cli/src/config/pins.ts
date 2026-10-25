@@ -52,7 +52,7 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
     },
     "osv-scanner": {
       bin: "/opt/homebrew/bin/osv-scanner", version: "2.7.0",
-      args: ["scan", "source", "--offline", "--offline-vulnerabilities", "--x-plugins=vulnmatch/osvlocal", "--format=json", "--recursive", "--no-ignore", "--no-resolve", "--no-call-analysis=go", "--no-call-analysis=rust", "."],
+      args: ["scan", "source", "--offline", "--offline-vulnerabilities", "--x-plugins=vulnmatch/osvlocal", "--config=/dev/null", "--format=json", "--recursive", "--no-ignore", "--no-resolve", "--no-call-analysis=go", "--no-call-analysis=rust", "."],
       env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/security/osv-db" },
       ...(osvDatabaseDir ? { databaseDir: osvDatabaseDir } : {}),
     },

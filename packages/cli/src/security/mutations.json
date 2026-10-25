@@ -146,8 +146,14 @@
   {
     "name": "security: gitleaks suppression file ignored",
     "file": "packages/cli/src/security/scanners.ts",
-    "anchor": "[\".gitleaksignore\"]",
-    "replacement": "[]"
+    "anchor": "[\".gitleaksignore\", \".gitleaks.toml\"]",
+    "replacement": "[\".gitleaks.toml\"]"
+  },
+  {
+    "name": "security: candidate gitleaks config honored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "[\".gitleaksignore\", \".gitleaks.toml\"]",
+    "replacement": "[\".gitleaksignore\"]"
   },
   {
     "name": "security: semgrep suppression file ignored",
@@ -460,5 +466,17 @@
     "file": "packages/cli/src/security/osv-db-fetch.ts",
     "anchor": "if (files.length === 0) throw Error(\"OSV database download produced no files\");",
     "replacement": ""
+  },
+  {
+    "name": "security offline: nested OSV config honored (pin)",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "\"--config=/dev/null\", ",
+    "replacement": ""
+  },
+  {
+    "name": "security offline: nested OSV config override not enforced",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "\"--x-plugins=vulnmatch/osvlocal\", \"--config=/dev/null\", ",
+    "replacement": "\"--x-plugins=vulnmatch/osvlocal\", "
   }
 ]

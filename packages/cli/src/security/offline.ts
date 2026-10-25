@@ -6,8 +6,9 @@ import type { ScannerRuntime } from "./runtime.ts";
 
 const semgrepFlags = ["--metrics=off", "--disable-version-check", "--disable-nosem", "--json"];
 const semgrepAllowed = new Set(["scan", ".", "--config", ...semgrepFlags, "--oss-only", "--no-secrets-validation", "--no-git-ignore", "--x-ignore-semgrepignore-files", "--jobs=1"]);
-const osvFlags = ["--offline", "--offline-vulnerabilities", "--x-plugins=vulnmatch/osvlocal", "--format=json", "--no-resolve", "--no-call-analysis=go", "--no-call-analysis=rust"];
-const osvAllowed = new Set(["scan", "source", ".", "--recursive", "--no-ignore", ...osvFlags]);
+// --config=/dev/null replaces every per-folder osv-scanner.toml, which can ignore vulnerabilities or packages.
+const osvFlags = ["--offline", "--offline-vulnerabilities", "--x-plugins=vulnmatch/osvlocal", "--config=/dev/null", "--format=json", "--no-resolve", "--no-call-analysis=go", "--no-call-analysis=rust"];
+const osvAllowed = new Set(["scan", "source", ".", "--recursive", "--no-ignore", "--config=/dev/null", ...osvFlags]);
 
 /** Only local, protected configuration and the reviewed option vocabulary can enter the gate. */
 export function offlineArgs(tool: Scanner, pin: ScannerPin, cwd: string, runtime: ScannerRuntime): readonly string[] {

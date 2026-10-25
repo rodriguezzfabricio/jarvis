@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
@@ -257,8 +258,16 @@ function paths(task: GoldenTask, runId: string, opts: JarvisEvalOptions): Paths 
   return { home, jarvisHome, resultsDir, workspace: join(evalDir, runId), worktreeRoot, reviewRoot, cacheRoot: realpathSync(cacheRoot), projectDir: join(resultsDir, "project") };
 }
 
-/** The production harness, as the runner builds it: the live preflight before every session (decision 59). */
+/** The repo's Jarvis plugin, which `jarvis run` also loads (commands/run-compose.ts). */
+export const JARVIS_PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
+
+/**
+ * The production harness, as the runner builds it: the live preflight before every session (decision 59),
+ * and the Jarvis plugin, as `jarvis run` loads it (decision 114: the arm measures what production runs).
+ */
 export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTable, opts: JarvisEvalOptions): Harness {
+  const pluginDir = opts.pluginDir ?? JARVIS_PLUGIN_DIR;
+  if (!existsSync(join(pluginDir, ".claude-plugin", "plugin.json"))) throw new Error(`the Jarvis arm needs the Jarvis plugin at ${pluginDir}`);
   return createClaudeHarness({
     jarvisHome: p.jarvisHome,
     cacheRoot: p.cacheRoot,
@@ -266,7 +275,7 @@ export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTa
     allowedDomains: task.allowedDomains,
     routing,
     home: p.home,
-    ...(opts.pluginDir ? { pluginDir: opts.pluginDir } : {}),
+    pluginDir,
     preflight: async () => {
       const pre = await opts.preflight();
       return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) };
@@ -276,7 +285,7 @@ export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTa
 }
 
 /** What the reviewer gets (decisions 49, 88): the runner's spec or request and the task's criteria, never builder notes. */
-export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRevision: string; tier: TaskTier; specText: string | undefined; spec: Spec | undefined; request: string }, taskId: string, attemptId: string): ReviewMaterial {
+export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRevision: string; tier: TaskTier; specText: string | undefined; spec: Spec | undefined; request: string; kind?: "bug" }, taskId: string, attemptId: string): ReviewMaterial {
   const entries = ledger.entries();
   const start = entries.filter((e) => e.actor === "runner" && e.kind === "attempt_started" && e.task_id === taskId && e.attempt_id === attemptId).at(-1);
   const base = (start?.data as { baseRevision?: unknown } | undefined)?.baseRevision;
@@ -292,6 +301,7 @@ export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRe
     tier: input.tier,
     spec: input.specText ?? `Request, as typed: ${input.request}\nGoal: ${def.goal ?? input.request}\nExit condition: ${def.exitCondition ?? "-"}`,
     acceptanceCriteria: criteria.length ? criteria : def.exitCondition ? [def.exitCondition] : [],
+    ...(input.kind ? { kind: input.kind } : {}),
   };
 }
 
@@ -378,7 +388,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   const harness = opts.harness ?? productionHarness(task, p, routing, opts);
   const tier: TaskTier = t.tier ?? 1;
-  const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request }, taskId, attemptId);
+  const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
   const review = opts.review ?? productionReview(p, ledger, material, opts);
   writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,

@@ -20,6 +20,8 @@ export interface ReviewMaterial {
   /** Runner-owned spec snapshot, never the builder's summary. */
   spec: string;
   acceptanceCriteria: readonly string[];
+  /** "bug": the spec is a bug report, and the reviewer checks the fix against it (decision 114). */
+  kind?: "bug";
 }
 export interface ReviewServiceOptions {
   ledger: Ledger;
@@ -109,6 +111,20 @@ function boundDiff(diff: string, budget: number): { diff: string; diffNote?: str
   return { diff: kept.join(""), diffNote: `The diff is cut to fit the review input: ${used} of ${jsonBytes(diff)} bytes shown. Not shown, ${left.length} file(s): ${names}. Read those files in the checkout (the candidate revision; the base is not in it).` };
 }
 
+/**
+ * Decision 114: a bug fix is reviewed against the report, not the builder's own test. A test built from
+ * the builder's hypothesis passes when the hypothesis is wrong, and a project suite that never covered the
+ * bug passes a fix of the first trigger found, so the reviewer looks for the triggers the fix missed.
+ */
+const BUG_BRIEF = [
+  "This candidate fixes a reported bug: the request in the spec is the bug report. Check the fix against the report, not against the candidate's own tests:",
+  "- List the paths the reported symptom can take, by reading the checkout: every caller of the changed code and the data it really passes (follow that data back to where it is produced or stored), and every configuration, service, entrypoint or platform the report's words cover.",
+  "- Construct at least two inputs or configurations that the candidate's own tests don't contain (another form of the same data, another caller, another service) and trace each one through the code by reading it.",
+  "- A path that still shows the reported symptom is a finding: severity high, because the exit condition is not met, with that input or configuration, the path and the symptom as its scenario.",
+  "- A change outside the layer the report points at, which leaves the cause in place, is a symptom fix: report it.",
+  "- When no case in the runner's evidence exercises the reported symptom, the evidence shows only that nothing else broke, and your reading is the only check of the fix: say so in a medium finding rather than assume the fix works.",
+].join("\n");
+
 function buildPrompt(request: ReviewRequest, material: ReviewMaterial, fullDiff: string, gates: readonly VerifiedGate[]): string {
   const base = { revision: request.revision, spec: material.spec, acceptanceCriteria: material.acceptanceCriteria };
   const evidence = gateMaterial(gates);
@@ -123,6 +139,7 @@ function buildPrompt(request: ReviewRequest, material: ReviewMaterial, fullDiff:
     "Return only JSON {\"findings\":[]}. Each finding has severity (critical|high|medium|low), confidence (0..1), impact (security|data_loss|money|messages|other), file, line (positive integer), scenario, fix. A high finding needs a concrete scenario: triggering input, affected caller and resulting harm. Do not invent requirements. Request the smallest correction. Reproductions that require execution belong to runner-controlled checks; describe the input and expected observation instead of executing code.",
     "The runner drops findings below confidence 0.8, except high-impact findings sent to investigate. Critical or high findings awaiting investigation prevent completion. Confirmed critical findings, or high findings with a concrete scenario, fail the review. Medium and low remain advisory.",
     "The gate evidence and the diff below are bounded excerpts: evidenceNote, each file's \"cut\" and diffNote (when present) say what was left out. Every candidate file is in the checkout.",
+    ...(material.kind === "bug" ? [BUG_BRIEF] : []),
     data,
   ].join("\n\n");
 }

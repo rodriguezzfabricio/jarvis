@@ -99,6 +99,12 @@ export function planEntries(plan: Plan): AppendInput[] {
   return PlanSchema.parse(plan).tasks.map(({ id, ...definition }) => ({ kind: "task_created", actor: "runner", task_id: id, data: definition }));
 }
 
+/**
+ * A bug's exit condition, which the builder reads and the reviewer checks as its criterion (decision 114):
+ * one cause usually has several triggers, and a fix for the first one found leaves the report open.
+ */
+export const BUG_EXIT_CONDITION = "The reported symptom is reproduced and its root cause is fixed on every path that produces it (every caller, input form, configuration or entrypoint the report covers), and the unit check and code review pass.";
+
 /** Risk tier never changes a bug/refactor into a spec or architecture pipeline (decision 89). */
 export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks: readonly { name: string }[]): Plan {
   if (triage.type !== "bug" && triage.type !== "refactor") throw new Error("singleTaskPlan requires bug or refactor triage");
@@ -107,7 +113,7 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
   if (!goal) throw new Error("singleTaskPlan requires a nonempty request");
   return PlanSchema.parse({ tasks: [{
     id: "T1", title: goal.slice(0, 120), goal,
-    exitCondition: triage.type === "bug" ? "The reported symptom is reproduced, fixed, and the unit check and code review pass." : "Pinned behavior remains unchanged and the unit check and code review pass.",
+    exitCondition: triage.type === "bug" ? BUG_EXIT_CONDITION : "Pinned behavior remains unchanged and the unit check and code review pass.",
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"],
     ...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),
   }] });

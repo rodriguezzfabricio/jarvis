@@ -137,6 +137,14 @@ describe("jarvis run notifications", () => {
     }
   });
 
+  it("a notice that can't even be written up resolves too", async () => {
+    const s = setup();
+    const bad = Object.defineProperty({ taskId: "T2", resumeAt: 0 }, "waitMs", { get() { throw new Error("unreadable notice"); } }) as typeof usage;
+    await expect(s.make().usageWait(bad)).resolves.toBeUndefined();
+    expect(s.sent).toEqual([]);
+    expect(s.warnings).toEqual([expect.stringMatching(/^Notification not delivered \(usage wait\).*unreadable notice/)]);
+  });
+
   it("a send that never answers is given up on, so the loop isn't held", async () => {
     const s = setup(CONFIG, () => new Promise<void>(() => {}));
     const n = s.make({ timeoutMs: 50 });

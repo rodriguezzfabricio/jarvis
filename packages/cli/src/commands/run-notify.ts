@@ -55,10 +55,11 @@ export function runNotifications(o: RunNotificationOptions): RunNotifications {
   if (config.status === "missing") warn(`Notifications are off for this run: no notifier configuration at ${o.configPath} (run jarvis setup).`);
   if (config.status === "invalid") warn(`Notifications are off for this run: ${o.configPath} is not a valid notifier configuration (run jarvis setup --redo ntfy).`);
 
-  async function send(what: string, message: Message): Promise<void> {
+  async function send(what: string, build: () => Message): Promise<void> {
     if (config.status !== "ok") { warn(`Notification not delivered (${what}): ${problem}.`); return; }
     const stop = new AbortController();
     try {
+      const message = build();
       const timedOut = delay(timeoutMs, "timeout", { signal: stop.signal }).catch(() => "stopped");
       if (await Promise.race([config.notifier.send(message, []).then(() => "sent"), timedOut]) === "timeout") throw new Error(`timed out after ${timeoutMs} ms`);
     } catch (error) {
@@ -69,15 +70,15 @@ export function runNotifications(o: RunNotificationOptions): RunNotifications {
   }
   const head = `Jarvis ${o.project}:`;
   return {
-    blocked: (n) => send(`${n.taskId} blocked`, { kind: "blocked", text: `${head} ${n.taskId} is blocked: ${oneLine(n.reason)}. The rest of the plan continues; REPORT.md has the details.` }),
-    usageWait: (n) => {
+    blocked: (n) => send(`${n.taskId} blocked`, () => ({ kind: "blocked", text: `${head} ${n.taskId} is blocked: ${oneLine(String(n.reason))}. The rest of the plan continues; REPORT.md has the details.` })),
+    usageWait: (n) => send("usage wait", () => {
       const hours = Math.max(1, Math.round(n.waitMs / 3_600_000));
       const until = new Date(n.resumeAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-      return send("usage wait", { kind: "usage-wait", waitMs: n.waitMs, text: `${head} usage limit reached. Waiting about ${hours} h, until ${until}; ${n.taskId} resumes then.` });
-    },
-    finished: (outcome) => send("run finished", {
-      kind: "finished",
-      text: outcome.status === "error" ? `${head} the run stopped with an error. The runner log on your Mac has the details.` : `${head} run ${outcome.status}. ${oneLine(outcome.summary)}`,
+      return { kind: "usage-wait", waitMs: n.waitMs, text: `${head} usage limit reached. Waiting about ${hours} h, until ${until}; ${n.taskId} resumes then.` };
     }),
+    finished: (outcome) => send("run finished", () => ({
+      kind: "finished",
+      text: outcome.status === "error" ? `${head} the run stopped with an error. The runner log on your Mac has the details.` : `${head} run ${outcome.status}. ${oneLine(String(outcome.summary))}`,
+    })),
   };
 }

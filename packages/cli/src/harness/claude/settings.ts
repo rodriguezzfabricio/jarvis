@@ -1,5 +1,5 @@
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { defaultHostTmpDir, tempRoots } from "../../sandbox/temp.ts";
 import { isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -57,24 +57,9 @@ export function sessionTmpEnv(sessionTmpDir: string): Record<string, string> {
   return { CLAUDE_CODE_TMPDIR: sessionTmpDir };
 }
 
-/**
- * System temp folders (decision 93): other processes' scratch files live there, and
- * blockReadsOutsideWorkingDirectories leaves them readable to sandboxed shells. Both spellings,
- * because macOS's /tmp and /var are symlinks into /private.
- */
-export const SYSTEM_TEMP_ROOTS = ["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp"] as const;
-
-function defaultHostTmpDir(): string | undefined {
-  const t = tmpdir();
-  return existsSync(t) ? realpathSync(t) : undefined;
-}
-
-/** The temp roots a session may not read: the system ones plus the runner's $TMPDIR when it lies elsewhere. */
-export function tempRoots(hostTmpDir: string | undefined): string[] {
-  const roots: string[] = [...SYSTEM_TEMP_ROOTS];
-  if (hostTmpDir !== undefined && !roots.some((r) => under(hostTmpDir, r))) roots.push(hostTmpDir);
-  return roots;
-}
+// System temp folders (decision 95): blockReadsOutsideWorkingDirectories leaves them readable to
+// sandboxed shells. The list is shared with the gate's sandbox.
+export { SYSTEM_TEMP_ROOTS, tempRoots } from "../../sandbox/temp.ts";
 
 /** Permission-rule form of an absolute path: //abs/path (a single leading / is relative to the settings file). */
 export function absRule(path: string): string {

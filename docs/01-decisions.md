@@ -964,7 +964,7 @@ The plugin installs at user scope, so its PreToolUse tripwire ran in every Claud
 - **The loop gates on the project's own suite; the hidden checks only grade.** `hidden/<id>/gate/` holds the checks the loop may run, and `hidden/<id>/checks/` grades both arms' final revisions. If the loop gated on the grader, Jarvis would get repair feedback the baseline never gets.
 - **Budget:** the baseline gets one session within the task's turns and minutes. Jarvis gets those limits per session. Wall time and usage waits are reported side by side; a total loop deadline can come later.
 - **Offline checks:** the gate sandbox has no network and no sockets. A Go task's check judges `go test -json` results for the named tests against a vendored or read-only module cache. A Docker/compose task's check is static: it parses the files and diffs against the snapshot's root commit.
-- **The Codex cross-model reviewer runs in evals too.** Both plans are Fabricio's, and the code is his (decision 65). Decision 70 limits the sessions' web tools, not the reviewer.
+- **Evals use the Claude reviewer only, for now.** Codex's `--sandbox read-only` doesn't confine reads, so a Codex reviewer could read the private evals repo or the installed grading checks (eval-arm Codex review, high 2). The Claude reviewer runs under the task-session sandbox with reads blocked outside its checkout. Codex can return to evals once its reads are confined to the review checkout.
 
 ## 6. Models, effort and cost
 

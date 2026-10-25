@@ -113,7 +113,6 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   const outputs = { gitleaks: [], semgrep: { results: [], errors: [] }, "osv-scanner": { results: [] } };
   const pins: ScannerPins = {};
   const defaults = pinnedSecurityScanners();
-  defaults.semgrep = { ...defaults.semgrep!, args: [...defaults.semgrep!.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] };
   for (const [tool, output] of Object.entries(outputs)) {
     const bin = join(root, tool);
     writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') || process.argv.includes('--version') ? '1.2.3' : ${JSON.stringify(JSON.stringify(output))});`, { mode: 0o700 });
@@ -121,7 +120,8 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   }
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: pins });
   const db = join(store.checksDir, "fixtures/security/osv-db"); mkdirSync(db); writeFileSync(join(db, "cache.zip"), "fake database");
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
+  // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
   store.approve(ledger, "approved");
   let runs = 0;
   const gate = async (g: GateInput): Promise<GateResult> => {

@@ -1,10 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import * as pins from "../../packages/cli/src/config/pins.ts";
 import { runSession, type SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import { fetchOsvDatabase } from "../../packages/cli/src/security/osv-db-fetch.ts";
+import { installSecurityChecks } from "../../packages/cli/src/security/protected.ts";
 import { runScanner, type ScannerPin } from "../../packages/cli/src/security/scanners.ts";
 
 const roots: string[] = [];
@@ -15,10 +18,8 @@ function setup() {
   return { root, checkout };
 }
 const ok = (stdout: string) => ({ code: 0, stdout, stderr: "", timedOut: false, overflowed: false, durationMs: 0 });
-function semgrepPin(): ScannerPin {
-  const pin = pins.pinnedSecurityScanners().semgrep!;
-  return { ...pin, args: [...pin.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] };
-}
+/** The production pin itself: a pins.ts edit that drops the size flag must fail these tests (backlog 92). */
+function semgrepPin(): ScannerPin { return pins.pinnedSecurityScanners().semgrep!; }
 
 it.each([undefined, "--max-target-bytes=1000000", "--max-target-bytes", "--max-target-bytes=0.0"])("rejects a Semgrep size limit of %s before spawning", async (flag) => {
   const { checkout } = setup(); const pin = semgrepPin(); let starts = 0;
@@ -162,4 +163,24 @@ it("refuses to fetch when no OSV pin is configured", async () => {
     writeFileSync(join(spec.env.OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY!, "cache.zip"), "fake database"); return ok("");
   } })).rejects.toThrow("OSV scanner pin missing");
   expect(starts).toBe(0);
+});
+
+// Backlog 96: the snapshot check reads the version from the pin, like the fetch that wrote the manifest.
+function snapshot(dir: string, scannerVersion: string) {
+  mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "cache.zip"), "fake offline database; never sent to a real scanner");
+  const sha256 = createHash("sha256").update(readFileSync(join(dir, "cache.zip"))).digest("hex");
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion, fetchedAt: "2026-10-25T00:00:00.000Z", ecosystems: ["npm", "Go", "PyPI"], files: [{ path: "cache.zip", sha256 }] }));
+}
+
+it.each([["2.8.1", "2.8.1", "pass"], ["2.7.0", "2.8.1", "not_run"], ["2.8.1", "2.7.0", "not_run"]] as const)("scans with an OSV snapshot fetched by %s only when the pin is %s: %s", async (fetchedBy, pinned, status) => {
+  const { root, checkout } = setup(); const fixtures = join(root, "fixtures"); snapshot(join(fixtures, "security/osv-db"), fetchedBy);
+  const pin = { ...pins.pinnedSecurityScanners()["osv-scanner"]!, version: pinned };
+  expect(await runScanner("osv-scanner", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => ok(spec.args.includes("--version") ? `osv-scanner version: ${pinned}\nosv-scalibr version: 0.5.3\n` : '{"results":[]}') })).toMatchObject({ status });
+});
+
+it.each([["2.8.1", "2.8.1", true], ["2.7.0", "2.8.1", false]] as const)("installs an OSV snapshot fetched by %s for a %s pin: %s", (fetchedBy, pinned, installs) => {
+  const { root } = setup(); const db = join(root, "downloaded-db"); snapshot(db, fetchedBy);
+  const pin = { ...pins.pinnedSecurityScanners(db)["osv-scanner"]!, version: pinned };
+  const install = () => installSecurityChecks(new ChecksStore(join(root, "project")), { nodeBin: process.execPath, scanners: { "osv-scanner": pin } });
+  if (installs) expect(install).not.toThrow(); else expect(install).toThrow("Invalid OSV database");
 });

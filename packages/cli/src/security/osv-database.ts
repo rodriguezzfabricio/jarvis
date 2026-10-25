@@ -56,11 +56,12 @@ export function hashOsvDatabase(dir: string): OsvDatabaseManifest["files"] {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function osvDatabaseReady(dir: string, ecosystems: readonly OsvEcosystem[]): boolean {
+/** The manifest must name the pinned scanner version that fetched it (decision 103; backlog 96). */
+export function osvDatabaseReady(dir: string, ecosystems: readonly OsvEcosystem[], scannerVersion: string): boolean {
   try {
     if (!isAbsolute(dir) || lstatSync(dir).isSymbolicLink()) return false;
     const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as OsvDatabaseManifest;
-    if (manifest.schema !== 1 || manifest.scannerVersion !== "2.7.0" || !Array.isArray(manifest.ecosystems) || !ecosystems.every((ecosystem) => manifest.ecosystems.includes(ecosystem))) return false;
+    if (manifest.schema !== 1 || manifest.scannerVersion !== scannerVersion || !Array.isArray(manifest.ecosystems) || !ecosystems.every((ecosystem) => manifest.ecosystems.includes(ecosystem))) return false;
     const files = hashOsvDatabase(realpathSync(dir));
     return files.length > 0 && JSON.stringify(files) === JSON.stringify(manifest.files);
   } catch { return false; }

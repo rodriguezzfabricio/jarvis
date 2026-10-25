@@ -550,5 +550,17 @@
     "file": "packages/cli/src/security/osv-db-fetch.ts",
     "anchor": "scannerVersion: pin.version,",
     "replacement": "scannerVersion: \"2.7.0\","
+  },
+  {
+    "name": "security backlog: production Semgrep pin drops the size flag",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "\"--jobs=1\", \"--max-target-bytes=0\", \".\"]",
+    "replacement": "\"--jobs=1\", \".\"]"
+  },
+  {
+    "name": "security backlog: OSV snapshot check hardcodes the scanner version",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "manifest.scannerVersion !== scannerVersion",
+    "replacement": "manifest.scannerVersion !== \"2.7.0\""
   }
 ]

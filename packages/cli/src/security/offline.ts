@@ -52,7 +52,7 @@ export function osvCacheReady(pin: ScannerPin, cwd: string, runtime: ScannerRunt
   const path = value.replaceAll("$JARVIS_FIXTURES", runtime.fixturesDir);
   if (!existsSync(path)) return false;
   if (!pathInside(realpathSync(runtime.fixturesDir), realpathSync(path))) throw Error("Invalid scanner environment");
-  return osvDatabaseReady(path, detectOsvEcosystems(cwd));
+  return osvDatabaseReady(path, detectOsvEcosystems(cwd), pin.version);
 }
 
 export function reportedScannerVersion(tool: Scanner, stdout: string): string[] {

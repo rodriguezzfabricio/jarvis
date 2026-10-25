@@ -47,7 +47,8 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
   writeFileSync(pin.bin, `#!${process.execPath}\nif(process.argv.includes('--version')) console.log('1.2.3'); else { if(process.env.HOME!==${JSON.stringify(home)} || process.env.TMPDIR!==${JSON.stringify(home)} || process.env.OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY!==${JSON.stringify(db)}) process.exit(2); console.log('{"results":[]}'); }`, { mode: 0o700 });
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: { "osv-scanner": { ...pin, args: pinnedSecurityScanners()["osv-scanner"]!.args, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/osv-db" } } } });
   mkdirSync(db); writeFileSync(join(db, "dummy.json"), "{}");
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
+  // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
   const r = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "osv-scanner"], cwd: checkout, env: { HOME: home, TMPDIR: home, JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(r.code).toBe(0);
   expect(JSON.parse(r.stdout)).toMatchObject({ status: "pass" });
@@ -55,7 +56,7 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
 
 it("uses a fresh home outside the checkout by default and forces semgrep nosem disabling", async () => {
   const { checkout, pin } = setup(); let env: Record<string, string> = {}; let args: readonly string[] = [];
-  const r = await runScanner("semgrep", { ...pinnedSecurityScanners().semgrep!, bin: pin.bin, version: pin.version, args: [...pinnedSecurityScanners().semgrep!.args.filter((arg) => arg !== "--max-target-bytes=0"), "--max-target-bytes=0"] }, checkout, { spawn: async (s) => {
+  const r = await runScanner("semgrep", { ...pinnedSecurityScanners().semgrep!, bin: pin.bin, version: pin.version }, checkout, { spawn: async (s) => {
     env = s.env; args = s.args;
     return { code: 0, stdout: s.args.includes("--version") ? "1.2.3" : '{"results":[],"errors":[]}', stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
   } });

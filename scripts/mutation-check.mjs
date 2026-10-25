@@ -60,7 +60,7 @@ const mutations = [
   ["baseline skips preflight", B, "  if (!pre.ok) throw new PreflightError", "  if (false) throw new PreflightError"],
   ["eval allowlist not enforced at run", B, "  checkEvalDomains(task.id, task.allowedDomains);\n", ""],
   ["task files widen the eval allowlist", B, "  checkEvalDomains(id, t.allowedDomains);\n", ""],
-  ["eval allowlist gains a host", B, '"localhost", "127.0.0.1"];', '"localhost", "127.0.0.1", "api.github.com"];'],
+  ["eval allowlist gains a host", B, '"fonts.googleapis.com", "fonts.gstatic.com"];', '"fonts.googleapis.com", "fonts.gstatic.com", "api.github.com"];'],
   ["baseline shares one cache", B,'const cacheRoot = join(workRoot, "cache-runs", task.id, runId);', 'const cacheRoot = join(workRoot, "cache-runs", "shared");'],
   ["runner git runs hooks", G, '  "-c", "core.hooksPath=/dev/null",\n', ""],
   ["runner git runs fsmonitor", G, '  "-c", "core.fsmonitor=false",\n', ""],

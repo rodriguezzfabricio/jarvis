@@ -98,13 +98,19 @@
   {
     "name": "settings task session can't read the Jarvis install",
     "file": "packages/cli/src/harness/claude/task.ts",
-    "anchor": "    ...(locations.installDir ? { readOnlyDirs: [locations.installDir] } : {}),\n",
+    "anchor": "    ...(locations.installDirs ? { readOnlyDirs: locations.installDirs } : {}),\n",
     "replacement": ""
   },
   {
     "name": "settings Jarvis install may overlap agent folders",
     "file": "packages/cli/src/harness/claude/task.ts",
-    "anchor": "  for (const root of roots) if (under(installDir, root) || under(root, installDir)) throw",
-    "replacement": "  for (const root of roots) if (false) throw"
+    "anchor": "  for (const dir of dirs) for (const root of roots) if (under(dir, root) || under(root, dir)) throw",
+    "replacement": "  for (const dir of dirs) for (const root of roots) if (false) throw"
+  },
+  {
+    "name": "settings Jarvis install dependencies not reopened",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  const dirs = [installDir, ...new Set(deps)];",
+    "replacement": "  const dirs = [installDir];"
   }
 ]

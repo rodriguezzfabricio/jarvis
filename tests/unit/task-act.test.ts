@@ -55,6 +55,41 @@ describe("jarvis act inside a task session", () => {
     expect(s.seen.settings!.permissions.allow).toContain(`Read(/${install}/**)`);
   });
 
+  // Round 19: a checkout whose node_modules link to another checkout (the mutation check's clones) is an
+  // install whose dependencies live elsewhere; act needs them too, and nothing more.
+  function fakeInstall(root: string, deps: string) {
+    const dir = join(root, "install");
+    mkdirSync(join(dir, "packages", "cli", "src"), { recursive: true });
+    writeFileSync(join(dir, "packages", "cli", "src", "cli.ts"), "");
+    mkdirSync(deps, { recursive: true });
+    symlinkSync(deps, join(dir, "node_modules"));
+    return dir;
+  }
+
+  it("also reopens, read-only, the install's dependencies when they live outside it", async () => {
+    const base = setup();
+    const deps = join(base.root, "deps-elsewhere");
+    const s = setup({ installDir: fakeInstall(base.root, deps) });
+    expect((await createClaudeHarness(s.options).runTask(s.input)).status).toBe("finished");
+    const fs = s.seen.settings!.sandbox.filesystem;
+    expect(fs.allowRead).toEqual(expect.arrayContaining([join(base.root, "install"), deps]));
+    expect(fs.denyWrite).toEqual(expect.arrayContaining([join(base.root, "install"), deps]));
+    expect(fs.allowWrite).not.toContain(deps);
+  });
+
+  it("refuses an install whose dependencies resolve into the worktrees, caches or runner folder", async () => {
+    for (const where of ["worktreeRoot", "cacheRoot", "jarvisHome"] as const) {
+      const probe = setup();
+      const s = setup({ installDir: fakeInstall(probe.root, join(probe.options[where], "deps")) });
+      s.options.worktreeRoot = probe.options.worktreeRoot; s.options.cacheRoot = probe.options.cacheRoot; s.options.jarvisHome = probe.options.jarvisHome;
+      s.input.workspace = probe.input.workspace; s.input.runHeaderPath = probe.input.runHeaderPath; s.input.logPath = probe.input.logPath;
+      const r = await createClaudeHarness(s.options).runTask(s.input);
+      expect(r.status, where).toBe("refused");
+      expect(r.status === "refused" ? r.reason : "", where).toMatch(/dependencies must not overlap/);
+      expect(s.seen.spec, where).toBeUndefined();
+    }
+  });
+
   it("refuses an install that isn't one, or overlaps the worktrees, caches or runner folder", async () => {
     const base = setup();
     const notInstall = join(base.root, "empty"); mkdirSync(notInstall);

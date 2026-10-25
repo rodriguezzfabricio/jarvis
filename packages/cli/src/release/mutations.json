@@ -1,0 +1,338 @@
+[
+  {
+    "name": "release_manifest_hash",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "return createHash(\"sha256\").update(canonical(parseManifest(manifest))).digest(\"hex\");",
+    "replacement": "return \"0\".repeat(64);"
+  },
+  {
+    "name": "release_smoke_path",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "text.refine(smokePath, \"unsafe smoke path\")",
+    "replacement": "text.refine(() => true, \"unsafe smoke path\")"
+  },
+  {
+    "name": "release_artifact_symlink",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "if (st.isSymbolicLink()) throw new Error(\"artifact symlink refused\");",
+    "replacement": "if (st.isSymbolicLink()) return;"
+  },
+  {
+    "name": "release_evidence_integrity",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "&& verifyEvidence(entry).ok;",
+    "replacement": "&& true;"
+  },
+  {
+    "name": "release_runner_state",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "input.ledger.append({ kind: \"state_reached\", actor: \"runner\", data: {",
+    "replacement": "input.ledger.append({ kind: \"state_reached\", actor: \"broker\", data: {"
+  },
+  {
+    "name": "release_protected_checks_lock",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "&& !!approved && data(e!).checksLock === data(approved).lockHash",
+    "replacement": "&& true"
+  },
+  {
+    "name": "release_evidence_manifest_binding",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "d.check === `release.${check}` && d.manifestHash === manifestHash(manifest)",
+    "replacement": "d.check === `release.${check}`"
+  },
+  {
+    "name": "release_grant_manifest_binding",
+    "file": "packages/cli/src/release/grants.ts",
+    "anchor": "&& d.scope?.project === manifest.project && d.scope.manifestHash === hash",
+    "replacement": "&& d.scope?.project === manifest.project"
+  },
+  {
+    "name": "release_rollback_permission",
+    "file": "packages/cli/src/release/grants.ts",
+    "anchor": "&& (!rollback || d.scope.allowRollback === true);",
+    "replacement": "&& true;"
+  },
+  {
+    "name": "release_production_grant",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (op === \"deploy.promote\" && !hasReleaseGrant(options.ledger, manifest, ref.action === \"rollback\")) return undefined;",
+    "replacement": "if (false) return undefined;"
+  },
+  {
+    "name": "release_production_readiness",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (ref.action === \"promote\" && !(options.readyToPromote ?? (m => isReleaseReady(options.ledger, m)))(manifest)) return undefined;",
+    "replacement": "if (false) return undefined;"
+  },
+  {
+    "name": "release_action_binding",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (!ref || (op === \"deploy.preview\") !== (ref.action === \"preview\")) return undefined;",
+    "replacement": "if (!ref) return undefined;"
+  },
+  {
+    "name": "release_artifact_binding",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "if (artifactDigest(dir) !== manifest.artifactHash) throw new Error(\"artifact copy hash differs from approved revision\");",
+    "replacement": "if (false) throw new Error(\"artifact copy hash differs from approved revision\");"
+  },
+  {
+    "name": "release_token_receipt_containment",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "detail: { provider: manifest.provider, siteId: options.projectConfig.siteId, manifestHash: manifestHash(manifest), action, url }",
+    "replacement": "detail: { provider: manifest.provider, siteId: options.projectConfig.siteId, manifestHash: manifestHash(manifest), action, url, token }"
+  },
+  {
+    "name": "release_secret_error_containment",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "} catch { return unknown(); }",
+    "replacement": "} catch (error) { return { outcome: \"unknown\", detail: { reason: String(error) } }; }"
+  },
+  {
+    "name": "release_uncertain_no_retry",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (result.code !== 0 || result.timedOut || result.overflowed) return unknown();",
+    "replacement": "if (result.code !== 0 || result.timedOut || result.overflowed) return failed(\"retry\");"
+  },
+  {
+    "name": "release_netlify_no_build",
+    "file": "packages/cli/src/broker/adapters/netlify.ts",
+    "anchor": "\"deploy\", \"--no-build\", \"--dir\"",
+    "replacement": "\"deploy\", \"--dir\""
+  },
+  {
+    "name": "release_smoke_timeout",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "controller.abort(); resolve({ status: 0, identity: false });",
+    "replacement": "controller.abort(); resolve({ status: 200, identity: true });"
+  },
+  {
+    "name": "release_smoke_retries",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "attempt <= retries",
+    "replacement": "attempt < retries"
+  },
+  {
+    "name": "release_smoke_redirects",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "redirect: \"manual\"",
+    "replacement": "redirect: \"follow\""
+  },
+  {
+    "name": "release_smoke_manifest_paths",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "new Set([\"/\", ...manifest.smokePaths, \"/.well-known/jarvis-release\"])",
+    "replacement": "new Set([\"/\", \"/.well-known/jarvis-release\"])"
+  },
+  {
+    "name": "release_automatic_rollback_grant",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "|| !hasReleaseGrant(ledger, manifest, true)",
+    "replacement": "|| false"
+  },
+  {
+    "name": "release_data_copy",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "const copy = join(dir, \"data-copy\");",
+    "replacement": "const copy = data.source;"
+  },
+  {
+    "name": "release_fresh_restore",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "command(\"restore\", restored)",
+    "replacement": "command(\"restore\", copy)"
+  },
+  {
+    "name": "release_command_failure",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "return outcome.code === 0 && !outcome.timedOut && !outcome.overflowed;",
+    "replacement": "return true;"
+  },
+  {
+    "name": "release_docker_pin",
+    "file": "packages/cli/src/release/docker.ts",
+    "anchor": "!/@sha256:[a-f0-9]{64}$/.test(options.image)",
+    "replacement": "false"
+  },
+  {
+    "name": "release_docker_network",
+    "file": "packages/cli/src/release/docker.ts",
+    "anchor": "\"--network\", \"none\"",
+    "replacement": "\"--network\", \"host\""
+  },
+  {
+    "name": "release_docker_cleanup",
+    "file": "packages/cli/src/release/docker.ts",
+    "anchor": "args: [\"rm\", \"--force\", container]",
+    "replacement": "args: [\"inspect\", container]"
+  },
+  {
+    "name": "release_restore_cluster",
+    "file": "packages/cli/src/release/docker.ts",
+    "anchor": "const restoring = spec.env.JARVIS_DATA_COPY === spec.env.JARVIS_RESTORE;",
+    "replacement": "const restoring = false;"
+  },
+  {
+    "name": "release_absolute_provider_bin",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (![config.bin, config.home, config.cwd].every(isAbsolute))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_preview_secret_scope",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "action === \"preview\" ? \"PREVIEW\" : \"PRODUCTION\"",
+    "replacement": "action === \"preview\" ? \"PRODUCTION\" : \"PRODUCTION\""
+  },
+  {
+    "name": "release_malformed_evidence_refusal",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "entry.data !== null && typeof entry.data === \"object\" ? entry.data as Data : {}",
+    "replacement": "entry.data as Data"
+  },
+  {
+    "name": "release_smoke_counterevidence",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "const latestFailure = ok && entries.some",
+    "replacement": "const latestFailure = false && entries.some"
+  },
+  {
+    "name": "release_snapshot_root_scope",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "const source = realChild(input.snapshotRoot, data.source);",
+    "replacement": "const source = data.source;"
+  },
+  {
+    "name": "release_rehearsal_stdout_private",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "observations.push({ step, code: outcome.code, timedOut: outcome.timedOut,",
+    "replacement": "observations.push({ step, code: outcome.code, timedOut: outcome.timedOut, stdout: outcome.stdout,"
+  },
+  {
+    "name": "release_rehearsal_stderr_private",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "observations.push({ step, code: outcome.code, timedOut: outcome.timedOut,",
+    "replacement": "observations.push({ step, code: outcome.code, timedOut: outcome.timedOut, stderr: outcome.stderr,"
+  },
+  {
+    "name": "release_snapshot_created_private",
+    "file": "packages/cli/src/release/rehearsal.ts",
+    "anchor": "const source = join(dir, \"snapshot\");",
+    "replacement": "const source = data.source;"
+  },
+  {
+    "name": "release_trusted_site",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "manifest.siteId !== config.siteId || ",
+    "replacement": ""
+  },
+  {
+    "name": "release_trusted_origin",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": " || manifest.productionUrl !== config.productionUrl",
+    "replacement": ""
+  },
+  {
+    "name": "release_revision_artifact_binding",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "if (!Object.hasOwn(config.artifacts, manifest.revision) || config.artifacts[manifest.revision] !== manifest.artifactHash)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_artifact_root_scope",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "const source = realChild(config.artifactRoot, manifest.artifactDir, true);",
+    "replacement": "const source = realpathSync(manifest.artifactDir);"
+  },
+  {
+    "name": "release_private_copy_deployed",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "(deployManifest, options.projectConfig, action, token, target)",
+    "replacement": "(manifest, options.projectConfig, action, token, target)"
+  },
+  {
+    "name": "release_marker_written",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "`${manifestHash(manifest)}\\n`",
+    "replacement": "\"wrong-release\\n\""
+  },
+  {
+    "name": "release_vercel_trusted_metadata",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "JSON.stringify({ projectId: config.siteId, orgId: config.orgId })",
+    "replacement": "JSON.stringify({ projectId: \"session-site\", orgId: \"session-org\" })"
+  },
+  {
+    "name": "release_vercel_reported_url",
+    "file": "packages/cli/src/broker/adapters/vercel.ts",
+    "anchor": "return value;",
+    "replacement": "return setup.productionUrl;"
+  },
+  {
+    "name": "release_netlify_reported_url",
+    "file": "packages/cli/src/broker/adapters/netlify.ts",
+    "anchor": "return output.deploy_url;",
+    "replacement": "return setup.productionUrl;"
+  },
+  {
+    "name": "release_live_identity_marker",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "return Buffer.concat(chunks).toString(\"utf8\").trim() === expected;",
+    "replacement": "return true;"
+  },
+  {
+    "name": "release_live_origin_checked",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "const origins = [...new Set([url, ...(preview ? [] : [input.projectConfig.productionUrl])])];",
+    "replacement": "const origins = [url];"
+  },
+  {
+    "name": "release_rollback_capture_before_promote",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "recordCurrentProduction(options.ledger, prepared.manifest, setup, current);",
+    "replacement": "void current;"
+  },
+  {
+    "name": "release_vercel_recorded_rollback",
+    "file": "packages/cli/src/broker/adapters/vercel.ts",
+    "anchor": "[\"rollback\", target!.id, \"--yes\"]",
+    "replacement": "[\"rollback\", manifest.rollback.deploymentId ?? \"session-chosen\", \"--yes\"]"
+  },
+  {
+    "name": "release_netlify_recorded_rollback",
+    "file": "packages/cli/src/broker/adapters/netlify.ts",
+    "anchor": "{ site_id: setup.siteId, deploy_id: target!.id }",
+    "replacement": "{ site_id: setup.siteId, deploy_id: manifest.rollback.deploymentId ?? \"session-chosen\" }"
+  },
+  {
+    "name": "release_signal_not_generic",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "// Generic observations cannot attest monitor installation or real alert delivery.\n      ok = false;",
+    "replacement": "// Broken: generic observations accepted.\n      ok = gate(at(value), manifest, \"failure-signal\");"
+  },
+  {
+    "name": "release_preview_failure_message",
+    "file": "packages/cli/src/release/smoke.ts",
+    "anchor": "\"Preview smoke failed. Preview release stopped.\"",
+    "replacement": "\"Production rollback is not authorized.\""
+  },
+  {
+    "name": "release_project_binding",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "manifest.project !== options.project || ",
+    "replacement": ""
+  },
+  {
+    "name": "release_rollback_steps_no_session_target",
+    "file": "packages/cli/src/release/manifest.ts",
+    "anchor": "deploymentId: id.optional(), url: url.optional(),",
+    "replacement": "deploymentId: id, url,"
+  },
+  {
+    "name": "release_staging_root_private",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "const privateRoot = realChild(runner, config.privateRoot);",
+    "replacement": "const privateRoot = realpathSync(config.privateRoot);"
+  }
+]

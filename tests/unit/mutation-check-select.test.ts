@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
 import { buildGraph, collectedFiles, controlCache, idsForFiles, isCandidateTest, judge, relatedTests, subsetControls } from "../../scripts/mutation-select.mjs";
 // @ts-expect-error plain .mjs script without types
-import { testIds } from "../../scripts/mutation-classify.mjs";
+import { skippedIds, testIds } from "../../scripts/mutation-classify.mjs";
 
 // The mutation check runs each mutation against the test files that can observe the mutated file,
 // then the whole suite whenever that subset doesn't catch it. These pin the parts that keep the
@@ -260,7 +260,7 @@ describe("subset control validation", () => {
   const clone = "/w/repo";
   type Test = { title: string; status?: string };
   const report = (files: Record<string, Test[]>) => ({
-    success: Object.values(files).flat().every((t) => (t.status ?? "passed") === "passed"),
+    success: Object.values(files).flat().every((t) => t.status !== "failed"),
     testResults: Object.entries(files).map(([f, tests]) => ({
       name: `${clone}/${f}`,
       message: "",
@@ -307,4 +307,14 @@ describe("subset control validation", () => {
       expect(lines[0]).toMatch(/not usable, their mutations ran on the full suite\]$/);
     });
   }
+
+  // Round 18: the full control may skip an opt-in test; a subset control must skip exactly the same ones.
+  it("carries the full control's skips into the subset control, and refuses a subset that skips differently", async () => {
+    const fullWithSkip = report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two", status: "skipped" }], "tests/unit/b.test.ts": [{ title: "x" }] });
+    const control = { ids: testIds(fullWithSkip), skipped: skippedIds(fullWithSkip) };
+    const subset = (two: string) => ({ proc: ok, report: report({ "tests/unit/a.test.ts": [{ title: "one" }, { title: "two", status: two }], "tests/unit/b.test.ts": [{ title: "x" }] }), runEnd: passed });
+    const same = await subsetControls({ run: async () => subset("skipped"), control })(files, clone);
+    expect(same).toEqual({ ids: control.ids, skipped: ["unit/a.test.ts > s two"] });
+    expect(await subsetControls({ run: async () => subset("passed"), control })(files, clone)).toBeUndefined();
+  });
 });

@@ -25,8 +25,23 @@ export function testIds(report) {
   return report.testResults.flatMap((f) => f.assertionResults.map((a) => `${f.name.split("/").slice(-2).join("/")} > ${a.fullName}`)).sort();
 }
 
-/** @returns {{ kind: "clean" | "caught" | "survived" | "error", detail: string }} */
-export function classify(proc, report, controlIds, runEnd) {
+/** Statuses of a test that was deliberately not run (it.skipIf, it.todo): finished, not unfinished. */
+const NOT_RUN = new Set(["skipped", "todo"]);
+
+/** The ids (as testIds) of the tests a run skipped, sorted. */
+export function skippedIds(report) {
+  return report.testResults.flatMap((f) => f.assertionResults.filter((a) => NOT_RUN.has(a.status)).map((a) => `${f.name.split("/").slice(-2).join("/")} > ${a.fullName}`)).sort();
+}
+
+/**
+ * `control` is the control run's { ids, skipped } (or, as before, a plain id list: no skip allowed).
+ * A control may skip tests (an opt-in live test without its environment, round 18); a run judged
+ * against it must skip exactly those tests.
+ * @returns {{ kind: "clean" | "caught" | "survived" | "error", detail: string }}
+ */
+export function classify(proc, report, control, runEnd) {
+  const controlIds = Array.isArray(control) ? control : control?.ids;
+  const controlSkipped = Array.isArray(control) ? [] : control?.skipped ?? [];
   if (proc.error) return { kind: "error", detail: `could not run the suite: ${proc.error.message ?? proc.error}` };
   if (proc.signal) return { kind: "error", detail: `suite killed by ${proc.signal}` };
   if (!report) return { kind: "error", detail: `no JSON report (exit ${proc.status})` };
@@ -40,13 +55,18 @@ export function classify(proc, report, controlIds, runEnd) {
   if (controlIds && (ids.length !== controlIds.length || ids.some((x, i) => x !== controlIds[i]))) {
     return { kind: "error", detail: `ran ${ids.length} tests, not the control's ${controlIds.length}` };
   }
+  const skipped = skippedIds(report);
+  if (controlIds) {
+    const differ = [...skipped.filter((x) => !controlSkipped.includes(x)), ...controlSkipped.filter((x) => !skipped.includes(x))];
+    if (differ.length) return { kind: "error", detail: `skipped tests differ from the control's: ${differ.slice(0, 3).join("; ")}` };
+  }
   const all = report.testResults.flatMap((f) => f.assertionResults);
-  const unfinished = all.filter((a) => a.status !== "passed" && a.status !== "failed");
+  const unfinished = all.filter((a) => a.status !== "passed" && a.status !== "failed" && !NOT_RUN.has(a.status));
   if (unfinished.length) return { kind: "error", detail: `${unfinished.length} test(s) did not finish (${[...new Set(unfinished.map((a) => a.status))].join(", ")})` };
   const failed = all.filter((a) => a.status === "failed");
   if (failed.length === 0) {
     if (proc.status !== 0 || report.success === false) return { kind: "error", detail: `suite failed (exit ${proc.status}) with no failed test: unhandled error?` };
-    return controlIds ? { kind: "survived", detail: "all tests passed" } : { kind: "clean", detail: `${ids.length} tests passed` };
+    return controlIds ? { kind: "survived", detail: "all tests passed" } : { kind: "clean", detail: `${ids.length - skipped.length} tests passed${skipped.length ? `, ${skipped.length} skipped` : ""}` };
   }
   if (proc.status !== 1) return { kind: "error", detail: `tests failed but the suite exited ${proc.status}` };
   const timeouts = failed.filter((a) => a.failureMessages.some((m) => TIMEOUT.test(m)));

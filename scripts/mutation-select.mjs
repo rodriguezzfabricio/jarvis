@@ -3,7 +3,7 @@
 // the selection can't see could still error on the full suite. Anything else is re-run on the full
 // suite, and confirm mode, the gate, takes every verdict from it (scripts/mutation-check.mjs).
 import { posix } from "node:path";
-import { classify, testIds } from "./mutation-classify.mjs";
+import { classify, skippedIds, testIds } from "./mutation-classify.mjs";
 
 /**
  * Files whose text can make a test depend on another file: code, and JSON that names commands someone
@@ -120,10 +120,13 @@ export function controlCache(run) {
 /**
  * The subset controls the runner uses: run(files, clone) once per distinct set. A control is usable
  * only if it ran clean, collected exactly `files` and produced exactly the full control's test ids
- * for them; anything else, a malformed report included, is unusable, so its mutations run on the full
- * suite. Resolves to { ids } or undefined, and reports one line per set through onLine.
+ * for them, skipping exactly the tests the full control skipped there; anything else, a malformed
+ * report included, is unusable, so its mutations run on the full suite. `control` is the full control's
+ * { ids, skipped } (a plain `controlIds` list means no skips). Resolves to { ids, skipped } or undefined,
+ * and reports one line per set through onLine.
  */
-export function subsetControls({ run, controlIds, onLine = () => {} }) {
+export function subsetControls({ run, control, controlIds, onLine = () => {} }) {
+  const full = control ?? { ids: controlIds, skipped: [] };
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   return controlCache(async (files, clone) => {
     const r = await run(files, clone);
@@ -131,12 +134,12 @@ export function subsetControls({ run, controlIds, onLine = () => {} }) {
     let ids;
     try {
       k = classify(r.proc, r.report, undefined, r.runEnd);
-      if (k.kind === "clean" && r.proc.status === 0 && same(collectedFiles(r.report, clone), files) && same(testIds(r.report), idsForFiles(controlIds, files))) ids = testIds(r.report);
+      if (k.kind === "clean" && r.proc.status === 0 && same(collectedFiles(r.report, clone), files) && same(testIds(r.report), idsForFiles(full.ids, files)) && same(skippedIds(r.report), idsForFiles(full.skipped, files))) ids = testIds(r.report);
     } catch {
       ids = undefined;
     }
     onLine(`control  ${k.detail} [${files.length} test file${files.length === 1 ? "" : "s"}${ids ? "" : ": not usable, their mutations ran on the full suite"}]`);
-    return ids ? { ids } : undefined;
+    return ids ? { ids, skipped: skippedIds(r.report) } : undefined;
   });
 }
 

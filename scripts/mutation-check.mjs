@@ -18,7 +18,7 @@ import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync,
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classify, summarize, testIds } from "./mutation-classify.mjs";
+import { classify, skippedIds, summarize, testIds } from "./mutation-classify.mjs";
 import { jobPlan, runAndRead, runPool, stopAll, suiteEnv } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
 import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
@@ -155,6 +155,8 @@ const mutations = [
   ["gate ignores the case output cap", GT, "        maxOutputBytes: MAX_OUT_BYTES - captured,\n", ""],
   ["gate verifies over-cap observations", GT, "    if (withinCap) {\n      for (const k of g.check.cases) {", "    if (true) {\n      for (const k of g.check.cases) {"],
   ["filtered mutation runs claim complete coverage", "scripts/mutation-classify.mjs", "  const partial = filtered || selected !== total;", "  const partial = false;"],
+  ["mutated runs may skip tests the control ran", "scripts/mutation-classify.mjs", "    if (differ.length) return { kind: \"error\", detail: `skipped tests differ", "    if (false) return { kind: \"error\", detail: `skipped tests differ"],
+  ["subset controls ignore the full control's skips", "scripts/mutation-select.mjs", " && same(skippedIds(r.report), idsForFiles(full.skipped, files))", ""],
   ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).
   ["public path replacement", "packages/cli/src/broker/server.ts", "    linkSync(privatePath, socketPath);", "    rmSync(socketPath, {force:true}); linkSync(privatePath, socketPath);"],
@@ -404,9 +406,10 @@ async function main() {
     console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
     return 2;
   }
-  const controlIds = testIds(control.report);
+  // The tests the control skipped (an opt-in live test without its environment) must stay skipped, and only those.
+  const fullControl = { ids: testIds(control.report), skipped: skippedIds(control.report) };
   controls.push(`control  ${c.detail} [full suite, ${collectedFiles(control.report, sandboxRepo).length} test files]`);
-  const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), controlIds, onLine: (line) => controls.push(line) });
+  const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), control: fullControl, onLine: (line) => controls.push(line) });
 
   const mutate = async (clone, [name, file, from, to, source]) => {
     const path = join(clone, file);
@@ -426,11 +429,11 @@ async function main() {
         control: () => ctl,
         runSubset: async (t, sc) => {
           const m = await runSuite(clone, tag, t);
-          return classify(m.proc, m.report, sc.ids, m.runEnd);
+          return classify(m.proc, m.report, sc, m.runEnd);
         },
         runFull: async () => {
           const m = await runSuite(clone, `${tag}-full`);
-          return classify(m.proc, m.report, controlIds, m.runEnd);
+          return classify(m.proc, m.report, fullControl, m.runEnd);
         },
       });
       verdicts.push({ kind: k.kind, confirmed: k.confirmed, scoped: confirm });

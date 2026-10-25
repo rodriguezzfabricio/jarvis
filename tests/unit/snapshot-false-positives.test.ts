@@ -163,8 +163,11 @@ describe("images and fonts", () => {
     expect(scan("blob.bin", Buffer.from([0xf8, 0x00, 0xff, 0xfe, 0x80, 0x81, 0x00, 0xc3]))).toEqual([]);
   });
 
-  it("does not decode encoded fields inside an image (an XMP thumbnail, say)", () => {
-    expect(scan("screenshot.png", Buffer.concat([PNG, noise("xmp", 4096), Buffer.from("<x:xmpmeta><xmpGImg:image>eJz/////////////</xmpGImg:image></x:xmpmeta>"), noise("xmp2", 4096)]))).toEqual([]);
+  it("decodes an image's XMP like any text: a base64 JPEG thumbnail is an image, not a refusal", () => {
+    // Codex review: XMP is text, so it goes through the decoding pipeline. A broken zlib field there needs
+    // review exactly as it would in a text file; a real thumbnail decodes to a JPEG and passes.
+    const thumbnail = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]), noise("thumb", 2048), Buffer.from([0xff, 0xd9])]).toString("base64");
+    expect(scan("screenshot.png", Buffer.concat([PNG, noise("xmp", 4096), Buffer.from(`<x:xmpmeta><xmpGImg:image>${thumbnail}</xmpGImg:image></x:xmpmeta>`), noise("xmp2", 4096)]))).toEqual([]);
   });
 
   it("still refuses a private key appended to an image", () => {

@@ -290,6 +290,13 @@ function requireJustifications(verdict: z.infer<typeof Verdict>, changes: Return
   }
 }
 
+/** The runner's protected checks, read only from an approved, unchanged store (decision 15). */
+export function readInstalledChecks(store: ChecksStore, ledger: Ledger): AuthoredCheck[] {
+  const verified = store.verify(ledger);
+  if (!verified.ok) throw new Error(`protected checks are not the approved set: ${verified.problems.join("; ")}`);
+  return validateFiles(installedFiles(store)).checks;
+}
+
 function installedFiles(store: ChecksStore): Record<string, string> {
   directory(dirname(store.checksDir));
   if (!lstatSync(store.checksDir, { throwIfNoEntry: false })) return {};

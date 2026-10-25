@@ -74,6 +74,27 @@ export function readPlan(workspace: string, context: PlanContext): Plan {
   return plan;
 }
 
+/** Session-owned plans the runner reads only when `jarvis run --plan <kind>` names them. */
+export const SESSION_PLAN_KINDS = ["onboard", "sweep"] as const;
+export type SessionPlanKind = (typeof SESSION_PLAN_KINDS)[number];
+
+/**
+ * `.jarvis/onboard/plan.json` (onboarding archaeology) or `.jarvis/sweep/plan.json`: written by an
+ * interactive session, so read only on an explicit request, with the same no-follow bounded reader.
+ * No approved spec backs them, so their tasks carry no criteria or stories, and every check they
+ * require must be installed (the runner's copy, never the workspace's).
+ */
+export function readSessionPlan(repo: string, kind: SessionPlanKind, checks: readonly { name: string }[]): Plan {
+  if (!(SESSION_PLAN_KINDS as readonly string[]).includes(kind)) throw new Error(`unknown plan kind: ${String(kind)}`);
+  const plan = PlanSchema.parse(JSON.parse(readPlanningFile(repo, `.jarvis/${kind}/plan.json`)));
+  const installed = new Set(checks.map((c) => c.name));
+  for (const task of plan.tasks) {
+    if (task.acceptanceCriteria.length || task.storyIds.length) throw new Error(`${task.id}: a ${kind} plan has no acceptance criteria or stories`);
+    for (const name of task.requiredChecks) if (!installed.has(name)) throw new Error(`${task.id}: unknown required check: ${name}`);
+  }
+  return plan;
+}
+
 export function planEntries(plan: Plan): AppendInput[] {
   return PlanSchema.parse(plan).tasks.map(({ id, ...definition }) => ({ kind: "task_created", actor: "runner", task_id: id, data: definition }));
 }

@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PlanSchema, planEntries, readPlan, singleTaskPlan } from "../../packages/cli/src/runner/plan.ts";
+import { PlanSchema, planEntries, readPlan, readSessionPlan, singleTaskPlan } from "../../packages/cli/src/runner/plan.ts";
 import { checkSpec } from "../../packages/cli/src/spec/index.ts";
 import { triage } from "../../packages/cli/src/triage/triage.ts";
 
@@ -106,5 +106,31 @@ describe("planner plans", () => {
     expect(singleTaskPlan({ type: "refactor" }, "Refactor", [{ name: "unit" }]).tasks[0]!.mayTouch).toBeUndefined();
     expect(() => singleTaskPlan({ type: "feature" }, "Build", [{ name: "unit" }])).toThrow();
     expect(() => singleTaskPlan({ type: "bug", touches: ["../file"] }, "Fix", [{ name: "unit" }])).toThrow();
+  });
+});
+
+describe("session-owned plans (onboarding and sweeps)", () => {
+  const unitTask = (id = "T1") => ({ id, title: "Split the module", goal: "Split src/big.ts", exitCondition: "Behavior unchanged; unit passes", acceptanceCriteria: [] as string[], storyIds: [] as string[], dependencies: [] as string[], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["src/big.ts"] });
+  function sessionPlan(kind: string, tasks: unknown[]) {
+    const root = mkdtempSync("/private/tmp/j-plan-"); roots.push(root);
+    mkdirSync(join(root, ".jarvis", kind), { recursive: true });
+    writeFileSync(join(root, ".jarvis", kind, "plan.json"), JSON.stringify({ tasks }));
+    return root;
+  }
+  it.each(["onboard", "sweep"] as const)("reads .jarvis/%s/plan.json when asked for it", (kind) => {
+    expect(readSessionPlan(sessionPlan(kind, [unitTask()]), kind, [{ name: "unit" }]).tasks.map((t) => t.id)).toEqual(["T1"]);
+  });
+  it("accepts no other plan kind", () => {
+    expect(() => readSessionPlan(sessionPlan("onboard", [unitTask()]), "../onboard" as "onboard", [{ name: "unit" }])).toThrow(/plan kind/);
+  });
+  it("refuses criteria and stories, which no approved spec backs", () => {
+    expect(() => readSessionPlan(sessionPlan("onboard", [{ ...unitTask(), acceptanceCriteria: ["AC1"] }]), "onboard", [{ name: "unit" }])).toThrow(/criteria|stories/);
+    expect(() => readSessionPlan(sessionPlan("onboard", [{ ...unitTask(), storyIds: ["S1"] }]), "onboard", [{ name: "unit" }])).toThrow(/criteria|stories/);
+  });
+  it("refuses checks that aren't installed", () => {
+    expect(() => readSessionPlan(sessionPlan("sweep", [{ ...unitTask(), requiredChecks: ["lint"] }]), "sweep", [{ name: "unit" }])).toThrow(/lint/);
+  });
+  it("refuses an invalid plan file", () => {
+    expect(() => readSessionPlan(sessionPlan("sweep", [{ ...unitTask(), id: "X" }]), "sweep", [{ name: "unit" }])).toThrow();
   });
 });

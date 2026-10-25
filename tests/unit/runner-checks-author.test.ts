@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSyn
 import * as fs from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installChecks, readAuthoredChecks, buildChecksReviewPrompt, readPlanningFile } from "../../packages/cli/src/runner/checks-author.ts";
+import { installChecks, readAuthoredChecks, readInstalledChecks, buildChecksReviewPrompt, readPlanningFile } from "../../packages/cli/src/runner/checks-author.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 
@@ -359,4 +359,18 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
     expect((p.ledger.entries().at(-1)!.data as { reason: string }).reason).toContain("Retains all observations");
   });
 
+});
+
+describe("installed checks for the runner", () => {
+  it("reads the approved installed checks exactly as installChecks approved them", async () => {
+    const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p);
+    const installed = await installChecks(p.store, files, p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    expect(readInstalledChecks(p.store, p.ledger)).toEqual(installed.checks);
+  });
+  it("refuses installed checks that no longer match the approved lock", async () => {
+    const w = workspace(); const p = project();
+    await installChecks(p.store, readAuthoredChecks(w.p), p.ledger, { spec, reviewVerdict: async () => ({ status: "pass" }) });
+    writeFileSync(join(p.store.checksDir, "expected/result.txt"), "tampered\n");
+    expect(() => readInstalledChecks(p.store, p.ledger)).toThrow(/approved|changed/);
+  });
 });

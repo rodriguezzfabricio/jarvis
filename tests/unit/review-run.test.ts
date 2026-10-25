@@ -29,7 +29,8 @@ function fixture() {
   writeFileSync(join(repo, 'source.txt'), 'committed');
   const git = (...args: string[]) => execFileSync('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: repo, env: { PATH: '/usr/bin:/bin', HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid' } });
   git('init', '-q'); git('add', '.'); git('commit', '-qm', 'fixture');
-  const codex = join(home, 'fake-codex');
+  mkdirSync(join(home, 'tools'));
+  const codex = join(home, 'tools', 'fake-codex');
   writeFileSync(codex, `#!${process.execPath}\n` + readFileSync(resolve('tests/fixtures/fake-review-codex.mjs'), 'utf8'));
   chmodSync(codex, 0o700);
   for (const lane of ['A', 'B', 'C', 'D']) writeFileSync(join(prompts, `prompt-${lane}.md`), lane);
@@ -39,6 +40,7 @@ function fixture() {
 }
 it('captures committed evidence, isolated parallel lanes and null stdin, readable by status', async () => {
   const f = fixture();
+  for (const lane of ['A', 'B', 'D']) writeFileSync(join(f.prompts, `prompt-${lane}.md`), `${lane} wait:A,B,D`);
   process.env.JARVIS_SYNTHETIC_PARENT = 'must-not-inherit';
   try {
     const result = await runReview(f);
@@ -48,15 +50,17 @@ it('captures committed evidence, isolated parallel lanes and null stdin, readabl
     expect(existsSync(join(f.repo, 'docs/reviews/old-response.md'))).toBe(true);
     expect(f.git('status', '--porcelain').toString()).toBe('');
     expect(execFileSync('/usr/bin/git', ['remote'], { cwd: result.workspace }).toString()).toBe('');
-    const lanes = ['A', 'B', 'D'].map(l => JSON.parse(readFileSync(join(result.roundDir, `env-${l}.json`), 'utf8')));
+    const lanes = ['A', 'B', 'D'].map(l => JSON.parse(readFileSync(join(result.roundDir, `stderr-${l}.txt`), 'utf8').trim().split('\n').at(-1)!));
     for (const lane of lanes) {
-      expect(Object.keys(codexEnvironment(f.home)).sort()).toEqual(['CODEX_HOME', 'HOME', 'PATH', 'USER']);
+      // Decision 110: the jail's environment, with a private Codex home outside the runner home.
+      const keys = Object.keys(codexEnvironment({ codexHome: '/c', tmp: '/t', proxyPort: 1 })).sort();
       // macOS initializes this runtime key even under /usr/bin/env -i.
       const childKeys = Object.keys(lane.env).filter(k => process.platform !== 'darwin' || k !== '__CF_USER_TEXT_ENCODING');
-      expect(childKeys.sort()).toEqual(['CODEX_HOME', 'HOME', 'PATH', 'USER']);
-      expect(lane.env).toMatchObject(codexEnvironment(f.home));
+      expect(childKeys.sort()).toEqual(keys);
+      expect(lane.env).toMatchObject(codexEnvironment({ codexHome: lane.env.CODEX_HOME, tmp: lane.env.TMPDIR, proxyPort: Number(new URL(lane.env.HTTPS_PROXY).port) }));
+      expect(lane.env.CODEX_HOME.startsWith(join(f.home, '.jarvis'))).toBe(false);
       expect(lane.stdinCharacterDevice).toBe(true);
-      expect(lane.argv).toContain('read-only');
+      expect(lane.argv).toContain('danger-full-access');
       expect(lane.argv).toContain('--ephemeral');
       expect(lane.argv.at(-2)).toBe('--');
       expect(lane.argv).toContain('model_reasoning_effort="high"');
@@ -92,9 +96,10 @@ it('never overwrites old status or workspace and fails spawn errors', async () =
   mkdirSync(rd, { recursive: true }); writeFileSync(join(rd, 'status'), 'old');
   await expect(runReview(f)).rejects.toThrow(/already|exists/);
   expect(readFileSync(join(rd, 'status'), 'utf8')).toBe('old');
-  const g = fixture(); const r = await runReview({ ...g, codex: join(g.home, 'missing') });
-  expect(r.exitCode).toBe(1);
-  expect(readFileSync(join(r.roundDir, 'status'), 'utf8')).toContain('lane A exit 127');
+  // A lane can't run unconfined, so a missing binary is refused before anything is created (decision 110).
+  const g = fixture();
+  await expect(runReview({ ...g, codex: join(g.home, 'missing') })).rejects.toThrow(/binary is missing/);
+  expect(existsSync(join(g.home, '.jarvis'))).toBe(false);
 });
 it('failed evidence cannot pass even when reviewers pass', async () => {
   const f = fixture(); f.evidence[1]!.args = ['-e', 'process.exit(3)'];
@@ -246,4 +251,19 @@ it('passes a review whose mutation evidence is a successful --confirm-stage run,
   const partial = summarize({ total: 9, selected: 7, filtered: true, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 4, fast: 3 } });
   const g = fixture();
   expect((await runReview({ ...g, evidence: withMutationLine(g, partial.line) })).exitCode).toBe(1);
+});
+
+// Decision 110: the lanes run under the reviewer's Seatbelt profile and hand back only plain verdict files.
+it('confines every lane: it reads its workspace but not the runner home, and a planted link is refused', async () => {
+  const f = fixture();
+  mkdirSync(join(f.home, '.jarvis/projects'), { recursive: true });
+  writeFileSync(join(f.home, '.jarvis/projects/canary.txt'), 'RUNNER-CANARY');
+  writeFileSync(join(f.prompts, 'prompt-A.md'), `PROBE:${join(f.home, '.jarvis/projects/canary.txt')}|source.txt|${join(f.repo, 'source.txt')}`);
+  writeFileSync(join(f.prompts, 'prompt-B.md'), 'LINK');
+  await expect(runReview(f)).rejects.toThrow(/not a plain file/);
+  const rd = join(f.home, '.jarvis/codex-review', f.round);
+  expect(readFileSync(join(rd, 'status'), 'utf8')).toContain('runner-error');
+  expect(existsSync(join(rd, 'verdict-B.json'))).toBe(false);
+  const lane = JSON.parse(readFileSync(join(rd, 'stderr-A.txt'), 'utf8').trim().split('\n').at(-1)!);
+  expect(lane.seen).toEqual(['denied:EPERM', 'read:committed', 'denied:EPERM']);
 });

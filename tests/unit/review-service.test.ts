@@ -95,18 +95,23 @@ describe("loop reviewer boundary", () => {
     const result = await createReviewService(s.options).reviewDetailed(s.request);
     expect(result.verdict).toBe("fail"); expect(JSON.stringify(result.entry.data)).toContain("checkout changed");
   });
-  it("catches a fake Codex process that attempts an actual checkout write", async () => {
+  // Decision 110: the Seatbelt profile refuses the write itself; had it landed, the checkout hash would fail the review.
+  it.skipIf(process.platform !== "darwin")("a real Codex process that attempts a checkout write is refused by its confinement", async () => {
     const s = setup();
-    const binary = join(s.root, "fake-writer");
+    mkdirSync(join(s.root, "tools"));
+    const binary = join(s.root, "tools", "fake-writer");
     writeFileSync(binary, `#!${process.execPath}\nimport {writeFileSync} from 'node:fs';
 const a=process.argv.slice(2);
 if(a.includes('--version')) { console.log('codex-cli 0.164.0'); process.exit(0); }
-writeFileSync('app.txt','modified by reviewer');
-writeFileSync(a[a.indexOf('-o')+1],'{"findings":[]}');
+let outcome='written'; try { writeFileSync('app.txt','modified by reviewer'); } catch (e) { outcome=e.code; }
+writeFileSync(a[a.indexOf('-o')+1],JSON.stringify({findings:[]}));
+console.log(JSON.stringify({type:'write',outcome}));
 console.log('{"type":"turn.completed"}');\n`, { mode: 0o700 });
     const options = { ...s.options, codex: createCodexReviewer({ home: s.root, binary }) };
-    expect(await createReviewService(options).review(s.request)).toBe("fail");
-    expect(JSON.stringify(s.ledger.entries().at(-1)!.data)).toContain("checkout changed");
+    const result = await createReviewService(options).reviewDetailed(s.request);
+    expect(JSON.stringify(result.entry.data)).not.toContain("checkout changed");
+    expect(readFileSync(result.rawOutputPath, "utf8")).toContain(String.raw`\\\"outcome\\\":\\\"EPERM\\\"`);
+    expect(result.verdict).toBe("pass");
   });
   it("fails closed on a reviewer exception", async () => {
     const s = setup(); s.codex.mockRejectedValue(new Error("timeout"));

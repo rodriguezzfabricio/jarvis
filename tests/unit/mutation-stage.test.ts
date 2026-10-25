@@ -26,6 +26,7 @@ describe("mutation stage map", () => {
     expect(STAGES).toEqual(["0-1", "2", "3", "4", "5", "6"]);
     expect(stageOf("packages/cli/src/harness/claude/mutations-settings.json")).toBe("0-1");
     expect(stageOf("packages/cli/src/commands/mutations-commands.json")).toBe("3");
+    expect(stageOf("packages/cli/src/commands/mutations-run.json")).toBe("3");
     expect(stageOf("packages/cli/src/runner/mutations-loop.json")).toBe("3");
     for (const lane of ["review", "security", "lanes"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("4");
     for (const lane of ["release", "setup"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("5");

@@ -1,0 +1,158 @@
+[
+  {
+    "name": "run broker keeps its sockets on a signal",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "  for (const s of HOST_SIGNALS) host.once(s, onSignal);",
+    "replacement": ""
+  },
+  {
+    "name": "run broker keeps its sockets on exit",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "  host.once(\"exit\", onExit);",
+    "replacement": ""
+  },
+  {
+    "name": "run broker swallows the signal",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "    host.kill(host.pid, signal); // with no listener left, the default action ends the runner",
+    "replacement": ""
+  },
+  {
+    "name": "run broker skips reconcile",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "  const reconciled = broker.reconcile();",
+    "replacement": "  const reconciled = 0;"
+  },
+  {
+    "name": "run broker close leaves its signal handlers",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "close: async () => { detach(); await teardown(); }",
+    "replacement": "close: async () => { await teardown(); }"
+  },
+  {
+    "name": "run broker has no adapters",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "adapters: outboxAdapters(join(o.projectDir, \"outbox\")),",
+    "replacement": "adapters: [],"
+  },
+  {
+    "name": "run broker ignores the secrets file",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "    secrets: existsSync(secretsPath) ? envFileSecrets(secretsPath) : { get: () => undefined },",
+    "replacement": "    secrets: { get: () => undefined },"
+  },
+  {
+    "name": "run sessions get no broker socket",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "      brokerSocket: hosted.socketPath, installDir: INSTALL_DIR,",
+    "replacement": "      installDir: INSTALL_DIR,"
+  },
+  {
+    "name": "run sessions get the public alias",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "      brokerSocket: hosted.socketPath, installDir: INSTALL_DIR,",
+    "replacement": "      brokerSocket: hosted.alias, installDir: INSTALL_DIR,"
+  },
+  {
+    "name": "run sessions get no install",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "      brokerSocket: hosted.socketPath, installDir: INSTALL_DIR,",
+    "replacement": "      brokerSocket: hosted.socketPath,"
+  },
+  {
+    "name": "run loop gets no blocked notifier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    notify: notifications.usageWait, notifyBlocked: notifications.blocked,",
+    "replacement": "    notify: notifications.usageWait,"
+  },
+  {
+    "name": "run loop gets no usage-wait notifier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    notify: notifications.usageWait, notifyBlocked: notifications.blocked,",
+    "replacement": "    notifyBlocked: notifications.blocked,"
+  },
+  {
+    "name": "run never stops its broker",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    close: hosted.close,",
+    "replacement": "    close: async () => {},"
+  },
+  {
+    "name": "run sends no finished notice",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    finished: (result) => notifications.finished(result ? { status: result.status, summary: summary(ledger) } : { status: \"error\" }),",
+    "replacement": "    finished: async () => {},"
+  },
+  {
+    "name": "run leaves its broker up when the loop throws",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "    try { await run.close(); } catch (error) {",
+    "replacement": "    try { if (!failed) await run.close(); } catch (error) {"
+  },
+  {
+    "name": "run skips the finished notice",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "    } finally { await run.finished(result); }",
+    "replacement": "    } finally { }"
+  },
+  {
+    "name": "run notifier throws on a missing or broken config",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "    if (config.status !== \"ok\") { warn(`Notification not delivered (${what}): ${problem}.`); return; }",
+    "replacement": "    if (config.status !== \"ok\") throw new Error(problem);"
+  },
+  {
+    "name": "run notifier throws when a send fails",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "      warn(`Notification not delivered (${what}) through ${o.configPath}: ${reason}`);",
+    "replacement": "      warn(`Notification not delivered (${what}) through ${o.configPath}: ${reason}`); throw error;"
+  },
+  {
+    "name": "run notifier prints the topic",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "      for (const secret of config.secrets) reason = reason.replaceAll(secret, \"<topic>\");",
+    "replacement": ""
+  },
+  {
+    "name": "run notifier waits on a send forever",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "if (await Promise.race([config.notifier.send(message, []).then(() => \"sent\"), timedOut]) === \"timeout\")",
+    "replacement": "if (await config.notifier.send(message, []).then(() => \"sent\") === \"timeout\")"
+  },
+  {
+    "name": "run notifier reads its config through a symlink",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "    raw = readNoFollow(o.configPath);",
+    "replacement": "    raw = process.getBuiltinModule(\"node:fs\").readFileSync(o.configPath, \"utf8\");"
+  },
+  {
+    "name": "session PATH lacks the jarvis launcher",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "{ PATH: `${join(locations.installDirs[0]!, SESSION_BIN)}:${fixedPath(home)}`, JARVIS_NODE: locations.node }",
+    "replacement": "{ JARVIS_NODE: locations.node }"
+  },
+  {
+    "name": "session launcher gets no Node",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "{ PATH: `${join(locations.installDirs[0]!, SESSION_BIN)}:${fixedPath(home)}`, JARVIS_NODE: locations.node }",
+    "replacement": "{ PATH: `${join(locations.installDirs[0]!, SESSION_BIN)}:${fixedPath(home)}` }"
+  },
+  {
+    "name": "install without a jarvis launcher accepted",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  if (!launcher?.isFile() || (launcher.mode & 0o111) === 0) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "launcher Node may live where sessions write",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "  if (!isAbsolute(node) || roots.some((root) => under(node, root))) throw",
+    "replacement": "  if (!isAbsolute(node)) throw"
+  },
+  {
+    "name": "session launcher runs whatever node is on PATH",
+    "file": "packages/cli/bin/jarvis",
+    "anchor": "exec \"${JARVIS_NODE:?jarvis: JARVIS_NODE is not set; this launcher is for Jarvis task sessions}\"",
+    "replacement": "exec node"
+  }
+]

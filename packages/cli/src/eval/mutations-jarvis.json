@@ -238,5 +238,17 @@
     "file": "packages/cli/src/eval/baseline.ts",
     "anchor": "    try { assertHiddenAbsent(workspace, opts.hiddenDirs); }",
     "replacement": "    try { }"
+  },
+  {
+    "name": "eval jarvis grades descriptors parsed before install",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "check: installed.checks[name]!",
+    "replacement": "check: g.hidden.checks[name]!"
+  },
+  {
+    "name": "eval jarvis loop gets gate descriptors parsed before install",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "harness, checks: gate.checks, review,",
+    "replacement": "harness, checks: loopChecks.checks, review,"
   }
 ]

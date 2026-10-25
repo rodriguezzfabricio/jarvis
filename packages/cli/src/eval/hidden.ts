@@ -206,11 +206,16 @@ export async function gradeRun(g: GradeInput): Promise<Grade> {
   mkdirSync(projectDir, { recursive: true, mode: 0o700 });
   const ledger = Ledger.open(projectDir);
   const store = installHiddenChecks(projectDir, ledger, g.hidden, "golden task hidden checks (grading)");
+  // What runs is what was hashed: the descriptors are parsed from the installed, locked copy, never from the
+  // copy parsed before the run (the evals repo may have changed since). Each gate re-verifies the lock.
+  const installed = loadHiddenChecks(store.checksDir);
   const suite = suiteFingerprint(store.hashAll());
+  const locked = store.verify(ledger);
+  if (!locked.ok) throw new Error(`grading checks changed after install: ${locked.problems.join("; ")}`);
   const gate = g.gate ?? runGate;
   const checks: GradeCheck[] = [];
-  for (const name of Object.keys(g.hidden.checks).sort()) {
-    const r = await gate({ ledger, store, projectDir, jarvisHome: g.jarvisHome, workRoot: g.workRoot, repoPath: g.repoPath, revision: g.revision, check: g.hidden.checks[name]!, taskId: "grade", attemptId: "g1" });
+  for (const name of Object.keys(installed.checks).sort()) {
+    const r = await gate({ ledger, store, projectDir, jarvisHome: g.jarvisHome, workRoot: g.workRoot, repoPath: g.repoPath, revision: g.revision, check: installed.checks[name]!, taskId: "grade", attemptId: "g1" });
     checks.push({ name, status: r.status });
   }
   const grade: Grade = { revision: g.revision, suite, gradedAt: new Date().toISOString(), pass: checks.length > 0 && checks.every((c) => c.status === "pass"), checks, projectDir };

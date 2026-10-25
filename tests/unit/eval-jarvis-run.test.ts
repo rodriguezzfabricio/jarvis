@@ -108,6 +108,18 @@ describe("eval jarvis: bug tasks (golden tasks 4 and 5) go triage → singleTask
     expect(calls).toHaveLength(0);
   });
 
+  it("gives the loop the gate checks as installed and locked, not as first parsed", async () => {
+    const fx = fixture();
+    const calls: RunLoopOptions[] = [];
+    const descriptor = join(fx.evalsRepo, "hidden", "05-citizenship", "gate", "unit.check.json");
+    const changed = { ...JSON.parse(readFileSync(descriptor, "utf8")), cases: [{ id: "unit", command: "node --test --test-reporter=tap" }] };
+    // The evals repo changes after the first load, while the preflight runs.
+    const preflight = async () => { writeFileSync(descriptor, JSON.stringify(changed)); return { ok: true }; };
+    await runJarvis(loadTask(fx.evalsRepo, "05-citizenship"), options(fx, { runLoop: fakeLoop("fix", undefined, calls), preflight }));
+    expect(calls[0]!.checks.unit!.cases).toEqual(changed.cases);
+    expect(JSON.parse(readFileSync(join(calls[0]!.projectDir, "checks", "unit.check.json"), "utf8")).cases).toEqual(changed.cases);
+  });
+
   it("refuses gate checks that hold any grading file, before the preflight", async () => {
     const fx = fixture();
     const pre = counter();

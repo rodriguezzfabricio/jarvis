@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { verifyEvidence } from "../../packages/cli/src/checks/gate.ts";
+import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { loadTask, runBaseline } from "../../packages/cli/src/eval/baseline.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRecordedRun, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, suiteFingerprint } from "../../packages/cli/src/eval/hidden.ts";
@@ -95,6 +96,31 @@ describe("eval hidden checks: loading and installing", () => {
     writeFileSync(join(store.checksDir, "verify.sh"), "echo JARVIS-CHECK-COMPLETE x\n");
     expect(store.verify(ledger)).toMatchObject({ ok: false, problems: ["check changed: verify.sh"] });
     expect(() => installHiddenChecks(projectDir, ledger, hidden, "again")).toThrow(/fresh/);
+  });
+
+  it("runs the descriptors it fingerprinted: a check changed after the first load is graded as installed, not as first parsed", async () => {
+    const fx = fixture();
+    const dir = hiddenDir(fx.evalsRepo, "05-citizenship");
+    const early = loadHiddenChecks(dir); // parsed before the run, as both arms do
+    const descriptor = join(dir, "unit.check.json");
+    const changed = { ...JSON.parse(readFileSync(descriptor, "utf8")), cases: [{ id: "unit", command: "true" }] };
+    writeFileSync(descriptor, JSON.stringify(changed)); // the evals repo changes during the run
+    const runDir = join(fx.jarvisHome, "evals", "05-citizenship", "run");
+    mkdirSync(runDir, { recursive: true });
+    const ran: string[] = [];
+    const grade = await gradeRun({
+      runDir, repoPath: fx.sourceRepo, revision: fx.fixRev, hidden: early, jarvisHome: fx.jarvisHome, workRoot: fx.workRoot,
+      gate: async (g) => {
+        ran.push(JSON.stringify(g.check.cases));
+        expect(g.store.verify(g.ledger).ok).toBe(true); // what runs is the approved, locked copy
+        return { status: "pass", entry: g.ledger.append({ kind: "gate_result", actor: "runner", task_id: g.taskId, attempt_id: g.attemptId, data: { check: g.check.name, revision: g.revision, status: "pass" } }), evidenceDir: g.projectDir };
+      },
+    });
+    expect(ran).toEqual([JSON.stringify(changed.cases)]);
+    expect(early.checks.unit!.cases[0]!.command).not.toBe("true");
+    const installed = new ChecksStore(grade.projectDir);
+    expect(JSON.parse(readFileSync(join(installed.checksDir, "unit.check.json"), "utf8")).cases).toEqual(changed.cases);
+    expect(grade.suite).toBe(suiteFingerprint(installed.hashAll()));
   });
 
   it("fingerprints the whole suite: any changed, added or removed file gives a different suite", () => {

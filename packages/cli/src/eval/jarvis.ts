@@ -161,6 +161,12 @@ export function pipelineFor(type: Triage["type"]): Pipeline {
   throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm`);
 }
 
+/** Spec criteria that no check covers. */
+function coverageGaps(spec: Spec, checks: HiddenChecks): string[] {
+  const covered = new Set(Object.values(checks.criteria).flat());
+  return spec.criteria.map((c) => c.id).filter((id) => !covered.has(id));
+}
+
 /** The approved spec for a spec-pipeline task: tasks/<id>/spec.md, checked, and covered by the loop's checks. */
 export function loadApprovedSpec(evalsRepo: string, taskId: string, loopChecks: HiddenChecks): { text: string; spec: Spec } {
   const p = join(evalsRepo, "tasks", taskId, "spec.md");
@@ -169,8 +175,7 @@ export function loadApprovedSpec(evalsRepo: string, taskId: string, loopChecks: 
   const checked = checkSpec(text, "v1.md"); // committed as docs/spec/v1.md, so it must say spec: 1
   if (!checked.ok) throw new Error(`${taskId}: spec.md does not check: ${checked.problems.map((q) => `line ${q.line}: ${q.message}`).join("; ")}`);
   if (checked.spec.status === "draft") throw new Error(`${taskId}: spec.md is a draft; the approved spec must be confirmed or unconfirmed`);
-  const covered = new Set(Object.values(loopChecks.criteria).flat());
-  const missing = checked.spec.criteria.map((c) => c.id).filter((id) => !covered.has(id));
+  const missing = coverageGaps(checked.spec, loopChecks);
   if (missing.length) throw new Error(`${taskId}: no installed check covers ${missing.join(", ")}; a plan could never cover them (decision 91)`);
   return { text, spec: checked.spec };
 }
@@ -343,7 +348,13 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   }
 
   const ledger = Ledger.open(p.projectDir);
-  installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
+  const gateStore = installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
+  // The loop runs what was installed and locked, never the copy parsed before the preflight (the evals repo may
+  // have changed since): re-parse the installed copy and re-check what the plan needs against it.
+  const gate = loadHiddenChecks(gateStore.checksDir);
+  assertHiddenDisjoint(gate, grading);
+  if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
+  if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   const harness = opts.harness ?? productionHarness(task, p, routing, opts);
   const tier: TaskTier = t.tier ?? 1;
@@ -351,7 +362,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const review = opts.review ?? productionReview(p, ledger, material, opts);
   writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
-    checks: Object.keys(loopChecks.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
+    checks: Object.keys(gate.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
     workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, startedAt: new Date(started).toISOString(),
   }, null, 2)}\n`);
@@ -363,9 +374,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   let usageWaitUntil: number | undefined;
   try {
     let plan: Plan | undefined;
-    if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(loopChecks.checks).map((name) => ({ name })));
+    if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(gate.checks).map((name) => ({ name })));
     else {
-      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: loopChecks, spec: approved!.spec, p, baseRevision });
+      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision });
       plannerSessions = r.started ? 1 : 0;
       if (r.kind === "plan") plan = r.plan;
       else if (r.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = r.until ?? Math.floor(Date.now() / 1000) + 3600; }
@@ -376,7 +387,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
       log(`${task.id} ${runId}: ${plan.tasks.length} task(s) planned; starting the build loop`);
       loop = await opts.runLoop({
         projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
-        worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: loopChecks.checks, review,
+        worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: gate.checks, review,
         taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
         reprobe: async () => (await opts.preflight()).ok,
         notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),

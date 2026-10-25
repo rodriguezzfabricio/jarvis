@@ -1,0 +1,54 @@
+# Original Jarvis rules. Conservative sink checks; findings require review.
+rules:
+  - id: jarvis.js.sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL built by concatenation can permit injection; use bound parameters.
+    pattern: $DB.query($SQL + $INPUT, ...)
+  - id: jarvis.js.eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Dynamic code execution requires review.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: jarvis.js.unsafe-deserialization
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Object deserialization can execute code; use a data-only format.
+    pattern-either:
+      - pattern: $SER.unserialize(...)
+      - pattern: $SER.deserialize(...)
+  - id: jarvis.js.command-execution
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Shell command execution requires review; prefer argument arrays.
+    pattern-either:
+      - pattern: $CP.exec(...)
+      - pattern: $CP.execSync(...)
+      - pattern: exec(...)
+      - pattern: execSync(...)
+  - id: jarvis.js.ssrf
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Request-controlled destinations need an allowlist.
+    mode: taint
+    pattern-sources:
+      - pattern: $REQ.query.$FIELD
+      - pattern: $REQ.body.$FIELD
+      - pattern: $REQ.params.$FIELD
+    pattern-sinks:
+      - pattern: fetch($URL, ...)
+      - pattern: $HTTP.get($URL, ...)
+  - id: jarvis.js.hardcoded-secret
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Credential-like literal requires review; use the secret backend.
+    patterns:
+      - pattern: $KEY = "$VALUE"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)^(api_?key|secret|password|token)$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: .{8,}

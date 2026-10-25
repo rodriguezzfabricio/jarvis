@@ -1001,6 +1001,17 @@ QA follow-up 1 (Codex) builds the Tauri app as a protected gate case, then had t
 So golden task 12 reports a built, verified bundle with native smoke **not run**, as decision 18 already requires when a native test isn't possible.
 *From:* the Opus review of QA follow-up 1 (lane `qa-2`), Oct 25.
 
+### 103. The security pass's scanners run pinned and offline, with an explicitly fetched, hashed OSV snapshot (new; Oct 25; the integrator after the Opus review of the security-pins lane; Fabricio can veto; tightens 17)
+- **Pins.** Semgrep 1.182.0, OSV-Scanner 2.7.0 and gitleaks 8.28.0, by absolute path (`pinnedSecurityScanners` in `config/pins.ts`), each version-checked before every scan. OSV prints its own version and OSV-Scalibr's; only the labelled scanner line counts.
+- **Semgrep gets exactly `SSL_CERT_FILE=/etc/ssl/cert.pem`.** In a clean environment 1.182.0 won't start without it (`ca-certs: empty trust anchors`). Only that fixed path is accepted; inherited certificate or proxy variables never are.
+- **OSV runs its local matcher explicitly** (`--x-plugins=vulnmatch/osvlocal`) with `--offline` and `--offline-vulnerabilities`. The two offline flags alone returned an empty success with no database.
+- **The OSV database is a hashed snapshot fetched outside any gate.** `node scripts/osv-db-fetch.mjs <project> <new-folder>` lets the pinned binary download npm, Go and PyPI databases (chosen from the project's files, which it never runs), writes `manifest.json` with every file's SHA-256 and the fetch time, and refuses an existing folder. Installing the checks copies the snapshot into the protected fixtures, where the store approval hashes it. Every scan re-hashes it and requires it to cover the ecosystems found in the candidate. Missing, partial or tampered gives `not run: osv database missing`, which is never a pass and can't be exempted. An ecosystem without a local database (Cargo, or a lockfile under `vendor/`) makes OSV exit 127, which is an error (verified live). An update is a new snapshot and a new reviewed install.
+- **The fetch time is recorded, but no maximum age is enforced yet.** A stale snapshot misses newer advisories; the age is visible in the manifest until a threshold is chosen.
+- **Semgrep uses a small original ruleset** (`security/rules/`: six sink categories each for JS/TS, Python and Go), copied into the fixtures. It is a conservative sink screen, not dataflow coverage, and no community ruleset is copied. Registry or `auto` configs are refused.
+- **Candidate files can't switch scanners off.** Semgrep runs with `--disable-nosem`, `--no-git-ignore` and `--x-ignore-semgrepignore-files`; gitleaks with `--ignore-gitleaks-allow` and full redaction. A root `.gitleaksignore`, `.gitleaks.toml`, `.semgrepignore` or `osv-scanner.toml` makes the scan an error. OSV runs with `--config=/dev/null`, because it loads an `osv-scanner.toml` next to every lockfile at any depth. The Opus review found a candidate `.gitleaks.toml` and a nested `osv-scanner.toml` each gave a clean pass with a planted finding present, and fixed both.
+
+*From:* the security-pins lane (Codex) and its Opus review, Oct 24–25. Still open: the integrator's real fetch, and both live scanner tests rerun inside the real gate sandbox with a network control.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

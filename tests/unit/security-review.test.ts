@@ -3,6 +3,8 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
+import { hashOsvDatabase } from "../../packages/cli/src/security/osv-database.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import type { GateInput, GateResult } from "../../packages/cli/src/checks/gate.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
@@ -23,7 +25,8 @@ function setup() {
 }
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-const suppression: [Scanner, string][] = [["gitleaks", ".gitleaksignore"], ["semgrep", ".semgrepignore"], ["osv-scanner", "osv-scanner.toml"], ["osv-scanner", ".osv-scanner.toml"]];
+// gitleaks replaces its whole ruleset with <source>/.gitleaks.toml when no --config is given (live-checked on 8.28.0).
+const suppression: [Scanner, string][] = [["gitleaks", ".gitleaksignore"], ["gitleaks", ".gitleaks.toml"], ["semgrep", ".semgrepignore"], ["osv-scanner", "osv-scanner.toml"], ["osv-scanner", ".osv-scanner.toml"]];
 it.each(suppression.flatMap(([tool, file]) => ["file", "directory", "symlink"].map((kind) => ({ tool, file, kind }))))("refuses $tool suppression $file as $kind without deleting it", async ({ tool, file, kind }) => {
   const { checkout, home, pin, spawn } = setup(); const path = join(checkout, file);
   if (kind === "directory") mkdirSync(path);
@@ -42,8 +45,9 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
   const { root, checkout, home, pin } = setup(); const store = new ChecksStore(root);
   const db = join(store.checksDir, "fixtures", "osv-db");
   writeFileSync(pin.bin, `#!${process.execPath}\nif(process.argv.includes('--version')) console.log('1.2.3'); else { if(process.env.HOME!==${JSON.stringify(home)} || process.env.TMPDIR!==${JSON.stringify(home)} || process.env.OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY!==${JSON.stringify(db)}) process.exit(2); console.log('{"results":[]}'); }`, { mode: 0o700 });
-  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { "osv-scanner": { ...pin, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/osv-db" } } } });
+  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { "osv-scanner": { ...pin, args: pinnedSecurityScanners()["osv-scanner"]!.args, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/osv-db" } } } });
   mkdirSync(db); writeFileSync(join(db, "dummy.json"), "{}");
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
   const r = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "osv-scanner"], cwd: checkout, env: { HOME: home, TMPDIR: home, JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(r.code).toBe(0);
   expect(JSON.parse(r.stdout)).toMatchObject({ status: "pass" });
@@ -51,7 +55,7 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
 
 it("uses a fresh home outside the checkout by default and forces semgrep nosem disabling", async () => {
   const { checkout, pin } = setup(); let env: Record<string, string> = {}; let args: readonly string[] = [];
-  const r = await runScanner("semgrep", pin, checkout, { spawn: async (s) => {
+  const r = await runScanner("semgrep", { ...pinnedSecurityScanners().semgrep!, bin: pin.bin, version: pin.version }, checkout, { spawn: async (s) => {
     env = s.env; args = s.args;
     return { code: 0, stdout: s.args.includes("--version") ? "1.2.3" : '{"results":[],"errors":[]}', stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
   } });
@@ -63,7 +67,7 @@ it("uses a fresh home outside the checkout by default and forces semgrep nosem d
 it("rejects a candidate-owned OSV database and environment overrides of HOME", async () => {
   const { checkout, home, fixtures, pin, spawn } = setup();
   for (const env of [{ HOME: checkout }, { HOME: fixtures }, { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: checkout }]) {
-    await expect(runScanner("osv-scanner", { ...pin, env }, checkout, { homeDir: home, tmpDir: home, fixturesDir: fixtures, spawn })).rejects.toThrow("environment");
+    await expect(runScanner("osv-scanner", { ...pin, args: pinnedSecurityScanners()["osv-scanner"]!.args, env }, checkout, { homeDir: home, tmpDir: home, fixturesDir: fixtures, spawn })).rejects.toThrow("environment");
   }
 });
 

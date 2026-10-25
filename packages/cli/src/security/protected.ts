@@ -1,8 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, copyFileSync, lstatSync, readdirSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runGate, type GateCheck, type GateInput, type GateResult } from "../checks/gate.ts";
 import type { ChecksStore } from "../checks/store.ts";
+import { hashOsvDatabase, osvDatabaseReady } from "./osv-database.ts";
 import { SCANNERS, scannerNotRun, type Scanner, type ScannerPins, type ScanResult } from "./scanners.ts";
 import type { TrifectaResult } from "./trifecta.ts";
 import type { TrialResult } from "./trial.ts";
@@ -34,7 +35,7 @@ export function installSecurityChecks(store: ChecksStore, plan: SecurityPlan): v
   for (const tool of SCANNERS) if (plan.scanners[tool] && plan.exemptions?.[tool] !== undefined) throw Error("Cannot exempt a pinned scanner");
   const fixture = join(store.checksDir, "fixtures", "security");
   for (const dir of [join(fixture, "security"), join(fixture, "proc"), join(fixture, "rules"), join(store.checksDir, "security")]) mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const sources = ["scanners.ts", "runtime.ts", "trifecta.ts", "trial.ts", "worker.ts"];
+  const sources = ["scanners.ts", "runtime.ts", "offline.ts", "osv-database.ts", "trifecta.ts", "trial.ts", "worker.ts"];
   for (const file of sources) copyFileSync(fileURLToPath(new URL(file, import.meta.url)), join(fixture, "security", file));
   copyFileSync(fileURLToPath(new URL("../proc/session.ts", import.meta.url)), join(fixture, "proc", "session.ts"));
   copyFileSync(fileURLToPath(new URL("verify.ts", import.meta.url)), join(store.checksDir, "security", "verify.ts"));
@@ -43,7 +44,12 @@ export function installSecurityChecks(store: ChecksStore, plan: SecurityPlan): v
     const pin = plan.scanners[tool];
     if (!pin) continue;
     if (!isAbsolute(pin.bin)) throw new Error("Scanner binary must be absolute");
-    if (pin.rulesFile) copyFileSync(pin.rulesFile, join(fixture, "rules", tool));
+    if (pin.rulesFile) copyRules(pin.rulesFile, join(fixture, "rules", tool));
+    if (pin.databaseDir) {
+      hashOsvDatabase(pin.databaseDir);
+      if (tool !== "osv-scanner" || !osvDatabaseReady(pin.databaseDir, [])) throw Error("Invalid OSV database");
+      cpSync(pin.databaseDir, join(fixture, "osv-db"), { recursive: true, errorOnExist: true, force: false });
+    }
     pins[tool] = { bin: pin.bin, version: pin.version, args: [...pin.args], ...(pin.rulesFile ? { rulesFile: tool } : {}), ...(pin.env ? { env: { ...pin.env } } : {}) };
   }
   writeFileSync(join(fixture, "config.json"), JSON.stringify(pins), { mode: 0o600 });
@@ -78,7 +84,7 @@ function scanObservation(tool: Scanner, gate: GateResult, configured: boolean): 
 export function evaluateSecurity(scans: readonly ScanResult[], trifecta: Pick<TrifectaResult, "complete" | "required">, trial: TrialResult, exemptions: Partial<Record<Scanner, string>> = {}): "pass" | "not_passed" {
   const scannersPass = scans.length === SCANNERS.length && SCANNERS.every((tool) => {
     const result = scans.find((s) => s.tool === tool);
-    return result?.findings.length === 0 && (result.status === "pass" || (result.status === "not_run" && Boolean(exemptions[tool]?.trim())));
+    return result?.findings.length === 0 && (result.status === "pass" || (result.status === "not_run" && result.detail !== "not run: osv database missing" && Boolean(exemptions[tool]?.trim())));
   });
   return scannersPass && trifecta.complete && (!trifecta.required || trial.status === "pass") ? "pass" : "not_passed";
 }
@@ -103,4 +109,15 @@ export async function runSecurityPass(input: SecurityInput, deps: { gate?: (g: G
   }
   const status = gates.some((g) => g.status === "tampered") ? "tampered" : evaluateSecurity(scanners, trifecta, trial, plan.exemptions);
   return { status, scanners, trifecta, trial, gates };
+}
+
+function copyRules(source: string, target: string): void {
+  const check = (path: string) => {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) throw Error("Scanner rules may not be symlinks");
+    if (stat.isDirectory()) for (const name of readdirSync(path)) check(join(path, name));
+    else if (!stat.isFile()) throw Error("Invalid scanner rules");
+  };
+  check(source);
+  cpSync(source, target, { recursive: true, errorOnExist: true, force: false });
 }

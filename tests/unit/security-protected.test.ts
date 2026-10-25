@@ -2,6 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
+import { hashOsvDatabase } from "../../packages/cli/src/security/osv-database.ts";
+import type { Scanner, ScannerPins } from "../../packages/cli/src/security/scanners.ts";
 import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import type { GateInput, GateResult } from "../../packages/cli/src/checks/gate.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
@@ -108,13 +111,17 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   const { root, ledger, store, input } = setup();
   mkdirSync(input.repoPath);
   const outputs = { gitleaks: [], semgrep: { results: [], errors: [] }, "osv-scanner": { results: [] } };
-  const pins: Record<string, { bin: string; version: string; args: string[] }> = {};
+  const pins: ScannerPins = {};
+  const defaults = pinnedSecurityScanners();
   for (const [tool, output] of Object.entries(outputs)) {
     const bin = join(root, tool);
     writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') || process.argv.includes('--version') ? '1.2.3' : ${JSON.stringify(JSON.stringify(output))});`, { mode: 0o700 });
-    pins[tool] = { bin, version: "1.2.3", args: ["scan", ...(tool === "gitleaks" ? ["--redact=100"] : []), "."] };
+    pins[tool as Scanner] = { ...defaults[tool as Scanner]!, bin, version: "1.2.3" };
   }
-  installSecurityChecks(store, { nodeBin: process.execPath, scanners: pins }); store.approve(ledger, "approved");
+  installSecurityChecks(store, { nodeBin: process.execPath, scanners: pins });
+  const db = join(store.checksDir, "fixtures/security/osv-db"); mkdirSync(db); writeFileSync(join(db, "cache.zip"), "fake database");
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
+  store.approve(ledger, "approved");
   let runs = 0;
   const gate = async (g: GateInput): Promise<GateResult> => {
     const evidenceDir = join(root, `evidence-${runs++}`); const scan = join(evidenceDir, "cases", "scan"); mkdirSync(scan, { recursive: true });

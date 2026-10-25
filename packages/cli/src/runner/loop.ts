@@ -12,6 +12,7 @@ import { captureProcessGroup, cleanupLeftovers, readProcessStartTime, type Proce
 import { buildFootprintEntry, createFootprintLog, type FootprintLog } from "./footprint.ts";
 import { ingestSteerNotes, loadInboxCursor, readInbox, saveInboxCursor, type InboxAction } from "./inbox.ts";
 import { buildRunHeader, buildTaskPrompt } from "./prompt.ts";
+import { loadSessionSkills, type SessionSkill } from "./session-skills.ts";
 import { decideRepair } from "./repair.ts";
 import { writeReport, type ReportClaim } from "./report.ts";
 import { loadRouting, routeTask, type RoutingTable } from "./routing.ts";
@@ -95,6 +96,10 @@ const REVIEW_TRIES = 2;
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
 }
+/** The spec a session is pointed at: none when the checkout has no such file (a bug report has no spec). */
+function specIn(worktree: string, path: string): string {
+  return existsSync(join(worktree, path)) ? path : "none (this checkout has no spec file; the goal above is the whole request)";
+}
 function positive(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) throw new Error(`invalid ${name}`);
   return value;
@@ -116,6 +121,8 @@ class Loop {
   routing!: RoutingTable;
   readonly footprint: FootprintLog | undefined;
   readonly readStart: ProcessStartTimeReader;
+  /** Decision 114: task sessions can't load skills, so their text goes in every run header. */
+  readonly skills: readonly SessionSkill[];
   private promotion: Promise<void> = Promise.resolve();
   private fatal: unknown;
   private failed = false;
@@ -135,6 +142,7 @@ class Loop {
     this.ledger = Ledger.open(opts.projectDir);
     this.pidFile = join(opts.projectDir, "runner.pid");
     this.readStart = opts.readProcessStartTime ?? readProcessStartTime;
+    this.skills = loadSessionSkills();
     this.footprint = opts.footprint === false ? undefined
       : opts.footprint ?? createFootprintLog({ worktrees: this.opts.worktreeRoot, caches: [], evidence: join(opts.projectDir, "evidence") }, { now: this.now });
   }
@@ -346,13 +354,13 @@ class Loop {
     return { ...task, attemptId: last.id, candidateRevision: last.candidateRevision, evidence: last.evidence };
   }
 
-  private prompt(task: TaskState) {
+  private prompt(task: TaskState, worktree: string) {
     const steers = this.records("inbox_applied").map((e) => dataOf(e).action as InboxAction).filter((a) => a.kind === "replan" && a.taskIds.includes(task.id));
     const spec = this.ledger.entries().filter((e) => e.actor === "runner" && e.kind === "spec_version").at(-1);
     const version = Number(spec ? dataOf(spec).version : 1);
     return { taskId: task.id, goal: task.definition.goal || task.definition.title, exitCondition: task.definition.exitCondition,
       acceptanceCriteria: task.definition.acceptanceCriteria, decisions: steers.map((a) => a.kind === "replan" ? `Steer #${a.seq}: ${a.note}` : ""),
-      specPath: String(spec ? dataOf(spec).path ?? `docs/spec/v${version}.md` : "docs/spec/v1.md"),
+      specPath: specIn(worktree, String(spec ? dataOf(spec).path ?? `docs/spec/v${version}.md` : "docs/spec/v1.md")),
       mayNotTouch: [".jarvis-routing.json", ".git/hooks/", ".git/config", ".claude/"], maxTurns: this.turns, specVersion: version };
   }
   private observeGroup(task: TaskState, workspace: TaskWorkspace) {
@@ -401,11 +409,11 @@ class Loop {
     return { onSpawn, onGroupExit, result, dispose };
   }
   private async session(task: TaskState, workspace: TaskWorkspace, repair: string, failure: EscalationReason | undefined) {
-    const input = this.prompt(task);
+    const input = this.prompt(task, workspace.path);
     const sessionDir = join(this.opts.projectDir, "sessions", randomUUID());
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
     const headerPath = join(sessionDir, "header.md");
-    writeFileSync(headerPath, buildRunHeader({ ...input, runId: this.runId }), { flag: "wx", mode: 0o600 });
+    writeFileSync(headerPath, buildRunHeader({ ...input, runId: this.runId, skills: this.skills }), { flag: "wx", mode: 0o600 });
     const observer = this.observeGroup(task, workspace);
     try {
       await this.pauseUsage();

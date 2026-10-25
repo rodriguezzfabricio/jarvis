@@ -88,5 +88,131 @@
     "file": "packages/cli/src/review/confine.ts",
     "anchor": "host === domain || host.endsWith(`.${domain}`)",
     "replacement": "host.endsWith(domain)"
+  },
+  {
+    "name": "review API proxy reads the ClientHello before dialing",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "      const scan = scanClientHello(buffered);",
+    "replacement": "      const scan: HelloScan = { sni: host };"
+  },
+  {
+    "name": "review API proxy SNI must equal the CONNECT host",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "if (scan.sni !== host || !apiHostAllowed(scan.sni)) return refuse(",
+    "replacement": "if (!apiHostAllowed(scan.sni)) return refuse("
+  },
+  {
+    "name": "review API proxy buffer bound",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "return buffered.length > 2 * MAX_CLIENT_HELLO ? refuse(\"ClientHello too large\") : undefined;",
+    "replacement": "return undefined;"
+  },
+  {
+    "name": "review API proxy ClientHello deadline",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "const timer = setTimeout(() => refuse(\"no complete ClientHello in time\"), helloTimeoutMs);",
+    "replacement": "const timer = setTimeout(() => {}, helloTimeoutMs);"
+  },
+  {
+    "name": "review ClientHello scan refuses non-TLS bytes",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    if (data[off] !== TLS_HANDSHAKE) return {",
+    "replacement": "    if (false) return {"
+  },
+  {
+    "name": "review ClientHello scan size limit",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "  if (size > MAX_CLIENT_HELLO) return {",
+    "replacement": "  if (false) return {"
+  },
+  {
+    "name": "review ClientHello scan refuses bytes after the hello",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "  if (complete > size) return {",
+    "replacement": "  if (false) return {"
+  },
+  {
+    "name": "review ClientHello scan refuses repeated extensions",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "      if (seen.has(type)) return {",
+    "replacement": "      if (false) return {"
+  },
+  {
+    "name": "review ClientHello scan refuses encrypted ClientHello",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "      if (ENCRYPTED_HELLO_EXTENSIONS.has(type)) return {",
+    "replacement": "      if (false) return {"
+  },
+  {
+    "name": "review ClientHello scan requires SNI",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "return sni === undefined ? { refuse: \"no SNI\" } : { sni };",
+    "replacement": "return { sni: sni ?? \"\" };"
+  },
+  {
+    "name": "review ClientHello scan requires exactly one host name",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "  if (length === 0 || 5 + length !== data.length) return undefined;",
+    "replacement": "  if (length === 0) return undefined;"
+  },
+  {
+    "name": "review Seatbelt profile denies Homebrew var and etc",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    policy.denyDirs.length ? `(deny",
+    "replacement": "    false ? `(deny"
+  },
+  {
+    "name": "review Seatbelt profile never opens the Homebrew prefix",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "\"/Library/Developer/CommandLineTools\",\n] as const;",
+    "replacement": "\"/Library/Developer/CommandLineTools\", \"/opt/homebrew\",\n] as const;"
+  },
+  {
+    "name": "review confinement opens only the kegs the launcher loads",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "const execDirs = [codexReadRoot(o.bin), ...homebrewKegs(o.bin, { homebrew: brew })];",
+    "replacement": "const execDirs = [codexReadRoot(o.bin), existsSync(brew) ? realpathSync(brew) : brew];"
+  },
+  {
+    "name": "review Homebrew kegs follow library loads",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "      if (found && under(realpathSync(found), brew)) visit(found, exe, rpaths);",
+    "replacement": "      void found;"
+  },
+  {
+    "name": "review Homebrew kegs resolve @rpath",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "const rpaths = [...image.rpaths.map(at), ...inherited];",
+    "replacement": "const rpaths = [...inherited];"
+  },
+  {
+    "name": "review Homebrew kegs resolve @executable_path from the main executable",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "p.startsWith(\"@executable_path\") ? join(dirname(exe), p.slice(16))",
+    "replacement": "p.startsWith(\"@executable_path\") ? join(dirname(real), p.slice(16))"
+  },
+  {
+    "name": "review Homebrew kegs ignore a library's own ID",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "const DYLIB_LOADS = new Set([0xc, ",
+    "replacement": "const DYLIB_LOADS = new Set([0xc, 0xd, "
+  },
+  {
+    "name": "review Homebrew kegs refuse files outside a keg",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    if (parts[0] !== \"Cellar\" || parts.length < 4) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "review Homebrew kegs resolve env interpreters",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "      if (basename(program) !== \"env\") return;",
+    "replacement": "      return;"
+  },
+  {
+    "name": "review Codex environment keeps node off Homebrew's etc",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    OPENSSL_CONF: \"/dev/null\",\n",
+    "replacement": ""
   }
 ]

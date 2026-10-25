@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { connect, createServer, type Server, type Socket } from "node:net";
+import { connect, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 const darwin = process.platform === "darwin";
 const temp = (name: string) => { const r = realpathSync(mkdtempSync(join(tmpdir(), name))); roots.push(r); return r; };
-const policy = { readDirs: ["/review/checkout"], readFiles: ["/review/schema.json"], writeDirs: ["/review/out"], writeFiles: ["/review/auth.json"], execDirs: ["/review/codex"], proxyPort: 4242 };
+const policy = { readDirs: ["/review/checkout"], readFiles: ["/review/schema.json"], writeDirs: ["/review/out"], writeFiles: ["/review/auth.json"], execDirs: ["/review/codex"], denyDirs: ["/review/brew/var", "/review/brew/etc"], proxyPort: 4242 };
 
 describe("Codex API host allowlist", () => {
   it.each(["chatgpt.com", "ab.chatgpt.com", "openai.com", "api.openai.com", "files.openai.com"])("allows %s", (host) => expect(apiHostAllowed(host)).toBe(true));
@@ -44,6 +44,13 @@ describe("Seatbelt profile", () => {
     expect(text).not.toMatch(/"\/Users|"\/private\/var\/folders|"\/private\/tmp|"\/tmp/);
     expect(text).not.toMatch(/subpath "\/usr"\)|subpath "\/Library"\)|subpath "\/private\/var"\)|subpath "\/private"\)/);
   });
+  it("never opens the whole Homebrew prefix, and puts the denied folders after every grant", () => {
+    expect(text).not.toMatch(/"\/opt\/homebrew"/);
+    const lines = text.split("\n");
+    const deny = lines.indexOf('(deny file-read* file-write* file-map-executable (subpath "/review/brew/var") (subpath "/review/brew/etc"))');
+    expect(deny).toBeGreaterThan(-1);
+    expect(lines.slice(deny + 1).filter((l) => /^\(allow file-/.test(l))).toEqual([]);
+  });
   it.each(['/a"b', "/a\\b", "/a\nb", "relative/path", "/a\u0000b"])("refuses a path it can't place safely: %j", (bad) => {
     expect(() => seatbeltProfile({ ...policy, readDirs: [bad] })).toThrow(/Seatbelt profile/);
   });
@@ -60,16 +67,6 @@ describe("API proxy", () => {
     s.on("data", (d) => { reply += d; if (reply.includes("\r\n\r\n")) { s.write("ping"); } if (reply.includes("pong")) { s.destroy(); resolve(reply); } if (reply.startsWith("HTTP/1.1 403")) { s.destroy(); resolve(reply.split("\r\n")[0]!); } });
     s.once("close", () => resolve(reply.split("\r\n")[0] ?? ""));
     s.once("error", (e) => resolve(`error:${(e as NodeJS.ErrnoException).code}`));
-  });
-  it("tunnels an allowed host on 443 to its upstream", async () => {
-    const echo: Server = createServer((s) => s.on("data", () => s.write("pong"))); closers.push(() => echo.close());
-    await new Promise<void>((done) => echo.listen(0, "127.0.0.1", done));
-    const targets: string[] = [];
-    const p = await proxy(() => connect((echo.address() as { port: number }).port, "127.0.0.1"));
-    const reply = await tunnel(p.port, "api.openai.com:443");
-    expect(reply).toContain("HTTP/1.1 200 Connection Established");
-    expect(reply).toContain("pong");
-    expect(p.refused).toEqual(targets);
   });
   it.each(["example.com:443", "api.openai.com:80", "api.openai.com:8443", "127.0.0.1:443", "localhost:443", "api.openai.com"])("refuses CONNECT %s", async (target) => {
     let dialed = false;

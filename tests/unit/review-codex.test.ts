@@ -15,7 +15,7 @@ afterEach(() => {
 });
 // Seatbelt matches real paths; every fixture path is resolved before use.
 const darwin = process.platform === "darwin";
-const ENV_KEYS = ["ALL_PROXY", "CODEX_CA_CERTIFICATE", "CODEX_HOME", "HOME", "HTTPS_PROXY", "HTTP_PROXY", "PATH", "SSL_CERT_FILE", "TMPDIR", "USER"];
+const ENV_KEYS = ["ALL_PROXY", "CODEX_CA_CERTIFICATE", "CODEX_HOME", "HOME", "HTTPS_PROXY", "HTTP_PROXY", "OPENSSL_CONF", "PATH", "SSL_CERT_FILE", "TMPDIR", "USER"];
 
 function setup(mode = "pass", version = "codex-cli 0.164.0", probes: Record<string, unknown> = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "review-codex-"))); roots.push(root);
@@ -48,7 +48,7 @@ describe("isolated Codex reviewer", () => {
     expect(codexEnvironment({ codexHome: "/jail/codex-home", tmp: "/jail/tmp", proxyPort: 4242 }, "fake-user")).toEqual({
       HOME: "/jail/codex-home/home", USER: "fake-user", PATH: "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin", CODEX_HOME: "/jail/codex-home", TMPDIR: "/jail/tmp",
       HTTPS_PROXY: "http://127.0.0.1:4242", HTTP_PROXY: "http://127.0.0.1:4242", ALL_PROXY: "http://127.0.0.1:4242",
-      CODEX_CA_CERTIFICATE: "/private/etc/ssl/cert.pem", SSL_CERT_FILE: "/private/etc/ssl/cert.pem",
+      CODEX_CA_CERTIFICATE: "/private/etc/ssl/cert.pem", SSL_CERT_FILE: "/private/etc/ssl/cert.pem", OPENSSL_CONF: "/dev/null",
     });
   });
   it.skipIf(!darwin)("checks the exact version and launches under Seatbelt with Codex's own sandbox off, ignored stdin and schema", async () => {

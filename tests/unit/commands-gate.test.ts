@@ -176,11 +176,11 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     expect(JSON.stringify(r)).not.toMatch(/OUTSIDE-SECRET|SUB-IS-LINK/);
   });
 
-  it("runGate records its result before cleanup, so a cleanup fault loses nothing (Codex review, medium 4)", async () => {
+  it("runGate records its result before cleanup and still returns it when cleanup fails (Codex review, medium 4)", async () => {
     const p = project(); install(p, "unit", "exit 0\n"); p.store.approve(p.ledger, "v1");
     const [check] = readInstalledChecks(p.store); const revision = git(p.repo, "rev-parse", "HEAD");
-    const error = await failure(runGate({ ledger: p.ledger, store: p.store, projectDir: p.projectDir, jarvisHome: p.jarvisHome, workRoot: p.workRoot, repoPath: p.repo, revision, check: check!, taskId: "T1", attemptId: "a1", cleanup: () => { throw new Error("cleanup fault"); } }));
-    expect(String(error)).toMatch(/cleanup fault/);
+    const result = await failure(runGate({ ledger: p.ledger, store: p.store, projectDir: p.projectDir, jarvisHome: p.jarvisHome, workRoot: p.workRoot, repoPath: p.repo, revision, check: check!, taskId: "T1", attemptId: "a1", cleanup: () => { throw new Error("cleanup fault"); } }));
+    expect(result).toMatchObject({ status: "pass", entry: { kind: "gate_result" } });
     expect(p.ledger.entries().at(-1)).toMatchObject({ kind: "gate_result", data: { check: "unit", status: "pass" } });
   });
 

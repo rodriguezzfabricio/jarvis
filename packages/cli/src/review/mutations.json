@@ -31,9 +31,9 @@
   },
   {
     "name": "review Codex environment allowlist",
-    "file": "packages/cli/src/review/codex.ts",
-    "anchor": "return { HOME: join(home,",
-    "replacement": "return { NODE_OPTIONS: \"--trace-warnings\", HOME: join(home,"
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    HOME: join(jail.codexHome, \"home\"), USER: user,",
+    "replacement": "    NODE_OPTIONS: \"--trace-warnings\", HOME: join(jail.codexHome, \"home\"), USER: user,"
   },
   {
     "name": "review Codex absolute pin",
@@ -48,9 +48,9 @@
     "replacement": "if (false)"
   },
   {
-    "name": "review Codex read only sandbox",
+    "name": "review Codex own sandbox off inside Seatbelt",
     "file": "packages/cli/src/review/codex.ts",
-    "anchor": "\"--sandbox\", \"read-only\"",
+    "anchor": "\"--sandbox\", \"danger-full-access\"",
     "replacement": "\"--sandbox\", \"workspace-write\""
   },
   {

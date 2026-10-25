@@ -1,0 +1,92 @@
+[
+  {
+    "name": "review Codex runs under Seatbelt",
+    "file": "packages/cli/src/review/codex.ts",
+    "anchor": "const result = await session({ ...common, ...jail.wrap(bin, [",
+    "replacement": "const result = await session({ ...common, bin, args: ((a: string[]) => a)(["
+  },
+  {
+    "name": "review Codex version check runs under Seatbelt",
+    "file": "packages/cli/src/review/codex.ts",
+    "anchor": "const version = await session({ ...common, ...jail.wrap(bin, [\"--version\"]) });",
+    "replacement": "const version = await session({ ...common, bin, args: [\"--version\"] });"
+  },
+  {
+    "name": "review confinement refuses a platform without Seatbelt",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "  if ((o.platform ?? process.platform) !== \"darwin\") throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "review confinement refuses a missing sandbox-exec",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "  if (!existsSync(o.sandboxExec ?? SANDBOX_EXEC)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "review confinement canary probe",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "if (denied.code === 0 || denied.stdout.includes(token)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review confinement positive probe",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "if (allowed.code !== 0 || allowed.stdout !== token) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review Seatbelt profile closed by default",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    \"(deny default)\",",
+    "replacement": "    \"(allow default)\","
+  },
+  {
+    "name": "review Seatbelt profile network only to the proxy",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    `(allow network-outbound (remote ip \"localhost:${policy.proxyPort}\"))`,",
+    "replacement": "    \"(allow network*)\","
+  },
+  {
+    "name": "review Seatbelt profile keeps preferences closed",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "\"com.apple.SystemConfiguration.configd\",",
+    "replacement": "\"com.apple.SystemConfiguration.configd\", \"com.apple.cfprefsd.agent\", \"com.apple.coreservices.launchservicesd\","
+  },
+  {
+    "name": "review Seatbelt path quoting",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "if (!isAbsolute(path) || /[\"\\\\\\u0000-\\u001f\\u007f]/.test(path))",
+    "replacement": "if (!isAbsolute(path))"
+  },
+  {
+    "name": "review confinement never opens the runner home",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "if (dir === \"/\" || under(jarvisDir, dir)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review private Codex home",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "const writeDirs = [codexHome, tmp, out,",
+    "replacement": "const writeDirs = [join(jarvisDir, \"codex-home\"), codexHome, tmp, out,"
+  },
+  {
+    "name": "review API proxy host allowlist",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    if (!target || target[2] !== \"443\" || !apiHostAllowed(target[1]!)) {",
+    "replacement": "    if (!target || target[2] !== \"443\") {"
+  },
+  {
+    "name": "review API proxy port 443 only",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "    if (!target || target[2] !== \"443\" || !apiHostAllowed(target[1]!)) {",
+    "replacement": "    if (!target || !apiHostAllowed(target[1]!)) {"
+  },
+  {
+    "name": "review API domain suffix match",
+    "file": "packages/cli/src/review/confine.ts",
+    "anchor": "host === domain || host.endsWith(`.${domain}`)",
+    "replacement": "host.endsWith(domain)"
+  }
+]

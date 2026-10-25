@@ -59,6 +59,31 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
   } else add("broker", "warn", d.socketPath ? "not running (it runs only while a run is active)" : "no run socket selected; use doctor --socket or JARVIS_BROKER_SOCKET");
 
   // The Jarvis plugin is in place with its hooks.
+  out.push(checkPlugin(d.pluginDir));
+
+  // The checks sandbox really blocks the runner folder and allows the checkout.
+  const root = mkdtempSync(join(realpathSync(d.tmpRoot ?? "/tmp"), "jarvis-srt-"));
+  try {
+    const secret = join(root, "denied");
+    const work = join(root, "work");
+    mkdirSync(secret);
+    mkdirSync(work);
+    writeFileSync(join(secret, "x.txt"), "SRT-CANARY");
+    const r = await runSandboxed({ policy: { denyRead: [secret], allowRead: [], allowWrite: [work] }, command: `cat ${join(secret, "x.txt")} 2>/dev/null; echo ok > ${join(work, "w.txt")}; echo done`, cwd: work, env: { PATH: "/usr/bin:/bin" }, timeoutMs: 30_000 });
+    const text = r.stdout;
+    const held = !text.includes("SRT-CANARY") && existsSync(join(work, "w.txt"));
+    add("checks_sandbox", held ? "pass" : "fail", held ? "srt blocked the denied folder and allowed the checkout" : "srt did not hold");
+  } catch (e) {
+    add("checks_sandbox", "fail", `srt self-test failed: ${String(e).slice(0, 200)}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  return out;
+}
+
+/** The Jarvis plugin is in place with its hooks. Shared with jarvis setup, which verifies its install. */
+export function checkPlugin(pluginDir: string): DoctorCheck {
+  const d = { pluginDir };
   try {
     const hooks = JSON.parse(readFileSync(join(d.pluginDir, "hooks", "hooks.json"), "utf8")) as { hooks?: Record<string, unknown> };
     const registrationsMatch = (name: string, command: string, matcher?: string): boolean => {
@@ -88,27 +113,8 @@ export async function foundationChecks(d: FoundationDeps): Promise<DoctorCheck[]
       && existsSync(join(d.pluginDir, "hooks", "session-start.mjs"))
       && manifest.name === "jarvis"
       && typeof manifest.version === "string" && manifest.version.length > 0;
-    add("plugin", ok ? "pass" : "fail", ok ? `${d.pluginDir}: tripwire and SessionStart hooks present` : "plugin is incomplete");
+    return { name: "plugin", level: ok ? "pass" : "fail", detail: ok ? `${d.pluginDir}: tripwire and SessionStart hooks present` : "plugin is incomplete" };
   } catch (e) {
-    add("plugin", "fail", `plugin unreadable: ${String(e)}`);
+    return { name: "plugin", level: "fail", detail: `plugin unreadable: ${String(e)}` };
   }
-
-  // The checks sandbox really blocks the runner folder and allows the checkout.
-  const root = mkdtempSync(join(realpathSync(d.tmpRoot ?? "/tmp"), "jarvis-srt-"));
-  try {
-    const secret = join(root, "denied");
-    const work = join(root, "work");
-    mkdirSync(secret);
-    mkdirSync(work);
-    writeFileSync(join(secret, "x.txt"), "SRT-CANARY");
-    const r = await runSandboxed({ policy: { denyRead: [secret], allowRead: [], allowWrite: [work] }, command: `cat ${join(secret, "x.txt")} 2>/dev/null; echo ok > ${join(work, "w.txt")}; echo done`, cwd: work, env: { PATH: "/usr/bin:/bin" }, timeoutMs: 30_000 });
-    const text = r.stdout;
-    const held = !text.includes("SRT-CANARY") && existsSync(join(work, "w.txt"));
-    add("checks_sandbox", held ? "pass" : "fail", held ? "srt blocked the denied folder and allowed the checkout" : "srt did not hold");
-  } catch (e) {
-    add("checks_sandbox", "fail", `srt self-test failed: ${String(e).slice(0, 200)}`);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-  return out;
 }

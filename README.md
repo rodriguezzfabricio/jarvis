@@ -7,7 +7,7 @@ It has two parts:
 - **The Jarvis plugin for Claude Code**: the `/jarvis` command, skills and safety hooks. This is what you talk to.
 - **The `jarvis` CLI**: a TypeScript program that runs the checks, keeps the ledger, holds credentials in a broker, and later drives the unattended build loop.
 
-Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker and the protected checks work today. The unattended runner (`jarvis run`) and `jarvis setup` are still coming. Commands that don't exist yet are marked "coming" below.
+Status: a work in progress, built stage by stage (`docs/03-architecture.md` §8). Triage, intake, specs, the decision register, the ledger, the broker and the protected checks work today. `jarvis setup` covers the one-time setup. The unattended runner (`jarvis run`) is still coming. Commands that don't exist yet are marked "coming" below.
 
 ## Requirements
 
@@ -46,16 +46,7 @@ If `~/.local/bin` isn't on your `PATH`, the installer tells you. Add `export PAT
 
 ## First run
 
-1. **Set up** (coming): `jarvis setup` will create your ntfy topics, accounts and taste profile. Until it exists, set up notifications by hand:
-
-   ```sh
-   mkdir -p ~/.jarvis
-   node -e 'const t = "jarvis-" + require("crypto").randomBytes(12).toString("hex"); console.log(JSON.stringify({ baseUrl: "https://ntfy.sh", topic: t, replyTopic: t + "-reply" }, null, 2))' > ~/.jarvis/notify.json
-   chmod 600 ~/.jarvis/notify.json
-   cat ~/.jarvis/notify.json
-   ```
-
-   Subscribe to both topics in the ntfy app. Anyone who knows a topic name can read it or post to it, so treat the names like passwords. Without this file, intake still works; you just answer in the session.
+1. **Set up:** run `jarvis setup` in a terminal. It checks the pinned Claude Code, prepares the secrets file, walks through the house-stack accounts (each one skippable; tokens are typed into a hidden prompt and stored only in `~/.jarvis/secrets/`), creates your ntfy topics (an existing `~/.jarvis/notify.json` is kept), offers the taste profile once, and installs the plugin copy that build sessions use. Running it again skips finished steps; `--redo <step>` repeats one. Subscribe to both printed topics in the ntfy app, then try `jarvis setup --send-test`. Anyone who knows a topic name can read it or post to it, so treat the names like passwords. Without ntfy, intake still works; you just answer in the session.
 
 2. **Check everything**, including the live probe:
 
@@ -101,6 +92,7 @@ From `jarvis --help` today:
 
 | Command | What it does |
 |---|---|
+| `jarvis setup [--redo <step>] [--send-test]` | One-time, resumable setup: Claude Code check, secrets backend, account tokens (hidden prompt, never sent anywhere), ntfy topics, taste profile, plugin copy for build sessions |
 | `jarvis doctor [--live] [--json]` | Preflight: pinned binaries, clean environment, disk, iCloud, ledgers, plugin, checks sandbox. `--live` adds the canary probe |
 | `jarvis triage "<request>"` | Classifies a request and prints its pipeline. `/jarvis` calls it first |
 | `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints (decisions 45, 53) |
@@ -120,7 +112,6 @@ Coming:
 
 | Command | What it will do |
 |---|---|
-| `jarvis setup` | One-time setup: accounts, secrets, ntfy topics, taste profile |
 | `jarvis run [--detach]` | The unattended build loop. It keeps working after you close Claude Code |
 | `jarvis report [--open]` | The morning report |
 | `jarvis gate <name>` | Runs a protected check by hand (feedback only, never evidence) |

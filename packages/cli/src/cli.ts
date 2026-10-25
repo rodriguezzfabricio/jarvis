@@ -20,6 +20,7 @@ import { register as registerTriage } from "./triage/command.ts";
 import { register as registerSteer } from "./commands/steer.ts";
 import { register as registerStatus } from "./commands/status.ts";
 import * as intake from "./intake/index.ts";
+import { register as registerSetup } from "./setup/command.ts";
 import * as lanes from "./lanes/index.ts";
 
 const projectDir = (id: string) => join(homedir(), ".jarvis", "projects", id);
@@ -143,6 +144,7 @@ registerTriage(program);
 registerSteer(program);
 registerStatus(program);
 intake.register(program);
+registerSetup(program);
 lanes.register(program);
 
 await program.parseAsync();

@@ -284,6 +284,19 @@ it("keeps an existing notify.json the phone already subscribes to, unless --redo
   expect(r.text()).toMatch(/unsubscribe/i);
 });
 
+it("keeps the stage 0 notify.json (backend, server, topic, reply_topic) as it is, and --send-test uses its topics", async () => {
+  const home = makeHome(); mkdirSync(join(home, ".jarvis"), { mode: 0o700 });
+  const path = join(home, ".jarvis", "notify.json");
+  const stage0 = `${JSON.stringify({ backend: "ntfy", server: "https://ntfy.sh", topic: "jarvis-stagezerotopic0123456789", reply_topic: "jarvis-stagezerotopic0123456789-reply" })}\n`;
+  writeFileSync(path, stage0, { mode: 0o600 });
+  await runSetup(deps(home, fakeTty(["n", "", "", "", "", "", "n"], []).tty, { secrets: fakeSecrets().backend }).d, {});
+  expect(readFileSync(path, "utf8")).toBe(stage0);
+  expect(state(home).steps.ntfy).toMatchObject({ status: "done", detail: expect.stringMatching(/kept/i) });
+  const n = fakeNotifier();
+  expect((await runSetup(deps(home, fakeTty([], []).tty, { secrets: fakeSecrets().backend, createNotifier: n.createNotifier }).d, { sendTest: true })).ok).toBe(true);
+  expect(n.configs).toEqual([{ baseUrl: "https://ntfy.sh", topic: "jarvis-stagezerotopic0123456789", replyTopic: "jarvis-stagezerotopic0123456789-reply" }]);
+});
+
 it("refuses an invalid or symlinked notify.json without changing it", async () => {
   for (const kind of ["invalid", "symlink"] as const) {
     const home = makeHome(); mkdirSync(join(home, ".jarvis"), { mode: 0o700 });

@@ -48,6 +48,14 @@ describe("jarvis run notifications", () => {
     expect(s.warnings).toEqual([]);
   });
 
+  it("reads the stage 0 notifier file (backend, server, topic, reply_topic) as the same config", async () => {
+    const s = setup({ backend: "ntfy", server: CONFIG.baseUrl, topic: CONFIG.topic, reply_topic: CONFIG.replyTopic });
+    await s.make().blocked(blocked);
+    expect(s.created).toEqual([{ baseUrl: CONFIG.baseUrl, topic: CONFIG.topic, replyTopic: CONFIG.replyTopic }]);
+    expect(s.sent.map((m) => m.kind)).toEqual(["blocked"]);
+    expect(s.warnings).toEqual([]);
+  });
+
   it("says when the run stopped with an error, with no error text in the message", async () => {
     const s = setup();
     await s.make().finished({ status: "error" });

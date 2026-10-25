@@ -154,5 +154,29 @@
     "file": "packages/cli/bin/jarvis",
     "anchor": "exec \"${JARVIS_NODE:?jarvis: JARVIS_NODE is not set; this launcher is for Jarvis task sessions}\"",
     "replacement": "exec node"
+  },
+  {
+    "name": "notify config refuses the stage 0 file",
+    "file": "packages/cli/src/notify/config.ts",
+    "anchor": "  if (stage0.success) return { baseUrl: stage0.data.server, topic: stage0.data.topic, replyTopic: stage0.data.reply_topic };",
+    "replacement": ""
+  },
+  {
+    "name": "notify config swaps the stage 0 topics",
+    "file": "packages/cli/src/notify/config.ts",
+    "anchor": "topic: stage0.data.topic, replyTopic: stage0.data.reply_topic }",
+    "replacement": "topic: stage0.data.reply_topic, replyTopic: stage0.data.topic }"
+  },
+  {
+    "name": "notify config accepts any stage 0 backend",
+    "file": "packages/cli/src/notify/config.ts",
+    "anchor": "backend: z.literal(\"ntfy\")",
+    "replacement": "backend: z.string()"
+  },
+  {
+    "name": "notify config error quotes the file",
+    "file": "packages/cli/src/notify/config.ts",
+    "anchor": "  throw new Error(\"not a notifier configuration\");",
+    "replacement": "  throw new Error(`not a notifier configuration: ${JSON.stringify(value)}`);"
   }
 ]

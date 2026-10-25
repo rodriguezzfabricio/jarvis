@@ -1,7 +1,7 @@
 import { lstatSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { readNoFollow } from "../config/private-file.ts";
-import { notifyConfigSchema } from "../intake/commands.ts";
+import { parseNotifyConfig } from "../notify/config.ts";
 import type { Message, Notifier } from "../notify/notifier.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
 import type { UsageWaitNotice } from "../runner/usage-wait.ts";
@@ -39,7 +39,7 @@ function load(o: RunNotificationOptions): Config {
     raw = readNoFollow(o.configPath); // runner-owned files refuse symlinks (O_NOFOLLOW) and anything but a file
   } catch { return { status: "invalid" }; }
   try {
-    const config = notifyConfigSchema.parse(JSON.parse(raw));
+    const config = parseNotifyConfig(JSON.parse(raw));
     const options: NtfyOptions = { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic, ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}) };
     return { status: "ok", notifier: (o.createNotifier ?? ((c) => new NtfyNotifier(c)))(options), secrets: [config.topic, config.replyTopic] };
   } catch { return { status: "invalid" }; }

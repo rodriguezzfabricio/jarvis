@@ -14,8 +14,8 @@
   {
     "name": "setup saves progress only at the end",
     "file": "packages/cli/src/setup/setup.ts",
-    "anchor": "    ctx.state = state;\n    saveState(jarvis, state, deps.rename ? { rename: deps.rename } : {});\n  }",
-    "replacement": "    ctx.state = state;\n  }\n  saveState(jarvis, state, deps.rename ? { rename: deps.rename } : {});"
+    "anchor": "    ctx.state = state;\n    saveState(jarvis, state, { ...trust, ...(deps.rename ? { rename: deps.rename } : {}) });\n  }",
+    "replacement": "    ctx.state = state;\n  }\n  saveState(jarvis, state, { ...trust, ...(deps.rename ? { rename: deps.rename } : {}) });"
   },
   {
     "name": "setup records a skipped account as done",
@@ -90,9 +90,57 @@
     "replacement": "return { status: \"done\", detail: check.detail };"
   },
   {
-    "name": "setup installs an incomplete plugin",
+    "name": "setup swaps in an unverified plugin",
+    "file": "packages/cli/src/setup/plugin.ts",
+    "anchor": "    verifyInstalled(staged, options);\n",
+    "replacement": ""
+  },
+  {
+    "name": "setup plugin links may leave the repo",
+    "file": "packages/cli/src/setup/plugin.ts",
+    "anchor": "if (link && !under(realpathSync(path), bound)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup skips verifying the task plugin source",
+    "file": "packages/cli/src/setup/plugin.ts",
+    "anchor": "  verifyInstalled(dir, options);\n  return dir;",
+    "replacement": "  return dir;"
+  },
+  {
+    "name": "setup skips the runner folder preflight",
     "file": "packages/cli/src/setup/setup.ts",
-    "anchor": "if (sourceCheck.level !== \"pass\") throw",
+    "anchor": "  checkRunnerFolders(jarvis, trust);\n",
+    "replacement": ""
+  },
+  {
+    "name": "setup accepts a writable home folder",
+    "file": "packages/cli/src/setup/state.ts",
+    "anchor": "  checkTrustedDir(root, options);\n  return privateDir",
+    "replacement": "  return privateDir"
+  },
+  {
+    "name": "setup trusts folders others can write",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "if ((st.mode & 0o022) !== 0) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup trusts a foreign owner",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "if (uid !== undefined && st.uid !== uid) throw new Error(`${path} must be owned by you",
+    "replacement": "if (false) throw new Error(`${path} must be owned by you"
+  },
+  {
+    "name": "setup trusts a symlink in the plugin tree",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "    if (st.isSymbolicLink()) throw new Error(`${path}: runner-owned trees refuse symlinks`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "setup secrets ignore a foreign owner",
+    "file": "packages/cli/src/broker/secrets.ts",
+    "anchor": "if (uid !== undefined && existing.uid !== uid) throw",
     "replacement": "if (false) throw"
   },
   {
@@ -116,8 +164,8 @@
   {
     "name": "setup private files readable by others",
     "file": "packages/cli/src/config/private-file.ts",
-    "anchor": "openSync(temp, \"wx\", 0o600)",
-    "replacement": "openSync(temp, \"wx\", 0o644)"
+    "anchor": "constants.O_EXCL | constants.O_NOFOLLOW, 0o600)",
+    "replacement": "constants.O_EXCL | constants.O_NOFOLLOW, 0o644)"
   },
   {
     "name": "setup secrets accept unsafe values",

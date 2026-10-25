@@ -24,7 +24,7 @@ import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions } from "../runner/loop.ts";
-import { readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
+import { planTasks, readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
@@ -157,8 +157,9 @@ function summary(ledger: Ledger): string {
   } catch { return "REPORT.md on your Mac has the details."; }
 }
 
+/** The plan's top-level notes ride on every task (decision 113), so each build prompt shows them as planner claims. */
 function toLoopPlan(plan: Plan): LoopPlan {
-  return { tasks: plan.tasks.map((task) => ({ ...task })) };
+  return { tasks: planTasks(plan) };
 }
 
 /** The review service: one review_result per review, keyed "code", recorded by the service itself. */

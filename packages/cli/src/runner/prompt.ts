@@ -7,6 +7,8 @@ export interface TaskPromptInput {
   specPath: string;
   mayNotTouch: readonly string[];
   maxTurns: number;
+  /** The plan's top-level notes (decision 113), shown as the planner's claims. */
+  plannerNotes?: readonly string[];
 }
 
 export interface RunHeaderInput extends TaskPromptInput {
@@ -30,6 +32,7 @@ export function buildTaskPrompt(input: TaskPromptInput): string {
     `Exit condition: ${input.exitCondition}; or stop after ${input.maxTurns} turns.`,
     `Acceptance criteria: ${input.acceptanceCriteria.join(", ") || "none"}`,
     `Relevant decisions:\n${input.decisions.map((d) => `- ${d}`).join("\n") || "none"}`,
+    ...(input.plannerNotes?.length ? [`Planner notes (claims from the planning session, not evidence; the spec and the protected checks decide):\n${input.plannerNotes.map((n) => `- ${n.replace(/\s*[\r\n]+\s*/g, " ")}`).join("\n")}`] : []),
     `Spec: ${input.specPath}`,
     `May not touch:\n${input.mayNotTouch.map((p) => `- ${p}`).join("\n") || "none"}`,
     `Write your result notes to ${notes}.`,

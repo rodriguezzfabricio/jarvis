@@ -352,6 +352,7 @@ class Loop {
     const version = Number(spec ? dataOf(spec).version : 1);
     return { taskId: task.id, goal: task.definition.goal || task.definition.title, exitCondition: task.definition.exitCondition,
       acceptanceCriteria: task.definition.acceptanceCriteria, decisions: steers.map((a) => a.kind === "replan" ? `Steer #${a.seq}: ${a.note}` : ""),
+      plannerNotes: task.definition.planNotes ?? [],
       specPath: String(spec ? dataOf(spec).path ?? `docs/spec/v${version}.md` : "docs/spec/v1.md"),
       mayNotTouch: [".jarvis-routing.json", ".git/hooks/", ".git/config", ".claude/"], maxTurns: this.turns, specVersion: version };
   }

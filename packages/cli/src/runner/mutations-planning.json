@@ -412,5 +412,83 @@
     "file": "packages/cli/src/runner/checks-author.ts",
     "anchor": "!file.startsWith(\"fixtures/\") && /\\.(?:sh|mjs|cjs|js|py)$/.test(file)",
     "replacement": "!file.includes(\"/\") && /\\.(?:sh|mjs|cjs|js|py)$/.test(file)"
+  },
+  {
+    "name": "planning plan accepts any top-level key",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "}).strict().superRefine((plan, ctx) => {",
+    "replacement": "}).passthrough().superRefine((plan, ctx) => {"
+  },
+  {
+    "name": "planning notes count unbounded",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": ".max(PLAN_NOTES.count)",
+    "replacement": ""
+  },
+  {
+    "name": "planning note length unbounded",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": ".max(PLAN_NOTES.chars)",
+    "replacement": ""
+  },
+  {
+    "name": "planning notes total unbounded",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "<= PLAN_NOTES.total,",
+    "replacement": "<= Infinity,"
+  },
+  {
+    "name": "planning blank notes accepted",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "z.string().trim().min(1).max(PLAN_NOTES.chars)",
+    "replacement": "z.string().trim().max(PLAN_NOTES.chars)"
+  },
+  {
+    "name": "planning notes kept untrimmed",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "z.string().trim().min(1).max(PLAN_NOTES.chars)",
+    "replacement": "z.string().min(1).max(PLAN_NOTES.chars)"
+  },
+  {
+    "name": "planning notes left off the tasks",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "({ ...task, ...(notes.length ? { planNotes: [...notes] } : {}) })",
+    "replacement": "({ ...task })"
+  },
+  {
+    "name": "planning notes dropped on ledger replay",
+    "file": "packages/cli/src/runner/state.ts",
+    "anchor": "  planNotes: z.array(text).optional(),\n",
+    "replacement": ""
+  },
+  {
+    "name": "planning notes never reach the build prompt",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      plannerNotes: task.definition.planNotes ?? [],\n",
+    "replacement": ""
+  },
+  {
+    "name": "planning notes not shown in the prompt",
+    "file": "packages/cli/src/runner/prompt.ts",
+    "anchor": "...(input.plannerNotes?.length ? [",
+    "replacement": "...(false ? ["
+  },
+  {
+    "name": "planning notes not labeled as claims",
+    "file": "packages/cli/src/runner/prompt.ts",
+    "anchor": "Planner notes (claims from the planning session, not evidence; the spec and the protected checks decide):",
+    "replacement": "Planner notes (follow these):"
+  },
+  {
+    "name": "planning notes may add prompt lines",
+    "file": "packages/cli/src/runner/prompt.ts",
+    "anchor": "n.replace(/\\s*[\\r\\n]+\\s*/g, \" \")",
+    "replacement": "n"
+  },
+  {
+    "name": "planning compose drops the notes",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  return { tasks: planTasks(plan) };",
+    "replacement": "  return { tasks: plan.tasks.map((task) => ({ ...task })) };"
   }
 ]

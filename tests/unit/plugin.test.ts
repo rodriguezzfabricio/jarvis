@@ -262,6 +262,33 @@ describe("tripwire scope: Jarvis sessions only", () => {
     for (const cwd of [plainRepo, jarvisRepo]) expect(bash("cat ~/.jarvis/secrets/p.env", cwd), cwd).toBeTruthy();
     expect(bash("ls ~/.jarvis-work/worktrees", plainRepo)).toBeUndefined();
   });
+
+  // Codex round 18, lane D, low: relative Bash paths slipped past the spelling-only runner-home rule.
+  it("resolves relative Bash paths against the cwd and HOME, cd included, before matching the runner home", () => {
+    const HOME = "/var/root";
+    const env = { HOME };
+    for (const [command, cwd] of [
+      ["cat .jarvis/secrets/p.env", HOME],
+      ["cat ../../.jarvis/secrets/p.env", `${HOME}/a/b`],
+      ["cat '../.jarvis/ledger.jsonl'", `${HOME}/repo`],
+      ["cd ~ && cat .jarvis/secrets/p.env", plainRepo],
+      ["cd && cat .jarvis/secrets/p.env", plainRepo],
+      ["cd $HOME; cat .jarvis/secrets/p.env", plainRepo],
+      ["cd /var/root/repo && cat ../.jarvis/secrets/p.env", plainRepo],
+      ["node x.js --env=../.jarvis/secrets/p.env", `${HOME}/repo`],
+      ["ls .jarvis", HOME],
+    ] as const) {
+      expect(check({ tool_name: "Bash", tool_input: { command }, cwd }, env), `${command} from ${cwd}`).toBeTruthy();
+    }
+    for (const [command, cwd] of [
+      ["cat .jarvis/notes/t.md", plainRepo],
+      ["cat ../.jarvis-work/x", `${HOME}/repo`],
+      ["cd ~/.jarvis-work && ls", plainRepo],
+      ["cd repo && cat .jarvis/notes/t.md", HOME],
+    ] as const) {
+      expect(check({ tool_name: "Bash", tool_input: { command }, cwd }, env), `${command} from ${cwd}`).toBeUndefined();
+    }
+  });
 });
 
 describe("secrets backend (decision 13)", () => {

@@ -19,6 +19,7 @@ import {
   type RateLimitInfo,
 } from "../harness/claude/index.ts";
 import { safeGit } from "./git.ts";
+import { assertHiddenAbsent } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
 
@@ -47,7 +48,7 @@ export interface GoldenTask {
  */
 export const EVAL_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "fonts.googleapis.com", "fonts.gstatic.com", "localhost", "127.0.0.1"];
 
-function checkEvalDomains(id: string, domains: readonly string[]): void {
+export function checkEvalDomains(id: string, domains: readonly string[]): void {
   const extra = domains.filter((d) => !EVAL_ALLOWED_DOMAINS.includes(d));
   if (extra.length) throw new Error(`${id}: allowedDomains outside the eval allowlist (decision 79): ${extra.join(", ")}`);
 }
@@ -93,9 +94,12 @@ export interface BaselineOptions {
   runId?: string;
   parentEnv?: Readonly<Record<string, string | undefined>>;
   extraEnv?: Readonly<Record<string, string>>;
+  /** The task's hidden folders (grading and gate checks): the snapshot must hold none of their files, checked before the session. */
+  hiddenDirs?: readonly string[];
 }
 
-const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
+/** Build output and tool folders kept out of candidate commits (both arms). */
+export const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
 
 export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Promise<BaselineRunResult> {
   checkEvalDomains(task.id, task.allowedDomains);
@@ -120,6 +124,10 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     ...(task.source ? { sourceRepo: task.source.repo, rev: task.source.rev, revert: task.source.revert ?? [], allowSecretsIn: task.source.allowSecretsIn ?? [] } : {}),
   });
   writeFileSync(join(workspace, ".git", "info", "exclude"), `${EXCLUDE.join("\n")}\n`);
+  // The same leak check as the Jarvis arm, before any session sees the snapshot (02-golden-tasks.md step 2).
+  if (opts.hiddenDirs?.length) {
+    try { assertHiddenAbsent(workspace, opts.hiddenDirs); } catch (e) { rmSync(cacheDir, { recursive: true, force: true }); throw e; }
+  }
 
   const settingsPath = join(resultsDir, "settings.json");
   const mcpPath = join(resultsDir, "mcp.json");

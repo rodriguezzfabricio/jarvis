@@ -138,6 +138,30 @@
     "replacement": ""
   },
   {
+    "name": "setup accepts an allow ACL",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "if (m[5] === \"allow\" && !(m[2] === \"user\" && m[3] === owner)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "setup ACL parsing fails open",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "if (!m) throw new Error(`${path}: an ACL entry could not be parsed",
+    "replacement": "if (!m) continue;\n    if (false) throw new Error(`${path}: an ACL entry could not be parsed"
+  },
+  {
+    "name": "setup unreadable ACL passes",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "try { output = read(path); } catch (error) { throw",
+    "replacement": "try { output = read(path); } catch (error) { return; throw"
+  },
+  {
+    "name": "setup new files skip the ACL check",
+    "file": "packages/cli/src/config/private-file.ts",
+    "anchor": "      checkAcl(temp, options);\n",
+    "replacement": ""
+  },
+  {
     "name": "setup secrets ignore a foreign owner",
     "file": "packages/cli/src/broker/secrets.ts",
     "anchor": "if (uid !== undefined && existing.uid !== uid) throw",

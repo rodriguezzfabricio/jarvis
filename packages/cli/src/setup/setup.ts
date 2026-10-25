@@ -33,6 +33,8 @@ export interface SetupDeps {
   rename?: typeof renameSync;
   /** Test seam for ownership checks; defaults to process.getuid(). */
   uid?: number;
+  /** Test seam for the macOS ACL listing (`/bin/ls -lde`); defaults to the real one on macOS. */
+  acl?: (path: string) => string;
 }
 export interface SetupOptions { redo?: readonly string[]; sendTest?: boolean }
 export interface SetupResult { ok: boolean; state: SetupState; pending: StepName[] }
@@ -91,7 +93,7 @@ const SKIPPED_ACCOUNT = "skipped; Jarvis develops against local services (SQLite
 
 export async function runSetup(deps: SetupDeps, options: SetupOptions = {}): Promise<SetupResult> {
   const redo = parseRedo(options.redo ?? []);
-  const trust: TrustOptions = deps.uid !== undefined ? { uid: deps.uid } : {};
+  const trust: TrustOptions = { ...(deps.uid !== undefined ? { uid: deps.uid } : {}), ...(deps.acl ? { acl: deps.acl } : {}) };
   const jarvis = jarvisHome(deps.home, trust);
   checkRunnerFolders(jarvis, trust);
   let state = loadState(jarvis);

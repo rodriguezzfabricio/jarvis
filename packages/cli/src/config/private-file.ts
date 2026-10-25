@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, type Stats } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -10,7 +11,45 @@ import { writeAll } from "../ledger/ledger.ts";
  * outside the sandbox. With that ancestry, nobody else can replace entries between a check and its use;
  * opens add O_NOFOLLOW and fstat checks on the opened descriptors, so the check binds to what was opened.
  */
-export interface TrustOptions { /** Test seam for ownership checks; defaults to process.getuid(). */ uid?: number }
+export interface TrustOptions {
+  /** Test seam for ownership checks; defaults to process.getuid(). */
+  uid?: number;
+  /** Returns `/bin/ls -lde <path>` output, or throws. Defaults to lsAcl on macOS; other platforms have no ACL check yet. */
+  acl?: (path: string) => string;
+}
+
+/** The macOS ACL listing for one path, from the absolute /bin/ls with a clean environment. Fails closed. */
+export function lsAcl(path: string): string {
+  const r = spawnSync("/bin/ls", ["-lde", path], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" }, timeout: 10_000 });
+  if (r.error || r.status !== 0) throw new Error(`could not read the ACL of ${path}; refusing it`);
+  return r.stdout;
+}
+
+const ACL_ENTRY = /^ (\d+): (user|group):(\S+)( inherited)? (allow|deny) ([a-z_,]+)$/;
+
+/**
+ * Refuses an ACL that lets anyone but the owner in (Codex re-check of setup): any allow entry for another
+ * user or for a group, inherited or not. Deny entries only remove rights, so the standard home-folder
+ * "group:everyone deny delete" passes. Output without an owner, or an entry that doesn't parse, is refused.
+ */
+export function checkAclOutput(path: string, output: string): void {
+  const lines = output.split("\n").filter((line) => line !== "");
+  const owner = (lines[0] ?? "").trim().split(/\s+/)[2];
+  if (!owner) throw new Error(`${path}: could not read its owner from the ACL listing; refusing it`);
+  for (const line of lines.slice(1)) {
+    const m = ACL_ENTRY.exec(line);
+    if (!m) throw new Error(`${path}: an ACL entry could not be parsed (${line.trim()}); refusing it`);
+    if (m[5] === "allow" && !(m[2] === "user" && m[3] === owner)) throw new Error(`${path} has an ACL that allows ${m[2]}:${m[3]} (${m[6]}); remove it with chmod -N`);
+  }
+}
+
+export function checkAcl(path: string, options: TrustOptions): void {
+  const read = options.acl ?? (process.platform === "darwin" ? lsAcl : undefined);
+  if (!read) return;
+  let output: string;
+  try { output = read(path); } catch (error) { throw new Error(`${path}: could not read its ACL (${(error as Error).message}); refusing it`); }
+  checkAclOutput(path, output);
+}
 export interface PrivateWriteOptions extends TrustOptions { rename?: typeof renameSync }
 
 const expectedUid = (options: TrustOptions) => options.uid ?? process.getuid?.();
@@ -19,6 +58,7 @@ function checkMeta(path: string, st: Stats, options: TrustOptions): void {
   const uid = expectedUid(options);
   if (uid !== undefined && st.uid !== uid) throw new Error(`${path} must be owned by you (uid ${uid}); it is owned by uid ${st.uid}`);
   if ((st.mode & 0o022) !== 0) throw new Error(`${path} is writable by others (mode ${(st.mode & 0o777).toString(8)}); runner-owned files and folders must be writable only by you`);
+  checkAcl(path, options);
 }
 
 export function refuseSymlink(path: string): void {
@@ -81,6 +121,8 @@ export function writePrivateAtomic(path: string, content: string, options: Priva
     try {
       const st = fstatSync(fd);
       if (!st.isFile() || st.nlink !== 1) throw new Error(`${temp} is not a fresh private file`);
+      // An inherited ACL would expose the bytes: check the new file before anything is written to it.
+      checkAcl(temp, options);
       writeAll(fd, content);
       fsyncSync(fd);
     } finally { closeSync(fd); }

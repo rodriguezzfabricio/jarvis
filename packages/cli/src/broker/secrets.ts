@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, statSync, type renameSync } from "node:fs";
 import { dirname } from "node:path";
-import { privateDir, readNoFollow, refuseSymlink, writePrivateAtomic } from "../config/private-file.ts";
+import { checkAcl, privateDir, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import type { SecretsBackend } from "./broker.ts";
 
 const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
@@ -41,23 +41,25 @@ export function isStorableSecret(value: string): boolean {
 
 const MARKER = "# broker-only: ";
 
-function checkOwnerOnly(path: string, what: string, uid: number | undefined): void {
+function checkOwnerOnly(path: string, what: string, uid: number | undefined, trust: TrustOptions): void {
   const existing = lstatSync(path, { throwIfNoEntry: false });
   if (!existing) return;
   if ((existing.mode & 0o077) !== 0) throw new Error(`${path}: the secrets ${what} must be owner only (it is ${(existing.mode & 0o777).toString(8)})`);
   if (uid !== undefined && existing.uid !== uid) throw new Error(`${path} must belong to the current user`);
+  // Owner-only mode bits aren't enough on macOS: an ACL can still let another user in.
+  checkAcl(path, trust);
 }
 
-/** Writes KEY=value lines into the env file envFileSecrets reads: owner-only folder and file, atomic replace, no symlinks. */
-export function envFileSecretsWriter(path: string, options: { rename?: typeof renameSync; /** Test seam for ownership. */ uid?: number } = {}): SecretsWriter {
+/** Writes KEY=value lines into the env file envFileSecrets reads: owner-only folder and file, atomic replace, no symlinks, no ACL. */
+export function envFileSecretsWriter(path: string, options: { rename?: typeof renameSync; /** Test seams for ownership and ACLs. */ uid?: number; acl?: (path: string) => string } = {}): SecretsWriter {
   const directory = dirname(path);
   const uid = options.uid ?? process.getuid?.();
-  const trust = uid !== undefined ? { uid } : {};
+  const trust: TrustOptions = { ...(uid !== undefined ? { uid } : {}), ...(options.acl ? { acl: options.acl } : {}) };
   const check = () => {
     refuseSymlink(directory);
     refuseSymlink(path);
-    checkOwnerOnly(directory, "folder", uid);
-    checkOwnerOnly(path, "file", uid);
+    checkOwnerOnly(directory, "folder", uid, trust);
+    checkOwnerOnly(path, "file", uid, trust);
   };
   return {
     location: path,

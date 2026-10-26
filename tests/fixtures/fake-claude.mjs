@@ -69,8 +69,17 @@ if (process.env.FAKE_CLAUDE_SCENARIO) {
 
 const rl = (status, u, at) => out({ type: "rate_limit_event", rate_limit_info: { status, resetsAt: at, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: u, resetsAt: at }, seven_day: { utilization: 0.2, resetsAt: at + 86400 } } } });
 
-if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy") {
+if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy" || mode === "go-env") {
   writeFileSync("app.txt", `built for: ${prompt}\n`);
+  if (mode === "go-env") {
+    // What a session's Go sees (decision 123): its variables, and which go its PATH runs.
+    const keys = ["PATH", "GOTOOLCHAIN", "GOMODCACHE", "GOPROXY", "GOSUMDB", "GOFLAGS", "CGO_ENABLED", "GOCACHE", "GOPATH"];
+    // Only a pinned toolchain's (fake) go is run: a host go would download a toolchain, outside any sandbox.
+    const go = (process.env.PATH ?? "").split(":").map((d) => `${d}/go`).find((p) => existsSync(p));
+    let goVersion = go ? `host go at ${go} (not run)` : "no go";
+    if (go?.includes("/golang.org/toolchain@")) goVersion = execSync(`"${go}" version`, { env: process.env }).toString().split("\n")[0];
+    writeFileSync("app.txt", `${JSON.stringify({ ...Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null])), goVersion }, null, 2)}\n`);
+  }
   if (mode === "cache-spy") {
     // Try to leave a note for the next run in the toolchain cache, and look for one from the last run.
     const note = `${process.env.GOCACHE}/note-for-next-run.txt`;

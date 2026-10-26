@@ -14,6 +14,7 @@ import { allowsUnattended, doctorExitCode, runDoctor } from "./doctor/doctor.ts"
 import { loadTask, runBaseline, type GoldenTask } from "./eval/baseline.ts";
 import { formatCompare, readRuns, writeRating } from "./eval/compare.ts";
 import { gradeRecordedRun, hiddenDir, loadHiddenChecks } from "./eval/hidden.ts";
+import { evalGoFixture } from "./eval/toolchain.ts";
 import { runJarvis, type RunLoop } from "./eval/jarvis.ts";
 import { runSchedule, type PreflightResult } from "./eval/schedule.ts";
 import * as decisionWrite from "./decisions/decide.ts";
@@ -94,15 +95,19 @@ evalCmd
   .action(async (ids: string[], opts: { evals: string; repeat: string; label: string }) => {
     // Hidden material is loaded (and refused if malformed) before any session, so each run's snapshot gets the same leak check as the Jarvis arm.
     const hidden = new Map<string, string[]>();
+    // Decision 123: the session gets the gate's pinned Go, as the Jarvis arm's sessions do.
+    const goFixtures = new Map<string, string>();
     for (const id of ids) {
       if (!existsSync(join(opts.evals, "hidden", id))) continue;
       const gate = hiddenDir(opts.evals, id, "gate");
       hidden.set(id, [loadHiddenChecks(hiddenDir(opts.evals, id)).dir, ...(existsSync(gate) ? [loadHiddenChecks(gate).dir] : [])]);
+      goFixtures.set(id, evalGoFixture(opts.evals, id));
     }
     const out = await runSchedule(ids, Number.parseInt(opts.repeat, 10), opts.label, {
       loadTask: (id) => loadTask(opts.evals, id),
       runOne: async (task, runId) => {
-        const r = await runBaseline(task, { preflight: livePreflight, runId, hiddenDirs: hidden.get(task.id) ?? [] });
+        const goFixture = goFixtures.get(task.id);
+        const r = await runBaseline(task, { preflight: livePreflight, runId, hiddenDirs: hidden.get(task.id) ?? [], ...(goFixture ? { goFixture } : {}), log: evalLog });
         await gradeAfter(opts.evals, task, r);
         return r;
       },

@@ -36,6 +36,17 @@ The runner uses a confidence cutoff of 0.8. Below it, ordinary findings are drop
 
 If reviewing a prior finding, change the position only on new evidence. State what changed in the scenario. Do not repeat a finding that the candidate has demonstrably fixed.
 
+## Report mode
+
+When a review request asks for fixes or names a report file (triage's `review.report`, default REVIEW.md), write the findings to that file instead of replying, and the same findings to `.jarvis/review/findings.json` for the runner. Those two files are the only writes: the fixes are a later pipeline, one bug task per finding.
+
+- Give each finding a heading with its id and file:line (F1, F2, ...), then its severity, its confidence (high, medium or low), what is wrong, the evidence and a proposed fix.
+- The evidence is the code path from an input the code really receives to the line, and why that path is reachable: which caller, route or job passes it. A dangerous-looking line with no reachable path is not a finding.
+- Low confidence means you couldn't trace or confirm it. The fix step confirms such a finding before it changes code.
+- Say "Not a problem" explicitly for suspicious-looking code you checked and cleared: list it under that heading with its file:line and why it is safe, and in the JSON's cleared list.
+- The JSON object has request, report, findings (id, title, severity, confidence, file, line, evidence, fix) and cleared (file, line, what, why), and nothing else. The runner refuses a finding the report doesn't show with its id and file:line, and a report that is a symlink or outside the checkout.
+- Then tell the user the fixes start with `jarvis run --plan review --detach`; a last task records in the report what was fixed and what wasn't.
+
 ## Gotchas
 
 - A passing check proves only what its recorded cases cover. Map every acceptance criterion to observable behavior and inspect uncovered branches.

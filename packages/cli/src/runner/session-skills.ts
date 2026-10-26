@@ -18,7 +18,13 @@ const FRONTMATTER = /^---\n[\s\S]*?\n---\n/;
 
 /** Each session skill's body, without its frontmatter; refuses a missing, empty or oversized skill. */
 export function loadSessionSkills(dir: string = SKILLS_DIR): SessionSkill[] {
-  return SESSION_SKILLS.map((name) => {
+  return loadSkills(SESSION_SKILLS, dir);
+}
+
+/** The named skills' bodies, the same way: the review step's session follows review (and security) instead (decision 126). */
+export function loadSkills(names: readonly string[], dir: string = SKILLS_DIR): SessionSkill[] {
+  return names.map((name) => {
+    if (!/^[a-z][a-z-]{0,31}$/.test(name)) throw new Error(`invalid session skill name: ${name}`);
     let raw: string;
     try { raw = readFileSync(join(dir, name, "SKILL.md"), "utf8"); } catch { throw new Error(`session skill ${name} is missing from ${dir}`); }
     if (Buffer.byteLength(raw) > MAX_SKILL_BYTES) throw new Error(`session skill ${name} is over ${MAX_SKILL_BYTES} bytes`);

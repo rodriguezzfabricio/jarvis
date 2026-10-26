@@ -2,8 +2,8 @@
   {
     "name": "review fix: a fix request in the request's words is ignored",
     "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "const fixes = j.then === \"none\" ? false : j.then !== undefined || verb !== undefined;",
-    "replacement": "const fixes = j.then === \"none\" ? false : j.then !== undefined;"
+    "anchor": "const fixes = !noFix && (j.then === \"none\" ? false : j.then !== undefined || verb !== undefined);",
+    "replacement": "const fixes = !noFix && (j.then === \"none\" ? false : j.then !== undefined);"
   },
   {
     "name": "review fix: a plain review gets a fix pipeline",
@@ -212,8 +212,8 @@
   {
     "name": "review fix: run leaves the session's report uncommitted",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "if (git([\"status\", \"--porcelain\", \"--untracked-files=all\", \"--\", report]) !== \"\") {",
-    "replacement": "if (false) {"
+    "anchor": "  commitReportOnly(git, report, `review report ${report} (written by the review session)`);\n",
+    "replacement": ""
   },
   {
     "name": "review fix: run numbers fix tasks over the ledger's own",
@@ -232,5 +232,101 @@
     "file": "packages/cli/src/commands/run.ts",
     "anchor": "result = run.drive ? await run.drive(loop) : await loop(run.loop);",
     "replacement": "result = await loop(run.loop);"
+  },
+  {
+    "name": "review fix: a no-fix constraint is ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const noFix = noEdit ?? hit(NO_FIX);",
+    "replacement": "const noFix = noEdit;"
+  },
+  {
+    "name": "review fix: a no-edit constraint is ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const noEdit = hit(NO_EDIT);",
+    "replacement": "const noEdit = undefined as string | undefined;"
+  },
+  {
+    "name": "review fix: a question's edits ignore a no-edit constraint",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  if (type === \"question\" && noFix && then) then = null;\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a no-edit constraint keeps the model's report",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "let named = noEdit ? undefined : j.report;",
+    "replacement": "let named = j.report;"
+  },
+  {
+    "name": "review fix: a no-edit constraint keeps a typed report",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];",
+    "replacement": "const typed = REPORT_FILE.exec(text)?.[1];"
+  },
+  {
+    "name": "review fix: a report path may hold git pattern characters",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (/[[\\]{}!*?]/.test(path)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a report may sit in a hidden folder",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (parts.some((p) => p.startsWith(\".\"))) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a report may overwrite an approved spec",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (/^docs\\/spec\\//i.test(path)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a report may take a name builds, agents or Jarvis read",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (READ_BY_TOOLS.test(name)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a .txt report needn't say what it is",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (/\\.txt$/i.test(name) && !TXT_REPORT.test(name)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: the report commit reads its path as a pattern",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "const spec = `:(literal)${report}`;",
+    "replacement": "const spec = report;"
+  },
+  {
+    "name": "review fix: the report commit isn't checked to change only the report",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (parent !== before || changed.length !== 1 || changed[0] !== report) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "review fix: run takes the report path from the session's findings",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "context.reviewReport ?? DEFAULT_REVIEW_REPORT",
+    "replacement": "(JSON.parse(process.getBuiltinModule(\"node:fs\").readFileSync(`${context.repoPath}/.jarvis/review/findings.json`, \"utf8\")).report as string)"
+  },
+  {
+    "name": "review fix: run takes --report unchecked",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "if (problem) throw new Error(`--report ${options.report} is refused: ${problem}`);",
+    "replacement": "if (false) throw new Error(`--report ${options.report} is refused: ${problem}`);"
+  },
+  {
+    "name": "review fix: run takes --report without --plan review",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "if (options.plan !== \"review\") throw new Error(\"--report goes with --plan review\");",
+    "replacement": "if (false) throw new Error(\"--report goes with --plan review\");"
+  },
+  {
+    "name": "review fix: a detached runner loses --report",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": ", ...(context.reviewReport ? [\"--report\", context.reviewReport] : [])]",
+    "replacement": "]"
   }
 ]

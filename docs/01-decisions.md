@@ -1214,7 +1214,22 @@ Golden task 3 says "Put what you find in REVIEW.md and fix the real problems", a
 
 *Why:* task 3 needs both the report and fixes that hold up. Review work and bug work already have their rules (the review skill, decision 114), so the pipeline joins them instead of inventing a third kind of task. False alarms are a review's known failure, and task 3 counts them. So the prompt asks for evidence per finding and an explicit "Not a problem", and the runner checks what code can check: each finding's id and file:line in the report.
 *Not done:* the protected scanners (gitleaks, semgrep, osv-scanner) don't run in the review step. They run only as gate checks recorded against a task, and a gate result for a task the ledger never created breaks state replay. The step says "not run" rather than imply a clean scan (backlog 160).
-*From:* the review-fix worker (Opus), Oct 26.
+**Round 1 of the Codex security review (three highs, fixed):** the report commit is the one change no gate or reviewer sees, so:
+- **The runner owns the report path.** It comes from the request (triage), or from `jarvis run --plan review --report <path>`, default REVIEW.md. The findings file's `report` is only compared with it, so a session can't name a different file for the runner to commit.
+- **A report is a file only people read:**
+  - a .md, .markdown or .txt path with no git pattern characters (`[ ] { } ! * ?`);
+  - not hidden, and not under `docs/spec/`, where the approved specs live;
+  - not a name that builds, agents or Jarvis read (README, CHANGELOG, LICENSE, AGENTS, CLAUDE, GEMINI, DESIGN, PRODUCT, SKILL, SECURITY, CONTRIBUTING and the like);
+  - for .txt, a name that says review, finding, report or audit, so it is never `requirements.txt` or `CMakeLists.txt`.
+
+  An existing file can be the report only when it is REVIEW.md or the file the request names, because the path is never the session's.
+- **The commit names the report as a literal pathspec** (`:(literal)…`), so a name like `[C]MakeLists.md` can't take `CMakeLists.md` with it. Afterwards the runner checks that the commit changes exactly the report against its parent; otherwise it undoes the commit (the branch goes back, the work tree stays) and refuses (`commitReportOnly`).
+- **An explicit constraint wins over fix words and the model's judgment,** for a review and for a question's edits alike:
+  - "do not edit", "don't change anything", "make no changes", "read-only" or "without changing anything" means a plain read-only review: no report, no fixes;
+  - "fix nothing", "don't fix anything", "report only", "suggestions only" or "only report" means no fixes, though a report the request names is still written;
+  - a scope ("don't change the public API", "no changes to the CLI flags", "without changing the file format") is not a constraint.
+
+*From:* the review-fix worker (Opus), Oct 26; round 1 after the Codex `gpt-6-astra` security review of 5316a3c..f686919.
 ### 116. A stage proof counts runs from one frozen Jarvis revision, rated by blind judges (new; Oct 26; the integrator, after the first stage 3 runs)
 - **One revision per proof.** The counted runs of a stage proof all come from one frozen clone of Jarvis; runs from an earlier revision move to `~/.jarvis/evals/_superseded/<task>/` with a README, and their results stay recorded. When a fix changes what both arms' sessions get (decision 123's toolchain), both arms are rerun.
 - **Ratings by two blind judges** (decision 105): each task's runs from both arms are shown to a fresh Claude `claude-opus-5-5` judge and a Codex `gpt-6-astra` judge under neutral labels; a run's rating is the two judges' mean rounded down, the same rule for both arms. A gap above 1 point or a split goes to Fabricio.

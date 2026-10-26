@@ -40,7 +40,7 @@ it("never consumes intake taps, malformed approval text, or its own refusal noti
 });
 it("sends a short refusal on the reply topic without the request, payload or nonce", async () => {
   const s = setup(); await s.broker.handle({ op: "spend", payload: { description: "PRIVATE FAKE PAYLOAD" } });
-  const run = s.run(); await run.tick(); const a = s.sent[0]!.actions[0]!;
+  const run = s.run(); await run.tick(); expect(s.sent[0]?.actions).toHaveLength(2); const a = s.sent[0]!.actions[0]!;
   s.reply({ id: "early", text: `approve:${a.requestId}:${a.nonce}`, time: 1000 }); await run.tick();
   const refusal = s.sent.find((e) => e.topic === "fake-reply");
   expect(refusal).toBeDefined(); expect(refusal!.message.text).toMatch(/^Not counted:.*tap again/);
@@ -51,7 +51,7 @@ it("sends a short refusal on the reply topic without the request, payload or non
 });
 it("answers only taps that carry this project's nonce: the reply topic is shared across projects", async () => {
   const s = setup(); const pending = await s.broker.handle({ op: "spend", payload: { description: "fake" } });
-  const run = s.run(); await run.tick(); const a = s.sent[0]!.actions[0]!;
+  const run = s.run(); await run.tick(); expect(s.sent[0]?.actions).toHaveLength(2); const a = s.sent[0]!.actions[0]!;
   s.reply({ id: "other-project", text: `approve:6f1d2c3b-0000-4000-8000-000000000000:${"a".repeat(64)}`, time: 2000 },
     { id: "forged", text: `approve:${a.requestId}:${"b".repeat(64)}`, time: 2000 });
   await run.tick();

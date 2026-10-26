@@ -28,6 +28,7 @@ async function setup(publishTime: unknown) {
     }) });
   // A ledger refusal here would stop phone approvals for the run: it must not happen.
   const firstTick = await run.tick().then(() => undefined, (error: unknown) => error);
+  expect(buttons).toHaveLength(2);
   const a = buttons[0]!;
   const sent = ledger.entries().find((e) => (e.data as { phase?: string }).phase === "sent")?.data;
   const tap = async (id: string, time: number) => { replies.push({ id, text: `approve:${a.requestId}:${a.nonce}`, time }); await run.tick(); };

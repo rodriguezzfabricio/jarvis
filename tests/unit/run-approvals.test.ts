@@ -36,7 +36,7 @@ function setup() {
 it.each(["approve", "reject"])("sends two buttons and records exactly the pending payload's %s", async (answer) => {
   const s = setup(); const p = await s.request(); const run = s.make();
   await run.tick();
-  expect(s.sent[0]!.actions.map((a) => a.answer)).toEqual(["approve", "reject"]);
+  expect(s.sent[0]?.actions.map((a) => a.answer)).toEqual(["approve", "reject"]);
   expect(s.sent[0]!.actions[0]!.nonce).toMatch(/^[a-f0-9]{64}$/);
   expect(s.sent[0]!.actions[0]!.requestId).toBe(p.approvalId);
   // Decision 117: the broker's one-line summary and the payload hash's first 12 characters, so the tap is an informed one.

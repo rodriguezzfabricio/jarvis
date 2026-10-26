@@ -131,3 +131,45 @@ describe("review: axe runs in an isolated world", () => {
     expect(detach).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("review: one Chromium per viewport (--single-process survives a single page)", () => {
+  // Measured on the pinned headless shell (Oct 26): with --single-process the second browser.newPage() dies with
+  // SIGTRAP, whether or not the first page was closed. loadBrowserRuntime always passes the flag, so observeWeb
+  // must never ask one browser for a second page.
+  function singlePageBrowsers(failOn?: number) {
+    const events: string[] = []; const widths: number[] = []; let launches = 0;
+    const send = async (method: string) => method === "Page.getFrameTree" ? { frameTree: { frame: { id: "frame-1", url: "http://localhost:3000/", loaderId: "loader" } } } : method === "Page.createIsolatedWorld" ? { executionContextId: 7 } : method === "Runtime.evaluate" ? { result: { value: { version: "4.10.3", violations: [], incomplete: [] } } } : method === "Target.getTargets" ? { targetInfos: [] } : {};
+    const page = {
+      frames: () => [{ url: () => "http://localhost:3000/", parentFrame: () => null, frameElement: async () => ({ getAttribute: async () => null }) }],
+      goto: async () => {}, url: () => "http://localhost:3000/", locator: () => ({ ariaSnapshot: async () => "tree" }),
+      context: () => ({ newCDPSession: async () => ({ send, detach: async () => {} }) }),
+      screenshot: async () => Buffer.from("fake"), close: async () => { events.push("page closed"); },
+    };
+    const launch = async () => {
+      const id = ++launches; let pages = 0; events.push(`launch ${id}`);
+      return {
+        newPage: async (options: { viewport: { width: number } }) => {
+          if (id === failOn) throw new Error("viewport failed");
+          if (++pages > 1) throw new Error("Target page, context or browser has been closed");
+          widths.push(options.viewport.width); return page;
+        },
+        close: async () => { events.push(`browser ${id} closed`); },
+      };
+    };
+    return { events, widths, runtime: { launch, axeSource: "/* fake trusted axe */" } };
+  }
+
+  it("launches a fresh browser for each of the three viewports and closes every one", async () => {
+    const fake = singlePageBrowsers();
+    const raw = await observeWeb("http://localhost:3000", fake.runtime);
+    expect(raw.pages.map(p => p.width)).toEqual([375, 768, 1440]);
+    expect(fake.widths).toEqual([375, 768, 1440]);
+    expect(fake.events).toEqual(["launch 1", "page closed", "browser 1 closed", "launch 2", "page closed", "browser 2 closed", "launch 3", "page closed", "browser 3 closed"]);
+  });
+
+  it("closes the browser of a viewport that fails, and launches no more", async () => {
+    const fake = singlePageBrowsers(2);
+    await expect(observeWeb("http://localhost:3000", fake.runtime)).rejects.toThrow("viewport failed");
+    expect(fake.events).toEqual(["launch 1", "page closed", "browser 1 closed", "launch 2", "browser 2 closed"]);
+  });
+});

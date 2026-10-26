@@ -886,5 +886,23 @@
     "file": "packages/cli/src/lanes/tells.ts",
     "anchor": "[Number(match[2]), Number(match[4])]",
     "replacement": "[Number(match[4])]"
+  },
+  {
+    "name": "runtime observation reuses one browser for all viewports",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "    const browser = await runtime.launch();",
+    "replacement": "    const browser = await ((runtime as { shared?: ReturnType<BrowserRuntime[\"launch\"]> }).shared ??= runtime.launch());"
+  },
+  {
+    "name": "runtime observation leaves each viewport's browser open",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "    } finally { await browser.close(); }",
+    "replacement": "    } finally { /* browser left open */ }"
+  },
+  {
+    "name": "runtime easing treats a negative y control point as bounded",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "some(y => y < 0 || y > 1)",
+    "replacement": "some(y => y > 1)"
   }
 ]

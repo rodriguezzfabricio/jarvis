@@ -178,5 +178,35 @@
     "file": "plugin/hooks/tripwire.mjs",
     "anchor": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !/(^|\\/)\\.\\.(\\/|$)/.test(path);",
     "replacement": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path);"
+  },
+  {
+    "name": "stage2 r3 main session reads recordings",
+    "file": "skills/research/SKILL.md",
+    "anchor": "and don't open the recordings in this session",
+    "replacement": "and read the recordings in this session instead"
+  },
+  {
+    "name": "stage2 r3 search fixtures rejected",
+    "file": "plugin/agents/recorded-researcher.md",
+    "anchor": "a search's is a synthetic `websearch:?q=…` naming the query",
+    "replacement": "any other URL is malformed"
+  },
+  {
+    "name": "stage2 r3 index cited as a source",
+    "file": "skills/research/README.md",
+    "anchor": "It is a table of contents, never a source to cite.",
+    "replacement": "Cite it like any other source."
+  },
+  {
+    "name": "stage2 r3 recorded reader skims the index",
+    "file": "plugin/agents/recorded-researcher.md",
+    "anchor": "read in full every source you use",
+    "replacement": "rely on the index titles"
+  },
+  {
+    "name": "stage2 r3 readme example drops the kind",
+    "file": "skills/research/README.md",
+    "anchor": "retrieved-at: 2026-10-25T14:31:10Z\nkind: search\n",
+    "replacement": "retrieved-at: 2026-10-25T14:31:10Z\n"
   }
 ]

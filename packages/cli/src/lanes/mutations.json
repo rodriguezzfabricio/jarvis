@@ -904,5 +904,125 @@
     "file": "packages/cli/src/lanes/tells.ts",
     "anchor": "some(y => y < 0 || y > 1)",
     "replacement": "some(y => y > 1)"
+  },
+  {
+    "name": "QA backlog 88 worker forwards shell and proxy environment",
+    "file": "packages/cli/src/lanes/desktop-worker.ts",
+    "anchor": "for (const key of ENV_KEYS)",
+    "replacement": "for (const key of Object.keys(process.env).filter(key => key !== \"JARVIS_FIXTURES\"))"
+  },
+  {
+    "name": "QA backlog 89 omits required O_NOFOLLOW",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK",
+    "replacement": "constants.O_RDONLY | constants.O_NONBLOCK"
+  },
+  {
+    "name": "QA backlog 89 skips descriptor regular-file validation",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "const regularFile = (stat: Stats): boolean => stat.isFile();",
+    "replacement": "const regularFile = (_stat: Stats): boolean => true;"
+  },
+  {
+    "name": "QA backlog 89 reopens a source path while copying",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "io.readSync(fd, buffer, 0, buffer.length, position)",
+    "replacement": "readSync(openSync(real, constants.O_RDONLY), buffer, 0, buffer.length, position)"
+  },
+  {
+    "name": "QA backlog 89 ignores source inode changes",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "a.dev === b.dev && a.ino === b.ino",
+    "replacement": "true"
+  },
+  {
+    "name": "QA backlog 89 ignores cumulative byte limits",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > budget.maxBytes - budget.bytes)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 ignores expanded file count limits",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (to !== target && ++budget.files > budget.maxFiles)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 accepts invalid resource limits",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!validLimit(budget.maxBytes) || !validLimit(budget.maxFiles))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 disables the default byte cap",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "options.maxBytes ?? 2 * 1024 ** 3",
+    "replacement": "options.maxBytes ?? Number.MAX_SAFE_INTEGER"
+  },
+  {
+    "name": "QA backlog 89 accepts an in-place source modification",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!sameFile(opened, after) || position !== opened.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 leaks source descriptors",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "} finally { io.closeSync(fd); }",
+    "replacement": "} finally { void fd; }"
+  },
+  {
+    "name": "QA backlog 89 leaves partially materialized output",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "rmSync(target, { recursive: true, force: true }); throw error;",
+    "replacement": "throw error;"
+  },
+  {
+    "name": "QA backlog 89 installer drops copy limits and filesystem seam",
+    "file": "packages/cli/src/lanes/chromium-install.ts",
+    "anchor": "materializeTree(input.sourceBundle, destination, deps.materialize)",
+    "replacement": "materializeTree(input.sourceBundle, destination)"
+  },
+  {
+    "name": "QA backlog 89 follows oscillating Darwin parent symlinks",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (platform === \"darwin\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 skips Linux descriptor path verification",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (platform === \"linux\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 copies on hosts without a secure path check",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (platform !== \"darwin\" && platform !== \"linux\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 source root escapes the approved checkout",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!insideTree(approvedRoot, root))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 omits nonblocking source open",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK",
+    "replacement": "constants.O_RDONLY | constants.O_NOFOLLOW"
+  },
+  {
+    "name": "QA backlog 89 accepts a mismatched Darwin proof descriptor",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "if (!regularFile(bound) || !sameFile(opened, bound))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA backlog 89 leaks Darwin proof descriptors",
+    "file": "packages/cli/src/lanes/materialize.ts",
+    "anchor": "} finally { io.closeSync(proof); }",
+    "replacement": "} finally { void proof; }"
   }
 ]

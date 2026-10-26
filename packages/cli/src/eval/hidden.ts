@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { runGate, type GateCheck, type GateInput, type GateResult, type GateStatus } from "../checks/gate.ts";
@@ -93,7 +93,7 @@ export function installHiddenChecks(projectDir: string, ledger: Ledger, hidden: 
   const store = new ChecksStore(projectDir);
   if (existsSync(store.checksDir)) throw new Error(`checks folder must be fresh: ${store.checksDir}`);
   const source = hashTree(hidden.dir);
-  cpSync(hidden.dir, store.checksDir, { recursive: true, errorOnExist: true, force: false });
+  cpSync(hidden.dir, store.checksDir, { recursive: true, mode: constants.COPYFILE_FICLONE, errorOnExist: true, force: false });
   const copied = store.hashAll();
   const same = Object.keys(source).length === Object.keys(copied).length && Object.entries(source).every(([f, h]) => copied[f] === h);
   if (!same) throw new Error("hidden checks changed while they were being installed");

@@ -39,7 +39,7 @@ describe("review: runner-owned locked QA toolchain", () => {
     const { readQaToolchain, loadBrowserRuntime } = await import("../../packages/cli/src/lanes/toolchain.ts");
     const verified = readQaToolchain(approved.toolchain, repo);
     const runtime = loadBrowserRuntime(verified.manifestPath, verified.manifestHash, repo);
-    expect(await runtime.launch()).toMatchObject({ options: { executablePath: realpathSync(join(approved.toolchain.root, "chromium")) } });
+    expect(await runtime.launch()).toMatchObject({ options: { executablePath: realpathSync(join(approved.toolchain.root, "chromium")), args: ["--single-process"] } });
   });
 
   it("uses only approved runner paths for both CLI and browser tools", async () => {

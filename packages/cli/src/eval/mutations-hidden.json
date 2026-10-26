@@ -1,0 +1,8 @@
+[
+  {
+    "name": "runtime hidden checks reintroduce a plain copy",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "mode: constants.COPYFILE_FICLONE, ",
+    "replacement": ""
+  }
+]

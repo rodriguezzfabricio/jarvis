@@ -1153,6 +1153,12 @@ The sessions' workarounds made it worse. Under `blockReadsOutsideWorkingDirector
 
 Settled:
 - **The runner unpacks the toolchain go.mod asks for, once per run** (`toolchain/go.ts`). It takes the `toolchain` line, else the `go` line, and unpacks that version's toolchain module zip from a fixture module cache in the gate's layout (`cache/download/golang.org/toolchain/@v/`). The toolchain goes in `~/.jarvis-work/toolchains/<task>/<run>` and is removed after the run's sessions.
+- **The runner unpacks that zip itself, as hostile input** (`toolchain/zip.ts`; Codex security review of dd0923f..a299593, highs 1 and 2). It runs outside any sandbox, so it uses no `unzip`, whose `UNZIP`/`UNZIPOPT` options from the runner's environment can turn on `../` paths.
+  - Every entry is listed and checked before anything is written. Its path must lie inside the toolchain module's folder, with no empty, `.` or `..` segment and no control characters or backslashes. It must be a plain file or folder, with no link and no special file. No two paths may fold to the same name, and no file may sit where a folder goes. Zip64, encryption and any method but stored or deflate are refused.
+  - Limits: 256 MiB archive, 20,000 entries and 512 MiB declared expansion. go1.26.10 darwin-arm64 is 69.6 MB, 11,523 entries and 211.7 MB.
+  - Free disk is checked first: if unpacking would go below the 20 GiB floor (decision 63), Go is reported unavailable and nothing is written.
+  - While unpacking, each entry inflates to at most its declared size and what is left of the budget, and must match its CRC-32. Files are created with `O_EXCL | O_NOFOLLOW`. The unpack stops at 300 s; it takes about 23 s at load 17.
+  - Any refusal removes the partial folder and stops the run before a session starts.
 - **Sessions get two folders read-only, and nothing else.** These are the unpacked toolchain and the fixture's module cache, each in `allowRead` and `denyWrite` (the install's read-only mechanism). The environment matches the gate's go-env:
   - the toolchain's `bin` on PATH, after the jarvis launcher;
   - `GOTOOLCHAIN=local`, `GOMODCACHE=<fixture>`, `GOPROXY=off` and `GOSUMDB=off`;

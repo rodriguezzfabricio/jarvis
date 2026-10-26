@@ -21,6 +21,8 @@ import * as decisionWhy from "./decisions/why.ts";
 import * as spec from "./spec/index.ts";
 import { register as registerTriage } from "./triage/command.ts";
 import { register as registerSteer } from "./commands/steer.ts";
+import { register as registerApprove } from "./commands/approve.ts";
+import { register as registerApprovals } from "./commands/approvals.ts";
 import { register as registerStatus } from "./commands/status.ts";
 import { register as registerRun } from "./commands/run.ts";
 import { prepareProductionRun } from "./commands/run-compose.ts";
@@ -215,18 +217,9 @@ program
     process.exitCode = ACT_EXIT[res.status] ?? 8;
   });
 
-for (const decision of ["approve", "reject"] as const) {
-  program
-    .command(decision)
-    .description(`${decision === "approve" ? "Approve" : "Reject"} a pending outside action by its approval id`)
-    .argument("<approval-id>")
-    .requiredOption("--project <id>", "project id")
-    .action((id: string, opts: { project: string }) => {
-      const broker = new Broker({ ledger: Ledger.open(projectDir(opts.project)), project: opts.project, adapters: [], secrets: { get: () => undefined } });
-      broker.decide(id, decision, `${process.env.USER ?? "user"} (terminal)`);
-      console.log(`${decision === "approve" ? "Approved" : "Rejected"} ${id}.`);
-    });
-}
+// jarvis approvals / approve / reject: show the exact pending action before answering it (backlog 115).
+registerApprovals(program);
+registerApprove(program);
 
 program
   .command("broker")

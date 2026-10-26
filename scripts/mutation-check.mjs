@@ -8,20 +8,22 @@
 // file (import graph plus files the tests name, scripts/mutation-select.mjs) against that set's own
 // control; a survivor or an error there is re-run on the full suite, but a catch is kept unconfirmed
 // (a test the selection can't see may still error on the full suite), so a fast run exits 3, never 0.
-// Stage-scoped (--confirm-stage <stage>, decision 94): that stage's mutations and any from an unmapped
-// definition file get confirm mode, the rest fast mode; it exits 0 only if everything is caught and
-// every scoped mutation confirmed (stage map: scripts/mutation-stage.mjs).
+// Stage-scoped (--confirm-stage <stage>, decision 129, which superseded 94's fast pass): runs that stage's
+// mutations and any from an unmapped definition file, all in confirm mode, and no others; it prints how many
+// that is and, once the control run has timed the suite, a wall-time estimate. It exits 0 only if all of
+// those are caught and confirmed (stage map: scripts/mutation-stage.mjs). --confirm, the v1 close, runs all.
 // Usage: node scripts/mutation-check.mjs [--confirm | --confirm-stage 0-1|2|3|4|5|6]   (JARVIS_MUTATIONS=<regex> runs a subset, which exits 4: partial, not the gate;
-//        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1)
+//        JARVIS_MUTATION_JOBS=<n> runs n mutations at once in separate clones, default 1;
+//        JARVIS_MUTATION_PLAN=1 prints the mutations the run would take, clones nothing and exits 5: a plan is no evidence)
 import { execFileSync, spawnSync } from "node:child_process";
 import { globSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classify, skippedIds, summarize, testIds } from "./mutation-classify.mjs";
+import { classify, skippedIds, testIds } from "./mutation-classify.mjs";
 import { jobPlan, runAndRead, runPool, stopAll, suiteEnv } from "./mutation-run.mjs";
 import { buildGraph, collectedFiles, isCandidateTest, judge, relatedTests, subsetControls } from "./mutation-select.mjs";
-import { DEFINITION_GLOBS, confirmFor, parseMode, tally } from "./mutation-stage.mjs";
+import { DEFINITION_GLOBS, confirmFor, definedLine, estimateLine, minutes, parseMode, planLine, planRun, runSummary } from "./mutation-stage.mjs";
 
 const S = "packages/cli/src/harness/claude/settings.ts";
 const A = "packages/cli/src/harness/claude/args.ts";
@@ -42,6 +44,8 @@ const RS = "scripts/review-status.mjs";
 const RR = "scripts/review-run.mjs";
 const DE = "packages/cli/src/harness/claude/desktop-evidence.ts";
 const DK = "scripts/desktop-plugin-check.mjs";
+const MS = "scripts/mutation-stage.mjs";
+const MC = "scripts/mutation-check.mjs";
 
 const mutations = [
   ["failIfUnavailable off", S, "      failIfUnavailable: true,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input", "      failIfUnavailable: false,\n      allowUnsandboxedCommands: false,\n      autoAllowBashIfSandboxed: true,\n      network: {\n        allowedDomains: [...input"],
@@ -141,6 +145,17 @@ const mutations = [
   ["review runner overwrites lane reservation", RR, "`lanes ${lanes.join(',')}\\n`, { flag: 'wx', mode: 0o600 }", "`lanes ${lanes.join(',')}\\n`, { flag: 'w', mode: 0o600 }"],
   ["review runner hides setup failure", RR, "    appendFileSync(join(roundDir, 'status'), 'runner-error\\n');", ""],
   ["review runner takes the last of repeated confirm stages", RR, "  if (stages.length > 1) throw Error('--confirm-stage may be given only once');\n", ""],
+  // Stage scope (decision 129): --confirm-stage runs one stage's mutations on the full suite and nothing else.
+  ["--confirm-stage also runs other stages", MS, '  const scoped = mode.mode === "stage" ? mutations.filter((m) => isScoped(m.at(-1), mode.stage)) : mutations;', "  const scoped = mutations;"],
+  ["stage run leaves out unmapped definition files", MS, "  return s === undefined || s === stage;", "  return s === stage;"],
+  ["stage run takes verdicts from related tests", MS, '  return mode.mode !== "fast";', '  return mode.mode === "confirm";'],
+  ["JARVIS_MUTATIONS reaches into other stages", MS, "  const selected = only ? scoped.filter(([name]) => only.test(name)) : scoped;", "  const selected = only ? mutations.filter(([name]) => only.test(name)) : scoped;"],
+  ["stage summary counts every defined mutation as the stage's", MS, "total: plan.scoped, selected: plan.selected.length", "total: plan.scoped + plan.notRun, selected: plan.selected.length"],
+  // The anchor is split so this entry doesn't match itself: it targets the script that holds it.
+  ["mutation check plans every mode as fast", MC, "const plan = planRun(mutations, mode, " + "only);", 'const plan = planRun(mutations, { mode: "fast" }, only);'],
+  ["review status trusts the stage-scoped confirmed count", RS, "STAGES.includes(stage) && Number(confirmed) === Number(n)", "STAGES.includes(stage)"],
+  ["review status accepts an unknown stage in decision 129's summary", RS, "STAGES.includes(stage) && Number(confirmed) === Number(n)", "Number(confirmed) === Number(n)"],
+  ["review status ignores decision 129's summary line", RS, "const staged = [staged94, staged129].filter(Boolean)", "const staged = [staged94].filter(Boolean)"],
   ["desktop receipt skipped", DE, "if (!result.sessionStart) result.problems.push('Jarvis SessionStart receipt missing');", ""],
   ["desktop tripwire skipped", DE, "if (!result.tripwire) result.problems.push('linked Jarvis tripwire denial missing');", ""],
   ["desktop exact command ignored", DE, "record(block.input).command === expected.probeCommand", "true"],
@@ -271,7 +286,7 @@ const mutations = [
 ];
 // Lane-owned definitions live next to their code (decision 81: mutations arrive as definitions).
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// Each entry's fifth element is where it was defined, which sets its stage (decision 94).
+// Each entry's fifth element is where it was defined, which sets its stage (decisions 94 and 129).
 for (const m of mutations) m.push("inline");
 for (const file of globSync(DEFINITION_GLOBS, { cwd: root }).sort()) {
   for (const m of JSON.parse(readFileSync(join(root, file), "utf8"))) mutations.push([m.name, m.file, m.anchor, m.replacement, file]);
@@ -291,7 +306,18 @@ try {
   console.log(err.message);
   process.exit(2);
 }
-const modeLabel = mode.mode === "confirm" ? "confirm mode" : mode.mode === "stage" ? `stage ${mode.stage} confirmed, the rest in fast mode` : "fast mode (catches on related tests only)";
+const modeLabel = mode.mode === "confirm" ? "confirm mode" : mode.mode === "stage" ? `stage ${mode.stage} only, confirmed on the full suite` : "fast mode (catches on related tests only)";
+// JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
+const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
+// What this run takes: everything, or (--confirm-stage, decision 129) one stage's mutations and no others.
+const plan = planRun(mutations, mode, only);
+const selected = plan.selected;
+if (process.env.JARVIS_MUTATION_PLAN === "1") {
+  console.log(definedLine(mutations));
+  console.log(planLine(plan, mode));
+  for (const [name] of selected) console.log(`run ${name}`);
+  process.exit(5); // a plan is no evidence: never 0
+}
 const started = Date.now();
 
 // Mutations run in disposable clones of the committed revision, never in the working tree, so an
@@ -310,6 +336,7 @@ const sandboxRepo = clones[0];
 process.chdir(sandboxRepo);
 console.log(`mutating a clone of ${execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: sandboxRepo, encoding: "utf8" }).trim()} (uncommitted changes are not included)`);
 if (jobs < requested) console.log(`running ${jobs} jobs, not ${requested}: one full-suite run's worker budget is ${jobs}`);
+if (mode.mode === "stage") console.log(planLine(plan, mode));
 // If the check is interrupted: stop every running suite's process group (TERM, then KILL), wait for
 // them to end, then put back whatever files are mutated and remove the clones (Codex review, 2).
 const current = new Map(); // clone -> [path, original]
@@ -388,18 +415,14 @@ function vitestRelated(files) {
   return new Map(Object.entries(JSON.parse(r.stdout)));
 }
 
-const minutes = (ms) => `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
-// JARVIS_MUTATIONS=<regex> runs only the matching mutations (for iterating; evidence runs use all).
-const only = process.env.JARVIS_MUTATIONS ? new RegExp(process.env.JARVIS_MUTATIONS) : undefined;
-const selected = mutations.filter(([n]) => !only || only.test(n));
-
 /** The whole check after setup; resolves with the exit code. Every job has ended when it settles. */
 async function main() {
   const controls = [];
   const verdicts = [];
   // Fast mode: which test files can observe each mutated file (the reference graph, plus Vitest's own).
+  // Confirm and stage runs take every verdict from the full suite and need no graph.
   const testsFor = new Map();
-  if (mode.mode !== "confirm") {
+  if (!confirmFor(mode)) {
     const tracked = execFileSync("git", ["-c", "core.fsmonitor=false", "ls-files", "-z"], { cwd: sandboxRepo, encoding: "utf8", env: gitEnv }).split("\0").filter(Boolean);
     const graph = buildGraph(tracked, (p) => {
       try {
@@ -419,23 +442,27 @@ async function main() {
     for (const [f, extra] of fromVitest) testsFor.set(f, relatedTests(f, graph, candidates, extra));
   }
 
+  const controlStarted = Date.now();
   const control = await runSuite(sandboxRepo, "control");
+  const controlMs = Date.now() - controlStarted;
   const c = classify(control.proc, control.report, undefined, control.runEnd);
   if (c.kind !== "clean" || control.proc.status !== 0) {
     console.log(`control run is not clean: ${c.kind}: ${c.detail}`);
     return 2;
   }
+  // The control is one full-suite run, which is what each mutation of this run costs: the estimate is the count times it.
+  if (mode.mode === "stage") console.log(estimateLine({ count: selected.length, controlMs, jobs }));
   // The tests the control skipped (an opt-in live test without its environment) must stay skipped, and only those.
   const fullControl = { ids: testIds(control.report), skipped: skippedIds(control.report) };
   controls.push(`control  ${c.detail} [full suite, ${collectedFiles(control.report, sandboxRepo).length} test files]`);
   const subsetControl = subsetControls({ run: (files, clone) => runSuite(clone, "control-subset", files), control: fullControl, onLine: (line) => controls.push(line) });
 
-  const mutate = async (clone, [name, file, from, to, source]) => {
+  const mutate = async (clone, [name, file, from, to]) => {
     const path = join(clone, file);
     const orig = readFileSync(path, "utf8");
     if (!orig.includes(from)) return `ERROR    ${name}: anchor not found in ${file}`;
     const tests = testsFor.get(file) ?? [];
-    const confirm = confirmFor(mode, source);
+    const confirm = confirmFor(mode);
     // The subset's control runs before this clone is mutated, so a control only ever sees unmutated code.
     const ctl = tests.length && !confirm ? await subsetControl(tests, clone) : undefined;
     const tag = name.replace(/\W+/g, "-");
@@ -455,7 +482,7 @@ async function main() {
           return classify(m.proc, m.report, fullControl, m.runEnd);
         },
       });
-      verdicts.push({ kind: k.kind, confirmed: k.confirmed, scoped: confirm });
+      verdicts.push({ kind: k.kind, confirmed: k.confirmed });
       return `${k.kind === "caught" ? "caught  " : k.kind === "survived" ? "SURVIVED" : "ERROR   "} ${name} (${k.detail}) [${k.scope}]`;
     } finally {
       writeFileSync(path, orig);
@@ -477,9 +504,7 @@ async function main() {
   }
   console.log([...controls, ...results].join("\n"));
   console.log(`\nwall time ${minutes(Date.now() - started)} for ${selected.length} mutation(s), ${jobs} job(s), ${modeLabel}`);
-  const t = tally(verdicts, mode);
-  const scope = mode.mode === "stage" ? { stage: mode.stage, confirmed: t.confirmed, fast: t.fast } : undefined;
-  const s = summarize({ total: mutations.length, selected: selected.length, filtered: only !== undefined, results, unconfirmed: t.unconfirmed, scope });
+  const s = runSummary({ mode, plan, filtered: only !== undefined, results, verdicts });
   console.log(`\n${s.line}`);
   return s.exitCode;
 }

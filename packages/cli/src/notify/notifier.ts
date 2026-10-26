@@ -10,8 +10,10 @@ export interface Action {
   label: string;
 }
 export interface ReplyMessage { id: string; text: string; time?: number }
+/** What a publish reported: the server's own time for the message, in Unix seconds, when it gave one. */
+export interface SendReceipt { time?: number }
 export interface Notifier {
-  send(message: Message, actions: readonly Action[]): Promise<void>;
+  send(message: Message, actions: readonly Action[]): Promise<SendReceipt | void>;
   poll(): Promise<ReplyMessage[]>;
 }
 

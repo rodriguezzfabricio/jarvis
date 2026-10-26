@@ -1,0 +1,122 @@
+[
+  {
+    "name": "terminal approval omits action display",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "        out(formatApproval(request));",
+    "replacement": ""
+  },
+  {
+    "name": "non-TTY approval bypasses --yes",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "if (!(seams.isTTY ?? (() => stdin.isTTY === true))())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "TTY approval defaults to yes",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "if (!/^(y|yes)$/i.test(answer.trim()))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "terminal payload skips redaction",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "visibleJson(redactPayload(d.payload))",
+    "replacement": "visibleJson(d.payload)"
+  },
+  {
+    "name": "terminal output exposes URL credentials",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "  return text.replace(/([a-z][a-z0-9+.-]*:\\/\\/)[^\\s/\"<>]+@/gi, \"$1[redacted]@\");",
+    "replacement": "  return text;"
+  },
+  {
+    "name": "terminal approvals ignore ledger tampering",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "  if (!result.ok) throw new LedgerTamperError(\"Approval ledger failed verification; refusing to show or answer requests.\");",
+    "replacement": ""
+  },
+  {
+    "name": "terminal approvals ignore ledger contention",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "  if (result.contended) throw new Error(\"Approvals contended: ledger writers are active; try again shortly.\");",
+    "replacement": ""
+  },
+  {
+    "name": "terminal command invokes action execution",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`, shown);",
+    "replacement": "        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`, shown);\n        await broker.handle({ op: \"spend\", payload: { description: \"fake unwanted execution\" } });"
+  },
+  {
+    "name": "terminal approval shows a payload its hash does not bind",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "if (typeof d.op !== \"string\" || typeof d.payloadHash !== \"string\" || payloadHash(d.op, d.payload) !== d.payloadHash) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "terminal approval does not bind the shown request",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "(terminal)`, shown);",
+    "replacement": "(terminal)`);"
+  },
+  {
+    "name": "terminal approval claims an answer recorded elsewhere",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "out(recorded ? `${done} ${id}.`",
+    "replacement": "out(true ? `${done} ${id}.`"
+  },
+  {
+    "name": "terminal payload redacts the action's target fields",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "  if (TARGET_FIELDS.has(key)) return typeof value === \"string\" ? redactUrlCredentials(value) : value;\n",
+    "replacement": ""
+  },
+  {
+    "name": "terminal target keeps URL credentials",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "return typeof value === \"string\" ? redactUrlCredentials(value) : value;",
+    "replacement": "return value;"
+  },
+  {
+    "name": "terminal free text hides every 32-character run",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "  if (!credentialLike(out)) return out;",
+    "replacement": "  if (!credentialLike(out)) return out.replace(/[A-Za-z0-9_+\\/-]{32,}={0,2}/g, \"[redacted]\");"
+  },
+  {
+    "name": "terminal free text hides all of it for one secret word",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "return credentialLike(words) ? ",
+    "replacement": "return true ? "
+  },
+  {
+    "name": "terminal free text keeps a secret spread over several words",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "return credentialLike(words) ? ",
+    "replacement": "return false ? "
+  },
+  {
+    "name": "terminal free text keeps a JWT",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": ".replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g, \"[redacted]\")",
+    "replacement": ""
+  },
+  {
+    "name": "terminal free text keeps an assigned password",
+    "file": "packages/cli/src/commands/approvals.ts",
+    "anchor": "(\\s*[:=]\\s*)(\"[^\"]*\"|'[^']*'|[^\\s\"',;]+)/gi, \"$1$2[redacted]\");",
+    "replacement": "(\\s*[:=]\\s*)(\"[^\"]*\"|'[^']*'|[^\\s\"',;]+)/gi, \"$1$2$3\");"
+  },
+  {
+    "name": "terminal payload drops invisible characters",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "    (c) => [...Array(c.length).keys()].map((i) => `\\\\u${c.charCodeAt(i).toString(16).padStart(4, \"0\")}`).join(\"\"));",
+    "replacement": "    () => \"\");"
+  },
+  {
+    "name": "terminal payload prints invisible characters raw",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "/(?! )[\\p{Cf}\\p{Zl}\\p{Zp}\\p{Zs}\\p{Co}\\p{Cn}]/gu",
+    "replacement": "/(?!)x/gu"
+  }
+]

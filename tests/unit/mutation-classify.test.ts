@@ -266,27 +266,29 @@ describe("mutation run summary", () => {
   it("still reports misses first when some catches are unconfirmed", () => {
     expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed)"], unconfirmed: 2 })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
   });
-  // Decision 94: --confirm-stage confirms one stage's mutations and runs the rest in fast mode.
-  it("passes a stage-scoped run only when everything was caught, and says what was confirmed", () => {
-    expect(summarize({ total: 5, selected: 5, filtered: false, results: caught(5), unconfirmed: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } })).toEqual({ line: "all 5 mutations caught; stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 0-1)", exitCode: 0 });
+  // Decision 129: --confirm-stage runs one stage's mutations, all on the full suite, and leaves the others' out.
+  it("passes a stage-scoped run only when everything was caught, and says what was run and left out", () => {
+    expect(summarize({ total: 5, selected: 5, filtered: false, results: caught(5), unconfirmed: 0, scope: { stage: "0-1", confirmed: 5, notRun: 2 } })).toEqual({ line: "all 5 mutations caught; stage 0-1: 5 confirmed on the full suite; other stages' mutations not run (decision 129): 2", exitCode: 0 });
   });
   // Codex review of decision 94, critical: JARVIS_MUTATIONS left the stage's other mutations unconfirmed, yet exited 0.
   it("never passes a filtered or incomplete run, whichever mode selected the confirmation", () => {
     const partial = "partial run: 3 of 10 mutations selected, all 3 caught (not a complete proof, not the gate)";
-    expect(summarize({ total: 10, selected: 3, filtered: true, results: caught(3), unconfirmed: 0, scope: { stage: "2", confirmed: 1, fast: 2 } })).toEqual({ line: `${partial}; stage 2: 1 confirmed, 2 caught in fast mode (outside stage 2)`, exitCode: 4 });
+    expect(summarize({ total: 10, selected: 3, filtered: true, results: caught(3), unconfirmed: 0, scope: { stage: "2", confirmed: 3, notRun: 40 } })).toEqual({ line: `${partial}; stage 2: 3 confirmed on the full suite; other stages' mutations not run (decision 129): 40`, exitCode: 4 });
     // --confirm and JARVIS_MUTATION_CONFIRM=1 select the same mode, and a filtered run under it is partial too.
     for (const mode of [parseMode(["--confirm"], {}), parseMode([], { JARVIS_MUTATION_CONFIRM: "1" })]) {
-      const t = tally([{ kind: "caught", confirmed: true, scoped: true }, { kind: "caught", confirmed: true, scoped: true }, { kind: "caught", confirmed: true, scoped: true }], mode);
+      expect(mode).toEqual({ mode: "confirm" });
+      const t = tally([{ kind: "caught", confirmed: true }, { kind: "caught", confirmed: true }, { kind: "caught", confirmed: true }]);
       expect(summarize({ total: 10, selected: 3, filtered: true, results: caught(3), unconfirmed: t.unconfirmed })).toEqual({ line: partial, exitCode: 4 });
     }
     // Incomplete without a filter (fewer ran than were declared) is partial as well.
     expect(summarize({ total: 10, selected: 9, filtered: false, results: caught(9) }).exitCode).toBe(4);
+    expect(summarize({ total: 10, selected: 9, filtered: false, results: caught(9), scope: { stage: "2", confirmed: 9, notRun: 40 } }).exitCode).toBe(4);
   });
-  it("fails a stage-scoped run on a survivor outside the stage", () => {
-    expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed) [full suite, after 2 test files survived]"], unconfirmed: 0, scope: { stage: "3", confirmed: 1, fast: 1 } })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
+  it("fails a stage-scoped run on a survivor in the stage", () => {
+    expect(summarize({ total: 3, selected: 3, filtered: false, results: [...caught(2), "SURVIVED m2 (all tests passed) [full suite, confirm mode]"], unconfirmed: 0, scope: { stage: "3", confirmed: 2, notRun: 9 } })).toEqual({ line: "1 mutation(s) not caught", exitCode: 1 });
   });
-  it("never passes a stage-scoped run with a scoped catch on related tests only", () => {
-    const s = summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 1, scope: { stage: "2", confirmed: 1, fast: 1 } });
+  it("never passes a stage-scoped run with a catch on related tests only", () => {
+    const s = summarize({ total: 3, selected: 3, filtered: false, results: caught(3), unconfirmed: 1, scope: { stage: "2", confirmed: 2, notRun: 9 } });
     expect(s).toEqual({ line: "all 3 ran, 1 of stage 2's mutations caught on related tests only; not confirmed on the full suite", exitCode: 3 });
   });
   it("passes only when every catch is confirmed", () => {

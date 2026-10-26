@@ -170,8 +170,8 @@
   {
     "name": "review UI gate drops Impeccable URL scan",
     "file": "packages/cli/src/lanes/selection.ts",
-    "anchor": "[\"impeccable-url\", \"axe\", \"playwright\"]",
-    "replacement": "[\"axe\", \"playwright\"]"
+    "anchor": "[\"impeccable-url\", \"design-browser\", \"axe\", \"playwright\"]",
+    "replacement": "[\"design-browser\", \"axe\", \"playwright\"]"
   },
   {
     "name": "review Expo dependency misclassifies web path",

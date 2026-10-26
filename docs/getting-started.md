@@ -92,7 +92,8 @@ From `jarvis --help` today:
 | `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
 | `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
-| `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
+| `jarvis approvals [--project <id>] [--json]` | Lists pending approvals, read-only: id, operation, the broker's summary, payload hash prefix, when and which task asked |
+| `jarvis approve <id> [--yes]` / `jarvis reject <id> [--yes]` | Prints the full pending action (secret-looking values redacted, targets shown) and its payload hash, then asks `[y/N]`; without a terminal it needs `--yes`. The project defaults to `JARVIS_PROJECT`, then this repository (`--project <id>` overrides) |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
 | `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |

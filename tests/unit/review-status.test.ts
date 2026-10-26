@@ -117,12 +117,10 @@ describe("review status is read-only, advisory and conservative", () => {
   });
 
   // Round 18, lane D: a successful --confirm-stage summary was read as "missing positive summary".
-  it("accepts the summarizer's stage-scoped success line, and checks its counts and stage", () => {
+  // Decision 94's line stays valid: historical rounds (stage0-18 and later) were written in that format and are never downgraded.
+  it("still accepts decision 94's stage-scoped success line from historical rounds, and checks its counts and stage", () => {
     const f = fixture();
-    const results = Array.from({ length: 5 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
-    const s = summarize({ total: 5, selected: 5, filtered: false, results, unconfirmed: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } });
-    expect(s.exitCode).toBe(0);
-    writeFileSync(join(f.evidence, "mutation-check.log"), `caught   m0 (x)\n\n${s.line}\nexit 0\n`);
+    writeFileSync(join(f.evidence, "mutation-check.log"), "caught   m0 (x)\n\nall 5 mutations caught; stage 0-1: 3 confirmed, 2 caught in fast mode (outside stage 0-1)\nexit 0\n");
     expect(read(f.base)).toMatchObject({ state: "finished", result: "PASS", mutations: { caught: 5, notCaught: 0, scope: { stage: "0-1", confirmed: 3, fast: 2 } } });
     for (const bad of [
       "all 5 mutations caught; stage 0-1: 3 confirmed, 3 caught in fast mode (outside stage 0-1)",
@@ -133,6 +131,28 @@ describe("review status is read-only, advisory and conservative", () => {
       writeFileSync(join(f.evidence, "mutation-check.log"), `${bad}\nexit 0\n`);
       expect(read(f.base).result, bad).toBe("FAIL");
     }
+  });
+
+  // Decision 129: a stage review runs its own stage's mutations only, so the line names the stage and the count left out.
+  it("accepts the summarizer's stage-scoped success line, and checks its counts and stage", () => {
+    const f = fixture();
+    const results = Array.from({ length: 5 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
+    const s = summarize({ total: 5, selected: 5, filtered: false, results, unconfirmed: 0, scope: { stage: "0-1", confirmed: 5, notRun: 7 } });
+    expect(s.exitCode).toBe(0);
+    writeFileSync(join(f.evidence, "mutation-check.log"), `caught   m0 (x)\n\n${s.line}\nexit 0\n`);
+    expect(read(f.base)).toMatchObject({ state: "finished", result: "PASS", mutations: { caught: 5, notCaught: 0, scope: { stage: "0-1", confirmed: 5, notRun: 7 } } });
+    for (const bad of [
+      "all 5 mutations caught; stage 0-1: 3 confirmed on the full suite; other stages' mutations not run (decision 129): 7",
+      "all 5 mutations caught; stage 9: 5 confirmed on the full suite; other stages' mutations not run (decision 129): 7",
+      "all 5 mutations caught; stage 0-1: 5 confirmed on the full suite; other stages' mutations not run (decision 129)",
+      "partial run: 5 of 9 mutations selected, all 5 caught (not a complete proof, not the gate); stage 0-1: 5 confirmed on the full suite; other stages' mutations not run (decision 129): 7",
+    ]) {
+      writeFileSync(join(f.evidence, "mutation-check.log"), `${bad}\nexit 0\n`);
+      expect(read(f.base).result, bad).toBe("FAIL");
+    }
+    // A miss reported after the success line wins, as for the plain line.
+    writeFileSync(join(f.evidence, "mutation-check.log"), `${s.line}\n1 mutation(s) not caught\nexit 0\n`);
+    expect(read(f.base)).toMatchObject({ result: "FAIL", mutations: { notCaught: 1 } });
   });
 
   it("requires a positive mutation summary and accepts non-blocking findings", () => {

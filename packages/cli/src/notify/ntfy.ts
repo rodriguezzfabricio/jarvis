@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { limitText, shouldSend, type Action, type Message, type Notifier, type ReplyMessage } from "./notifier.ts";
+import { limitText, shouldSend, type Action, type Message, type Notifier, type ReplyMessage, type SendReceipt } from "./notifier.ts";
 
 export interface NtfyOptions {
   baseUrl: string;
@@ -13,6 +13,9 @@ export interface NtfyOptions {
 const Event = z.object({ event: z.literal("message"), id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), message: z.string(), time: z.number().int().nonnegative().optional() });
 /** The most a poll reads. ntfy messages are under 4 KB; a body this large is a broken or hostile server. */
 export const MAX_POLL_BYTES = 4 * 1024 * 1024;
+/** A publish response is one message event, under 4 KB plus its actions. */
+const MAX_PUBLISH_BYTES = 64 * 1024;
+const PublishTime = z.object({ time: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
 
 /** Reads at most `max` bytes, then cancels the body. The error names the cap, never any content. */
 async function readCapped(response: Response, max: number): Promise<string> {
@@ -65,21 +68,30 @@ export class NtfyNotifier implements Notifier {
   }
   get lastId(): string { return this.cursor; }
 
-  async send(message: Message, actions: readonly Action[]): Promise<void> {
+  async send(message: Message, actions: readonly Action[]): Promise<SendReceipt> {
     if (actions.length > 3) throw new Error("ntfy permits at most 3 actions");
     const buttons = actions.map((action) => {
       const a = Button.parse(action);
       return { action: "http", label: a.label, url: new URL(this.replyTopic, this.base).href, method: "POST", body: `${a.answer}:${a.requestId}:${a.nonce}` };
     });
-    if (!shouldSend(message)) return;
+    if (!shouldSend(message)) return {};
     const response = await fetch(this.base, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(this.timeoutMs),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ topic: this.topic, message: limitText(message.text), actions: buttons }),
     });
     // Never include the URL (topic capability) or response body in errors.
-    await response.body?.cancel();
-    if (!response.ok) throw new Error(`ntfy publish HTTP ${response.status}`);
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`ntfy publish HTTP ${response.status}`);
+    }
+    // The publish happened. Its server `time` is ntfy's clock for the send (decision 130); anything
+    // unreadable only means no time, never a failed send.
+    const body = await readCapped(response, MAX_PUBLISH_BYTES).catch(() => "");
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { return {}; }
+    const time = PublishTime.safeParse(parsed);
+    return time.success ? { time: time.data.time } : {};
   }
 
   async poll(): Promise<ReplyMessage[]> {

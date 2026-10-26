@@ -42,7 +42,7 @@ function setup() {
   const warnings: string[] = [];
   const make = () => runApprovals({ configPath, project: "test", ledger, broker, taskAllowlists: [[]], createNotifier, now: () => 100_500,
     warn: (text) => warnings.push(text), timeoutMs: 20, pollMs: 60_000 });
-  const tap = (id: string) => { const a = sent.find((s) => s.actions.length)!.actions[0]!; topic.push({ id, text: `approve:${a.requestId}:${a.nonce}`, time: 102 }); };
+  const tap = (id: string) => { const notification = sent.find((s) => s.actions.length); expect(notification).toBeDefined(); const a = notification!.actions[0]!; topic.push({ id, text: `approve:${a.requestId}:${a.nonce}`, time: 102 }); };
   const approvals = () => ledger.entries().filter((e) => e.kind === "approval");
   const errors = () => ledger.entries().filter((e) => e.kind === "notify" && (e.data as { phase?: string }).phase === "approval-error");
   return { ledger, broker, sent, hooks, warnings, make, tap, approvals, errors, polls: () => polls };

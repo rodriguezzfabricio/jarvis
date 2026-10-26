@@ -37,6 +37,7 @@ it.each([
   serve(() => `${body}\n`);
   const n = notifier();
   const error = await n.poll().then(() => undefined, (e: unknown) => e as Error);
+  expect(error).toBeInstanceOf(Error);
   expect(error?.message).toMatch(/^ntfy poll returned (malformed JSON|a malformed message event)$/);
   expect(error?.message).not.toContain("private-capability");
   expect(n.lastId).toBe("saved");

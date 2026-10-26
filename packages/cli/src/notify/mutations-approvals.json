@@ -14,13 +14,13 @@
   {
     "name": "phone reply accepts an unsent request",
     "file": "packages/cli/src/notify/replies.ts",
-    "anchor": "  if (!sent || typeof data(sent).sentAt !== \"number\") return \"not-sent\";",
-    "replacement": "  if (!sent || typeof data(sent).sentAt !== \"number\") return undefined;"
+    "anchor": "  if (!sent || typeof sent.sentAt !== \"number\") return \"not-sent\";",
+    "replacement": "  if (!sent || typeof sent.sentAt !== \"number\") return undefined;"
   },
   {
-    "name": "phone reply accepts a pre-send or missing timestamp",
+    "name": "phone reply accepts a missing timestamp",
     "file": "packages/cli/src/notify/replies.ts",
-    "anchor": "  if (!Number.isSafeInteger(time) || time! * 1000 <= (data(sent).sentAt as number)) return \"before-send\";",
+    "anchor": "  if (!Number.isSafeInteger(time) || time! < 0) return \"before-send\";",
     "replacement": ""
   },
   {
@@ -84,9 +84,9 @@
     "replacement": "id: z.string().min(1)"
   },
   {
-    "name": "phone inbox records the reply topic's other messages",
+    "name": "phone inbox consumes steer without opting into inbox routing",
     "file": "packages/cli/src/notify/replies.ts",
-    "anchor": "      if (this.approvalProject !== undefined && (parsed.kind === \"steer\" || parsed.requestId.startsWith(\"intake-\"))) return { status: \"ignored\", reason: \"not-approval\" };",
+    "anchor": "      if (this.approvalProject !== undefined && parsed.kind === \"steer\" && !this.steerInbox) return { status: \"ignored\", reason: \"not-approval\" };",
     "replacement": ""
   }
 ]

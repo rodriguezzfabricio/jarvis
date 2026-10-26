@@ -141,15 +141,25 @@ function inspectRound(root, name) {
   if (installExit !== null && installExit !== 0) problems.push(`install exited ${installExit}`);
   const install = { exitCode: installExit, detail: installLog.error ?? "informational; historical runners omit an install exit footer" };
   const mutationText = logs.get("mutation-check").text ?? "";
-  // The plain success line, or --confirm-stage's (decision 94): "all N mutations caught; stage S: X
-  // confirmed, Y caught in fast mode (outside stage S)", valid only for a known stage with X + Y = N.
+  // The plain success line, or --confirm-stage's. Decision 129's: "all N mutations caught; stage S: X confirmed
+  // on the full suite; other stages' mutations not run (decision 129): Z", valid only for a known stage with
+  // X = N. Decision 94's, which rounds 18 and later wrote and which stays valid: "all N mutations caught;
+  // stage S: X confirmed, Y caught in fast mode (outside stage S)", valid only for a known stage with X + Y = N.
   const lastOf = (re) => [...mutationText.matchAll(re)].at(-1);
   const plain = lastOf(/^all (\d+) mutations caught\s*$/gm);
-  const staged = lastOf(/^all (\d+) mutations caught; stage (\S+): (\d+) confirmed, (\d+) caught in fast mode \(outside stage (\S+)\)\s*$/gm);
+  const staged94 = lastOf(/^all (\d+) mutations caught; stage (\S+): (\d+) confirmed, (\d+) caught in fast mode \(outside stage (\S+)\)\s*$/gm);
+  const staged129 = lastOf(/^all (\d+) mutations caught; stage (\S+): (\d+) confirmed on the full suite; other stages' mutations not run \(decision 129\): (\d+)\s*$/gm);
+  const staged = [staged94, staged129].filter(Boolean).sort((a, b) => a.index - b.index).at(-1);
   const useStaged = staged && (!plain || staged.index > plain.index);
   let caught = useStaged ? null : plain;
   let scope;
-  if (useStaged) {
+  if (useStaged && staged === staged129) {
+    const [, n, stage, confirmed, notRun] = staged;
+    if (STAGES.includes(stage) && Number(confirmed) === Number(n)) {
+      caught = staged;
+      scope = { stage, confirmed: Number(confirmed), notRun: Number(notRun) };
+    } else problems.push("Invalid stage-scoped mutation summary");
+  } else if (useStaged) {
     const [, n, stage, confirmed, fast, outside] = staged;
     if (STAGES.includes(stage) && outside === stage && Number(confirmed) + Number(fast) === Number(n)) {
       caught = staged;

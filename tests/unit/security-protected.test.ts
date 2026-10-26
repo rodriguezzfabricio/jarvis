@@ -87,7 +87,7 @@ it("provides a read-only reviewer skill and realistic security evals", async () 
   expect(skill).toContain("Do not change source, checks, scanner rules, ignore lists or evidence.");
   expect(skill).toContain("OWASP Top 10:2025");
   expect(skill).toContain("hostile-content trial");
-  expect(JSON.parse(readFileSync(new URL("evals/evals.json", path), "utf8")).evals.length).toBeGreaterThanOrEqual(3);
+  expect(JSON.parse(readFileSync(new URL("../../evals/skills/security/evals.json", import.meta.url), "utf8")).evals.length).toBeGreaterThanOrEqual(3);
 });
 
 it("captures only sanitized scanner output through the installed worker", async () => {

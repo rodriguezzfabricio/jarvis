@@ -28,7 +28,7 @@ it("reports design lint findings with nonzero exit and makes no evidence claim",
 it("ships QA skill evals for the real targets, unavailable tools and the negative control", () => {
   const skill = readFileSync("skills/qa/SKILL.md", "utf8");
   expect(skill).toMatch(/^---\nname: qa\ndescription:/);
-  const evals = JSON.parse(readFileSync("skills/qa/evals/evals.json", "utf8"));
+  const evals = JSON.parse(readFileSync("evals/skills/qa/evals.json", "utf8"));
   expect(evals.skill_name).toBe("qa");
   expect(evals.evals.length).toBeGreaterThanOrEqual(4);
   for (const e of evals.evals) {

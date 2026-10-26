@@ -251,7 +251,7 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
   it("includes every bypass probe in reviewer instructions, architect guidance and a distinct eval", () => {
     const prompt = buildChecksReviewPrompt(spec, readAuthoredChecks(workspace().p)).split("\n").slice(0, -1).join("\n");
     const skill = readFileSync(new URL("../../skills/architect/SKILL.md", import.meta.url), "utf8");
-    const evals = JSON.parse(readFileSync(new URL("../../skills/architect/evals/evals.json", import.meta.url), "utf8")).evals as { prompt: string }[];
+    const evals = JSON.parse(readFileSync(new URL("../../evals/skills/architect/evals.json", import.meta.url), "utf8")).evals as { prompt: string }[];
     for (const probe of ["createRequire(import.meta.url)", 'new Function("return imp"+"ort(p)")', ".py", "fixtures/answers.txt", 'stdio: ["ignore","inherit","inherit"]', "node src/server.mjs &", "from src.app import f", "only echoes the nonce"]) {
       expect(prompt).toContain(probe); expect(skill).toContain(probe);
       expect(evals.some((e) => e.prompt.includes(probe))).toBe(true);

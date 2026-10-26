@@ -57,10 +57,10 @@ describe("intake keeps the guidance the lane's compression dropped", () => {
 });
 
 describe("the taste offer never holds the round (decision 86)", () => {
-  it("offers it in its own message and keeps working without waiting", () => {
+  it("offers it within the budget and keeps design moving", () => {
     const inputs = section(read("skills/intake/SKILL.md"), "Inputs");
-    expect(inputs).toContain("never end the turn on it");
-    expect(inputs).toContain("send the round without a profile");
+    expect(inputs).toContain("Do not wait for a profile before framing the job");
+    expect(inputs).toContain("Draft the design directions without a profile");
   });
 });
 
@@ -78,6 +78,7 @@ describe("bundled skill templates are the canonical templates", () => {
     ["skills/spec/templates/spec.md", "templates/spec.md"],
     ["skills/design/templates/DESIGN.md", "templates/DESIGN.md"],
   ])("%s matches %s", (bundled, canonical) => {
+    // Byte for byte, comments included (decision 120): a comment's example is what the session reads.
     expect(read(bundled)).toBe(read(canonical));
   });
 });

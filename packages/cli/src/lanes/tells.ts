@@ -16,7 +16,6 @@ const RULES: { rule: TellRule; pattern: RegExp; message: string }[] = [
   { rule: "eyebrow", pattern: /<(?:p|span|div)\b[^>]*class(?:Name)?=["'][^"']*\beyebrow\b[^"']*["'][^>]*>\s*[A-Z][A-Z\s\d!]+</g, message: "Template eyebrow: keep only meaningful structure" },
   { rule: "meta-line", pattern: /\bA\s+·\s+B\s+·\s+C\b/g, message: "Template meta line: give these words a clear job" },
   { rule: "flat-black", pattern: /#(?:000000|111111|000|111)\b/gi, message: "Use the direction's tinted neutrals" },
-  { rule: "bouncy-easing", pattern: /cubic-bezier\(\s*[\d.]+\s*,\s*-?[\d.]+\s*,\s*[\d.]+\s*,\s*(?:1\.[1-9]\d*|[2-9][\d.]*)\s*\)/gi, message: "Avoid bouncy fallback motion" },
   { rule: "aurora", pattern: /\b(?:class(?:Name)?=["'][^"']*\baurora\b|animation\s*:\s*aurora\b)/gi, message: "Aurora decoration needs a brief-grounded reason" },
   { rule: "submit-copy", pattern: /<(?:button|Button)\b[^>]*>\s*Submit\s*</gi, message: "Name the action on the button" },
   { rule: "apologetic-error", pattern: /<[^>]*(?:role=["']alert["']|(?:class(?:Name)?|data-state)=["'][^"']*error[^"']*["'])[^>]*>\s*(?:Sorry|We(?:'|’)?re sorry|Oops)\b/gi, message: "Explain the error and recovery without apologetic validation" },
@@ -47,6 +46,9 @@ export function detectAiTells(sources: readonly SourceFile[], options: TellOptio
 }
 
 function structuralTells(text: string, add: (offset: number, rule: TellRule, message: string) => void): void {
+  for (const match of text.matchAll(/cubic-bezier\(\s*([+-]?(?:\d*\.)?\d+)\s*,\s*([+-]?(?:\d*\.)?\d+)\s*,\s*([+-]?(?:\d*\.)?\d+)\s*,\s*([+-]?(?:\d*\.)?\d+)\s*\)/gi)) {
+    if ([Number(match[2]), Number(match[4])].some(y => y < 0 || y > 1)) add(match.index, "bouncy-easing", "Avoid bouncy fallback motion");
+  }
   for (const match of text.matchAll(/(?:linear|radial|conic)-gradient\([^;{}]+\)|(?:bg-)?gradient[^\n<]+/gi)) {
     if (purpleGradient(match[0])) add(match.index, "purple-gradient", "Use a functional accent instead of a purple/indigo gradient");
   }

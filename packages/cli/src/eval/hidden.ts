@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { runGate, type GateCheck, type GateInput, type GateResult, type GateStatus } from "../checks/gate.ts";
 import { ChecksStore } from "../checks/store.ts";
@@ -86,6 +87,23 @@ export function loadHiddenChecks(dir: string): HiddenChecks {
 }
 
 /**
+ * Copies a hidden folder that holds no symlinks (files() refuses them). On macOS `cp -c` clones on APFS,
+ * so the 1 GB module cache of a Go task or the 2.8 GB of task 06's node fixtures costs no disk per grade
+ * folder, and a write on either side leaves the other alone. cp falls back to an ordinary copy by itself
+ * off APFS or across volumes. Node can't clone here: cpSync ignores `mode: COPYFILE_FICLONE` for a tree and
+ * copyFileSync does a full copy with it on macOS (Node 24.21, measured on APFS). If cp fails, whatever it
+ * left is removed and Node copies the tree instead.
+ */
+function copyHiddenTree(source: string, destination: string): void {
+  mkdirSync(dirname(destination), { recursive: true });
+  if (process.platform === "darwin") {
+    try { execFileSync("/bin/cp", ["-cR", source, destination], { stdio: "ignore" }); return; }
+    catch { rmSync(destination, { recursive: true, force: true }); }
+  }
+  cpSync(source, destination, { recursive: true, errorOnExist: true, force: false });
+}
+
+/**
  * Copies hidden checks into a fresh runner-owned project folder and approves them (checks.lock plus a
  * checks_approved ledger entry), so every gate re-verifies their hashes before it runs (decision 15).
  */
@@ -93,7 +111,7 @@ export function installHiddenChecks(projectDir: string, ledger: Ledger, hidden: 
   const store = new ChecksStore(projectDir);
   if (existsSync(store.checksDir)) throw new Error(`checks folder must be fresh: ${store.checksDir}`);
   const source = hashTree(hidden.dir);
-  cpSync(hidden.dir, store.checksDir, { recursive: true, errorOnExist: true, force: false });
+  copyHiddenTree(hidden.dir, store.checksDir);
   const copied = store.hashAll();
   const same = Object.keys(source).length === Object.keys(copied).length && Object.entries(source).every(([f, h]) => copied[f] === h);
   if (!same) throw new Error("hidden checks changed while they were being installed");

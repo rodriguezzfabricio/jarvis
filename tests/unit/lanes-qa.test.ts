@@ -138,7 +138,7 @@ describe("runner-owned browser observations", () => {
     expect(events.slice(0, 5)).toEqual(["goto", "tree", "axe-world", "axe", "screenshot"]);
     expect(result.pages.map(p => p.width)).toEqual([375, 768, 1440]);
     expect(result.pages[0]).toMatchObject({ accessibilityTree: "- button Record observation", axe: { violations: [{ impact: "serious", id: "color-contrast" }] }, screenshot: Buffer.from("fake-image").toString("base64") });
-    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.close).toHaveBeenCalledTimes(3); // one browser per viewport (--single-process, lanes-toolchain.test.ts)
     expect(page.close).toHaveBeenCalledTimes(3);
   });
 

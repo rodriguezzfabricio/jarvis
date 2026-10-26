@@ -1,3 +1,5 @@
+import type { SessionSkill } from "./session-skills.ts";
+
 export interface TaskPromptInput {
   taskId: string;
   goal: string;
@@ -16,6 +18,8 @@ export interface RunHeaderInput extends TaskPromptInput {
   specVersion: number;
   /** Teach-me mode (decision 32), from readMode(projectDir) in commands/mode.ts. Quiet when absent. */
   mode?: "explain" | "quiet";
+  /** The skills the session follows, as text (decision 114: task sessions have no Skill tool). */
+  skills?: readonly SessionSkill[];
 }
 
 export function taskNotesPath(taskId: string): string {
@@ -48,5 +52,14 @@ export function buildRunHeader(input: RunHeaderInput): string {
     "Notes are claims, not evidence. Only the runner makes evidence after this session ends, on a fresh checkout of the committed revision.",
     "Only the runner commits candidates and runs protected checks. Do not modify check definitions, evidence or ledger files.",
     ...(input.mode === "explain" ? ["Teach-me mode is on: in your notes, add a short \"Why\" line for each choice that isn't obvious (what you chose, why, and the alternative you passed over). These are claims like the rest of the notes."] : []),
+    ...(input.skills?.length ? [skillsBlock(input.skills)] : []),
   ].join("\n") + "\n";
+}
+
+function skillsBlock(skills: readonly SessionSkill[]): string {
+  return [
+    "",
+    `This session has no Skill tool, so the runner includes the Jarvis skills it follows: ${skills.map((s) => s.name).join(", ")}. Follow build throughout. Follow debug as well for a bug report, a repair attempt, or any failure you can't explain. Where a skill says \"the build skill\" or \"the debug skill\", it means the text below.`,
+    ...skills.map((s) => `<skill name="${s.name}">\n${s.text}\n</skill>`),
+  ].join("\n\n");
 }

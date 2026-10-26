@@ -69,6 +69,10 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     expect(sessionCalls({ scenarioPath: s.scenarioPath }).map((c) => [c.session, c.envelope, c.tools])).toEqual([["review", [], "Read,Glob,Grep"]]);
     const results = reviewResults(s.calls[0]!.projectDir);
     expect(results.map((d) => [d.status, d.reviews.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
+    // Decision 114: a bug task's reviewer checks the fix against the report: every path, new inputs, the layer.
+    const reviewPrompt = s.reviewerSpecs[0]!.args[s.reviewerSpecs[0]!.args.indexOf("-p") + 1]!;
+    expect(reviewPrompt).toContain("fixes a reported bug");
+    expect(reviewPrompt).toContain("still shows the reported symptom");
 
     // Codex is never used in evals: its read-only sandbox doesn't confine reads (the canary would have read a hidden file).
     expect(existsSync(s.codexMarker)).toBe(false);

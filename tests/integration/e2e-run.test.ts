@@ -78,12 +78,15 @@ describe("e2e: jarvis run on the production composition", { timeout: 600_000 }, 
 
     // Fabricio hears about the blocked task and the finished run; nothing failed to deliver.
     // The pending send also reaches the phone as an approval request (decision 117), naming the request and the action.
-    expect(sent.map((m) => m.kind)).toEqual(["blocked", "approval", "finished"]);
-    expect(sent[0]!.text).toMatch(/T3.*blocked.*required check unavailable: lint/);
+    // The approval poller runs beside the loop, so its notice may come before or after the blocked one; the finish is last.
+    expect([...sent.map((m) => m.kind)].sort()).toEqual(["approval", "blocked", "finished"]);
+    expect(sent.at(-1)!.kind).toBe("finished");
+    const byKind = (k: string) => sent.find((m) => m.kind === k)!.text;
+    expect(byKind("blocked")).toMatch(/T3.*blocked.*required check unavailable: lint/);
     const req = requests[0]!.data as { approvalId: string; payloadHash: string };
-    expect(sent[1]!.text).toContain(`request ${req.approvalId}, payload ${req.payloadHash.slice(0, 12)}`);
-    expect(sent[1]!.text).toMatch(/approve email\.send\?.*jane@example\.com/);
-    expect(sent[2]!.text).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
+    expect(byKind("approval")).toContain(`request ${req.approvalId}, payload ${req.payloadHash.slice(0, 12)}`);
+    expect(byKind("approval")).toMatch(/approve email\.send\?.*jane@example\.com/);
+    expect(byKind("finished")).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
     expect(warnings).toEqual([]);
 
     // The broker was the run's: no socket name is left behind.

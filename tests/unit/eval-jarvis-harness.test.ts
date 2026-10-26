@@ -46,6 +46,11 @@ describe("eval jarvis: the production harness on the fake claude", () => {
     expect(spec.args).toContain("--restricted");
     expect(spec.args).toContain("--strict-mcp-config");
     expect(spec.args).toContain("--no-session-persistence");
+    // Decision 114: the eval arm runs the Jarvis plugin, as `jarvis run` does (its tripwire and SessionStart hooks),
+    // from a runner-owned copy, so the arm measures what production runs.
+    const pluginDir = spec.args[spec.args.indexOf("--plugin-dir") + 1];
+    expect(spec.args).toContain("--plugin-dir");
+    expect(pluginDir?.startsWith(`${fx.jarvisHome}/`)).toBe(true);
     expect(settings.sandbox).toMatchObject({ failIfUnavailable: true, allowUnsandboxedCommands: false, network: { allowedDomains: ["registry.npmjs.org", "proxy.golang.org"] } });
     expect(settings.sandbox.filesystem.denyRead).toContain(fx.jarvisHome);
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${fx.jarvisHome}/**)`, "WebSearch", "WebFetch"]));

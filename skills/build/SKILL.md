@@ -60,6 +60,7 @@ Under the session's non-interactive permission mode, compound shell commands are
 - **Repeating a command over many items?** Make the separate calls. If there are too many, write a short script with the file tools to `.jarvis/scratch/<name>.sh` and run it as one command: `sh .jarvis/scratch/<name>.sh`. The script obeys every rule in this skill (nothing outside the worktree, no network the allowlist doesn't permit). Delete it when you're done.
 - **Long output goes to a file** through the tool's own option (a reporter or output-file flag), not shell redirection. Read only the part you need, and keep your context for the work.
 - **A refused command is the policy, not a puzzle:** never retry variations of it until one slips through. Split it into plain commands. If a plain command is refused, it's off limits: note it and do without. The runner logs every refusal.
+- **A refusal refuses that one command, not the tool.** The message can read as if Bash itself were off ("Permission to use Bash has been denied…"). It isn't: the next plain command runs. Never stop running the tests or a reproduction because one command was refused. Split it and go on.
 
 ## Stay inside the worktree
 

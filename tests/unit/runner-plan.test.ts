@@ -131,6 +131,11 @@ describe("planner plans", () => {
     expect(plan.tasks[0]).toMatchObject({ id: "T1", goal: "Fix the filter", acceptanceCriteria: [], storyIds: [], requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["src/filter.ts"] });
     expect(plan.tasks[0]!.exitCondition).not.toBe("");
   });
+  it("asks a bug fix to cover every path of the reported symptom, not one instance (decision 114)", () => {
+    const exit = singleTaskPlan({ type: "bug" }, "Fix the filter", [{ name: "unit" }]).tasks[0]!.exitCondition;
+    for (const part of ["reproduced", "root cause", "every path", "caller", "input form", "configuration", "entrypoint", "unit check", "code review"]) expect(exit).toContain(part);
+    expect(singleTaskPlan({ type: "refactor" }, "Refactor", [{ name: "unit" }]).tasks[0]!.exitCondition).not.toContain("every path");
+  });
   it("requires the installed unit check before constructing a single task", () => {
     expect(() => singleTaskPlan({ type: "bug" }, "Fix", [])).toThrow(/installed.*unit|unit.*installed/i);
     expect(() => singleTaskPlan({ type: "refactor" }, "Fix", [{ name: "ac1" }])).toThrow(/installed.*unit|unit.*installed/i);

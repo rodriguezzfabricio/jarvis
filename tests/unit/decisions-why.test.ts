@@ -1,24 +1,38 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { shortTmp } from "../helpers.ts";
+import { register } from "../../packages/cli/src/decisions/why.ts";
 import { DecisionRegister } from "../../packages/cli/src/decisions/store.ts";
 import type { DecisionInput } from "../../packages/cli/src/decisions/format.ts";
 
 const root = shortTmp("jtw-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
-const whyUrl = new URL("../../packages/cli/src/decisions/why.ts", import.meta.url).href;
-const commanderUrl = pathToFileURL(fileURLToPath(new URL("../../packages/cli/node_modules/commander/index.js", import.meta.url))).href;
-const script = `import { Command } from ${JSON.stringify(commanderUrl)};
-import { register } from ${JSON.stringify(whyUrl)};
-const program = new Command().name("jarvis");
-register(program);
-await program.parseAsync(process.argv.slice(1), { from: "user" });`;
+const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 let n = 0;
 function repo() { const dir = join(root, `repo ${++n}`); mkdirSync(dir); writeFileSync(join(dir, "intake.md"), "# Intake\n"); return dir; }
-function run(args: string[], cwd: string) { return spawnSync(process.execPath, ["--input-type=module", "-e", script, "--", ...args], { cwd, encoding: "utf8" }); }
+/**
+ * `jarvis ...args` run from `cwd`: the command's own registration on a fresh Commander program, in this process (it was a
+ * fresh Node process per call, about 0.27 s of CPU each). Commander's exitOverride turns the exit the command asks for into a
+ * thrown error that carries its exit code; stdout and stderr are what it would write. The command reads the working folder
+ * when it registers (the default of --repo), so the folder is changed first.
+ */
+function run(args: string[], cwd: string) {
+  let stdout = "", stderr = "", status = 0;
+  const before = process.cwd();
+  process.chdir(cwd);
+  try {
+    const program = new Command();
+    program.name("jarvis"); program.exitOverride(); program.configureOutput({ writeOut: (text) => { stdout += text; }, writeErr: (text) => { stderr += text; } });
+    register(program);
+    program.parse(args, { from: "user" });
+  } catch (error) {
+    const exit = (error as { exitCode?: unknown }).exitCode;
+    if (typeof exit === "number") status = exit; else { status = 1; stderr += String(error); }
+  } finally { process.chdir(before); }
+  return { status, stdout, stderr };
+}
 const input: DecisionInput = {
   date: "2026-10-20", decision: "No follow-ups", madeBy: "fabricio", source: "intake.md#one",
   class: "Taste", reversibility: "hard", why: "Avoid spam", alternatives: ["Reminders"], dependsOn: ["outreach"],

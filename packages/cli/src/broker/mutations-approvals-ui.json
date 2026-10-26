@@ -10,5 +10,23 @@
     "file": "packages/cli/src/broker/broker.ts",
     "anchor": "      && (e.data as D).payloadHash === r.payloadHash && (e.data as D).op === r.op",
     "replacement": ""
+  },
+  {
+    "name": "broker decide ignores the request the person was shown",
+    "file": "packages/cli/src/broker/broker.ts",
+    "anchor": "if (shown && (d.payloadHash !== shown.payloadHash || d.op !== shown.op)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "broker decide checks only the shown hash, not its operation",
+    "file": "packages/cli/src/broker/broker.ts",
+    "anchor": "d.payloadHash !== shown.payloadHash || d.op !== shown.op)",
+    "replacement": "d.payloadHash !== shown.payloadHash)"
+  },
+  {
+    "name": "broker decide reports a repeated answer as newly recorded",
+    "file": "packages/cli/src/broker/broker.ts",
+    "anchor": "        if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);\n        return false;",
+    "replacement": "        if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);\n        return true;"
   }
 ]

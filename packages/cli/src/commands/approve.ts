@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { Broker, pendingApprovalRequests } from "../broker/broker.ts";
+import { Broker, payloadHash, pendingApprovalRequests } from "../broker/broker.ts";
 import { resolveProject } from "../config/project.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
@@ -48,6 +48,12 @@ export function register(program: Command, seams: ApproveCommandOptions = {}): v
           if (answer) throw new Error(`Approval ${id} was already answered: ${String((answer.data as { decision?: unknown }).decision)}.`);
           throw new Error(`No pending approval ${id} in project ${project}.`);
         }
+        const d = request.data as { op?: unknown; payload?: unknown; payloadHash?: unknown };
+        // The answer binds the hash; the person sees the payload. They must be the same action.
+        if (typeof d.op !== "string" || typeof d.payloadHash !== "string" || payloadHash(d.op, d.payload) !== d.payloadHash) {
+          throw new Error(`Approval ${id}'s stored payload does not match its payload hash; refusing to show or answer it.`);
+        }
+        const shown = { payloadHash: d.payloadHash, op: d.op };
         const out = seams.output ?? console.log;
         out(formatApproval(request));
         if (!options.yes) {
@@ -56,8 +62,9 @@ export function register(program: Command, seams: ApproveCommandOptions = {}): v
           if (!/^(y|yes)$/i.test(answer.trim())) { out("No decision recorded."); return; }
         }
         const broker = new Broker({ ledger: Ledger.open(dir), project, adapters: [], secrets: { get: () => undefined } });
-        broker.decide(id, decision, seams.by ?? `${process.env.USER ?? "user"} (terminal)`);
-        out(`${decision === "approve" ? "Approved" : "Rejected"} ${id}.`);
+        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? "user"} (terminal)`, shown);
+        const [done, already] = decision === "approve" ? ["Approved", "approved"] : ["Rejected", "rejected"];
+        out(recorded ? `${done} ${id}.` : `Already ${already} elsewhere; nothing new recorded for ${id}.`);
       });
   }
 }

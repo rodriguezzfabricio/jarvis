@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { Broker } from "../../packages/cli/src/broker/broker.ts";
+import { Broker, payloadHash } from "../../packages/cli/src/broker/broker.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { register, readApprovals } from "../../packages/cli/src/commands/approvals.ts";
 import { register as registerApprove } from "../../packages/cli/src/commands/approve.ts";
@@ -96,7 +96,8 @@ it("a display failure cannot approve", async () => {
 });
 it("redacts nested secret fields and ordinary assignments even for fake-looking values", async () => {
   const s = await setup();
-  s.ledger.append({ kind: "approval_request", actor: "broker", data: { approvalId: "nested", project: "test", op: "spend", payloadHash: "f".repeat(64), summary: "password=fake-password", payload: { credentials: { user: "fake-user" }, values: [{ apiKey: "fake-key" }], description: "password=fake-password" } } });
+  const payload = { credentials: { user: "fake-user" }, values: [{ apiKey: "fake-key" }], description: "password=fake-password" };
+  s.ledger.append({ kind: "approval_request", actor: "broker", data: { approvalId: "nested", project: "test", op: "spend", payloadHash: payloadHash("spend", payload), summary: "password=fake-password", payload } });
   await s.make().parseAsync(["approve", "nested", "--yes"], { from: "user" });
   const shown = s.output.join("\n");
   for (const secret of ["fake-user", "fake-key", "fake-password"]) expect(shown).not.toContain(secret);

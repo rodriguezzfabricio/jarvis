@@ -110,14 +110,19 @@ export class Broker {
     return this.o.ledger.entries();
   }
 
-  /** A person's answer to an approval request (from `jarvis approve`/`reject` or ntfy). */
-  decide(approvalId: string, decision: "approve" | "reject", by: string): void {
+  /**
+   * A person's answer to an approval request (from `jarvis approve`/`reject` or ntfy). `shown` is the
+   * request the person saw: the answer binds only if it is the request this id names. True when this
+   * call recorded the answer, false when the same answer was already there.
+   */
+  decide(approvalId: string, decision: "approve" | "reject", by: string, shown?: { payloadHash: string; op: string }): boolean {
     if (decision !== "approve" && decision !== "reject") throw new Error(`invalid approval decision: ${String(decision)}`);
-    this.o.ledger.transact((es, add) => {
+    return this.o.ledger.transact((es, add) => {
       const req = es.find((e) => e.kind === "approval_request" && (e.data as D).approvalId === approvalId);
       if (!req) throw new Error(`no approval request ${approvalId}`);
       const d = req.data as D;
       if (d.project !== undefined && d.project !== this.o.project) throw new Error("approval request belongs to another project");
+      if (shown && (d.payloadHash !== shown.payloadHash || d.op !== shown.op)) throw new Error("approval request does not match the action shown; nothing recorded");
       const firstAnswer = es.find((e) => {
         if (e.kind !== "approval") return false;
         const answer = e.data as D;
@@ -127,9 +132,10 @@ export class Broker {
       if (firstAnswer) {
         const firstDecision = (firstAnswer.data as D).decision as "approve" | "reject";
         if (firstDecision !== decision) throw new Error(`already answered: ${firstDecision}`);
-      } else {
-        add({ kind: "approval", actor: "runner", data: { approvalId, payloadHash: d.payloadHash, op: d.op, decision, by } });
+        return false;
       }
+      add({ kind: "approval", actor: "runner", data: { approvalId, payloadHash: d.payloadHash, op: d.op, decision, by } });
+      return true;
     });
   }
 

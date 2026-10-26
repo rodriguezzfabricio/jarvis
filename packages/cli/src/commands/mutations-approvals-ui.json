@@ -62,7 +62,25 @@
   {
     "name": "terminal command invokes action execution",
     "file": "packages/cli/src/commands/approve.ts",
-    "anchor": "        broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`);",
-    "replacement": "        broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`);\n        await broker.handle({ op: \"spend\", payload: { description: \"fake unwanted execution\" } });"
+    "anchor": "        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`, shown);",
+    "replacement": "        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`, shown);\n        await broker.handle({ op: \"spend\", payload: { description: \"fake unwanted execution\" } });"
+  },
+  {
+    "name": "terminal approval shows a payload its hash does not bind",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "if (typeof d.op !== \"string\" || typeof d.payloadHash !== \"string\" || payloadHash(d.op, d.payload) !== d.payloadHash) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "terminal approval does not bind the shown request",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "(terminal)`, shown);",
+    "replacement": "(terminal)`);"
+  },
+  {
+    "name": "terminal approval claims an answer recorded elsewhere",
+    "file": "packages/cli/src/commands/approve.ts",
+    "anchor": "out(recorded ? `${done} ${id}.`",
+    "replacement": "out(true ? `${done} ${id}.`"
   }
 ]

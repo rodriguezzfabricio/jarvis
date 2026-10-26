@@ -74,8 +74,8 @@
   {
     "name": "notify answer for wrong request kind counted",
     "file": "packages/cli/src/notify/replies.ts",
-    "anchor": "return ignore(\"wrong-answer\");",
-    "replacement": "{ /* answer kind guard removed */ }"
+    "anchor": "if ((request.requestKind === \"question\") !== (parsed.answer === \"defaults\")) return ignore(\"wrong-answer\");",
+    "replacement": "/* answer kind guard removed */"
   },
   {
     "name": "notify forged counted result accepted",

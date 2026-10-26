@@ -1,6 +1,6 @@
-import { lstatSync, readFileSync, statSync, type renameSync } from "node:fs";
-import { dirname } from "node:path";
-import { checkAcl, privateDir, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, type Stats, type renameSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { checkAcl, checkTrustedDir, privateDir, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import type { SecretsBackend } from "./broker.ts";
 
 const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
@@ -9,12 +9,49 @@ const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
  * The default secrets backend (decision 13): an env file at ~/.jarvis/secrets/<project>.env, owner-only.
  * Only the broker reads it; task sessions are denied the whole runner folder (decisions 59, 69).
  */
-export function envFileSecrets(path: string): SecretsBackend {
-  const st = statSync(path);
-  if ((st.mode & 0o077) !== 0) throw new Error(`${path} must be readable by its owner only (chmod 600); it is ${(st.mode & 0o777).toString(8)}`);
-  if (typeof process.getuid === "function" && st.uid !== process.getuid()) throw new Error(`${path} must belong to the current user`);
+export interface SecretsReadOptions extends TrustOptions {
+  open?: (path: string, flags: number) => number;
+  fstat?: (fd: number) => Stats;
+}
+
+/** ACL checks use the existing absolute /bin/ls adapter on macOS. Other platforms currently check
+ * POSIX ownership/mode only unless an ACL reader is supplied (config/private-file.ts's limit).
+ * The parent must be trusted; descriptor checks and identity checks bind the reads to the checked paths. */
+function readSecrets(path: string, options: SecretsReadOptions): string {
+  const directory = dirname(path);
+  checkTrustedDir(directory, options);
+  const open = options.open ?? openSync;
+  const stat = options.fstat ?? fstatSync;
+  const uid = options.uid ?? process.getuid?.();
+  const dirFd = open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const parent = stat(dirFd);
+    if (!parent.isDirectory() || (parent.mode & 0o022) !== 0 || (uid !== undefined && parent.uid !== uid)) throw new Error("untrusted secrets parent");
+    checkAcl(directory, options);
+    sameFile(directory, parent);
+    const fd = open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const st = stat(fd);
+      if (!st.isFile()) throw new Error(`${path} must be a regular file`);
+      if ((st.mode & 0o177) !== 0) throw new Error(`${path} must have mode 0600 or stricter`);
+      if (uid !== undefined && st.uid !== uid) throw new Error(`${path} must belong to the current user`);
+      checkAcl(path, options);
+      sameFile(path, st);
+      sameFile(directory, parent);
+      return readFileSync(fd, "utf8");
+    } finally { closeSync(fd); }
+  } finally { closeSync(dirFd); }
+}
+
+function sameFile(path: string, opened: Stats): void {
+  const current = lstatSync(path);
+  if (current.dev !== opened.dev || current.ino !== opened.ino) throw new Error(`${path} changed while being checked`);
+}
+
+export function envFileSecrets(path: string, options: SecretsReadOptions = {}): SecretsBackend {
+  const text = readSecrets(resolve(path), options);
   const values = new Map<string, string>();
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  for (const line of text.split("\n")) {
     const m = LINE.exec(line);
     if (!m) continue;
     let v = (m[2] ?? "").trim();

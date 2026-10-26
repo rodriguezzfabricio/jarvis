@@ -30,9 +30,9 @@ export interface RunNotificationOptions {
   timeoutMs?: number;
 }
 
-type Config = { status: "ok"; notifier: Notifier; secrets: string[] } | { status: "missing" | "invalid" };
+type Config = { status: "ok"; notifier: Notifier; secrets: string[]; baseUrl: string } | { status: "missing" | "invalid" };
 
-function load(o: RunNotificationOptions): Config {
+export function loadRunNotifier(o: RunNotificationOptions & { since?: string }): Config {
   let raw: string;
   try {
     if (!lstatSync(o.configPath, { throwIfNoEntry: false })) return { status: "missing" };
@@ -40,17 +40,42 @@ function load(o: RunNotificationOptions): Config {
   } catch { return { status: "invalid" }; }
   try {
     const config = parseNotifyConfig(JSON.parse(raw));
-    const options: NtfyOptions = { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic, ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}) };
-    return { status: "ok", notifier: (o.createNotifier ?? ((c) => new NtfyNotifier(c)))(options), secrets: [config.topic, config.replyTopic] };
+    const options: NtfyOptions = { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic, ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}), ...(o.since !== undefined ? { since: o.since } : {}) };
+    return { status: "ok", notifier: (o.createNotifier ?? ((c) => new NtfyNotifier(c)))(options), secrets: [config.topic, config.replyTopic], baseUrl: config.baseUrl };
   } catch { return { status: "invalid" }; }
 }
 
 const oneLine = (text: string) => text.replace(/[\r\n\t\x00-\x1f]+/g, " ").trim().slice(0, 240);
 
+/** Redact the union of full capability occurrences before changing the original text. Sequential
+ * replacement can expose fragments when two topics overlap, even when the longest is replaced first. */
+export function notificationError(error: unknown, secrets: readonly string[]): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  const ranges: { start: number; end: number }[] = [];
+  for (const secret of secrets.filter(Boolean)) {
+    for (let at = reason.indexOf(secret); at !== -1; at = reason.indexOf(secret, at + 1)) {
+      ranges.push({ start: at, end: at + secret.length });
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: { start: number; end: number }[] = [];
+  for (const range of ranges) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ ...range });
+  }
+  let redacted = "", end = 0;
+  for (const range of merged) {
+    redacted += reason.slice(end, range.start) + "<topic>";
+    end = range.end;
+  }
+  return oneLine(redacted + reason.slice(end));
+}
+
 export function runNotifications(o: RunNotificationOptions): RunNotifications {
   const warn = o.warn ?? console.error;
   const timeoutMs = o.timeoutMs ?? 30_000;
-  const config = load(o);
+  const config = loadRunNotifier(o);
   const problem = config.status === "missing" ? `${o.configPath} is missing` : `${o.configPath} is not a valid notifier configuration`;
   if (config.status === "missing") warn(`Notifications are off for this run: no notifier configuration at ${o.configPath} (run jarvis setup).`);
   if (config.status === "invalid") warn(`Notifications are off for this run: ${o.configPath} is not a valid notifier configuration (run jarvis setup --redo ntfy).`);
@@ -63,8 +88,7 @@ export function runNotifications(o: RunNotificationOptions): RunNotifications {
       const timedOut = delay(timeoutMs, "timeout", { signal: stop.signal }).catch(() => "stopped");
       if (await Promise.race([config.notifier.send(message, []).then(() => "sent"), timedOut]) === "timeout") throw new Error(`timed out after ${timeoutMs} ms`);
     } catch (error) {
-      let reason = oneLine(error instanceof Error ? error.message : String(error));
-      for (const secret of config.secrets) reason = reason.replaceAll(secret, "<topic>");
+      const reason = notificationError(error, config.secrets);
       warn(`Notification not delivered (${what}) through ${o.configPath}: ${reason}`);
     } finally { stop.abort(); }
   }

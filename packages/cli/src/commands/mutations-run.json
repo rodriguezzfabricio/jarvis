@@ -110,8 +110,8 @@
   {
     "name": "run notifier prints the topic",
     "file": "packages/cli/src/commands/run-notify.ts",
-    "anchor": "      for (const secret of config.secrets) reason = reason.replaceAll(secret, \"<topic>\");",
-    "replacement": ""
+    "anchor": "  return oneLine(redacted + reason.slice(end));",
+    "replacement": "  return oneLine(reason);"
   },
   {
     "name": "run notifier waits on a send forever",
@@ -178,5 +178,83 @@
     "file": "packages/cli/src/notify/config.ts",
     "anchor": "  throw new Error(\"not a notifier configuration\");",
     "replacement": "  throw new Error(`not a notifier configuration: ${JSON.stringify(value)}`);"
+  },
+  {
+    "name": "run notifier truncates before redaction",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "  const reason = error instanceof Error ? error.message : String(error);",
+    "replacement": "  const reason = oneLine(error instanceof Error ? error.message : String(error));"
+  },
+  {
+    "name": "run notifier fails to merge overlapping topics",
+    "file": "packages/cli/src/commands/run-notify.ts",
+    "anchor": "Math.max(last.end, range.end)",
+    "replacement": "Math.min(last.end, range.end)"
+  },
+  {
+    "name": "phone approval host isolation skipped",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "if (config.status === \"ok\") assertApprovalIsolation(config.baseUrl, o.taskAllowlists);",
+    "replacement": "if (config.status === \"ok\") { /* isolation skipped */ }"
+  },
+  {
+    "name": "phone approvals never sent",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "    await requests();",
+    "replacement": ""
+  },
+  {
+    "name": "phone polling never starts",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "      timer = setInterval(background, pollMs);",
+    "replacement": "      timer = setInterval(() => {}, pollMs);"
+  },
+  {
+    "name": "phone approval send falsely acknowledged",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "if (await send({ kind: \"approval\", text }, actionsFor(\"approval\", id, nonce)) && !closed) inbox.sent(id, now());",
+    "replacement": "await send({ kind: \"approval\", text }, actionsFor(\"approval\", id, nonce)); if (!closed) inbox.sent(id, now());"
+  },
+  {
+    "name": "phone approvals forget terminal-only notice",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "  else warn(\"Phone approvals are off for this run: approvals stay terminal-only (jarvis approve / jarvis reject).\");",
+    "replacement": ""
+  },
+  {
+    "name": "phone approvals skip final pending request",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "await active; await tick(); return true;",
+    "replacement": "await active; return true;"
+  },
+  {
+    "name": "phone transport has no deadline",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "return await Promise.race([Promise.resolve().then(work).then((value) => ({ ok: true as const, value })), stopped]);",
+    "replacement": "return await Promise.resolve().then(work).then((value) => ({ ok: true as const, value }));"
+  },
+  {
+    "name": "phone approval messages exceed 4 KB",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "text: limitText(message.text)",
+    "replacement": "text: message.text"
+  },
+  {
+    "name": "phone approval poller remains open",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "closed = true; stop.abort();",
+    "replacement": "stop.abort();"
+  },
+  {
+    "name": "phone shutdown skips its active poll drain",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "await active; await tick(); return true;",
+    "replacement": "await tick(); return true;"
+  },
+  {
+    "name": "phone shutdown has no total deadline",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "Promise.race([draining, deadline])",
+    "replacement": "draining"
   }
 ]

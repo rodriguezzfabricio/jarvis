@@ -5,7 +5,7 @@ import { confirmation, type Answer, type Message, type ReplyMessage } from "./no
 
 export type ParsedReply = { kind: "button"; answer: Answer; requestId: string; nonce: string }
   | { kind: "steer"; text: string } | { kind: "invalid" };
-export type IgnoredReason = "invalid" | "duplicate" | "unknown-request" | "unknown-nonce" | "reused-nonce" | "already-answered" | "wrong-answer";
+export type IgnoredReason = "invalid" | "duplicate" | "unknown-request" | "unknown-nonce" | "reused-nonce" | "already-answered" | "wrong-answer" | "wrong-project" | "not-sent" | "before-send";
 export type CountedAnswer = { status: "counted"; seq: number; id: string } & (
   { answer: Answer; requestId: string; confirmation: Message } | { answer: "steer"; text: string; confirmation: Message }
 );
@@ -16,6 +16,7 @@ interface Request {
   requestId: string;
   requestKind: "question" | "approval";
   nonce: string;
+  project?: string;
 }
 interface Intent {
   source: "notify";
@@ -25,6 +26,7 @@ interface Intent {
   requestId?: string;
   nonce?: string;
   text?: string;
+  approvalProject?: string;
 }
 type Data = Record<string, unknown>;
 function data(entry: LedgerEntry): Data {
@@ -58,15 +60,30 @@ export function parseReply(text: string): ParsedReply {
  * it through recordAnswer; only after that succeeds may the caller send its confirmation. */
 export class ReplyInbox {
   private readonly ledger: Ledger;
-  constructor(ledger: Ledger) { this.ledger = ledger; }
+  private readonly approvalProject: string | undefined;
+  constructor(ledger: Ledger, options: { approvalProject?: string } = {}) {
+    this.ledger = ledger;
+    this.approvalProject = options.approvalProject;
+  }
 
-  register(requestId: string, requestKind: "question" | "approval"): Request {
+  register(requestId: string, requestKind: "question" | "approval", project?: string): Request {
     if (!/^[A-Za-z0-9_-]{1,200}$/.test(requestId) || !["question", "approval"].includes(requestKind)) throw new Error("invalid notification request");
     return this.ledger.transact((entries, add) => {
       if (entries.some((e) => isPhase(e, "request") && data(e).requestId === requestId)) throw new Error("notification request already registered");
-      const request: Request = { source: "notify", phase: "request", requestId, requestKind, nonce: randomBytes(32).toString("hex") };
+      const request: Request = { source: "notify", phase: "request", requestId, requestKind, nonce: randomBytes(32).toString("hex"), ...(project !== undefined ? { project } : {}) };
       add({ kind: "notify", actor: "runner", data: request });
       return request;
+    });
+  }
+
+  /** Record only after a successful send. A failed or ambiguous send grants no phone capability. */
+  sent(requestId: string, sentAt: number): void {
+    if (!Number.isSafeInteger(sentAt) || sentAt < 0) throw new Error("invalid notification send time");
+    this.ledger.transact((entries, add) => {
+      const request = entries.find((e) => isPhase(e, "request") && data(e).requestId === requestId);
+      if (!request || typeof data(request).project !== "string") throw new Error("no project-bound notification request");
+      if (entries.some((e) => isPhase(e, "sent") && data(e).requestId === requestId)) return;
+      add({ kind: "notify", actor: "runner", data: { source: "notify", phase: "sent", requestId, sentAt } });
     });
   }
 
@@ -81,6 +98,7 @@ export class ReplyInbox {
       };
       if (entries.some((e) => (isPhase(e, "answer") || isPhase(e, "ignored")) && data(e).id === message.id)) return { status: "ignored", reason: "duplicate" };
       if (parsed.kind === "invalid") return ignore("invalid");
+      if (this.approvalProject !== undefined && (parsed.kind !== "button" || parsed.answer === "defaults")) return ignore("wrong-answer");
       let intent: Intent;
       if (parsed.kind === "button") {
         // Intake taps are routed to the intake round (receiveRoundReply), never answered here (decision 90).
@@ -91,7 +109,12 @@ export class ReplyInbox {
         if (entries.some((e) => isPhase(e, "answer") && data(e).nonce === parsed.nonce)) return ignore("reused-nonce");
         if (request.nonce !== parsed.nonce) return ignore("unknown-nonce");
         if ((request.requestKind === "question") !== (parsed.answer === "defaults")) return ignore("wrong-answer");
-        intent = { source: "notify", phase: "answer", id: message.id, answer: parsed.answer, requestId: parsed.requestId, nonce: parsed.nonce };
+        if (this.approvalProject !== undefined || request.project !== undefined) {
+          const reason = approvalGuard(entries, request, this.approvalProject ?? request.project!, message.time);
+          if (reason) return ignore(reason);
+        }
+        intent = { source: "notify", phase: "answer", id: message.id, answer: parsed.answer, requestId: parsed.requestId, nonce: parsed.nonce,
+          ...(request.project !== undefined ? { approvalProject: request.project } : {}) };
       } else {
         intent = { source: "notify", phase: "answer", id: message.id, answer: "steer", text: parsed.text };
       }
@@ -101,8 +124,28 @@ export class ReplyInbox {
 
   pending(): CountedAnswer[] {
     const entries = this.ledger.entries();
-    return entries.filter((e) => isPhase(e, "answer") && data(e).intakeOwned !== true && !String(data(e).requestId ?? "").startsWith("intake-") && !entries.some((r) => isRecorded(r, e.seq))).map(result);
+    return entries.filter((e) => isPhase(e, "answer") && data(e).intakeOwned !== true && !String(data(e).requestId ?? "").startsWith("intake-")
+      && (this.approvalProject === undefined || data(e).approvalProject === this.approvalProject)
+      && !entries.some((r) => isRecorded(r, e.seq))).map(result);
   }
+}
+
+/** Both the notification and the exact pending broker request must belong to this project. */
+function approvalGuard(entries: readonly LedgerEntry[], request: Request, project: string, time: number | undefined): IgnoredReason | undefined {
+  if (request.project !== project) return "wrong-project";
+  const broker = entries.find((e) => e.kind === "approval_request" && data(e).approvalId === request.requestId);
+  if (!broker) return "unknown-request";
+  const pending = data(broker);
+  if (pending.project !== project) return "wrong-project";
+  if (entries.some((e) => e.kind === "approval" && data(e).approvalId === request.requestId
+    && data(e).payloadHash === pending.payloadHash && data(e).op === pending.op
+    && (data(e).decision === "approve" || data(e).decision === "reject"))) return "already-answered";
+  const sent = entries.find((e) => isPhase(e, "sent") && data(e).requestId === request.requestId);
+  if (!sent || typeof data(sent).sentAt !== "number") return "not-sent";
+  // ntfy's second-resolution timestamp must prove the tap followed the completed send. Same-second
+  // taps cannot prove this and are refused; a later tap with the same nonce can still count.
+  if (!Number.isSafeInteger(time) || time! * 1000 <= (data(sent).sentAt as number)) return "before-send";
+  return undefined;
 }
 
 type Outcome = { outcome: "recorded" } | { outcome: "superseded"; by: "approve" | "reject" } | { outcome: "no-request" };

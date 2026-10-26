@@ -484,5 +484,83 @@
     "file": "packages/cli/src/runner/review-fix.ts",
     "anchor": "  if (existsAtBase) return `the report",
     "replacement": "  if (false) return `the report"
+  },
+  {
+    "name": "review fix: the loop dispatches tasks outside its allowlist",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "filter((task) => this.mine(task.id) && !this.running.has(task.id)",
+    "replacement": "filter((task) => !this.running.has(task.id)"
+  },
+  {
+    "name": "review fix: the loop blocks tasks outside its allowlist",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "        if (this.mine(task.id) && !isDone(task, this.verify) && task.status !== \"blocked\") await this.block",
+    "replacement": "        if (!isDone(task, this.verify) && task.status !== \"blocked\") await this.block"
+  },
+  {
+    "name": "review fix: the loop recovers a candidate outside its allowlist",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "      if (!this.mine(task.id)) continue; // never recover a task outside this run's allowlist\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: the loop reports tasks outside its allowlist as its own",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    const mine = Object.values(state.tasks).filter((t) => this.mine(t.id));",
+    "replacement": "    const mine = Object.values(state.tasks);"
+  },
+  {
+    "name": "review fix: the loop doesn't say what it left alone",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    const leftAlone = this.only ? Object.values(state.tasks).filter(",
+    "replacement": "    const leftAlone = false ? Object.values(state.tasks).filter("
+  },
+  {
+    "name": "review fix: an empty allowlist means every task",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    this.only = opts.only ? new Set(opts.only) : undefined;",
+    "replacement": "    this.only = opts.only?.length ? new Set(opts.only) : undefined;"
+  },
+  {
+    "name": "review fix: REPORT.md hides what the run left alone",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "  if (options.leftAlone?.length) lines.push(",
+    "replacement": "  if (false) lines.push("
+  },
+  {
+    "name": "review fix: jarvis run hides what it left alone",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "${result.leftAlone?.length ? `; left alone: ${result.leftAlone.join(\", \")}` : \"\"}",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: eval's fix loop may touch any task",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds] }); },",
+    "replacement": "return opts.runLoop(loopOptions()); },"
+  },
+  {
+    "name": "review fix: eval's update loop may touch any task",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds, update.id] }); },",
+    "replacement": "return opts.runLoop(loopOptions()); },"
+  },
+  {
+    "name": "review fix: run's review loop may touch any task",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: run's update loop may touch any task",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "runUpdate: (task) => run({ ...loop, plan: { tasks: [task] }, only: [...fix.taskIds, task.id] }),",
+    "replacement": "runUpdate: (task) => run({ ...loop, plan: { tasks: [task] } }),"
+  },
+  {
+    "name": "review fix: a review with no findings still runs a fix loop",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "  const fixes = r.fix.plan ? await r.runFixes() :",
+    "replacement": "  const fixes = true ? await r.runFixes() :"
   }
 ]

@@ -1,4 +1,4 @@
-// Runner loop tests, part 5 of 6 (real gates, usage barriers on reviews, recorded review verdicts). The loop tests are spread over six files so they run in parallel;
+// Runner loop tests, part 5 of 7 (real gates, usage barriers on reviews, recorded review verdicts). The loop tests are spread over seven files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { readFileSync } from "node:fs";

@@ -1,4 +1,4 @@
-// Runner loop tests, part 4 of 6 (review repairs, paused resets, reports, intake recovery, steer, runner metadata, evidence). The loop tests are spread over six files so they run in parallel;
+// Runner loop tests, part 4 of 7 (review repairs, paused resets, reports, intake recovery, steer, runner metadata, evidence). The loop tests are spread over seven files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

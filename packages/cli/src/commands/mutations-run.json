@@ -212,8 +212,8 @@
   {
     "name": "phone approval host isolation skipped",
     "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "if (config.status === \"ok\") assertApprovalIsolation(config.baseUrl, o.taskAllowlists);",
-    "replacement": "if (config.status === \"ok\") { /* isolation skipped */ }"
+    "anchor": "if (loaded.status === \"ok\") assertApprovalIsolation(loaded.baseUrl, o.taskAllowlists);",
+    "replacement": "if (loaded.status === \"ok\") { /* isolation skipped */ }"
   },
   {
     "name": "phone approvals never sent",
@@ -236,7 +236,7 @@
   {
     "name": "phone approvals forget terminal-only notice",
     "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "  else warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; approvals stay terminal-only (jarvis approve / jarvis reject).`);",
+    "anchor": "  else if (config.status !== \"ok\") warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; ${off}`);",
     "replacement": ""
   },
   {
@@ -304,5 +304,17 @@
     "file": "packages/cli/src/commands/run-approvals.ts",
     "anchor": "    if (failing) return;\n    failing = true;",
     "replacement": "    failing = true;"
+  },
+  {
+    "name": "phone approvals use a loopback notifier",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "loaded.status === \"ok\" && onLoopback(loaded.baseUrl)",
+    "replacement": "false"
+  },
+  {
+    "name": "phone loopback check misses IPv6 loopback",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "|| host === \"[::1]\" || host === \"[::]\"",
+    "replacement": "|| host === \"[::]\""
   }
 ]

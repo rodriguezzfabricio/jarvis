@@ -40,6 +40,15 @@ export function assertApprovalIsolation(baseUrl: string, taskAllowlists: readonl
   }
 }
 
+/** A notifier on this Mac's loopback. A protected check that may bind local ports reaches every loopback
+ * port (sandbox/srt.ts), and a phone can't reach it, so phone approvals never use one. URL has already
+ * canonicalized integer, hex and IPv4-mapped spellings. */
+export function onLoopback(baseUrl: string): boolean {
+  const host = new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, "");
+  return host === "localhost" || host.endsWith(".localhost") || host.startsWith("127.") || host === "0.0.0.0"
+    || host === "[::1]" || host === "[::]" || host.startsWith("[::ffff:7f") || host.startsWith("[::ffff:127.");
+}
+
 function unanswered(entries: readonly LedgerEntry[], request: LedgerEntry): boolean {
   const r = data(request);
   return !entries.some((e) => e.kind === "approval" && data(e).approvalId === r.approvalId
@@ -56,9 +65,12 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
   const timeoutMs = o.timeoutMs ?? 10_000;
   const pollMs = o.pollMs ?? 5000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || !Number.isSafeInteger(pollMs) || pollMs <= 0) throw new Error("invalid approval polling interval or timeout");
-  const config = loadRunNotifier(o);
-  if (config.status === "ok") assertApprovalIsolation(config.baseUrl, o.taskAllowlists);
-  else warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; approvals stay terminal-only (jarvis approve / jarvis reject).`);
+  const loaded = loadRunNotifier(o);
+  if (loaded.status === "ok") assertApprovalIsolation(loaded.baseUrl, o.taskAllowlists);
+  const config = loaded.status === "ok" && onLoopback(loaded.baseUrl) ? { status: "loopback" as const } : loaded;
+  const off = "approvals stay terminal-only (jarvis approve / jarvis reject).";
+  if (config.status === "loopback") warn(`Phone approvals are off for this run: the notifier in ${o.configPath} is on this Mac's loopback, which sandboxed checks can reach and a phone can't; ${off}`);
+  else if (config.status !== "ok") warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; ${off}`);
   const inbox = new ReplyInbox(o.ledger, { approvalProject: o.project });
   const stop = new AbortController();
   let timer: ReturnType<typeof setInterval> | undefined;

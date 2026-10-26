@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadTask, runBaseline } from "../../packages/cli/src/eval/baseline.ts";
@@ -124,6 +124,33 @@ describe("eval sessions get the gate's Go, offline and read-only, in both arms (
     expect(r.toolchain).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/no Go fixture at/) });
     expect(logs.join("\n")).toMatch(/05-go j4: go toolchain unavailable/);
     for (const { spec } of seen) expect(spec.env.GOTOOLCHAIN).toBeUndefined();
+  });
+
+  it("refuses a fixture where any run's sessions write, before a session starts, in both arms", async () => {
+    const { fx, fixture } = goTask();
+    // A copy of the fixture under the eval workspaces' folder, which baseline sessions write.
+    const planted = join(fx.workRoot, "evals", "05-go", "planted", "gomodcache");
+    makeGoFixture(planted);
+    const marker = join(fx.root, "session-started");
+    const task = loadTask(fx.evalsRepo, "05-go");
+    await expect(runBaseline(task, {
+      preflight: async () => ({ ok: true }), claudeBin: fakeClaudeBin(fx.root), jarvisHome: fx.jarvisHome, workRoot: fx.workRoot, runId: "b5",
+      parentEnv: { HOME: fx.home, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: "go-env", FAKE_CLAUDE_MARKER: marker }, goFixture: planted,
+    })).rejects.toThrow(/toolchain folder must not overlap/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(evalToolchainDir(fx.workRoot, "05-go", "b5"))).toBe(false);
+    // The Jarvis arm reads its evals repo's gate fixture: an evals repo inside the work root is refused the same way.
+    const evalsCopy = join(fx.workRoot, "evals", "05-go", "evals-copy");
+    cpSync(fx.evalsRepo, evalsCopy, { recursive: true });
+    let sessions = 0;
+    await expect(runJarvis(loadTask(evalsCopy, "05-go"), {
+      preflight: async () => ({ ok: true }), evalsRepo: evalsCopy, runLoop: harnessLoop(), review: async () => "pass", gate: markerGate().gate,
+      jarvisHome: fx.jarvisHome, workRoot: fx.workRoot, home: fx.home, runId: "j5",
+      harnessSeams: { binaryRealpath: () => "/usr/bin/true", session: async () => { sessions++; throw new Error("must not run"); } },
+    })).rejects.toThrow(/toolchain folder must not overlap/);
+    expect(sessions).toBe(0);
+    expect(existsSync(evalToolchainDir(fx.workRoot, "05-go", "j5"))).toBe(false);
+    expect(existsSync(fixture)).toBe(true);
   });
 
   it("names the gate's module cache, never the grading checks", () => {

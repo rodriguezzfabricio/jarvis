@@ -23,6 +23,14 @@ export function evalGoFixture(evalsRepo: string, taskId: string): string {
   return fixture;
 }
 
+/**
+ * Every folder under the work root that a session of any run, or candidate code in a gate, writes: a pinned
+ * toolchain may sit in none of them, since baseline and Jarvis runs can run side by side.
+ */
+export function evalWritableRoots(workRoot: string): string[] {
+  return ["evals", "cache-runs", "worktrees", "caches", "checks", "feedback"].map((d) => join(workRoot, d)).filter((d) => existsSync(d)).map((d) => realpathSync(d));
+}
+
 /** Where a run's toolchain is unpacked: outside the worktrees, caches and runner folder; removed after the run. */
 export function evalToolchainDir(workRoot: string, taskId: string, runId: string): string {
   return join(workRoot, "toolchains", taskId, runId);

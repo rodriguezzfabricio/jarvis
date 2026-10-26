@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
+import { checkSessionToolchain } from "../harness/claude/toolchain.ts";
 import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type ReviewRequest } from "../review/index.ts";
@@ -21,7 +22,7 @@ import { safeGit } from "./git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
-import { evalGoFixture, evalToolchainDir } from "./toolchain.ts";
+import { evalGoFixture, evalToolchainDir, evalWritableRoots } from "./toolchain.ts";
 import { prepareGoToolchain, removeGoToolchain, type SessionToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
@@ -424,7 +425,11 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
   if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
   let harness: Harness;
-  try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
+  try {
+    // Never where any run's sessions write: the harness checks only this run's worktrees and caches.
+    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), ".jarvis-work")), p.jarvisHome]);
+    harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain);
+  } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
   const tier: TaskTier = t.tier ?? 1;
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
   const review = opts.review ?? productionReview(p, ledger, material, opts);

@@ -26,7 +26,7 @@ import { assertTaskDomains } from "./allowlist.ts";
 import { assertHiddenAbsent } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
-import { evalToolchainDir } from "./toolchain.ts";
+import { evalToolchainDir, evalWritableRoots } from "./toolchain.ts";
 import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
@@ -151,7 +151,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     let prepared: PreparedToolchain | undefined;
     try {
       prepared = prepareGoToolchain({ workspace, fixture: opts.goFixture, dest: evalToolchainDir(workRoot, task.id, runId) });
-      return { go: prepared, tc: checkSessionToolchain(prepared.toolchain, [realpathSync(join(workRoot, "evals", task.id)), cacheDir, jarvisHome]) };
+      return { go: prepared, tc: checkSessionToolchain(prepared.toolchain, [...evalWritableRoots(workRoot), cacheDir, jarvisHome]) };
     } catch (e) {
       rmSync(cacheDir, { recursive: true, force: true });
       if (prepared?.dir) removeGoToolchain(prepared.dir);

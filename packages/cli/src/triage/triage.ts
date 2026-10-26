@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { DEFAULT_REVIEW_REPORT, reportPathProblem } from "../runner/review-path.ts";
-import { fixAuthorization } from "./authorize.ts";
+import { reportPathProblem } from "../runner/review-path.ts";
+import { forbidsEdits, mentionsFixes } from "./fix-words.ts";
 
 /**
  * Triage, the deterministic half (architecture §2, decisions 2, 5, 37, 89): classify a request into a
@@ -131,7 +131,7 @@ export type TriageInput = z.input<typeof Input>;
 export type SignalName =
   | "override" | "empty-folder" | "design-md" | "attached-error" | "error-text"
   | "bug-words" | "question-words" | "onboarding-words" | "review-words" | "refactor-words" | "release-words" | "edit-words"
-  | "fix-words" | "report-file" | "report-refused" | "security-words" | "no-edit-words" | "fixes-not-requested"
+  | "fixes-mentioned" | "report-file" | "report-refused" | "security-words" | "no-edit-words"
   | "tier2-area" | "several-modules" | "one-sentence" | "no-type-words"
   | "judgment" | "judgment-overruled" | "missing-behavior" | "new-screen" | "new-platform" | "tier-raised";
 export interface Signal { name: SignalName; detail: string }
@@ -152,14 +152,14 @@ export interface Pipeline {
 export interface Triage extends Pipeline {
   decidedBy: "override" | "empty-folder" | "judgment" | "text" | "default";
   onboarding: boolean;
-  /** A question that also asks for edits, or a review that asks for fixes: this pipeline runs after the first one (decisions 89, 126). */
+  /** A question that also asks for edits: this pipeline runs after the read-only one (decision 89). Never set for a review (decision 126). */
   then: Pipeline | null;
   /**
-   * A review's report and lens (decision 126); null for every other type. `report`: the file the review
-   * writes (the one the request names, or REVIEW.md when it asks for fixes), null for a read-only review.
-   * `security`: the review also follows the security skill (security words, or a tier-2 area).
+   * A review's report and lens (decision 126); null for every other type. `report`: the file the request names
+   * for the findings, else null. `security`: the review also follows the security skill (security words, or a
+   * tier-2 area). `fixesMentioned`: the request mentions fixes, a signal only: fixes start on an explicit opt-in.
    */
-  review: { report: string | null; security: boolean; limits: string[] } | null;
+  review: { report: string | null; security: boolean; fixesMentioned: boolean } | null;
   signals: Signal[];
   upgrade: { from: "bug"; to: "feature"; announcement: string } | null;
   /** The classification in one line, for the first message (after the upgrade sentence, if any). */
@@ -328,23 +328,19 @@ export function triage(raw: TriageInput): Triage {
     if (kind) then = pipeline(kind, LABELS[kind]);
   }
 
-  // Fixes fail closed (triage/authorize.ts): an unscoped negation of editing anywhere stops every editing pipeline.
-  const auth = fixAuthorization(text);
-  const noEdit = auth.forbidden?.kind === "edit" ? auth.forbidden.words : undefined;
-  const noFix = auth.forbidden?.words;
-  if (noFix) add("no-edit-words", `"${noFix}": ${noEdit ? "no edits at all" : "no fixes"}`);
-  if (type === "question" && noFix && then) then = null;
+  // A prohibition on editing vetoes the edits triage reads from words: a question's, and a review's report (fail closed).
+  const noEdit = forbidsEdits(text);
+  if (noEdit) add("no-edit-words", `"${noEdit}": no edits`);
+  if (type === "question" && noEdit && then) then = null;
 
-  // A review that asks for fixes (decision 126) stays a review: its step writes the report, then a bug pipeline repairs the confirmed findings.
+  // A review is always a review, and triage never starts its fixes (decision 126, round 3): not from the request's
+  // words and not from the model's judgment. Fixes start only on an explicit, structured opt-in outside triage (the
+  // user's recorded answer to the intake question review-fix, `jarvis run --plan review --fix`, or an eval task's
+  // runner-owned reviewFix). The request mentioning fixes is a signal that prompts that question, nothing more.
   let review: Triage["review"] = null;
-  let fixesDeclined = false;
   if (type === "review") {
-    if (auth.imperative) add("fix-words", `"${auth.imperative}"`);
-    // Only the request's own positive imperative starts fixes. The model's judgment can veto them, never add them.
-    const fixes = !noFix && j.then !== "none" && auth.authorized;
-    fixesDeclined = !fixes && auth.declined;
-    if (fixesDeclined) add("fixes-not-requested", "fix words, but no clear request to fix the code: a review without fixes");
-    // "No edits at all" writes no report either: a plain read-only review.
+    const fixesMentioned = mentionsFixes(text);
+    if (fixesMentioned) add("fixes-mentioned", "the request mentions fixes: they start only on an explicit opt-in (the review-fix question, or jarvis run --plan review --fix)");
     let named = noEdit ? undefined : j.report;
     const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];
     if (named === undefined && typed !== undefined) {
@@ -352,14 +348,12 @@ export function triage(raw: TriageInput): Triage {
       if (problem) add("report-refused", `"${typed}": ${problem}`);
       else named = typed;
     }
-    const report = named ?? (fixes ? DEFAULT_REVIEW_REPORT : null);
-    if (report !== null) add("report-file", named !== undefined ? `the findings go to ${report}` : `fixes asked for: the findings go to ${report}`);
+    const report = named ?? null;
+    if (report !== null) add("report-file", `the findings go to ${report}`);
     const security = hit(SECURITY);
     if (security) add("security-words", `"${security}"`);
-    // A negation scoped to a named part ("make no changes to the public API") rides on the fix tasks as a limit.
-    review = { report, security: security !== undefined || areas.length > 0, limits: fixes ? [...auth.limits] : [] };
+    review = { report, security: security !== undefined || areas.length > 0, fixesMentioned };
     if (report !== null) first = { ...first, ...stepsFor("review", { design: false, onboarding: false, report: true }) };
-    if (fixes) then = pipeline("bug", "Bug fixes for the confirmed findings");
   }
 
   const upgrade = upgraded ? { from: "bug" as const, to: "feature" as const, announcement: upgradeSentence(first.tier === 2, j.questions) } : null;
@@ -372,7 +366,7 @@ export function triage(raw: TriageInput): Triage {
     `${first.label}${first.tier === null ? "" : `, tier ${first.tier}`}${decidedBy === "override" ? ` (your override: ${input.override})` : ""}.`,
     ...describe(first),
     review?.report ? `Report: ${review.report}.` : undefined,
-    fixesDeclined ? "Fixes weren't requested: the review changes no code." : undefined,
+    review?.fixesMentioned ? "The request mentions fixes: they start only on an explicit opt-in." : undefined,
     then ? `Then: ${then.label}, tier ${then.tier}.` : undefined,
     ...(then ? describe(then) : []),
   ].filter((x) => x !== undefined).join(" ");

@@ -9,8 +9,13 @@ import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type ReviewRequest } from "../review/index.ts";
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { PLAN_NOTES, planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
+import {
+  readReviewOutput, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
+  type FindingOutcome, type ReviewOutput,
+} from "../runner/review-fix.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
-import { rebuildState, repairsUsed } from "../runner/state.ts";
+import { loadSkills } from "../runner/session-skills.ts";
+import { rebuildState, repairsUsed, type RunState } from "../runner/state.ts";
 import { recordSessionUsage, summarizeUsage, type UsageTotals } from "../runner/usage-log.ts";
 import type { UsageWaitNotice } from "../runner/usage-wait.ts";
 import { createWorkspace } from "../runner/worktrees.ts";
@@ -75,8 +80,22 @@ export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promi
 // ---- Options and results ----------------------------------------------------------------------------
 
 export const JARVIS_VARIANT = "jarvis";
-export type JarvisOutcome = "complete" | "blocked" | "crashed" | "plan-failed" | "usage-limited";
-export type Pipeline = "single-task" | "spec";
+/** "review-failed": a review that asked for fixes left no usable report or findings, so no fix started (decision 126). */
+export type JarvisOutcome = "complete" | "blocked" | "crashed" | "plan-failed" | "review-failed" | "usage-limited";
+export type Pipeline = "single-task" | "spec" | "review-fix";
+
+/** A review-fix run (decision 126): the report, the review's counts, and what the runner's records say happened to each finding. */
+export interface ReviewSummary {
+  report: string;
+  /** The runner's commit of the session's report on the run branch: the fixes' base revision. */
+  reportRevision: string | null;
+  findings: number;
+  cleared: number;
+  skipped: number;
+  outcomes: FindingOutcome[];
+  /** The report-update task passed: the report on the final revision says what happened. */
+  updated: boolean;
+}
 
 /** Seams for the production Claude harness (tests point it at the fake claude). */
 export type HarnessSeams = Partial<Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "sessionTmpDir" | "home" | "parentEnv" | "cleanup">>;
@@ -112,6 +131,7 @@ export interface TaskSummary { id: string; status: string; attempts: number; rep
 export interface JarvisMetrics {
   tasks: TaskSummary[];
   repairs: number;
+  /** planner: the sessions before the loop (the planner, or a review-fix task's review step). review: the loop's reviewer sessions. */
   sessions: { planner: number; build: number; review: number; total: number };
   usageWaits: { count: number; waitMs: number };
   usage: UsageTotals;
@@ -132,8 +152,10 @@ export interface JarvisRunResult {
   loop: RunLoopResult | null;
   /** What Jarvis reported: the loop said every task is done. A false done is this with a failing grade. */
   claimedDone: boolean;
-  /** The revision the planner and the first task started from (the snapshot, plus the spec for task 2). */
+  /** The revision the planner and the first task started from (the snapshot, plus the spec for task 2, or the review's report for a review-fix task). */
   baseRevision: string;
+  /** A review-fix task's review (decision 126); null for every other pipeline, or when the review step left nothing usable. */
+  review: ReviewSummary | null;
   lastGreen: string | null;
   /** last-green, or the base revision when nothing was accepted: what Jarvis delivered. */
   finalCommit: string;
@@ -161,9 +183,11 @@ export function jarvisRequest(evalsRepo: string, task: GoldenTask): string {
   return existsSync(p) ? readFileSync(p, "utf8").trim() : task.prompt;
 }
 
-export function pipelineFor(type: Triage["type"]): Pipeline {
+/** `then`: the pipeline triage runs after the first one. A review with a bug `then` asked for fixes (decision 126). */
+export function pipelineFor(type: Triage["type"], then: Triage["type"] | null = null): Pipeline {
   if (type === "bug" || type === "refactor") return "single-task";
   if (type === "feature" || type === "new-product") return "spec";
+  if (type === "review" && then === "bug") return "review-fix";
   throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm`);
 }
 
@@ -368,7 +392,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   // Everything read from the evals repo is checked before the preflight, so a bad task file costs no usage.
   const request = jarvisRequest(opts.evalsRepo, task);
   const t = triage({ request, folder: { empty: task.source === undefined, designMd: false } });
-  const pipeline = pipelineFor(t.type);
+  const pipeline = pipelineFor(t.type, t.then?.type ?? null);
+  const reportPath = pipeline === "review-fix" ? t.review?.report ?? null : null;
+  if (pipeline === "review-fix" && reportPath === null) throw new Error(`${task.id}: triage asked for fixes but named no report`);
   const grading = loadHiddenChecks(hiddenDir(opts.evalsRepo, task.id, "checks"));
   const gateDir = hiddenDir(opts.evalsRepo, task.id, "gate");
   // Decision 97: the loop gates on the project's own suite; the hidden checks only grade, after the loop.
@@ -377,6 +403,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   assertHiddenDisjoint(loopChecks, grading);
   const approved = pipeline === "spec" ? loadApprovedSpec(opts.evalsRepo, task.id, loopChecks) : undefined;
   if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
+  if (pipeline === "review-fix" && !loopChecks.checks.unit) throw new Error(`${task.id}: a review that asks for fixes needs a gate check named "unit" (its fix tasks' required check)`);
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -411,14 +438,18 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const gate = loadHiddenChecks(gateStore.checksDir);
   assertHiddenDisjoint(gate, grading);
   if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
+  if (pipeline === "review-fix" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   const harness = opts.harness ?? productionHarness(task, p, routing, opts);
   const tier: TaskTier = t.tier ?? 1;
-  const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
+  // A review-fix task's fix tasks are bug fixes reviewed against their finding (decisions 114, 126); its report update is not.
+  const fixTasks = new Set<string>();
+  const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(fixTasks.has(taskId) ? { kind: "bug" as const } : {}), ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
   const review = opts.review ?? productionReview(p, ledger, material, opts);
   writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
+    ...(t.review ? { review: t.review } : {}),
     checks: Object.keys(gate.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
     workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, startedAt: new Date(started).toISOString(),
@@ -429,10 +460,48 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   let loop: RunLoopResult | null = null;
   let plannerSessions = 0;
   let usageWaitUntil: number | undefined;
+  let reviewed: ReviewSummary | null = null;
+  const problems: string[] = [];
+  const loopOptions = (): RunLoopOptions => ({
+    projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
+    worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: gate.checks, review,
+    taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
+    reprobe: async () => (await opts.preflight()).ok,
+    notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),
+    ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}),
+  });
   try {
     let plan: Plan | undefined;
     if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(gate.checks).map((name) => ({ name })));
-    else {
+    else if (pipeline === "review-fix") {
+      // Decision 126: the review session writes the report in its checkout; the runner commits it, then fixes each finding.
+      const step = await runReviewStep({ harness, ledger, routing, tier, runId, task, request, report: reportPath!, security: t.review?.security ?? false, p, baseRevision });
+      plannerSessions = step.sessions;
+      if (step.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = step.until ?? Math.floor(Date.now() / 1000) + 3600; }
+      else if (step.kind === "failed") { outcome = "review-failed"; error = step.reason; log(`${task.id} ${runId}: ${step.reason}`); }
+      else {
+        problems.push(...step.problems);
+        const output = { ...step.output, request }; // the runner's copy of the request, not the session's
+        baseRevision = commitReport(p.workspace, output.report, output.reportText, p.home) ?? baseRevision;
+        reviewed = { report: output.report, reportRevision: baseRevision, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
+        const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })));
+        if (!fix) { outcome = "complete"; log(`${task.id} ${runId}: the review found nothing to fix; the report is the deliverable`); }
+        else {
+          for (const id of Object.values(fix.taskOf)) fixTasks.add(id);
+          log(`${task.id} ${runId}: ${fix.plan.tasks.length} finding(s) to fix; starting the build loop`);
+          const result = await runReviewFixes({
+            output, fix,
+            runFixes: async () => { for (const e of planEntries(fix.plan)) ledger.append(e); return opts.runLoop(loopOptions()); },
+            runUpdate: async (update) => { for (const e of planEntries({ tasks: [update] })) ledger.append(e); return opts.runLoop(loopOptions()); },
+            state: () => { try { return rebuildState(ledger.entries(), { now: Date.now() }); } catch { return { tasks: {} } as unknown as RunState; } },
+            changedFiles: (revision) => safeGit(p.workspace, ["diff", "--name-only", "-z", `${revision}^1`, revision], { home: p.home }).toString().split("\0").filter(Boolean),
+          });
+          loop = result.update;
+          reviewed = { ...reviewed, outcomes: result.outcomes, updated: result.updated };
+          outcome = result.fixes.status === "complete" && result.updated ? "complete" : "blocked";
+        }
+      }
+    } else {
       const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log });
       plannerSessions = r.sessions;
       if (r.kind === "plan") plan = r.plan;
@@ -442,14 +511,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     if (plan) {
       for (const e of planEntries(plan)) ledger.append(e);
       log(`${task.id} ${runId}: ${plan.tasks.length} task(s) planned; starting the build loop`);
-      loop = await opts.runLoop({
-        projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
-        worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: gate.checks, review,
-        taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
-        reprobe: async () => (await opts.preflight()).ok,
-        notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),
-        ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}),
-      });
+      loop = await opts.runLoop(loopOptions());
       outcome = loop.status === "complete" ? "complete" : "blocked";
     }
   } catch (e) {
@@ -461,6 +523,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   }
 
   const metrics = jarvisMetrics(ledger.entries(), Date.now(), plannerSessions);
+  metrics.problems.push(...problems);
   const lastGreen = revisionOf(p.workspace, "refs/tags/last-green", p.home);
   const finalCommit = lastGreen ?? baseRevision;
   const diffStat = safeGit(p.workspace, ["diff", "--shortstat", baseRevision, finalCommit], { home: p.home }).toString().trim();
@@ -477,7 +540,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const out: JarvisRunResult = {
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
     outcome, ...(error !== undefined ? { error } : {}), loop,
-    claimedDone: outcome === "complete", baseRevision, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot,
+    claimedDone: outcome === "complete", baseRevision, review: reviewed, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot,
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
   };
@@ -528,5 +591,73 @@ async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: Routin
   } finally {
     rmSync(ws.path, { recursive: true, force: true });
   }
+}
+
+// ---- A review that asks for fixes (decision 126) ------------------------------------------------------
+
+const REVIEW_TASK = "review";
+
+type ReviewStepResult =
+  | { kind: "review"; output: ReviewOutput; sessions: number; problems: string[] }
+  | { kind: "usage-limited"; until: number | undefined; sessions: number }
+  | { kind: "failed"; reason: string; sessions: number };
+
+/**
+ * The review step (decision 126): one session, as the reviewer, in a fresh checkout of the base revision,
+ * with the review (and security) skills as text and the runner's static evidence. It writes the report and
+ * the findings file; the runner reads both after it ends and keeps nothing else it changed. A session that
+ * didn't finish, or left no usable report, starts no fixes. Never retried.
+ */
+async function runReviewStep(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; report: string; security: boolean; p: Paths; baseRevision: string }): Promise<ReviewStepResult> {
+  const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: REVIEW_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
+  try {
+    const sessionsDir = join(i.p.projectDir, "sessions");
+    mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
+    // The evidence comes from the runner-made checkout, before the session can change a byte of it.
+    const evidence = reviewStepEvidence(ws.path, i.security);
+    const header = join(sessionsDir, "review-a1.header.md");
+    writeFileSync(header, reviewStepHeader({ runId: i.runId, label: `Golden task ${i.task.id}.`, skills: loadSkills(reviewStepSkills(i.security)) }), { mode: 0o600 });
+    const prompt = reviewStepPrompt({ request: i.request, report: i.report, maxTurns: i.task.maxTurns, security: i.security, evidence });
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "review", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "review-a1.jsonl") });
+    recordSessionUsage(i.ledger, { runId: i.runId, taskId: REVIEW_TASK, attemptId: "a1", role: "review", tier: i.tier, route: routeTask("review", i.tier, undefined, i.routing), outcome });
+    const sessions = outcome.status === "refused" ? 0 : 1;
+    if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
+    if (outcome.status !== "finished") return { kind: "failed", reason: `review session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}; no fixes were started`, sessions };
+    try {
+      const output = readReviewOutput(ws.path, i.report, { inCheckout: (file) => inRevision(i.p.workspace, i.baseRevision, file, i.p.home) });
+      return { kind: "review", output, sessions, problems: strayEdits(ws.path, i.report, i.p.home) };
+    } catch (e) {
+      return { kind: "failed", reason: `${e instanceof Error ? e.message : String(e)}; no fixes were started`, sessions };
+    }
+  } finally {
+    rmSync(ws.path, { force: true, recursive: true }); // the review checkout: only the report leaves it, through the runner
+  }
+}
+
+/** True when `file` exists in `revision` (the review's base): a finding about a file that isn't there gets no fix task. */
+function inRevision(repo: string, revision: string, file: string, home: string): boolean {
+  try { safeGit(repo, ["cat-file", "-e", `${revision}:${file}`], { home }); return true; } catch { return false; }
+}
+
+/** What the review session changed besides its report and runner metadata: discarded with its checkout, and said so. */
+function strayEdits(workspace: string, report: string, home: string): string[] {
+  const raw = safeGit(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { home }).toString();
+  const changed = raw.split("\0").filter(Boolean).map((row) => row.slice(3)).filter((path) => path !== report && !path.startsWith(".jarvis/"));
+  if (!changed.length) return [];
+  const shown = changed.length > 10 ? `${changed.slice(0, 10).join(", ")} and ${changed.length - 10} more` : changed.join(", ");
+  return [`the review session also changed ${shown}; discarded (the review step writes only its report)`];
+}
+
+/**
+ * The session's report, committed by the runner on the run branch of the runner-made snapshot: the
+ * deliverable as the session wrote it, and the base every fix starts from. Undefined when the snapshot
+ * already had exactly that report.
+ */
+function commitReport(repo: string, report: string, text: string, home: string): string | undefined {
+  writeReportFile(repo, report, text);
+  if (!safeGit(repo, ["status", "--porcelain", "--untracked-files=all", "--", report], { home }).toString().trim()) return undefined;
+  safeGit(repo, ["add", "--", report], { home });
+  safeGit(repo, ["commit", "-q", "--no-verify", "-m", `review report ${report} (written by the review session)`, "--", report], { home });
+  return safeGit(repo, ["rev-parse", "HEAD"], { home }).toString().trim();
 }
 

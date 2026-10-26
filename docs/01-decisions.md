@@ -1151,6 +1151,49 @@ The lane wrote the round-1 judges' findings into the skills as examples: calenda
 *Why:* each was found by the real machine and none was visible in the lane's fakes: the lane's clone option copied everything, and its single-process browser could not take a second viewport.
 *From:* the Codex stage 4 fixes lane (gpt-6.1-sol) and its Sonnet review; backlog 127 (baseline wiring), 128 (baseline edges), 129 (single-process).
 
+### 126. A review that asks for fixes: the review writes the report, one bug task per finding, then the report says what happened (new; Oct 26; the review-fix worker, backlog 109, golden task 3; extends 89 and 114; the integrator may renumber; Fabricio can veto)
+Golden task 3 says "Put what you find in REVIEW.md and fix the real problems", and triage made it a read-only review with no edit pipeline, so the Jarvis arm couldn't run it and `/jarvis` had no way to fix what a review found.
+
+**Triage** (extends 89):
+- **A review stays a review.** When its words ask for fixes ("and fix …", ". Fix …", ", repair …"), or the model passes `--then`, triage adds a bug pipeline as its `then`, the way a question with edits gets one. A review's fixes are always bug work. A bare "fix" is not a request: "Review the fix for the login bug" asks for a review of a fix.
+- **Its one step becomes `review-report`.** The findings go to the report the request names ("put what you find in REVIEW.md", or `--report`), and to REVIEW.md when it names none. A typed path outside the checkout, or in `.git` or `.jarvis`, gets a `report-refused` signal and the default. The report is the step's only edit.
+- **A named report alone starts no fixes.** The review writes the file and stops. A named file is a deliverable, not permission to change code. A plain "review this" stays read-only, as before, and still has no Jarvis build-loop arm in evals.
+- **Security lens:** the review also follows the security skill when the request has security words or touches a tier-2 area (decision 37). Task 3's "outreach" is one.
+
+**The pipeline** (`runner/review-fix.ts`, shared by the eval arm and `jarvis run --plan review`):
+1. **The review step writes the report.** A session writes the report and `.jarvis/review/findings.json` in its checkout; the runner never writes the findings itself. In evals the runner starts that session as the reviewer, in a fresh checkout, with the review (and security) skills as text and the static trifecta detector's result as evidence. In production the interactive `/jarvis` session runs the review skill's new report mode. The prompt asks, for each finding, for:
+   - file:line, severity and confidence;
+   - the code path from an input the code really receives, and why that path is reachable ("a dangerous-looking line with no reachable path is not a finding");
+   - a proposed fix.
+
+   It also asks the session to say "Not a problem" explicitly for suspicious code it checked and cleared.
+2. **The runner reads both files once the session ends,** with the bounded no-follow reader:
+   - No report means no fixes, and the run says so ("the review session wrote no report at REVIEW.md; no fixes were started"). The eval outcome is `review-failed`.
+   - A symlink, a hard link, a symlinked folder or a path outside the checkout is refused the same way.
+   - Every finding must appear in the report with its id and file:line, so the JSON the fixes come from matches the report a person reads.
+   - A finding about a file the base revision lacks gets no task.
+   - Anything else the session changed is discarded, and the run says so.
+3. **The runner commits the report** on the run branch, that one path only. In evals it is the fixes' base revision, as task 2's spec is. In `jarvis run --plan review` it is committed before anything is hosted, since promotion needs a clean checkout. The findings stay claims.
+4. **One bug task per finding,** not one per file:
+   - Each exit condition embeds decision 114's for that one finding: confirmed in the code before anything changes, and fixed on every path. A low-confidence finding that can't be confirmed is left unchanged.
+   - The reviewer gets the bug brief, with the finding as the report.
+   - So each fixed or not-fixed line comes from that task's own gate, review and promotion, never from a session's account of which findings in a group it fixed. One false or stuck finding blocks only itself.
+   - Two findings in one file can overlap. That costs a runner merge and a second check, or a redo, which the loop already handles.
+   - A low-confidence finding's goal says to change code only once it is confirmed.
+   - Each fix task requires the `unit` check and a code review.
+   - Ids follow the ledger's own tasks, since the loop never re-creates an id. A task with the same definition keeps its id, so planning the same findings twice adds nothing.
+5. **A last task writes the outcome into the report.** It is gated and reviewed like any task and may touch only the report. It records what the runner's records say happened to each finding:
+   - fixed: passed and merged, with the files it touched;
+   - left unchanged: passed with no file change;
+   - not fixed: with the reason it was blocked;
+   - not attempted.
+
+   The session writes the report; the facts are the runner's. A fix loop that throws runs no update. In evals the run counts as complete only when every fix and the update passed. In production, `PreparedRun.drive` runs the two loops one after the other.
+
+*Why:* task 3 needs both the report and fixes that hold up. Review work and bug work already have their rules (the review skill, decision 114), so the pipeline joins them instead of inventing a third kind of task. False alarms are a review's known failure, and task 3 counts them. So the prompt asks for evidence per finding and an explicit "Not a problem", and the runner checks what code can check: each finding's id and file:line in the report.
+*Not done:* the protected scanners (gitleaks, semgrep, osv-scanner) don't run in the review step. They run only as gate checks recorded against a task, and a gate result for a task the ledger never created breaks state replay. The step says "not run" rather than imply a clean scan (backlog 133).
+*From:* the review-fix worker (Opus), Oct 26.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

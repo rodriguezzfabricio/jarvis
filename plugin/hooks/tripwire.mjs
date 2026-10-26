@@ -71,6 +71,60 @@ function bashInRunnerHome(command, cwd, env) {
   return false;
 }
 
+/** The command with its quotes, backslashes and $'' / $"" splits taken out: `research-""fixtures` and `.jar\vis` read as written. */
+export function shellWords(command) {
+  return command.replace(/\$(?=['"])/g, "").replace(/["'\\]/g, "");
+}
+
+// Commands that change files, by name (lowercased: APFS finds CHMOD too), and the wrappers before them.
+const MUTATORS = new Set(["chmod", "chown", "chgrp", "chflags", "xattr", "mv", "rm", "rmdir", "unlink", "ln", "link", "cp", "ditto",
+  "install", "rsync", "tee", "truncate", "dd", "touch", "mkdir", "shred"]);
+const WRAPPERS = new Set(["sudo", "doas", "env", "command", "builtin", "exec", "nohup", "time", "nice", "xargs"]);
+const OPERATOR = /^[;&|()<>\n]+$/;
+
+/**
+ * Bash that changes a `.jarvis` path other than the session's own files (decision 132): within one
+ * pipeline, a changing command (the list above, `sed -i`, `perl -i`, `find -delete` or `-exec`) and such a
+ * path, or a redirection into one. Follows plain `cd`. Best effort, like the rest: not a parser.
+ */
+function bashChangesJarvis(command, cwd, env) {
+  const home = env.HOME && isAbsolute(env.HOME) ? resolve(env.HOME) : undefined;
+  const expand = (w) => w.replace(/^(?:--?[\w-]+|[A-Za-z_]\w*)=/, "").replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, home ?? "~");
+  const foreign = (dir, w) => { const p = resolve(dir, expand(w)); return JARVIS_PATH.test(p) && !sessionOwned(p); };
+  const tokens = command.match(/[;&|()<>\n]+|[^\s;&|()<>`]+/g) ?? [];
+  let dir = typeof cwd === "string" && isAbsolute(cwd) ? cwd : "/";
+  let changes = false, names = false, head = true, prog = "";
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const next = tokens[i + 1];
+    if (OPERATOR.test(t)) {
+      if (t.includes(">")) { if (next !== undefined && !OPERATOR.test(next)) { if (foreign(dir, next)) return true; i++; } continue; }
+      if (t.includes("<")) { if (next !== undefined && !OPERATOR.test(next)) i++; continue; }
+      head = true; prog = "";
+      if (t === "|" || t === "|&") continue; // one pipeline: xargs and tee act on what came before
+      if (changes && names) return true;
+      changes = false; names = false;
+      continue;
+    }
+    if (head) {
+      if (/^[A-Za-z_]\w*=/.test(t)) continue; // an assignment before the command
+      prog = t.slice(t.lastIndexOf("/") + 1).toLowerCase();
+      if (WRAPPERS.has(prog)) continue;
+      head = false;
+      if (prog === "cd") {
+        if (next === undefined || OPERATOR.test(next)) dir = home ?? dir;
+        else { dir = resolve(dir, expand(next)); i++; }
+      }
+      if (MUTATORS.has(prog)) changes = true;
+      continue;
+    }
+    if ((prog === "sed" || prog === "perl") && (/^-[a-zA-Z]*i/.test(t) || t.startsWith("--in-place"))) changes = true;
+    if (prog === "find" && /^-(delete|exec|execdir|ok|okdir)$/.test(t)) changes = true;
+    if (foreign(dir, t)) names = true;
+  }
+  return changes && names;
+}
+
 // The files sessions may own under the repo's `.jarvis/`: a task session's notes (architecture §5) and
 // scratch scripts (decision 68: a script instead of a refused compound command), and what the skills
 // write there: intake rounds, answers and the taste draft; design mockups; the planner's plan and
@@ -99,54 +153,82 @@ function sessionOwned(path) {
   return SESSION_OWNED.test(path.toLowerCase()) && !/(^|\/)\.\.(\/|$)/.test(path);
 }
 
+// A Glob pattern or Grep glob may search the areas those files live in, and nothing else under `.jarvis`.
+const OWNED_AREAS = /^\/(notes|scratch|intake|mockups|checks|onboard|sweep|release)(\/|$)|^\/plan\.json$/i;
+
+function ownedSearch(pattern) {
+  if (pattern.split("/").includes("..")) return false;
+  return [...pattern.matchAll(/\.jarvis/gi)].every((m) =>
+    (m.index === 0 || pattern[m.index - 1] === "/") && OWNED_AREAS.test(pattern.slice(m.index + m[0].length)));
+}
+
 // The run provider's recorded research (decision 132): one regular file per source directly in the
 // project's `.jarvis/research-fixtures/`. Sessions may Read those files and list the folder with Glob; no
-// tool and no Bash command may write there, so a session can't plant evidence. A guard, not the
-// boundary: the eval's prep makes the files read-only and checks them against a manifest kept outside
-// the project. A read must name a regular file with one link, directly in the session's own folder
-// (same inode), with neither the file, the folder nor its `.jarvis` a symlink, so no link can alias the
-// runner home. Grep recurses, so it gets no exception; a Glob pattern can't leave the folder.
+// tool and no Bash command may write there. In an unsandboxed interactive session this is a guard
+// against mistakes, not the boundary: the eval's boundary is a post-run check of every fixture Read's
+// returned bytes in the transcript against the original recording (backlog 155). A read must name a
+// regular file with one link, directly in the session's own folder (same inode), with no symlink in any
+// path component from the git toplevel down, so no link can alias the runner home. Grep recurses, so it
+// gets no exception; a Glob pattern can't leave the folder.
 const FIXTURE_FILE = new RegExp(`(^|\\/)\\.jarvis\\/research-fixtures\\/${NAME}$`, "i");
 const FIXTURE_DIR = /(^|\/)\.jarvis\/research-fixtures\/?$/i;
 const FIXTURES_NAMED = /research-fixtures/i;
 const FIXTURES_READ_ONLY = "the recorded research fixtures are read-only: Read their files and list them with Glob";
 
-/** The session's fixture folder, under the nearest `.jarvis` from the cwd up to its git toplevel: a real folder in a real `.jarvis`. */
+/**
+ * The session's fixture folder, under the nearest `.jarvis` from the cwd up to its git toplevel (a real
+ * folder in a real `.jarvis`), and that toplevel: the folder holding `.git`, or else the one holding `.jarvis`.
+ */
 function fixtureFolder(cwd) {
+  let folder, holder;
   for (let d = realpathSync.native(cwd); ; d = dirname(d)) {
-    const jarvis = lstatSync(join(d, ".jarvis"), { throwIfNoEntry: false });
-    if (jarvis) {
-      const folder = jarvis.isDirectory() ? lstatSync(join(d, ".jarvis", "research-fixtures"), { throwIfNoEntry: false }) : undefined;
-      return folder?.isDirectory() ? folder : undefined;
+    if (!folder) {
+      const jarvis = lstatSync(join(d, ".jarvis"), { throwIfNoEntry: false });
+      if (jarvis) {
+        folder = jarvis.isDirectory() ? lstatSync(join(d, ".jarvis", "research-fixtures"), { throwIfNoEntry: false }) : undefined;
+        if (!folder?.isDirectory()) return undefined;
+        holder = d;
+      }
     }
-    if (marked(d, ".git") || dirname(d) === d) return undefined;
+    if (marked(d, ".git")) return folder && { folder, top: lstatSync(d) };
+    if (dirname(d) === d) return folder && { folder, top: lstatSync(holder) };
   }
 }
 
-/** dir, as spelled, is that folder: neither it nor its parent is a link, and it has the folder's inode. */
+/** dir, as spelled, is that folder: a directory with the folder's inode. */
 function isFolder(dir, folder) {
   const own = lstatSync(dir, { throwIfNoEntry: false });
-  const parent = lstatSync(dirname(dir), { throwIfNoEntry: false });
-  return !!own?.isDirectory() && !!parent?.isDirectory() && own.dev === folder.dev && own.ino === folder.ino;
+  return !!own?.isDirectory() && own.dev === folder.dev && own.ino === folder.ino;
+}
+
+/** No component of path, as spelled, is a symlink from the toplevel (by inode) down; never reaching it is a refusal. */
+function linkFreeBelow(path, top) {
+  for (let d = path; ; d = dirname(d)) {
+    const own = lstatSync(d);
+    if (own.isSymbolicLink()) return false;
+    if (own.dev === top.dev && own.ino === top.ino) return true;
+    if (dirname(d) === d) return false;
+  }
 }
 
 function fixtureRead(tool, ti, cwd) {
   try {
     if (typeof cwd !== "string" || !isAbsolute(cwd)) return false;
-    const folder = fixtureFolder(cwd);
-    if (!folder) return false;
+    const found = fixtureFolder(cwd);
+    if (!found) return false;
+    const { folder, top } = found;
     if (tool === "Read") {
       const p = String(ti.file_path ?? "");
       if (!FIXTURE_FILE.test(p) || p.split("/").includes("..")) return false;
       const target = resolve(cwd, p);
       const file = lstatSync(target, { throwIfNoEntry: false });
-      return !!file?.isFile() && file.nlink === 1 && isFolder(dirname(target), folder);
+      return !!file?.isFile() && file.nlink === 1 && isFolder(dirname(target), folder) && linkFreeBelow(target, top);
     }
     if (tool === "Glob") {
       const p = String(ti.path ?? ""), pattern = String(ti.pattern ?? "");
       if (!FIXTURE_DIR.test(p) || p.split("/").includes("..")) return false;
       if (pattern === "" || pattern.includes("/") || pattern.includes("**") || pattern.includes("..")) return false;
-      return isFolder(resolve(cwd, p), folder);
+      return isFolder(resolve(cwd, p), folder) && linkFreeBelow(resolve(cwd, p), top);
     }
     return false;
   } catch { return false; } // anything unreadable is refused
@@ -185,17 +267,21 @@ export function isJarvisSession(input, env) {
 export function check(input, env = process.env) {
   const tool = input?.tool_name;
   const ti = input?.tool_input ?? {};
-  const text = tool === "Bash" ? String(ti.command ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
-  // Glob's pattern and Grep's glob also name paths, beside the path they search from.
-  const also = tool === "Glob" && ti.path !== undefined ? [String(ti.pattern ?? "")] : tool === "Grep" && ti.glob !== undefined ? [String(ti.glob)] : [];
+  const text = tool === "Bash" ? String(ti.command ?? "") : tool === "Glob" ? String(ti.path ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
+  // Glob's pattern and Grep's glob name paths too, beside (or for Glob, instead of) the path they search from.
+  const also = tool === "Glob" ? [String(ti.pattern ?? "")] : tool === "Grep" && ti.glob !== undefined ? [String(ti.glob)] : [];
   if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
   if (also.some((t) => inRunnerHome(t, input?.cwd, env))) return OFF_LIMITS;
-  if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
+  const words = tool === "Bash" ? shellWords(text) : ""; // the command as Bash reads it, quotes and backslashes out
+  if (tool === "Bash" && bashInRunnerHome(words, input?.cwd, env)) return OFF_LIMITS;
   if (!isJarvisSession(input, env)) return undefined;
-  const named = tool === "Bash" ? [] : [text, ...also].filter((t) => JARVIS_PATH.test(t));
-  if (named.length && !named.every(sessionOwned) && !fixtureRead(tool, ti, input?.cwd)) return OFF_LIMITS;
-  if (tool !== "Bash") return undefined;
-  if (FIXTURES_NAMED.test(text)) return FIXTURES_READ_ONLY;
+  if (tool !== "Bash") {
+    const pathOk = !JARVIS_PATH.test(text) || sessionOwned(text) || fixtureRead(tool, ti, input?.cwd);
+    const searchOk = also.every((t) => !/\.jarvis/i.test(t) || ownedSearch(t));
+    return pathOk && searchOk ? undefined : OFF_LIMITS;
+  }
+  if (FIXTURES_NAMED.test(words)) return FIXTURES_READ_ONLY;
+  if (bashChangesJarvis(words, input?.cwd, env)) return "only the session's own .jarvis files may change";
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;
 }

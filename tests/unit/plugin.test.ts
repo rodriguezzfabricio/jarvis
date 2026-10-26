@@ -125,6 +125,9 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     linkSync(join(root, "fixtures-outside.md"), join(dir, "hard.md"));
     mkdirSync(join(repo, "x"));
     symlinkSync("../.jarvis", join(repo, "x", ".jarvis"));
+    symlinkSync(".", join(repo, "lnk")); // an ancestor link: lnk/.jarvis/research-fixtures is the real folder
+    mkdirSync(join(repo, "nested", ".jarvis", "research-fixtures"), { recursive: true }); // real, but not the session's folder
+    writeFileSync(join(repo, "nested", ".jarvis", "research-fixtures", "001-a.md"), "x\n");
     const linkedFolder = repoAt("fixtures-linked-folder", [".git/", ".jarvis/"]);
     const elsewhere = join(root, "fixtures-elsewhere", ".jarvis", "research-fixtures"); // a real folder in a real .jarvis
     mkdirSync(elsewhere, { recursive: true });
@@ -157,7 +160,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     ]) for (const t of ["Write", "Edit"]) expect(at(fx.repo, t, { file_path: p }), `${t} ${p}`).toBeTruthy();
     for (const c of [
       "printf fabricated > .jarvis/research-fixtures/001.md", "cp /tmp/x.md .JARVIS/Research-Fixtures/", "rm -r .jarvis/research-fixtures",
-      "ln -s ~/x .jarvis/research-fixtures/y.md", "cat .jarvis/research-fixtures/001-a.md", "mv research-fixtures old",
+      "ln -s ~/x .jarvis/research-fixtures/y.md", "cat .jarvis/research-fixtures/001-a.md", "cat .JARVIS/Research-Fixtures/001-a.md", "mv research-fixtures old",
     ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeTruthy();
     expect(at(fx.repo, "Bash", { command: "pnpm test" })).toBeUndefined();
   });
@@ -167,6 +170,8 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       ".jarvis/research-fixtures/link.md", ".jarvis/research-fixtures/hard.md", ".jarvis/research-fixtures/.hidden.md",
       ".jarvis/research-fixtures/sub/x.md", ".jarvis/research-fixtures/sub", ".jarvis/research-fixtures/missing.md",
       ".jarvis/research-fixtures/", "x/.jarvis/research-fixtures/001-a.md", join(fx.other, ".jarvis", "research-fixtures", "001-a.md"),
+      "lnk/.jarvis/research-fixtures/001-a.md", join(fx.repo, "lnk", ".jarvis", "research-fixtures", "INDEX.md"),
+      "nested/.jarvis/research-fixtures/001-a.md",
       ".jarvis/research-fixtures/../research-fixtures/001-a.md",
     ]) {
       expect(at(fx.repo, "Read", { file_path: p }), p).toBeTruthy();
@@ -179,7 +184,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     // A session whose fixture folder is a link has no fixtures, even spelled by the link's real target.
     expect(at(fx.linkedFolder, "Read", { file_path: join(fx.elsewhere, "001-a.md") })).toBeTruthy();
     expect(at(fx.linkedFolder, "Glob", { path: fx.elsewhere, pattern: "*.md" })).toBeTruthy();
-    for (const path of ["x/.jarvis/research-fixtures", join(fx.other, ".jarvis", "research-fixtures"), ".jarvis/research-fixtures/sub"]) {
+    for (const path of ["x/.jarvis/research-fixtures", "lnk/.jarvis/research-fixtures", join(fx.other, ".jarvis", "research-fixtures"), ".jarvis/research-fixtures/sub"]) {
       expect(at(fx.repo, "Glob", { path, pattern: "*.md" }), path).toBeTruthy();
     }
   });
@@ -196,6 +201,49 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       expect(at(fx.repo, "Glob", { path: ".", pattern }), pattern).toBeTruthy();
     }
     expect(at(fx.repo, "Glob", { pattern: ".jarvis/research-fixtures/*.md" })).toBeTruthy();
+  });
+
+  // Bash, best effort (decision 132; Codex round 2 on a89f149): the tripwire reads the command with its
+  // quotes, backslashes and $'' / $"" splits taken out, refuses any naming of the fixtures, and refuses a
+  // command that changes a .jarvis path other than the session's own files.
+  it("refuses Bash that changes runner-owned .jarvis paths or names the fixtures, however it is quoted", () => {
+    for (const c of [
+      'printf fabricated > .jarvis/research-""fixtures/001.md', "chmod -R u+w .jarvis", "mv .jarvis .jarvis-old", // round 2's reproductions
+      "printf x > .jarvis/research-'f'ixtures/1.md", 'cat .jarvis/re"search-fix"tures/1.md', "rm .jarvis/research\\-fixtures/1.md",
+      "printf x > .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research\\-fixtures/1.md", 'mv .jar""vis .x', 'ch""mod -R u+w .jarvis', "CHMOD -R u+w .JARVIS", "/bin/chmod -R u+w ./.jarvis",
+      "rm -rf .jarvis", "cp fake.json .jarvis/plan.md", "ln -s /tmp/x .jarvis/ledger.jsonl", "touch .jarvis/REPORT.md",
+      "printf x > .jarvis/plan.md", "printf x >> .JARVIS/ledger.jsonl", "echo x >.jarvis/inbox.md", "echo x | tee .jarvis/progress.md",
+      "dd if=/dev/zero of=.jarvis/ledger.jsonl", "sed -i s/a/b/ .jarvis/plan.md", "perl -pi -e s/a/b/ .jarvis/plan.md",
+      "truncate -s 0 .jarvis/ledger.jsonl", "rsync -a /tmp/x/ .jarvis/", "install -m 644 x .jarvis/plan.md", "chflags uchg .jarvis",
+      "cd .jarvis && rm ledger.jsonl", "cd .jarvis; chmod -R u+w .", "echo .jarvis | xargs rm -r", "find .jarvis -delete", "sudo rm -r .jarvis",
+    ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeTruthy();
+    expect(bash('cat ~/.jar""vis/secrets/p.env'), "the runner home through quotes").toBeTruthy();
+    expect(bash("cat ~/.jar\\vis/secrets/p.env"), "the runner home through a backslash").toBeTruthy();
+  });
+
+  it("lets Bash change the session's own .jarvis files and read the rest", () => {
+    for (const c of [
+      "printf x > .jarvis/notes/T1.md", "cp run.sh .jarvis/scratch/run.sh", "chmod +x .jarvis/scratch/run.sh", "rm .jarvis/scratch/run.sh",
+      "mv .jarvis/scratch/a.sh .jarvis/scratch/b.sh", "sh .jarvis/scratch/run.sh", "cat .jarvis/plan.json", "ls .jarvis",
+      "cat .jarvis/REPORT.md > report-copy.md", "grep -r rm .jarvis/notes", "ls .jarvis && rm -rf dist", "cd .jarvis/scratch && rm a.sh",
+      "node .jarvis/scratch/gen.mjs 2>/dev/null", "sort < .jarvis/plan.json > sorted.json",
+    ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeUndefined();
+  });
+
+  // Searches (Codex round 2): Glob patterns and Grep globs may reach the session's own .jarvis areas, as
+  // before 6cf42c3; runner-owned .jarvis paths, the fixtures' depth and ".." stay refused.
+  it("lets Glob and Grep search the session's own .jarvis areas, never runner-owned paths", () => {
+    for (const [tool, input] of [
+      ["Glob", { path: ".", pattern: ".jarvis/notes/*.md" }], ["Grep", { pattern: "x", path: ".", glob: ".jarvis/checks/*.mjs" }],
+      ["Glob", { path: ".", pattern: ".jarvis/mockups/**/*.png" }], ["Glob", { pattern: ".jarvis/intake/round-*.json" }],
+      ["Glob", { path: ".", pattern: "**/.jarvis/scratch/*" }], ["Glob", { path: ".", pattern: ".JARVIS/Notes/*.md" }],
+    ] as const) expect(at(fx.repo, tool, input), JSON.stringify(input)).toBeUndefined();
+    for (const [tool, input] of [
+      ["Glob", { path: ".", pattern: ".jarvis/*" }], ["Glob", { path: ".", pattern: ".jarvis/ledger*" }],
+      ["Glob", { path: ".", pattern: ".jarvis/notes/../ledger.jsonl" }], ["Glob", { path: ".", pattern: ".jarvis/notes*/x.md" }],
+      ["Grep", { pattern: "x", path: ".", glob: ".jarvis/**" }], ["Glob", { pattern: ".jarvis/{notes,evidence}/*" }],
+      ["Glob", { path: ".", pattern: ".jarvis*/ledger.jsonl" }],
+    ] as const) expect(at(fx.repo, tool, input), JSON.stringify(input)).toBeTruthy();
   });
 
   it("matches every .jarvis rule in any case, as APFS does by default", () => {

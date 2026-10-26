@@ -35,7 +35,7 @@ it.each(suppression.flatMap(([tool, file]) => ["file", "directory", "symlink"].m
   let starts = 0;
   expect(await runScanner(tool, pin, checkout, { homeDir: home, tmpDir: home, spawn: async (s) => {
     starts++; const r = await spawn(s);
-    return tool !== "gitleaks" && !s.args.includes("--version") ? { ...r, stdout: '{"results":[],"errors":[]}' } : r;
+    return tool !== "gitleaks" && !s.args.includes("--version") ? { ...r, stdout: '{"results":[],"errors":[],"paths":{"scanned":[]}}' } : r;
   } })).toMatchObject({ status: "error", detail: "suppression file present" });
   expect(starts).toBe(0);
   expect(lstatSync(path)).toBeDefined();
@@ -58,7 +58,7 @@ it("uses a fresh home outside the checkout by default and forces semgrep nosem d
   const { checkout, pin } = setup(); let env: Record<string, string> = {}; let args: readonly string[] = [];
   const r = await runScanner("semgrep", { ...pinnedSecurityScanners().semgrep!, bin: pin.bin, version: pin.version }, checkout, { spawn: async (s) => {
     env = s.env; args = s.args;
-    return { code: 0, stdout: s.args.includes("--version") ? "1.2.3" : '{"results":[],"errors":[]}', stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
+    return { code: 0, stdout: s.args.includes("--version") ? "1.2.3" : '{"results":[],"errors":[],"paths":{"scanned":[]}}', stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
   } });
   expect(r.status).toBe("pass");
   expect(env.HOME).not.toBe(checkout); expect(env.TMPDIR).not.toBe(checkout);

@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { withGitleaksConfig } from "./gitleaks-config.ts";
 import { detectOsvEcosystems, osvDatabaseReady, pathInside } from "./osv-database.ts";
 import type { Scanner, ScannerPin } from "./scanners.ts";
 import type { ScannerRuntime } from "./runtime.ts";
@@ -14,7 +15,7 @@ const osvAllowed = new Set(["scan", "source", ".", "--recursive", "--no-ignore",
 
 /** Only local, protected configuration and the reviewed option vocabulary can enter the gate. */
 export function offlineArgs(tool: Scanner, pin: ScannerPin, cwd: string, runtime: ScannerRuntime): readonly string[] {
-  if (tool === "gitleaks") return gitleaksArgs(pin, cwd, runtime);
+  if (tool === "gitleaks") return gitleaksArgs(withGitleaksConfig(pin), cwd, runtime);
   if (tool === "osv-scanner") {
     if (!osvFlags.every((flag) => pin.args.includes(flag)) || !pin.args.every((arg) => osvAllowed.has(arg))) throw Error("invalid offline osv configuration");
     return pin.args;
@@ -42,7 +43,7 @@ function gitleaksArgs(pin: ScannerPin, cwd: string, runtime: ScannerRuntime): re
   if (!gitleaksFlags.every((flag) => args.includes(flag))) throw Error("invalid offline gitleaks configuration");
   if (!args.every((arg, index) => (configIndex >= 0 && index === configIndex + 1) || gitleaksAllowed.has(arg))) throw Error("invalid offline gitleaks configuration");
   if (args.filter((arg) => arg.startsWith("--report-path=")).length !== 1 || args.filter((arg) => arg === "--config").length > 1) throw Error("invalid offline gitleaks configuration");
-  if (configIndex >= 0 && !protectedRules(args[configIndex + 1], pin, cwd, runtime)) throw Error("invalid offline gitleaks configuration");
+  if (configIndex < 0 || !protectedRules(args[configIndex + 1], pin, cwd, runtime)) throw Error("invalid offline gitleaks configuration");
   return args;
 }
 

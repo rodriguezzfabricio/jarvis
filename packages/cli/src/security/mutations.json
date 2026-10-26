@@ -487,14 +487,14 @@
   },
   {
     "name": "security backlog: Semgrep skipped paths accepted",
-    "file": "packages/cli/src/security/scanners.ts",
-    "anchor": "if (paths?.skipped !== undefined && array(paths.skipped).length !== 0) invalid();",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (paths.skipped !== undefined && (!Array.isArray(paths.skipped) || paths.skipped.length !== 0)) invalid();",
     "replacement": ""
   },
   {
     "name": "security backlog: Semgrep skipped targets accepted",
-    "file": "packages/cli/src/security/scanners.ts",
-    "anchor": "if (output.skipped_targets !== undefined && array(output.skipped_targets).length !== 0) invalid();",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (output.skipped_targets !== undefined && (!Array.isArray(output.skipped_targets) || output.skipped_targets.length !== 0)) invalid();",
     "replacement": ""
   },
   {
@@ -524,7 +524,7 @@
   {
     "name": "security backlog: gitleaks candidate configuration accepted",
     "file": "packages/cli/src/security/offline.ts",
-    "anchor": "configIndex >= 0 && !protectedRules(args[configIndex + 1], pin, cwd, runtime)",
+    "anchor": "configIndex < 0 || !protectedRules(args[configIndex + 1], pin, cwd, runtime)",
     "replacement": "false"
   },
   {
@@ -562,5 +562,53 @@
     "file": "packages/cli/src/security/osv-database.ts",
     "anchor": "manifest.scannerVersion !== scannerVersion",
     "replacement": "manifest.scannerVersion !== \"2.7.0\""
+  },
+  {
+    "name": "security coverage: coverage comparison skipped",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (coverage) return error(coverage);",
+    "replacement": ""
+  },
+  {
+    "name": "security coverage: extensionless shebang detection disabled",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "extension === \"\" && coveredShebang(absolute)",
+    "replacement": "false"
+  },
+  {
+    "name": "security coverage: coverage inventory follows symlinks",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (stat.isSymbolicLink()) throw Error(\"Coverage cannot follow symlinks\");",
+    "replacement": "if (stat.isSymbolicLink()) continue;"
+  },
+  {
+    "name": "security coverage: first-line read bound removed",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "Buffer.alloc(4096)",
+    "replacement": "Buffer.alloc(1024 * 1024)"
+  },
+  {
+    "name": "security coverage: protected gitleaks config not passed",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "return gitleaksArgs(withGitleaksConfig(pin), cwd, runtime);",
+    "replacement": "return gitleaksArgs(withGitleaksConfig(pin), cwd, runtime).filter((arg, index, args) => arg !== \"--config\" && args[index - 1] !== \"--config\");"
+  },
+  {
+    "name": "security coverage: gitleaks global path allowlist restored",
+    "file": "packages/cli/src/security/gitleaks.toml",
+    "anchor": "description = \"global allow lists\"",
+    "replacement": "description = \"global allow lists\"\npaths = ['''(?:^|/)node_modules/''', '''package-lock\\.json$''']"
+  },
+  {
+    "name": "security coverage: gitleaks default omitted at installation",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "const pin = tool === \"gitleaks\" ? withGitleaksConfig(configured) : configured;",
+    "replacement": "const pin = configured;"
+  },
+  {
+    "name": "security coverage: missing scanned evidence accepted",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return invalid();",
+    "replacement": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return [];"
   }
 ]

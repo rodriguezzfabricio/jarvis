@@ -93,13 +93,14 @@ it("provides a read-only reviewer skill and realistic security evals", async () 
 it("captures only sanitized scanner output through the installed worker", async () => {
   const { installSecurityChecks } = await import("../../packages/cli/src/security/protected.ts");
   const { root, ledger, store } = setup();
+  const checkout = join(root, "checkout"); mkdirSync(checkout);
   const dummy = "jarvis-canary-never-a-real-secret";
   const bin = join(root, "fake-scanner");
   const raw = JSON.stringify([{ RuleID: "dummy", File: "app.ts", StartLine: 1, Secret: dummy, Match: dummy }]);
   writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') ? '8.28.0' : ${JSON.stringify(raw)});`, { mode: 0o700 });
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: { gitleaks: { bin, version: "8.28.0", args: pinnedSecurityScanners().gitleaks!.args } } });
   store.approve(ledger, "approved scanner");
-  const observed = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "gitleaks"], cwd: root, env: { JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
+  const observed = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "gitleaks"], cwd: checkout, env: { JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(observed.code).toBe(0);
   expect(observed.stderr).toBe("");
   expect(observed.stdout).not.toContain(dummy);
@@ -110,7 +111,7 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   const { installSecurityChecks, runSecurityPass } = await import("../../packages/cli/src/security/protected.ts");
   const { root, ledger, store, input } = setup();
   mkdirSync(input.repoPath);
-  const outputs = { gitleaks: [], semgrep: { results: [], errors: [] }, "osv-scanner": { results: [] } };
+  const outputs = { gitleaks: [], semgrep: { results: [], errors: [], paths: { scanned: ["app.ts"] } }, "osv-scanner": { results: [] } };
   const pins: ScannerPins = {};
   const defaults = pinnedSecurityScanners();
   for (const [tool, output] of Object.entries(outputs)) {

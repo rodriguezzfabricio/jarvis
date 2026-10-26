@@ -1065,6 +1065,12 @@ Vitest 5.0.5 rewrites the stack of every error raised in a `.rejects`/`.resolves
 - **Still errors:** a TypeError or any other runtime error thrown inside a `.rejects` matcher, with or without that wording, and any promise-chain failure the reporter didn't record.
 *From:* the stage 0–1 mutation-hygiene work; Codex review of 927131c..9dc1d73 (FAIL, high: the wording shortcut let a recorded TypeError count). Tests: `tests/unit/mutation-classify.test.ts`, with a real Vitest run on `scripts/fixtures/promise-errors`.
 
+### 118. The native launcher uses Seatbelt directly, and a GUI sandbox also needs input isolation (new; Oct 25; the native-launch lane review, found on the real machine; refines 102's "sandbox runtime" for the native lane, follows 110)
+- **Seatbelt, not the sandbox runtime.** `lanes/desktop-sandbox.ts` writes a deny-by-default profile the way decision 110's `review/confine.ts` does; it needs `(literal "/")` (dyld lists the root at startup) and nothing below it.
+- **Files and network aren't enough for a GUI app.** Seatbelt doesn't cover WindowServer, and WindowServer judges synthetic input by the TCC-responsible process: the runner, which holds the Accessibility grant the osascript probes need. Verified on Darwin 25.5: a binary under the profile posted a key and a mouse move into the user's session.
+- **So the launcher refuses without input isolation.** `NativeSandboxDeps.isolateInput` is required with no default; without it native smoke stays "not run". The verified remedy (a helper that spawns with a disclaimed TCC responsibility, `responsibility_spawnattrs_setdisclaim`, a private API, plus a per-run input canary) is backlog 111 and needs Fabricio's go before it ships.
+*From:* the Opus review of the Codex native-launch lane (backlog 87); backlog 110 (gate hook), 111 (input isolation), 112 (bundle defects).
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

@@ -51,3 +51,15 @@ describe("native smoke uses a runner-owned artifact handoff after the build gate
     expect(await runDesktop(s.input, { gate: async () => ({ status: "fail", evidenceDir: s.evidenceDir } as GateResult), probe: s.probe, exists: () => true, platform: "darwin" })).toMatchObject({ status: "not run", reason: "not run: desktop build needs network" });
   });
 });
+
+describe("native sandbox availability", () => {
+  it("accepts an injected launcher and keeps unavailable confinement as not run, without a native pass entry", async () => {
+    const { NativeSandboxUnavailable } = await import("../../packages/cli/src/lanes/desktop-sandbox.ts");
+    const s = setup(), before = s.ledger.entries().length;
+    const gate = async (g: DesktopGateInput) => { await g.afterCases(s.checkout); return { status: "pass", evidenceDir: s.evidenceDir } as GateResult; };
+    const launch = vi.fn(async () => { throw new NativeSandboxUnavailable("canary denied incorrectly"); });
+    expect(await runDesktop(s.input, { gate, launch, exists: () => true, platform: "darwin" })).toMatchObject({ status: "not run", reason: expect.stringMatching(/sandbox.*canary/) });
+    expect(launch).toHaveBeenCalledOnce(); expect(s.ledger.entries().length).toBe(before);
+    expect(existsSync(join(s.evidenceDir, "native-observation.json"))).toBe(false);
+  });
+});

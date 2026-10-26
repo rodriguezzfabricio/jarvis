@@ -40,7 +40,9 @@ const PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 // System frameworks only; never the Homebrew prefix, runner config, or system temporary files.
 const SYSTEM = ["/System/Library", "/usr/lib", "/usr/bin", "/usr/sbin", "/bin", "/sbin", "/Library/Apple"];
 const SYSTEM_DATA = ["/usr/share", "/private/var/db/timezone", "/private/var/db/dyld"];
-// WindowServer is needed for native UI. No LaunchServices, AppleEvents, preferences or credential service.
+// WindowServer is needed for native UI. It judges posted input by the TCC-responsible process, which
+// Seatbelt can't narrow: hence `isolateInput` (backlog 110). No LaunchServices, AppleEvents,
+// preferences or credential service.
 const MACH = ["com.apple.windowserver.active", "com.apple.logd", "com.apple.logd.events", "com.apple.secinitd"];
 const overlaps = (a: string, b: string) => insideTree(a, b) || insideTree(b, a);
 function literal(path: string): string {

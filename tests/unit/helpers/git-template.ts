@@ -4,13 +4,26 @@
 // same HEAD, same config (the template is made with a clean environment, so no global or system config).
 // This module has no Vitest import, so a worker thread can use it; test files use initRepo (git-repo.ts).
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { accessSync, constants, cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+/** Fixture construction needs Git itself, not macOS's installer-capable /usr/bin/git shim. */
+export function fixtureGitCommand(platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "darwin") return "git";
+  for (const bin of [
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+    "/Library/Developer/CommandLineTools/usr/bin/git",
+  ]) {
+    try { accessSync(bin, constants.X_OK); return bin; } catch { /* Try the next installed location. */ }
+  }
+  throw new Error("Fixture construction requires direct installed Git in Xcode or CommandLineTools; no macOS launcher fallback");
+}
 
 /** Builds a template repository in `dir` (which must exist and be empty). */
 export function buildRepoTemplate(dir: string, identity: boolean): void {
   const env = { PATH: "/usr/bin:/bin", HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-  const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, env });
+  const bin = fixtureGitCommand();
+  const git = (...args: string[]) => execFileSync(bin, args, { cwd: dir, env });
   git("init", "-q", "-b", "main");
   if (identity) {
     git("config", "user.email", "t@t");

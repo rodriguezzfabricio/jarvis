@@ -7,7 +7,20 @@ const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 function stdout(captured: Captured): string {
   expect(captured.error).toBeUndefined();
+  if (typeof captured.value !== "string") expect(captured.value).toEqual(expect.objectContaining({ status: 0, signal: null }));
   return typeof captured.value === "string" ? captured.value : captured.value!.stdout;
+}
+export function assertNativeEnvironment(captured: Captured, root: string, key: string): void {
+  const observation = JSON.parse(stdout(captured));
+  // macOS can add this runtime field even with an explicit env. The pair still compares it exactly.
+  const runtime = observation.env?.__CF_USER_TEXT_ENCODING;
+  if (runtime !== undefined) expect(runtime).toMatch(/^0x[\da-f]+:0x[\da-f]+:0x[\da-f]+$/i);
+  expect(observation).toEqual({
+    label: "caller-git", args: ["space value", "", "$HOME", "`literal`", "--dash"], cwd: root,
+    env: { PATH: "/usr/bin:/bin", HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", [key]: "/callers/own",
+      ...(runtime === undefined ? {} : { __CF_USER_TEXT_ENCODING: runtime }),
+    },
+  });
 }
 function failure(api: string, captured: Captured, detail: string, code: number) {
   if (api === "spawn" || api === "spawnSync") {
@@ -38,19 +51,7 @@ export function nativeGitComparisons(api: string) {
       }
       for (const key of ["CPATH", "LIBRARY_PATH", "MANPATH", "SDKROOT"]) {
         if (!selected.includes(key)) continue;
-        if (key === "SDKROOT" && process.platform === "darwin") {
-          failure(api, result.cases[key]![side], "Failed to determine realpath of '/callers/own'", 72);
-          continue;
-        }
-        const output = stdout(result.cases[key]![side]);
-        expect(output, key).toContain(`HOME=${root}\n`);
-        // Git prepends its exec directory; the native shim can also extend caller variables.
-        expect(output, key).toMatch(/(?:^|\n)PATH=(?:[^\n]*:)?\/usr\/bin:\/bin\n/);
-        const variable = output.split("\n").find(line => line.startsWith(`${key}=`));
-        expect(variable, key).toMatch(new RegExp(`^${key}=.+$`));
-        if (key !== "SDKROOT") expect(variable!.slice(key.length + 1).split(":"), key).toContain("/callers/own");
-        expect(output, key).toContain("GIT_CONFIG_GLOBAL=/dev/null\n");
-        expect(output, key).toContain("GIT_CONFIG_NOSYSTEM=1\n");
+        assertNativeEnvironment(result.cases[key]![side], root, key);
       }
       if (selected.includes("failed git")) failure(api, result.cases["failed git"]![side], "unknown option: --not-a-real-option", 129);
       for (const [name, label] of [["first PATH executable", "caller-git"], ["relative PATH", "caller-git"], ["empty PATH entry", "cwd-git"], ["new earlier executable", "new-earlier-git"]] as const) {

@@ -16,7 +16,10 @@ export const faultBatches = [
   ["MANPATH", "SDKROOT", "relative PATH"],
   ["cached PATH", "failed git"],
 ];
-export type Captured = { value?: string | { stdout: string }; error?: unknown };
+export type Captured = {
+  value?: string | { stdout: string; stderr?: string; status?: number | null; signal?: string | null };
+  error?: unknown;
+};
 type Pair = { native: Captured; configured: Captured };
 type ProbeResult = {
   identities: Record<string, boolean>; cases: Record<string, Pair>; controls: Record<string, Pair>;

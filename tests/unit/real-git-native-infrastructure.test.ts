@@ -12,7 +12,7 @@ afterEach(() => { vi.resetAllMocks(); });
 
 const root = "/native-probe-fixture";
 const selected = ["absolute"];
-function payload(configured = "native observation") {
+function payload(configured = "native observation"): ReturnType<typeof runNativeGitProbe> {
   return {
     identities: { execFileSync: true, spawnSync: true, spawn: true, execFile: true, promisified: true },
     cases: { absolute: { native: { value: "native observation" }, configured: { value: configured } } },
@@ -29,7 +29,7 @@ function observe(run: () => unknown): Error {
     if (error instanceof Error) return error;
     throw error;
   }
-  throw new Error("fixture did not reach its intended failure");
+  expect.fail("fixture did not reach its intended failure");
 }
 function probeError(result: SpawnSyncReturns<string>): Error {
   vi.mocked(spawnSync).mockReturnValueOnce(result);
@@ -69,6 +69,68 @@ const failures = [
   { name: "missing output fields", result: child({ stdout: "{}" }) },
   { name: "wrong output field types", result: child({ stdout: JSON.stringify({ ...payload(), executions: "not an array" }) }) },
 ];
+
+describe("native probe expected rejection boundary", () => {
+  it("throws an assertion to the caller when the operation unexpectedly succeeds", () => {
+    expect(() => observe(() => {})).toThrowError(expect.objectContaining({
+      name: "AssertionError", message: "fixture did not reach its intended failure",
+    }));
+  });
+  it("returns the original infrastructure error unchanged", () => {
+    const error = new Error("worker infrastructure", { cause: spawnError });
+    expect(observe(() => { throw error; })).toBe(error);
+  });
+  it("returns the original behavioral assertion unchanged", () => {
+    const error = observe(() => { expect("configured").toBe("native"); });
+    expect(error.name).toBe("AssertionError");
+    expect(observe(() => { throw error; })).toBe(error);
+  });
+  it("rethrows a non-Error worker failure unchanged", () => {
+    const failure = { diagnostic: "non-Error worker failure" };
+    let caught: unknown;
+    try { observe(() => { throw failure; }); } catch (error) { caught = error; }
+    expect(caught).toBe(failure);
+  });
+});
+
+describe("native probe behavioral coverage", () => {
+  for (const fixture of [
+    { name: "empty", selected: [] },
+    { name: "oversized", selected: ["absolute", "one", "two", "three"] },
+    { name: "duplicate", selected: ["absolute", "absolute"] },
+  ]) {
+    it(`rejects ${fixture.name} selection before starting a worker`, () => {
+      vi.mocked(spawnSync).mockReturnValueOnce(child());
+      const error = observe(() => runNativeGitProbe("spawnSync", root, "comparisons", fixture.selected));
+      expect(error.name).toBe("AssertionError");
+      expect(spawnSync).not.toHaveBeenCalled();
+      expect(classification([error]).kind).toBe("caught");
+    });
+  }
+  for (const mode of ["comparisons", "faults"] as const) {
+    for (const field of ["cases", "controls"] as const) {
+      it(`asserts ${field} coverage in ${mode} mode`, () => {
+        const changed = payload();
+        if (mode === "faults") {
+          changed.controls = changed.cases;
+          changed.cases = {};
+        }
+        changed[field] = field === (mode === "comparisons" ? "cases" : "controls") ? {} : payload().cases;
+        vi.mocked(spawnSync).mockReturnValueOnce(child({ stdout: JSON.stringify(changed) }));
+        const error = observe(() => runNativeGitProbe("spawnSync", root, mode, selected));
+        expect(error.name).toBe("AssertionError");
+        expect(classification([error]).kind).toBe("caught");
+      });
+    }
+  }
+  it("asserts worker execution order even when case keys are complete", () => {
+    const changed = payload();
+    changed.executions.reverse();
+    const error = probeError(child({ stdout: JSON.stringify(changed) }));
+    expect(error.name).toBe("AssertionError");
+    expect(classification([error]).kind).toBe("caught");
+  });
+});
 
 describe("native probe infrastructure evidence", () => {
   for (const fixture of failures) {

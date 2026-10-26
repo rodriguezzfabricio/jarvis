@@ -116,7 +116,8 @@ await compare('no options', 'git', ['--version']);
 await compare('shell', 'git', ['--version'], { cwd: root, env, shell: true });
 await compare('absolute system git', '/usr/bin/git', ['--version'], { cwd: root, env });
 for (const key of ['CPATH', 'LIBRARY_PATH', 'MANPATH', 'SDKROOT']) {
-  await compare(key, 'git', ['-c', 'alias.e=!env', 'e'], { cwd: root, env: { ...env, [key]: '/callers/own' } });
+  // Arbitrary caller values belong to the controlled reporter, not a toolchain launcher.
+  await compare(key, join(absolute, 'git'), args, { cwd: root, env: { ...env, [key]: '/callers/own' } });
 }
 await compare('failed git', 'git', ['--not-a-real-option'], { cwd: root, env });
 process.stdout.write(JSON.stringify({ identities, cases, controls, executions }));

@@ -60,10 +60,12 @@ describe("jarvis run --plan review", () => {
     const p = project();
     const before = git(p, ["rev-parse", "HEAD"]);
     const run = await prepare(p);
+    // Assertions that can't throw first: the run branch moved, and the checkout is clean (promotion needs it; .jarvis/ is excluded).
+    expect(git(p, ["rev-parse", "HEAD"])).not.toBe(before);
+    expect(git(p, ["status", "--porcelain", "--untracked-files=all"])).toBe("");
     expect(git(p, ["rev-parse", "HEAD^"])).toBe(before);
     expect(git(p, ["show", "HEAD:REVIEW.md"])).toBe(REPORT.trimEnd());
     expect(git(p, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])).toBe("REVIEW.md");
-    expect(git(p, ["status", "--porcelain", "--untracked-files=all"])).toBe(""); // .jarvis/ is excluded; promotion needs a clean tree
     expect(run.loop.plan?.tasks.map((t) => [t.id, t.requiredChecks, t.requiredReviews])).toEqual([["T1", ["unit"], ["code"]]]);
     expect(run.loop.plan?.tasks[0]!.exitCondition).toContain(BUG_EXIT_CONDITION);
     expect(run.loop.plan?.tasks[0]!.goal).toContain(REQUEST);

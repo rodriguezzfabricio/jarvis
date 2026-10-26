@@ -17,6 +17,7 @@ interface Opts {
   platform?: string;
   onboarding?: boolean;
   then?: string;
+  report?: string;
   questions?: string;
   reason?: string;
 }
@@ -44,7 +45,8 @@ export function register(program: Command): void {
     .option("--new-platform", "the model's read: the change targets a platform or client the repo has no UI for")
     .option("--platform <name>", "the platform or client the change targets (web, ios, android, macos …)")
     .option("--onboarding", "the model's read: a question about the whole repo")
-    .option("--then <type>", "the model's read: the pipeline for edits a question also asks for (feature | refactor | bug | none)")
+    .option("--then <type>", "the model's read: the pipeline for edits a question also asks for (feature | refactor | bug | none); for a review, any edit type means fixes, which are bug work")
+    .option("--report <path>", "the model's read: the repo-relative .md or .txt file a review writes its findings to (decision 126)")
     .option("--questions <n>", "product questions the model expects intake to ask (0-7)")
     .option("--reason <text>", "one line on the model's judgment")
     .action((words: string[], opts: Opts) => {
@@ -59,6 +61,7 @@ export function register(program: Command): void {
           ...(opts.platform !== undefined ? { platform: opts.platform } : {}),
           ...(opts.onboarding ? { onboarding: true } : {}),
           ...(opts.then !== undefined ? { then: opts.then as NonNullable<Judgment["then"]> } : {}),
+          ...(opts.report !== undefined ? { report: opts.report } : {}),
           ...(opts.questions !== undefined ? { questions: integer("--questions", opts.questions) } : {}),
           ...(opts.reason !== undefined ? { reason: opts.reason } : {}),
         };

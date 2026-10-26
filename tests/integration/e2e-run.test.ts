@@ -76,10 +76,12 @@ describe("e2e: jarvis run on the production composition", { timeout: 600_000 }, 
     expect(requests[0]!.actor).toBe("broker");
     expect(existsSync(join(p.projectDir, "outbox")) ? readdirSync(join(p.projectDir, "outbox")) : []).toEqual([]); // nothing executed without approval
 
-    // Fabricio hears about the blocked task and the finished run; nothing failed to deliver.
-    expect(sent.map((m) => m.kind)).toEqual(["blocked", "finished"]);
-    expect(sent[0]!.text).toMatch(/T3.*blocked.*required check unavailable: lint/);
-    expect(sent[1]!.text).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
+    // Fabricio is asked about the pending request on the phone (decision 117), then hears about the blocked
+    // task and the finished run; nothing failed to deliver.
+    expect(sent.map((m) => m.kind)).toEqual(["approval", "blocked", "finished"]);
+    expect(sent[0]!.text).toMatch(/approve .*\(request .*, payload [0-9a-f]{12}\)/s);
+    expect(sent[1]!.text).toMatch(/T3.*blocked.*required check unavailable: lint/);
+    expect(sent[2]!.text).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
     expect(warnings).toEqual([]);
 
     // The broker was the run's: no socket name is left behind.

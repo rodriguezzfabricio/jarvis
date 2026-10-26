@@ -1,7 +1,7 @@
 // Runner loop tests, part 3 of 6 (recovery points, missing checks, routing snapshot, spawn identity, gate errors). The loop tests are spread over six files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLoop } from "../../packages/cli/src/runner/loop.ts";
@@ -37,4 +37,13 @@ it("rejects a harness that omits spawn identity callbacks", async () => {
 });
 it("a gate infrastructure error blocks rather than spinning forever", async () => {
   const f = fixture(); f.gate.mockImplementation(async (g) => recordGate(g, "error")); expect((await runLoop(f.options)).blocked).toEqual(["T1"]); expect(f.calls).toHaveLength(1);
+});
+it("gives each build session its task's planner notes, as claims, and none to a task without them (decision 113)", async () => {
+  const f = fixture(); const notes = ["Keep task files at the repo root.", "No new dependencies."];
+  const plan = { tasks: [{ id: "T2", goal: "second", exitCondition: "proven", dependencies: ["T1"], mayTouch: ["T2.txt"], planNotes: notes }] };
+  expect((await runLoop({ ...f.options, plan })).done).toEqual(["T1", "T2"]);
+  const t2 = f.calls.find((c) => c.prompt.includes("Task: T2"))!;
+  expect(t2.prompt).toMatch(/^Planner notes \(claims/m); for (const note of notes) expect(t2.prompt).toContain(`\n- ${note}`);
+  expect(readFileSync(t2.runHeaderPath!, "utf8")).toContain("- No new dependencies.");
+  expect(f.calls.find((c) => c.prompt.includes("Task: T1"))!.prompt).not.toContain("Planner notes");
 });

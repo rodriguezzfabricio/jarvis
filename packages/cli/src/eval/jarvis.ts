@@ -7,7 +7,7 @@ import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/cla
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type ReviewRequest } from "../review/index.ts";
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
-import { planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
+import { PLAN_NOTES, planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
 import { rebuildState, repairsUsed } from "../runner/state.ts";
 import { recordSessionUsage, summarizeUsage, type UsageTotals } from "../runner/usage-log.ts";
@@ -30,7 +30,7 @@ import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
  * Bug and refactor tasks (golden tasks 4 and 5) go triage → singleTaskPlan → the build loop. Feature and
  * new-product tasks (task 2) take the evals repo's written spec as the approved spec, run one planner
  * session, and read its plan against the runner's copy of that spec and the installed checks (decision
- * 91). The loop's protected checks are the project's own suite from hidden/<task>/gate/ (decision 97),
+ * 91); a refused plan gets one corrective planner session with the refusal (decision 113). The loop's protected checks are the project's own suite from hidden/<task>/gate/ (decision 97),
  * installed in a runner-owned folder no session can read. The grading checks (hidden/<task>/checks/) never
  * enter the loop, its ledger or any prompt: they run only after the run ends, in their own folder, on
  * the final revision, exactly as for the baseline. Reviews are Claude-only in evals (no Codex).
@@ -186,6 +186,20 @@ export function loadApprovedSpec(evalsRepo: string, taskId: string, loopChecks: 
 }
 
 const PLAN_TASK = "plan";
+/** One planner session, plus one corrective session when its plan is refused (decision 113). */
+const PLANNER_TRIES = 2;
+/** How much of a refusal the corrective prompt quotes: a schema error can list one issue per task. */
+const REFUSAL_CHARS = 4000;
+
+/** The plan's exact shape. The values are placeholders; the keys are the only ones PlanSchema accepts (it is strict). */
+const PLAN_SKELETON = JSON.stringify({
+  notes: ["<optional: a constraint every build session should know, such as where new code goes or what not to add>"],
+  tasks: [{
+    id: "T1", title: "<short title>", goal: "<one clear goal>", exitCondition: "<a measurable condition>",
+    acceptanceCriteria: ["AC1"], storyIds: ["S1"], dependencies: [], priority: 1,
+    requiredChecks: ["<a check name from the list below>"], requiredReviews: ["code"],
+  }],
+}, null, 2);
 
 export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number }): string {
   const list = Object.keys(input.checks.checks).sort().map((n) => `- ${n}: ${input.checks.criteria[n]!.join(", ") || "no criteria (project tests)"}`);
@@ -193,9 +207,22 @@ export function plannerPrompt(input: { request: string; specPath: string; checks
     "Plan this approved feature for Jarvis's build loop. You write a plan only: no product code, no checks, no commits.",
     `The request, as typed: ${input.request}`,
     `The approved spec is ${input.specPath}. It is confirmed: do not edit it or ask questions.`,
-    "Write .jarvis/plan.json: an object with a tasks array. Each task has id (T1, T2, ...), title, goal, exitCondition (measurable), acceptanceCriteria (AC ids), storyIds (S ids), dependencies (task ids), priority (a number; higher runs first), requiredChecks (names from the list below) and requiredReviews ([\"code\"]). Use small tasks in dependency order with no cycles. Cover every acceptance criterion in the spec, and link each task's criteria to its stories.",
+    `Write .jarvis/plan.json as one JSON object in exactly this shape (the values are placeholders):\n\`\`\`json\n${PLAN_SKELETON}\n\`\`\``,
+    `Only these keys are accepted: "tasks" and the optional "notes" at the top, and the ten keys shown in each task. The runner refuses a plan with any other key, at the top or in a task (a feature name, a summary, comments). Put anything else the build sessions should know in notes: at most ${PLAN_NOTES.count} strings of at most ${PLAN_NOTES.chars} characters each, ${PLAN_NOTES.total} in all. Every build session sees them as your claims, not as evidence.`,
+    "Task ids are T1, T2, ...; acceptanceCriteria are AC ids and storyIds are S ids from the spec; dependencies are task ids; priority is a number (higher runs first); requiredChecks are names from the list below; requiredReviews is [\"code\"]. Use small tasks in dependency order with no cycles. Cover every acceptance criterion in the spec, and link each task's criteria to its stories.",
     `Installed protected checks (names, and the criteria each covers; the runner owns them and you cannot read them). A task listing an AC must require a check that covers it:\n${list.join("\n")}`,
     `Stop after ${input.maxTurns} turns. The runner reads only .jarvis/plan.json.`,
+  ].join("\n\n");
+}
+
+/** The one corrective session (decision 113): the refusal, what to rewrite, then the full planning prompt (sessions don't persist). */
+export function plannerRetryPrompt(input: Parameters<typeof plannerPrompt>[0], refusal: string): string {
+  const quoted = refusal.length > REFUSAL_CHARS ? `${refusal.slice(0, REFUSAL_CHARS)}\n… (cut: ${refusal.length} characters in all)` : refusal;
+  return [
+    "Correct the plan. A planning session for this feature already wrote .jarvis/plan.json in this workspace, and the runner refused it:",
+    quoted,
+    "Rewrite .jarvis/plan.json only: fix what the refusal names, keep the rest of the plan where it is valid, and change no other file. This is the only corrective attempt. The planning instructions follow.",
+    plannerPrompt(input),
   ].join("\n\n");
 }
 
@@ -396,8 +423,8 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     let plan: Plan | undefined;
     if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(gate.checks).map((name) => ({ name })));
     else {
-      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision });
-      plannerSessions = r.started ? 1 : 0;
+      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log });
+      plannerSessions = r.sessions;
       if (r.kind === "plan") plan = r.plan;
       else if (r.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = r.until ?? Math.floor(Date.now() / 1000) + 3600; }
       else { outcome = "plan-failed"; error = r.reason; }
@@ -448,29 +475,46 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   return out;
 }
 
+/** `sessions` counts the planner sessions that started (a refused session never started). */
 type PlannerResult =
-  | { kind: "plan"; plan: Plan; started: true }
-  | { kind: "usage-limited"; until: number | undefined; started: boolean }
-  | { kind: "failed"; reason: string; started: boolean };
+  | { kind: "plan"; plan: Plan; sessions: number }
+  | { kind: "usage-limited"; until: number | undefined; sessions: number }
+  | { kind: "failed"; reason: string; sessions: number };
 
-async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string }): Promise<PlannerResult> {
+/**
+ * The planner session (decision 91), with one corrective attempt (decision 113): when a session finishes but
+ * the runner refuses its plan (not JSON, the schema, or coverage), one more session in the same workspace gets
+ * the refusal and rewrites .jarvis/plan.json. A session that didn't finish (usage-limited, refused, timed out,
+ * crashed) is never retried. Each session has its own header, log and usage record (plan-a1, plan-a2).
+ */
+async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string; log: (m: string) => void }): Promise<PlannerResult> {
   const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: PLAN_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
   try {
-    const sessions = join(i.p.projectDir, "sessions");
-    mkdirSync(sessions, { recursive: true, mode: 0o700 });
-    const header = join(sessions, "plan-a1.header.md");
-    writeFileSync(header, `Jarvis eval run: ${i.runId}\nRole: planner (architect). Golden task ${i.task.id}.\nPlans are claims, not evidence.\n`, { mode: 0o600 });
-    const prompt = plannerPrompt({ request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns });
-    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessions, "plan-a1.jsonl") });
-    recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId: "a1", role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
-    const started = outcome.status !== "refused";
-    if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, started };
-    if (outcome.status !== "finished") return { kind: "failed", reason: `planner session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}`, started };
-    try {
-      return { kind: "plan", plan: readPlan(ws.path, { spec: i.spec, checks: Object.keys(i.checks.checks).map((name) => ({ name, criteria: i.checks.criteria[name]! })) }), started: true };
-    } catch (e) {
-      return { kind: "failed", reason: `invalid plan: ${e instanceof Error ? e.message : String(e)}`, started: true };
+    const sessionsDir = join(i.p.projectDir, "sessions");
+    mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
+    const promptInput = { request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns };
+    const context = { spec: i.spec, checks: Object.keys(i.checks.checks).map((name) => ({ name, criteria: i.checks.criteria[name]! })) };
+    const refusals: string[] = [];
+    let sessions = 0;
+    for (let n = 1; n <= PLANNER_TRIES; n++) {
+      const attemptId = `a${n}`;
+      const label = n > 1 ? "corrective attempt: " : "";
+      const header = join(sessionsDir, `plan-${attemptId}.header.md`);
+      writeFileSync(header, `Jarvis eval run: ${i.runId}\nRole: planner (architect). Golden task ${i.task.id}.${n > 1 ? " Corrective attempt: the runner refused the previous plan." : ""}\nPlans are claims, not evidence.\n`, { mode: 0o600 });
+      const prompt = refusals.length ? plannerRetryPrompt(promptInput, refusals.at(-1)!) : plannerPrompt(promptInput);
+      const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, `plan-${attemptId}.jsonl`) });
+      recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId, role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
+      if (outcome.status !== "refused") sessions++;
+      if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
+      if (outcome.status !== "finished") return { kind: "failed", reason: [...refusals, `${label}planner session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}`].join("; "), sessions };
+      try {
+        return { kind: "plan", plan: readPlan(ws.path, context), sessions };
+      } catch (e) {
+        refusals.push(`${label}invalid plan: ${e instanceof Error ? e.message : String(e)}`);
+        if (n < PLANNER_TRIES) i.log(`${i.task.id} ${i.runId}: the runner refused the plan; one corrective planner session`);
+      }
     }
+    return { kind: "failed", reason: refusals.join("; "), sessions };
   } finally {
     rmSync(ws.path, { recursive: true, force: true });
   }

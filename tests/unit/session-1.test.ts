@@ -47,10 +47,10 @@ describe("session output capture (Codex review 2, medium)", () => {
   it("cleans up background processes the session left running (its whole process group)", async () => {
     const marker = join(dir, "grandchild-survived");
     const leaver = join(dir, "leaver");
-    writeFileSync(leaver, `#!/bin/sh\n(sleep 2; touch ${marker}) > /dev/null 2>&1 &\necho done\n`);
+    writeFileSync(leaver, `#!/bin/sh\n(sleep 1; touch ${marker}) > /dev/null 2>&1 &\necho done\n`);
     chmodSync(leaver, 0o755);
     await runSession({ ...base, bin: leaver });
-    await new Promise((res) => setTimeout(res, 3000));
+    await new Promise((res) => setTimeout(res, 2000)); // the descendant's touch would come at 1 s
     expect(existsSync(marker)).toBe(false);
   });
 

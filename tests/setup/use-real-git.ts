@@ -44,7 +44,9 @@ export function useRealGit(realGit: string): void {
     if (file !== "git") return file;
     const options = rest.find((a): a is { env?: Record<string, string | undefined>; shell?: unknown } => typeof a === "object" && a !== null && !Array.isArray(a));
     if (options?.shell) return file;
-    return findsShim(options?.env?.PATH ?? process.env.PATH ?? "", cache) ? realGit : file;
+    // The PATH a spawn searches: its own env's (Node falls back to /usr/bin:/bin when that env has none), else this process's.
+    const path = options?.env ? (options.env.PATH ?? "/usr/bin:/bin") : (process.env.PATH ?? "");
+    return findsShim(path, cache) ? realGit : file;
   };
   const target = cp as unknown as Record<string, (...args: unknown[]) => unknown>;
   for (const name of ["execFileSync", "spawnSync", "spawn", "execFile"]) {

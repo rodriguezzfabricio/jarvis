@@ -134,6 +134,9 @@ function checkContext(input: TaskSettingsInput): void {
     if (!isAbsolute(d) || d.startsWith("/tmp/") || d.startsWith("/var/")) throw new Error(`read-only dir must be an absolute real path: ${d}`);
     if (under(d, input.jarvisHome) || under(input.jarvisHome, d)) throw new Error("a read-only dir must not contain or sit inside the runner-owned folder");
     if (under(input.worktree, d) || under(d, input.worktree)) throw new Error("a read-only dir must not contain or sit inside the worktree");
+    // Decision 123: never a folder the session writes, so what it runs from there can't change under it.
+    if (under(input.cacheDir, d) || under(d, input.cacheDir)) throw new Error("a read-only dir must not contain or sit inside the session's cache");
+    if (t !== undefined && (under(t, d) || under(d, t))) throw new Error("a read-only dir must not contain or sit inside the session's temp folder");
   }
   assertTaskDomains(input.allowedDomains);
 }

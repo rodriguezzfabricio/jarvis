@@ -82,7 +82,7 @@ it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)("foreground broker cleans up o
     child.stdout.on("data", chunk => { output += String(chunk); });
     child.stderr.on("data", chunk => { output += String(chunk); });
     try {
-      const deadline = Date.now() + 5000;
+      const deadline = Date.now() + 30_000; // ends as soon as it listens; 5 s was too short for a loaded machine
       while (!output.includes("Broker listening") && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
       expect(output).toContain("Broker listening");
       child.kill(signal);
@@ -91,7 +91,7 @@ it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)("foreground broker cleans up o
       expect(readdirSync(root).filter(name => name.startsWith(".b-"))).toEqual([]);
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }
   }
-}, 15000);
+}, 90_000);
 it("act requires an explicit run socket instead of falling back to a global broker", () => {
   const result = spawnSync(process.execPath, [cli, "act", "deploy.preview", "--json", '{"ref":"main"}'], {
     env: { HOME: root, PATH: process.env.PATH! }, encoding: "utf8", timeout: 5000,

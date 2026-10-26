@@ -109,6 +109,9 @@ describe("scanner adapters", () => {
   ])("fails closed on scanner fault %s", async (body, detail) => {
     const { runScanner } = await import("../../packages/cli/src/security/scanners.ts");
     const { dir, pin } = fake(body);
-    expect(await runScanner("gitleaks", pin, dir, { timeoutMs: 250 })).toMatchObject({ status: "error", detail });
+    // Only the timeout case needs a short timeout; the others exit at once, and under load a 250 ms limit also cut off Node's start-up
+    // (and the version probe, which shares the limit), turning "invalid output" and "exit code" into "timeout".
+    const timeoutMs = detail === "timeout" ? 1_000 : 30_000;
+    expect(await runScanner("gitleaks", pin, dir, { timeoutMs })).toMatchObject({ status: "error", detail });
   });
 });

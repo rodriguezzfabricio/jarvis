@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
@@ -10,7 +11,7 @@ import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type 
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { PLAN_NOTES, planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import {
-  commitReportOnly, readReviewOutput, recordReport, reportsWritten, reportTargetProblem, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
+  commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, reportTargetProblem, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
   type FindingOutcome, type ReviewOutput,
 } from "../runner/review-fix.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
@@ -184,11 +185,28 @@ export function jarvisRequest(evalsRepo: string, task: GoldenTask): string {
 }
 
 /** `then`: the pipeline triage runs after the first one. A review with a bug `then` asked for fixes (decision 126). */
-export function pipelineFor(type: Triage["type"], then: Triage["type"] | null = null): Pipeline {
+/**
+ * `reviewFix`: the task's runner-owned opt-in to fix a review's findings (decision 126, round 3). A review's fixes
+ * never come from its request's words, so a review without it has no build-loop arm.
+ */
+export function pipelineFor(type: Triage["type"], reviewFix = false): Pipeline {
   if (type === "bug" || type === "refactor") return "single-task";
   if (type === "feature" || type === "new-product") return "spec";
-  if (type === "review" && then === "bug") return "review-fix";
-  throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm`);
+  if (type === "review" && reviewFix === true) return "review-fix";
+  throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm${type === "review" ? " (a review's fixes need the task's runner-owned reviewFix opt-in in task.json, decision 126)" : ""}`);
+}
+
+const ReviewFixOptIn = z.union([z.literal(true), z.object({ limits: z.array(z.string().trim().min(1).max(300)).min(1).max(10) }).strict()]);
+/**
+ * The task's runner-owned opt-in (task.json `reviewFix`): `true`, or `{ "limits": [...] }` whose limits ride on every
+ * fix task. Null when absent. Anything else refuses the task before the preflight.
+ */
+export function reviewFixOptIn(task: GoldenTask): { limits: string[] } | null {
+  const raw = (task as GoldenTask & { reviewFix?: unknown }).reviewFix;
+  if (raw === undefined) return null;
+  const parsed = ReviewFixOptIn.safeParse(raw);
+  if (!parsed.success) throw new Error(`${task.id}: task.json's reviewFix must be true or { "limits": ["…"] } (decision 126)`);
+  return parsed.data === true ? { limits: [] } : { limits: [...parsed.data.limits] };
 }
 
 /** Spec criteria that no check covers. */
@@ -392,9 +410,10 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   // Everything read from the evals repo is checked before the preflight, so a bad task file costs no usage.
   const request = jarvisRequest(opts.evalsRepo, task);
   const t = triage({ request, folder: { empty: task.source === undefined, designMd: false } });
-  const pipeline = pipelineFor(t.type, t.then?.type ?? null);
-  const reportPath = pipeline === "review-fix" ? t.review?.report ?? null : null;
-  if (pipeline === "review-fix" && reportPath === null) throw new Error(`${task.id}: triage asked for fixes but named no report`);
+  const optIn = reviewFixOptIn(task);
+  const pipeline = pipelineFor(t.type, optIn !== null);
+  // The report the request names, else the default; the fixes and their limits come only from the task's opt-in.
+  const reportPath = pipeline === "review-fix" ? t.review?.report ?? DEFAULT_REVIEW_REPORT : null;
   const grading = loadHiddenChecks(hiddenDir(opts.evalsRepo, task.id, "checks"));
   const gateDir = hiddenDir(opts.evalsRepo, task.id, "gate");
   // Decision 97: the loop gates on the project's own suite; the hidden checks only grade, after the loop.
@@ -476,7 +495,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     else if (pipeline === "review-fix") {
       // Decision 126: the review session writes the report in its checkout; the runner commits it, then fixes each finding.
       // The ungated report commit may never replace a file the snapshot already has: checked before any session (round 2).
-      const target = reportTargetProblem(reportPath!, inRevision(p.workspace, baseRevision, reportPath!, p.home), reportsWritten(ledger.entries()));
+      const target = reportTargetProblem(reportPath!, inRevision(p.workspace, baseRevision, reportPath!, p.home));
       const step: ReviewStepResult = target ? { kind: "failed", reason: `${target}; no review session was started`, sessions: 0 }
         : await runReviewStep({ harness, ledger, routing, tier, runId, task, request, report: reportPath!, security: t.review?.security ?? false, p, baseRevision });
       plannerSessions = step.sessions;
@@ -486,9 +505,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
         problems.push(...step.problems);
         const output = { ...step.output, request }; // the runner's copy of the request, not the session's
         const committed = commitReport(p.workspace, output.report, output.reportText, p.home);
-        if (committed) { baseRevision = committed; recordReport(ledger, output.report, committed); }
+        if (committed) baseRevision = committed;
         reviewed = { report: output.report, reportRevision: committed ?? null, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
-        const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })), [], t.review?.limits ?? []);
+        const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })), [], optIn?.limits ?? []);
         if (!fix) { outcome = "complete"; log(`${task.id} ${runId}: the review found nothing to fix; the report is the deliverable`); }
         else {
           for (const id of Object.values(fix.taskOf)) fixTasks.add(id);

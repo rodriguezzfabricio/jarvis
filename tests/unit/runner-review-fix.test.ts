@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { BUG_EXIT_CONDITION, PlanSchema } from "../../packages/cli/src/runner/plan.ts";
 import {
   DEFAULT_REVIEW_REPORT, REVIEW_FINDINGS_FILE, ReviewOutputError, findingOutcomes, readReviewOutput, reportPathProblem,
-  commitReportOnly, reportUpdateTask, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile, type ReviewOutput,
+  commitReportOnly, recordedFixYes, REVIEW_FIX_QUESTION, reportTargetProblem, reportUpdateTask, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile, type ReviewOutput,
 } from "../../packages/cli/src/runner/review-fix.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { loadSkills } from "../../packages/cli/src/runner/session-skills.ts";
@@ -456,6 +456,26 @@ describe("committing the report alone", () => {
     const head = git(["rev-parse", "HEAD"]);
     expect(commitReportOnly(git, "REVIEW.md", "review report")).toBeUndefined();
     expect(git(["rev-parse", "HEAD"])).toBe(head);
+  });
+});
+
+describe("the report's target and the opt-in answer (round 3)", () => {
+  it("never lets a report replace a file the base revision has, whoever wrote it", () => {
+    expect(reportTargetProblem("REVIEW.md", true)).toMatch(/REVIEW\.md already exists in the base revision/);
+    expect(reportTargetProblem("REVIEW.md", false)).toBeUndefined();
+  });
+
+  it("accepts only the user's confirmed, session-typed yes to the review-fix question", () => {
+    const entries = (answer: string, by = "user", confirmed = true, questionId = REVIEW_FIX_QUESTION) => [
+      { seq: 5, kind: "notify", actor: "runner", data: { source: "notify", phase: "answer", intakeOwned: true, intakeBy: "session", intakeAnswers: { [questionId]: answer } } },
+      { seq: 6, kind: "decision", actor: "runner", data: { source: "intake", answerSeq: 5, questionId, answer, by, confirmed } },
+    ] as unknown as Parameters<typeof recordedFixYes>[0];
+    expect(recordedFixYes(entries("yes"), "5:review-fix")).toBe(true);
+    expect(recordedFixYes(entries("Yes"), "5:review-fix")).toBe(true);
+    for (const [label, e, ref] of [
+      ["no", entries("no"), "5:review-fix"], ["yes, but…", entries("yes, but only the API"), "5:review-fix"], ["a default", entries("yes", "default-accepted"), "5:review-fix"],
+      ["unconfirmed", entries("yes", "user", false), "5:review-fix"], ["another question", entries("yes", "user", true, "Q1"), "5:Q1"], ["a ref to another question", entries("yes"), "5:Q1"], ["a wrong seq", entries("yes"), "6:review-fix"], ["a bad ref", entries("yes"), "five"],
+    ] as const) expect(recordedFixYes(e, ref), label).toBe(false);
   });
 });
 

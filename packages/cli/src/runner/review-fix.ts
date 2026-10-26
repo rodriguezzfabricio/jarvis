@@ -1,7 +1,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, writeSync, type Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
+import type { LedgerEntry } from "../ledger/ledger.ts";
 import { scanTrifecta, type TrifectaSignal } from "../security/trifecta.ts";
 import { readPlanningFile } from "./checks-author.ts";
 import { BUG_EXIT_CONDITION, PlanSchema, type Plan, type PlanTask } from "./plan.ts";
@@ -347,32 +347,36 @@ export async function runReviewFixes(r: ReviewFixRun): Promise<{ fixes: LoopResu
 
 // ---- The report in the main checkout -----------------------------------------------------------------
 
-/** The ledger record of a report this pipeline committed (decision 126): only such a file may be replaced later. */
-export const REVIEW_REPORT_RECORD = "review_report";
-
-/** The report paths this pipeline committed on this project, from the runner's own records. */
-export function reportsWritten(entries: readonly LedgerEntry[]): Set<string> {
-  const paths = new Set<string>();
-  for (const e of entries) {
-    const d = e.data as { type?: unknown; path?: unknown } | null;
-    if (e.actor === "runner" && e.kind === "reconciled" && d?.type === REVIEW_REPORT_RECORD && typeof d.path === "string") paths.add(d.path);
-  }
-  return paths;
-}
-
 /**
- * Why the report may not go to `report`, or undefined (Codex security review, round 2). The report commit is never
- * gated, so it may never replace a file the base revision already has (an agent's instructions, a build input,
- * the project's own notes), unless this pipeline wrote that file before. A new file, REVIEW.md included, is fine.
+ * Why the report may not go to `report`, or undefined (Codex security review, rounds 2 and 3). The report commit is
+ * never gated, so it never replaces a file the base revision already has, whoever wrote it: a path once a report may
+ * since have become an agent's instructions or a build input. A new file, REVIEW.md included, is fine.
  */
-export function reportTargetProblem(report: string, existsAtBase: boolean, written: ReadonlySet<string>): string | undefined {
-  if (existsAtBase && !written.has(report)) return `the report ${report} would replace a file the base revision already has, which this pipeline didn't write: name a new report file`;
+export function reportTargetProblem(report: string, existsAtBase: boolean): string | undefined {
+  if (existsAtBase) return `the report ${report} already exists in the base revision: a review's report never replaces a file, so name a new one (--report <path>)`;
   return undefined;
 }
 
-/** Records a committed report, so a later run of this pipeline may update it. */
-export function recordReport(ledger: Pick<Ledger, "append">, report: string, revision: string): void {
-  ledger.append({ kind: "reconciled", actor: "runner", data: { type: REVIEW_REPORT_RECORD, path: report, revision } });
+/** The intake question the interactive review asks before any fix (decision 126, round 3): "Fix the confirmed findings after the review?". */
+export const REVIEW_FIX_QUESTION = "review-fix";
+
+/**
+ * True only when `ref` (`<answerSeq>:review-fix`) names the user's explicit, recorded answer "yes" to the review-fix
+ * question (decision 119's provenance): a confirmed intake decision by the user, for that question, from the
+ * session-typed answer it cites. A default, a timeout, a phone tap, another question or any other answer is not.
+ */
+export function recordedFixYes(entries: readonly LedgerEntry[], ref: string): boolean {
+  const m = /^([1-9]\d*):review-fix$/.exec(ref);
+  if (!m) return false;
+  const seq = Number(m[1]);
+  const data = (e: LedgerEntry | undefined) => (e && e.data !== null && typeof e.data === "object" ? e.data as Record<string, unknown> : {});
+  const intent = entries.find((e) => e.seq === seq);
+  const recorded = entries.find((e) => e.actor === "runner" && e.kind === "decision" && data(e).source === "intake" && data(e).answerSeq === seq && data(e).questionId === REVIEW_FIX_QUESTION);
+  const d = data(recorded), i = data(intent);
+  const supplied = i.intakeAnswers as Record<string, unknown> | undefined;
+  return recorded !== undefined && d.by === "user" && d.confirmed === true && typeof d.answer === "string" && d.answer.trim().toLowerCase() === "yes"
+    && intent?.kind === "notify" && i.phase === "answer" && i.intakeBy === "session" && i.intakeOwned === true
+    && supplied !== undefined && typeof supplied === "object" && supplied[REVIEW_FIX_QUESTION] === d.answer;
 }
 
 /**

@@ -19,6 +19,13 @@ export interface RunContext {
   planKind?: SessionPlanKind;
   /** `--plan review --report <path>`: the report the review wrote (default REVIEW.md); the run's, never the findings' (decision 126). */
   reviewReport?: string;
+  /**
+   * The explicit opt-in to fix a review's findings (decision 126, round 3): `--fix`, or `--fix-answer <answerSeq>:review-fix`
+   * naming the user's recorded "yes" to the intake question. A review's fixes never start without one.
+   */
+  reviewFix?: { by: "flag" } | { by: "answer"; ref: string };
+  /** `--limit <text>` (repeatable) with the opt-in: limits every fix task keeps, and its reviewer checks. Never read from prose. */
+  reviewLimits?: string[];
 }
 /** A run ready to start, and what it hosts for its own duration (architecture §3.4). */
 export interface PreparedRun {
@@ -70,7 +77,9 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
   try {
     const entrypoint = seams.entrypoint ?? process.argv[1];
     if (!entrypoint) throw new Error("cannot resolve the CLI entry point");
-    const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : [])];
+    const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : []),
+      ...(context.reviewFix?.by === "flag" ? ["--fix"] : context.reviewFix?.by === "answer" ? ["--fix-answer", context.reviewFix.ref] : []),
+      ...(context.reviewLimits ?? []).flatMap((limit) => ["--limit", limit])];
     const child = (seams.spawn ?? spawnChild)(process.execPath, args, { cwd: context.repoPath, detached: true, stdio: ["ignore", fd, fd] });
     await new Promise<void>((accept, reject) => {
       child.once("error", reject);
@@ -104,8 +113,11 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .option("--plan <kind>", `read a session-owned plan: ${SESSION_PLAN_KINDS.join(" or ")} (.jarvis/<kind>/plan.json)`)
     .option("--report <path>", `with --plan review: the report the review wrote (default ${DEFAULT_REVIEW_REPORT}); a plain .md or .txt file nothing but a person reads`)
+    .option("--fix", "with --plan review: the explicit opt-in to fix the review's confirmed findings (decision 126)")
+    .option("--fix-answer <ref>", "with --plan review: <answerSeq>:review-fix, the user's recorded \"yes\" to the intake question, as the opt-in")
+    .option("--limit <text>", "with the opt-in: a limit every fix task keeps, such as \"make no changes to the public API\" (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option("--detach", "continue in a detached runner")
-    .action(async (options: { project?: string; plan?: string; report?: string; detach?: boolean }) => {
+    .action(async (options: { project?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean }) => {
       const cwd = resolve(seams.cwd ?? process.cwd());
       const projectId = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd });
       if (options.plan !== undefined && !(SESSION_PLAN_KINDS as readonly string[]).includes(options.plan)) throw new Error(`--plan must be one of: ${SESSION_PLAN_KINDS.join(", ")}`);
@@ -115,11 +127,21 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
         const problem = reportPathProblem(options.report);
         if (problem) throw new Error(`--report ${options.report} is refused: ${problem}`);
       }
+      // A review's fixes start only on an explicit opt-in, checked before anything else runs (decision 126, round 3).
+      const limits = options.limit ?? [];
+      if (options.plan === "review") {
+        if (!options.fix && options.fixAnswer === undefined) throw new Error("a review's fixes start only on an explicit opt-in: pass --fix, or --fix-answer <answerSeq>:review-fix for the user's recorded yes (decision 126)");
+        if (options.fix && options.fixAnswer !== undefined) throw new Error("--fix and --fix-answer: pass one opt-in, not both");
+        if (options.fixAnswer !== undefined && !/^[1-9]\d*:review-fix$/.test(options.fixAnswer)) throw new Error("--fix-answer takes <answerSeq>:review-fix");
+        for (const limit of limits) if (!limit.trim() || limit.length > 300) throw new Error("--limit takes a limit of 1 to 300 characters");
+      } else if (options.fix || options.fixAnswer !== undefined || limits.length) throw new Error("--fix, --fix-answer and --limit go with --plan review");
       const jarvisHome = seams.jarvisHome ?? join(homedir(), ".jarvis");
       const context: RunContext = {
         projectId, projectDir: runnerProjectDir(projectId, jarvisHome), jarvisHome, repoPath: projectRoot(cwd),
         ...(options.plan ? { planKind: options.plan as SessionPlanKind } : {}),
         ...(options.report !== undefined ? { reviewReport: options.report } : {}),
+        ...(options.plan === "review" ? { reviewFix: options.fix ? { by: "flag" as const } : { by: "answer" as const, ref: options.fixAnswer! } } : {}),
+        ...(limits.length ? { reviewLimits: [...limits] } : {}),
       };
       // Both checks come before a detached runner is spawned (Opus review L6).
       if (!seams.run && !seams.prepareRun) throw new Error("run composition is required: provide a harness, protected checks and a fresh read-only reviewer");

@@ -38,16 +38,17 @@ If reviewing a prior finding, change the position only on new evidence. State wh
 
 ## Report mode
 
-When a review request asks for fixes or names a report file (triage's `review.report`, default REVIEW.md), write the findings to that file instead of replying, and the same findings to `.jarvis/review/findings.json` for the runner. Those two files are the only writes: the fixes are a later pipeline, one bug task per finding.
+When the request names a report file (triage's `review.report`), or the user answered yes to the fix question below (then REVIEW.md unless one is named), write the findings to that file instead of replying, and the same findings to `.jarvis/review/findings.json` for the runner. Those two files are the only writes: the fixes are a later pipeline, one bug task per finding.
+
+Fixes need the user's explicit yes, never the request's wording. When triage's `review.fixesMentioned` is true, ask one intake round with a single question, id `review-fix`: "Fix the confirmed findings after the review?", default "no", the one alternative "yes". Only the user's recorded "yes" starts fixes. With any other answer, write no fixes and say at the top of the report that fixes weren't requested.
 
 - Give each finding a heading with its id and file:line (F1, F2, ...), then its severity, its confidence (high, medium or low), what is wrong, the evidence and a proposed fix.
 - The evidence is the code path from an input the code really receives to the line, and why that path is reachable: which caller, route or job passes it. A dangerous-looking line with no reachable path is not a finding.
 - Low confidence means you couldn't trace or confirm it. The fix step confirms such a finding before it changes code.
 - Say "Not a problem" explicitly for suspicious-looking code you checked and cleared: list it under that heading with its file:line and why it is safe, and in the JSON's cleared list.
 - The JSON object has request, report, findings (id, title, severity, confidence, file, line, evidence, fix) and cleared (file, line, what, why), and nothing else. The runner refuses a finding the report doesn't show with its id and file:line, and a report that is a symlink or outside the checkout.
-- The report is a plain .md or .txt file that only people read. It is never a file a build, an agent, a tool or Jarvis reads (README*, CLAUDE*, AGENTS*, DESIGN*, a name with instructions, rules or prompt in it, requirements.txt, anything hidden or under docs/spec/), and never a file the project already has unless an earlier review wrote it.
-- Fixes start only when the request plainly asks to fix, repair or resolve the code and says "don't" about no edit. A negation scoped to a named part ("make no changes to the public API") is a limit on the fixes. Otherwise there are no fixes: say at the top of the report that fixes weren't requested.
-- Then tell the user the fixes start with `jarvis run --plan review --detach`, plus `--report <path>` when the report isn't REVIEW.md: the runner takes the path from the run, never from the findings. A last task records in the report what was fixed and what wasn't.
+- The report is a new plain .md or .txt file that only people read. It is never a file the project already has, and never one a build, an agent, a tool or Jarvis reads (README*, CLAUDE*, AGENTS*, DESIGN*, a name with instructions, rules or prompt in it, requirements.txt, anything hidden or under docs/spec/).
+- After a yes, tell the user the fixes start with `jarvis run --plan review --fix-answer <answerSeq>:review-fix --detach`, plus `--report <path>` when the report isn't REVIEW.md, and `--limit "<limit>"` for each limit the user stated in their answer (such as "make no changes to the public API"). The runner takes the path and the limits from the run, never from the findings or the request. A last task records in the report what was fixed and what wasn't.
 
 ## Gotchas
 

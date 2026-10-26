@@ -66,6 +66,9 @@ describe("eval jarvis: a review-fix task's reviews", { timeout: 240_000 }, () =>
     addTask(fx, "03-review", REQUEST, { revert: [fx.fixRev] });
     addHidden(fx, "03-review", "checks", { unit: [] });
     addHidden(fx, "03-review", "gate", { unit: [] });
+    // The task's runner-owned opt-in to fix (decision 126, round 3).
+    const taskJson = join(fx.evalsRepo, "tasks", "03-review", "task.json");
+    writeFileSync(taskJson, JSON.stringify({ ...JSON.parse(readFileSync(taskJson, "utf8")), reviewFix: true }));
     const scenarioPath = join(fx.root, "review-scenario", "scenario.json");
     mkdirSync(dirname(scenarioPath));
     writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "review", match: "Independently review", repeat: true, steps: [{ result: { subtype: "success", text: "{\"findings\":[]}" } }] }] }));

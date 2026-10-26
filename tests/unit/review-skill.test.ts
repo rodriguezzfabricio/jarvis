@@ -28,7 +28,7 @@ describe("review skill", () => {
   });
   it("has a report mode for a review that asks for fixes, with the false-alarm rules (decision 126)", () => {
     const mode = skill().split("## Report mode\n")[1]?.split("\n## ")[0] ?? "";
-    for (const phrase of ["review.report", "REVIEW.md", ".jarvis/review/findings.json", "only writes", "file:line", "reachable", "not a finding", "Low confidence", "Not a problem", "cleared", "`jarvis run --plan review --detach`"]) expect(mode, phrase).toContain(phrase);
+    for (const phrase of ["review.report", "REVIEW.md", ".jarvis/review/findings.json", "only writes", "file:line", "reachable", "not a finding", "Low confidence", "Not a problem", "cleared", "review-fix", "fixesMentioned", "default \"no\"", "`jarvis run --plan review --fix-answer <answerSeq>:review-fix --detach`", "--limit"]) expect(mode, phrase).toContain(phrase);
   });
   it("ships realistic evals with resolvable fixture references", () => {
     const data = JSON.parse(readFileSync(`${root}/evals/evals.json`, "utf8"));

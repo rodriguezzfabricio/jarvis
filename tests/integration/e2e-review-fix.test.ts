@@ -49,7 +49,7 @@ describe("e2e: jarvis run --plan review", { timeout: 600_000 }, () => {
         harness: { binaryRealpath: () => p.claudeBin, session: (spec) => runSession({ ...spec, bin: p.claudeBin }), parentEnv: { HOME: p.home, USER: "e2e", LANG: "en_US.UTF-8" } },
       }),
     });
-    await program.parseAsync(["run", "--plan", "review"], { from: "user" });
+    await program.parseAsync(["run", "--plan", "review", "--fix"], { from: "user" });
 
     expect(output).toEqual(["Run complete: 2 done, 0 blocked"]);
     expect(sessionCalls(p).map((c) => [c.session, c.task])).toEqual([["T1-fix", "T1"], ["T2-report", "T2"]]);

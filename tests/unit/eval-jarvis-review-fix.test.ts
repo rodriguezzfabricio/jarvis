@@ -14,6 +14,7 @@ import { BUG_EXIT_CONDITION } from "../../packages/cli/src/runner/plan.ts";
 import { REVIEW_FINDINGS_FILE } from "../../packages/cli/src/runner/review-fix.ts";
 import { addHidden, addTask, FIXED, type EvalFixture } from "./eval-jarvis-fixture.ts";
 import { finished, fixture, json, options, removeFixtures } from "./helpers/eval-jarvis-run-fixture.ts";
+import { CODEX_PHRASINGS } from "./helpers/review-fix-phrasings.ts";
 
 afterEach(removeFixtures);
 
@@ -21,10 +22,18 @@ const REQUEST = "Review the citizenship filter before I ship it. Put what you fi
 const git = (cwd: string, home: string, args: string[]) => safeGit(cwd, args, { home }).toString().trim();
 const put = (root: string, rel: string, text: string) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text); };
 
-function reviewTask(fx: EvalFixture, request = REQUEST, id = "03-review") {
+/** The task's runner-owned opt-in (decision 126, round 3): `true`, `{ limits }`, or null for none. */
+function setReviewFix(fx: EvalFixture, id: string, reviewFix: unknown): void {
+  const path = join(fx.evalsRepo, "tasks", id, "task.json");
+  const task = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  if (reviewFix === null) delete task.reviewFix; else task.reviewFix = reviewFix;
+  writeFileSync(path, JSON.stringify(task, null, 2));
+}
+function reviewTask(fx: EvalFixture, request = REQUEST, id = "03-review", reviewFix: unknown = true) {
   addTask(fx, id, request, { revert: [fx.fixRev] });
   addHidden(fx, id, "checks", { unit: [] });
   addHidden(fx, id, "gate", { unit: [] });
+  setReviewFix(fx, id, reviewFix);
   return loadTask(fx.evalsRepo, id);
 }
 
@@ -93,11 +102,31 @@ const created = (projectDir: string) => Ledger.open(projectDir).entries().filter
 const show = (repo: string, home: string, rev: string, path: string) => git(repo, home, ["show", `${rev}:${path}`]);
 
 describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", () => {
-  it("has a pipeline only when the review asks for fixes", () => {
-    expect(pipelineFor("review", "bug")).toBe("review-fix");
-    expect(() => pipelineFor("review", null)).toThrow(/not a build-loop task/);
-    expect(() => pipelineFor("review")).toThrow(/not a build-loop task/);
+  it("has a pipeline only when the task opts in, never from the request's words", () => {
+    expect(pipelineFor("review", true)).toBe("review-fix");
+    expect(() => pipelineFor("review", false)).toThrow(/not a build-loop task/);
+    expect(() => pipelineFor("review")).toThrow(/runner-owned reviewFix/);
     expect(pipelineFor("bug")).toBe("single-task");
+  });
+
+  it("starts nothing for a review that asks for fixes in words but has no runner-owned opt-in", async () => {
+    for (const [i, request] of [REQUEST, ...CODEX_PHRASINGS.filter((p) => p.startsWith("Review"))].entries()) {
+      const fx = fixture();
+      let preflights = 0;
+      const task = reviewTask(fx, request, `03-words-${i}`, null);
+      const error = await runJarvis(task, options(fx, { preflight: async () => { preflights++; return { ok: true }; }, runLoop: reviewFixLoop([]) })).then(() => "ran", (e: unknown) => String(e));
+      expect(error, request).toMatch(/triage says review: not a build-loop task/);
+      expect(preflights, request).toBe(0);
+    }
+  });
+
+  it("refuses an opt-in that isn't exactly true or a limits object", async () => {
+    for (const bad of ["yes", 1, { limits: "public API" }, { limits: [""] }, { limits: ["x"], extra: true }, false]) {
+      const fx = fixture();
+      const task = reviewTask(fx, REQUEST, "03-bad", bad);
+      const error = await runJarvis(task, options(fx, { runLoop: reviewFixLoop([]) })).then(() => "ran", (e: unknown) => String(e));
+      expect(error, JSON.stringify(bad)).toMatch(/reviewFix/);
+    }
   });
 
   it("reviews, commits the session's report, fixes each finding through the loop, then records what happened in the report", async () => {
@@ -213,19 +242,22 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
     expect(r.metrics.problems.join("\n")).toMatch(/review session also changed src\/citizen\.mjs; discarded/);
   });
 
-  it("hands a limit the request scoped to a named part to every fix task", async () => {
+  it("hands the opt-in's limits to every fix task, and never derives a limit from the request's words", async () => {
     const fx = fixture();
     const calls: RunLoopOptions[] = [];
-    const scoped = `${REQUEST.replace(/\.$/, "")}; make no changes to the public API.`;
-    const r = await runJarvis(reviewTask(fx, scoped, "03-scoped"), options(fx, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop(calls) }));
+    const r = await runJarvis(reviewTask(fx, REQUEST, "03-limited", { limits: ["make no changes to the public API"] }), options(fx, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop(calls) }));
     expect(r.outcome).toBe("complete");
     const fixTask = created(calls[0]!.projectDir)[0]!;
     expect(fixTask.goal).toContain("The request limits the fixes: \"make no changes to the public API\"");
     expect(fixTask.exitCondition).toContain("keeps the request's limits: \"make no changes to the public API\"");
+    const prose = fixture();
+    const proseCalls: RunLoopOptions[] = [];
+    await runJarvis(reviewTask(prose, `${REQUEST.replace(/\.$/, "")}; make no changes to the public API.`, "03-prose"), options(prose, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop(proseCalls) }));
+    expect(created(proseCalls[0]!.projectDir)[0]!.goal).not.toMatch(/limits the fixes/);
   });
 
-  // Round 2 (high 4): the report commit is ungated, so it may never replace a file the snapshot already has.
-  it("refuses a report path the snapshot already has, before any session, and records the report it commits", async () => {
+  // Rounds 2 and 3: the report commit is ungated, so it never replaces a file the snapshot already has, whoever wrote it.
+  it("refuses a report path the snapshot already has, before any session", async () => {
     const fx = fixture();
     put(fx.sourceRepo, "REVIEW.md", "# The project's own review notes\n");
     git(fx.sourceRepo, fx.home, ["add", "--", "REVIEW.md"]);
@@ -233,25 +265,21 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
     addTask(fx, "03-existing", REQUEST, { revert: [fx.fixRev], rev: git(fx.sourceRepo, fx.home, ["rev-parse", "HEAD"]) });
     addHidden(fx, "03-existing", "checks", { unit: [] });
     addHidden(fx, "03-existing", "gate", { unit: [] });
+    setReviewFix(fx, "03-existing", true);
     const s = reviewer(writesReport);
     const calls: RunLoopOptions[] = [];
     const r = await runJarvis(loadTask(fx.evalsRepo, "03-existing"), options(fx, { harness: s.harness, runLoop: reviewFixLoop(calls) }));
     expect(r.outcome).toBe("review-failed");
-    expect(r.error).toMatch(/REVIEW\.md would replace a file the base revision already has/);
+    expect(r.error).toMatch(/REVIEW\.md already exists in the base revision/);
     expect(s.inputs).toHaveLength(0);
     expect(calls).toHaveLength(0);
     expect(show(r.workspace, fx.home, r.finalCommit, "REVIEW.md")).toBe("# The project's own review notes");
-
-    const fresh = fixture();
-    const ok = await runJarvis(reviewTask(fresh), options(fresh, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop([]) }));
-    const records = Ledger.open(join(ok.resultsDir, "project")).entries().filter((e) => e.kind === "reconciled" && (e.data as { type?: string }).type === "review_report");
-    expect(records.map((e) => e.data)).toEqual([expect.objectContaining({ type: "review_report", path: "REVIEW.md", revision: ok.review!.reportRevision })]);
   });
 
   it("a plain review still has no Jarvis build-loop arm: it stops before the preflight", async () => {
     const fx = fixture();
     let preflights = 0;
-    const task = reviewTask(fx, "Review the citizenship filter before I ship it.", "03-plain");
+    const task = reviewTask(fx, "Review the citizenship filter before I ship it.", "03-plain", null);
     await expect(runJarvis(task, options(fx, { preflight: async () => { preflights++; return { ok: true }; }, runLoop: reviewFixLoop([]) }))).rejects.toThrow(/triage says review: not a build-loop task/);
     expect(preflights).toBe(0);
   });
@@ -261,6 +289,7 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
     addTask(fx, "03-nounit", REQUEST, { revert: [fx.fixRev] });
     addHidden(fx, "03-nounit", "checks", { unit: [] });
     addHidden(fx, "03-nounit", "gate", { lint: [] });
+    setReviewFix(fx, "03-nounit", true);
     let preflights = 0;
     await expect(runJarvis(loadTask(fx.evalsRepo, "03-nounit"), options(fx, { preflight: async () => { preflights++; return { ok: true }; }, runLoop: reviewFixLoop([]) }))).rejects.toThrow(/unit/);
     expect(preflights).toBe(0);

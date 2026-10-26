@@ -28,10 +28,9 @@ import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
 import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
 import {
-  commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordReport, reportsWritten, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
+  commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordedFixYes, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
   type ReviewFixPlan, type ReviewOutput,
 } from "../runner/review-fix.ts";
-import { fixAuthorization } from "../triage/authorize.ts";
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
@@ -103,18 +102,22 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
  * before anything is hosted). The runner commits the report alone on the run branch, since every fix starts
  * from it and promotion needs a clean checkout, and plans one bug task per finding after the ledger's own tasks.
  */
-export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string): { output: ReviewOutput; fix: ReviewFixPlan | null } {
+export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string, optIn: { fix: RunContext["reviewFix"]; limits: readonly string[] }): { output: ReviewOutput; fix: ReviewFixPlan | null } {
+  // The explicit opt-in comes first (round 3): the flag, or the user's recorded yes to the review-fix question.
+  if (!optIn.fix) throw new Error("a review's fixes start only on an explicit opt-in: --fix, or --fix-answer <answerSeq>:review-fix (decision 126)");
+  if (optIn.fix.by === "answer" && !recordedFixYes(ledger.entries(), optIn.fix.ref)) throw new Error(`--fix-answer ${optIn.fix.ref} names no recorded user answer of yes to the review-fix question`);
   // A tree path, not a pathspec: `HEAD:<file>` is never read as a pattern.
   const inHead = (file: string) => { try { git(["cat-file", "-e", `HEAD:${file}`]); return true; } catch { return false; } };
   const output = readReviewOutput(repoPath, report, { inCheckout: inHead });
-  // The ungated report commit never replaces a file the run branch has, unless this pipeline wrote it (round 2).
-  const target = reportTargetProblem(report, inHead(report), reportsWritten(ledger.entries()));
+  // The ungated report commit never replaces a file the run branch has, whoever wrote it (rounds 2 and 3). A report
+  // the branch already has as it stands (a rerun) commits nothing, so it replaces nothing.
+  const changes = git(["status", "--porcelain", "--untracked-files=all", "--", `:(literal)${report}`]) !== "";
+  const target = changes ? reportTargetProblem(report, inHead(report)) : undefined;
   if (target) throw new ReviewOutputError("report-refused", target);
-  const committed = commitReportOnly(git, report, `review report ${report} (written by the review session)`);
-  if (committed) recordReport(ledger, report, committed);
+  commitReportOnly(git, report, `review report ${report} (written by the review session)`);
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
-  // The request's limits ride on the fix tasks; the run itself (`jarvis run --plan review`) is the user's go-ahead to fix.
-  return { output, fix: reviewFixPlan(output, checks, existing, fixAuthorization(output.request).limits) };
+  // The limits come from the opt-in (`--limit`), never from the request's words.
+  return { output, fix: reviewFixPlan(output, checks, existing, optIn.limits) };
 }
 
 /** The build sessions' network allowlist: none. The same value goes to the harness and the phone approvals' isolation check. */
@@ -168,7 +171,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const runBranch = runBranchOf(git);
   const spec = approvedSpec(git, runBranch);
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
-  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git) : undefined;
+  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
   const plan = reviewRun ? reviewRun.fix?.plan : planFor(context.repoPath, context.planKind, spec, checks);
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));

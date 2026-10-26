@@ -29,6 +29,7 @@ const MAP = [
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
+  [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
@@ -39,6 +40,7 @@ const MAP = [
   [/^packages\/cli\/src\/doctor\/mutations[^/]*\.json$/, "0-1"],
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
+  [/^packages\/cli\/src\/toolchain\/mutations[^/]*\.json$/, "3"], // the sessions' pinned Go, found by the stage 3 evals (decision 123)
   [/^packages\/cli\/src\/(review|security|lanes)\/mutations[^/]*\.json$/, "4"],
   [/^packages\/cli\/src\/(release|setup)\/mutations[^/]*\.json$/, "5"],
   [/^packages\/cli\/src\/broker\/adapters\/(?:[^/]+\/)*mutations[^/]*\.json$/, "5"],

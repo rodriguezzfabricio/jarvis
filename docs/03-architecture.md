@@ -48,6 +48,7 @@ The first thing `/jarvis` does is classify the request. That classification pick
 | **Bug** | 0–1 | reproduce → failing test → fix → checks → lanes the change touches → report | Intake, mockups, design stage, architecture |
 | **Refactor** | 1 | pin current behavior with tests → small steps → same tests pass → architecture lane | Intake, design |
 | **Question / onboarding** | — | read-only research → answer with file citations → decision archaeology (for onboarding) | Any edit |
+| **Review** | 1–2 | read-only review: findings with file references and fixes. When the request asks for fixes (decision 126): the review writes the report (the one it names, or REVIEW.md) → one bug task per finding → the report records what was fixed | Any edit (plain review); edits besides the report, then the bug pipeline's (with fixes) |
 | **Release / ops** | — | release manifest → rehearsals → broker-gated deploy → smoke test | Building |
 | **Sweep** (scheduled) | 0–1 | cleanup, docs, dependency report, memory prune | Intake, design |
 

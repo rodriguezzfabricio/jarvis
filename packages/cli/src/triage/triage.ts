@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { reportPathProblem } from "../runner/review-path.ts";
+import { forbidsEdits, mentionsFixes } from "./fix-words.ts";
 
 /**
  * Triage, the deterministic half (architecture §2, decisions 2, 5, 37, 89): classify a request into a
@@ -63,6 +65,7 @@ export const STEPS = {
   answer: { label: "answer with file citations", skill: null, stage: 2, by: "session", dispatch: true },
   "decision-archaeology": { label: "decision archaeology", skill: "onboard", stage: 6, by: "session", dispatch: true },
   review: { label: "read-only review (findings with file references and fixes)", skill: "review", stage: 4, by: "session", dispatch: true },
+  "review-report": { label: "review written to the report (each finding with file:line, severity, evidence and a proposed fix)", skill: "review", stage: 4, by: "session", dispatch: true },
   architecture: { label: "architecture", skill: "architect", stage: 3, by: "runner", dispatch: false },
   "build-loop": { label: "build loop", skill: "build", stage: 3, by: "runner", dispatch: false },
   reproduce: { label: "reproduce", skill: "debug", stage: 3, by: "runner", dispatch: false },
@@ -99,8 +102,10 @@ const Judgment = z.object({
   platform: z.string().trim().min(1).max(40).optional(),
   /** A question about the whole repo: map it and reconstruct its decisions. */
   onboarding: z.boolean().optional(),
-  /** The pipeline for edits a question also asks for, or "none" when it asks for none. */
+  /** The pipeline for edits a question also asks for, or "none" when it asks for none. A review's fixes are always bug work. */
   then: z.enum([...EDIT_TYPES, "none"]).optional(),
+  /** The file a review writes its findings to, when the request names one in words code doesn't read (decision 126). */
+  report: z.string().refine((p) => reportPathProblem(p) === undefined, "the report must be a plain repo-relative .md or .txt path outside .git and .jarvis").optional(),
   /** Product questions the model expects intake to ask (decision 8's cap: 7). Used in the upgrade sentence. */
   questions: z.number().int().min(0).max(7).optional(),
   /** One line on why, shown with the signals. */
@@ -126,6 +131,7 @@ export type TriageInput = z.input<typeof Input>;
 export type SignalName =
   | "override" | "empty-folder" | "design-md" | "attached-error" | "error-text"
   | "bug-words" | "question-words" | "onboarding-words" | "review-words" | "refactor-words" | "release-words" | "edit-words"
+  | "fixes-mentioned" | "report-file" | "report-refused" | "security-words" | "no-edit-words"
   | "tier2-area" | "several-modules" | "one-sentence" | "no-type-words"
   | "judgment" | "judgment-overruled" | "missing-behavior" | "new-screen" | "new-platform" | "tier-raised";
 export interface Signal { name: SignalName; detail: string }
@@ -146,8 +152,14 @@ export interface Pipeline {
 export interface Triage extends Pipeline {
   decidedBy: "override" | "empty-folder" | "judgment" | "text" | "default";
   onboarding: boolean;
-  /** A question that also asks for edits: this pipeline runs after the read-only one (decision 89). */
+  /** A question that also asks for edits: this pipeline runs after the read-only one (decision 89). Never set for a review (decision 126). */
   then: Pipeline | null;
+  /**
+   * A review's report and lens (decision 126); null for every other type. `report`: the file the request names
+   * for the findings, else null. `security`: the review also follows the security skill (security words, or a
+   * tier-2 area). `fixesMentioned`: the request mentions fixes, a signal only: fixes start on an explicit opt-in.
+   */
+  review: { report: string | null; security: boolean; fixesMentioned: boolean } | null;
   signals: Signal[];
   upgrade: { from: "bug"; to: "feature"; announcement: string } | null;
   /** The classification in one line, for the first message (after the upgrade sentence, if any). */
@@ -163,6 +175,9 @@ const ONBOARDING = /\b(get familiar|onboard(?:ing)?|walk me through (?:this|the)
 const REVIEW = /^\s*(?:please\s+|(?:can|could|would) you\s+)?(?:do an? (?:security |code )?review of|(?:security[- ]|code[- ])?review|audit)\b/i;
 const REFACTOR = /\b(refactor\w*|clean ?up|restructur\w*|reorganiz\w*|simplif(?:y|ies)|extract|rename|dedupe|deduplicate)\b/i;
 const RELEASE = /\b(deploy\w*|release|ship it|publish|roll ?back|promote (?:it |the \w+ )?to (?:prod\w*|staging)|go live)\b/i;
+// A file the request says to put the findings in: "Put what you find in REVIEW.md", "write them to docs/x.md".
+const REPORT_FILE = /\b(?:put|write|save|record|list|document|keep|log|leave)\b[^.!?\n]{0,80}?\b(?:in|into|to|as)\s+(?:a\s+file\s+(?:called|named)\s+)?[`'"]?([^\s`'"]+?\.(?:md|markdown|txt))(?![\w/])/i;
+const SECURITY = /\b(secur\w*|vulnerab\w*|exploit\w*|injection|ssrf|xss|csrf|owasp|pen-?test\w*|threat model\w*)\b/i;
 // Edits a question asks for after it: "… and make it easier for agents to work in" (golden task 7).
 const EDITS = /\b(?:and|also)\s+(?:then\s+)?(?:please\s+)?(make|clean|tidy|simplify|improve|refactor|reorganiz\w*|restructur\w*|fix|add|update|create|build|write|set up|remove)\b/i;
 const EDIT_KIND: Record<string, EditType> = { fix: "bug", make: "refactor", clean: "refactor", tidy: "refactor", simplify: "refactor", improve: "refactor", refactor: "refactor" };
@@ -303,7 +318,7 @@ export function triage(raw: TriageInput): Triage {
     return { type: t, label, tier: tierFor(t), mockups: design, ...stepsFor(t, { design, onboarding: t === "question" && onboarding }) };
   };
 
-  const first = pipeline(type, type === "question" && onboarding ? "Onboarding" : LABELS[type]);
+  let first = pipeline(type, type === "question" && onboarding ? "Onboarding" : LABELS[type]);
   // Mixed requests (decision 89): a question that also asks for edits keeps both parts. The override (ask:) means only the question.
   let then: Pipeline | null = null;
   if (type === "question" && decidedBy !== "override" && j.then !== "none") {
@@ -311,6 +326,34 @@ export function triage(raw: TriageInput): Triage {
     if (verb) add("edit-words", `"${verb}"`);
     const kind = j.then ?? (verb ? EDIT_KIND[EDITS.exec(text)![1]!.toLowerCase()] ?? (words.refactor ? "refactor" : "feature") : undefined);
     if (kind) then = pipeline(kind, LABELS[kind]);
+  }
+
+  // A prohibition on editing vetoes the edits triage reads from words: a question's, and a review's report (fail closed).
+  const noEdit = forbidsEdits(text);
+  if (noEdit) add("no-edit-words", `"${noEdit}": no edits`);
+  if (type === "question" && noEdit && then) then = null;
+
+  // A review is always a review, and triage never starts its fixes (decision 126, round 3): not from the request's
+  // words and not from the model's judgment. Fixes start only on an explicit, structured opt-in outside triage (the
+  // user's recorded answer to the intake question review-fix, `jarvis run --plan review --fix`, or an eval task's
+  // runner-owned reviewFix). The request mentioning fixes is a signal that prompts that question, nothing more.
+  let review: Triage["review"] = null;
+  if (type === "review") {
+    const fixesMentioned = mentionsFixes(text);
+    if (fixesMentioned) add("fixes-mentioned", "the request mentions fixes: they start only on an explicit opt-in (the review-fix question, or jarvis run --plan review --fix)");
+    let named = noEdit ? undefined : j.report;
+    const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];
+    if (named === undefined && typed !== undefined) {
+      const problem = reportPathProblem(typed);
+      if (problem) add("report-refused", `"${typed}": ${problem}`);
+      else named = typed;
+    }
+    const report = named ?? null;
+    if (report !== null) add("report-file", `the findings go to ${report}`);
+    const security = hit(SECURITY);
+    if (security) add("security-words", `"${security}"`);
+    review = { report, security: security !== undefined || areas.length > 0, fixesMentioned };
+    if (report !== null) first = { ...first, ...stepsFor("review", { design: false, onboarding: false, report: true }) };
   }
 
   const upgrade = upgraded ? { from: "bug" as const, to: "feature" as const, announcement: upgradeSentence(first.tier === 2, j.questions) } : null;
@@ -322,11 +365,13 @@ export function triage(raw: TriageInput): Triage {
     upgrade?.announcement,
     `${first.label}${first.tier === null ? "" : `, tier ${first.tier}`}${decidedBy === "override" ? ` (your override: ${input.override})` : ""}.`,
     ...describe(first),
+    review?.report ? `Report: ${review.report}.` : undefined,
+    review?.fixesMentioned ? "The request mentions fixes: they start only on an explicit opt-in." : undefined,
     then ? `Then: ${then.label}, tier ${then.tier}.` : undefined,
     ...(then ? describe(then) : []),
   ].filter((x) => x !== undefined).join(" ");
 
-  return { ...first, decidedBy, onboarding, then, signals, upgrade, headline };
+  return { ...first, decidedBy, onboarding, then, review, signals, upgrade, headline };
 }
 
 const LABELS: Record<TaskType, string> = {
@@ -339,7 +384,7 @@ function upgradeSentence(big: boolean, questions: number | undefined): string {
 }
 
 /** §2's table: the steps each pipeline runs, the ones it never runs, and when the runner takes over. */
-function stepsFor(type: TaskType, o: { design: boolean; onboarding: boolean }): Pick<Pipeline, "steps" | "never" | "handoff"> {
+function stepsFor(type: TaskType, o: { design: boolean; onboarding: boolean; report?: boolean }): Pick<Pipeline, "steps" | "never" | "handoff"> {
   const steps = (...ids: StepId[]): Step[] => ids.map((id) => ({ id, ...STEPS[id] }));
   switch (type) {
     case "new-product":
@@ -355,6 +400,8 @@ function stepsFor(type: TaskType, o: { design: boolean; onboarding: boolean }): 
     case "question":
       return { steps: o.onboarding ? steps("read-only-research", "answer", "decision-archaeology") : steps("read-only-research", "answer"), never: ["any edit"], handoff: "none" };
     case "review":
+      // A review that writes a report (decision 126): the report is its one edit; any fixes are the `then` pipeline's.
+      if (o.report) return { steps: steps("review-report"), never: ["edits besides the report"], handoff: "none" };
       return { steps: steps("review"), never: ["any edit"], handoff: "none" };
     case "release":
       return { steps: steps("release-manifest", "rehearsals", "broker-deploy", "smoke-test"), never: ["building"], handoff: "now" };

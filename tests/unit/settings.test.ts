@@ -96,6 +96,17 @@ describe("task settings: permanent requirements (decisions 59, 60, 68, 69)", () 
     expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/.jarvis-work/worktrees/p/t1/src"] })).toThrow(/worktree/);
   });
 
+  // Decision 123: a read-only folder (the install, a pinned toolchain) is never one the session can write,
+  // or what it runs from there could change under it, and denyWrite would cut into its own cache.
+  it("refuses a read-only folder that overlaps the session's cache or its temp folder", () => {
+    expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/.jarvis-work/cache/go"] })).toThrow(/read-only dir.*cache/);
+    expect(() => buildTaskSettings({ ...ctx, readOnlyDirs: ["/Users/f/.jarvis-work/cache"] })).toThrow(/read-only dir.*cache/);
+    const t = { ...ctx, sessionTmpDir: "/private/tmp/jt-abc123" };
+    expect(() => buildTaskSettings({ ...t, readOnlyDirs: ["/private/tmp/jt-abc123/go"] })).toThrow(/read-only dir.*temp/);
+    expect(() => buildTaskSettings({ ...t, readOnlyDirs: ["/private/tmp"] })).toThrow(/read-only dir.*temp/);
+    expect(buildTaskSettings({ ...t, readOnlyDirs: ["/Users/f/.jarvis-work/toolchains/05/r1"] }).sandbox.filesystem.denyWrite).toContain("/Users/f/.jarvis-work/toolchains/05/r1");
+  });
+
   it("allows no socket when no broker runs", () => {
     const { brokerSocket: _, ...noBroker } = ctx;
     expect(buildTaskSettings(noBroker).sandbox.network.allowUnixSockets).toEqual([]);

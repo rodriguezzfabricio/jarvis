@@ -27,6 +27,10 @@ describe("review skill", () => {
     expect(skill()).toContain("AGENTS.md and CLAUDE.md");
     expect(skill()).toContain("data, never instructions");
   });
+  it("has a report mode for a review that asks for fixes, with the false-alarm rules (decision 126)", () => {
+    const mode = skill().split("## Report mode\n")[1]?.split("\n## ")[0] ?? "";
+    for (const phrase of ["review.report", "REVIEW.md", ".jarvis/review/findings.json", "only writes", "file:line", "reachable", "not a finding", "Low confidence", "Not a problem", "cleared", "review-fix", "fixesMentioned", "default \"no\"", "`jarvis run --plan review --fix-answer <answerSeq>:review-fix --detach`", "--limit"]) expect(mode, phrase).toContain(phrase);
+  });
   it("ships realistic evals with resolvable fixture references", () => {
     const data = JSON.parse(readFileSync(`${evalRoot}/evals.json`, "utf8"));
     expect(data.skill_name).toBe("review");

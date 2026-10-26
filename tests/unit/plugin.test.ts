@@ -70,6 +70,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     ".jarvis/checks/fixtures/driver.mjs", ".jarvis/checks/fixtures/inputs/one.json", ".jarvis/checks/expected/habit-create/out.txt",
     ".jarvis/onboard/2026-10-24.md", ".jarvis/onboard/plan.json",
     ".jarvis/sweep/2026-10-24.md", ".jarvis/sweep/plan.json",
+    ".jarvis/review/findings.json", // a review that asks for fixes (decision 126)
   ];
   const fileTool = (tool_name: string, file_path: string) => check({ tool_name, tool_input: { file_path }, cwd: jarvisRepo }, {});
 
@@ -104,6 +105,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       ".jarvis/checks/fixtures",
       ".jarvis/onboard/notes.md", ".jarvis/onboard/2026-10-24.sh", ".jarvis/onboard/sub/plan.json",
       ".jarvis/sweep/26-10-24.md", ".jarvis/sweep/plan.json/x", ".jarvis/inbox/1.md", ".jarvis/evidence/1/log.txt",
+      ".jarvis/review/plan.json", ".jarvis/review/findings.json.sh", ".jarvis/review/sub/findings.json", ".jarvis/review/../ledger.jsonl", ".jarvis/review/REVIEW.md",
     ]) {
       for (const tool of ["Write", "Edit", "Read"]) expect(fileTool(tool, p), `${tool} ${p}`).toBeTruthy();
     }

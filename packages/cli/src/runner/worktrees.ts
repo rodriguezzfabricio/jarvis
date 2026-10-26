@@ -40,7 +40,11 @@ export interface WorkspaceFileChecks {
   fstat?: (fd: number) => Stats;
 }
 export interface GitSeams { git?: RunnerGit; files?: WorkspaceFileChecks }
-export interface CandidateBranchOptions extends GitSeams { home?: string }
+export interface CandidateBranchOptions extends GitSeams {
+  home?: string;
+  /** Delete only these tasks' candidates (a scoped run, decision 126); every other task keeps its recovery checkpoint. */
+  onlyTasks?: ReadonlySet<string>;
+}
 export interface PromoteInput extends GitSeams {
   repoPath: string;
   candidate: CandidateRevision;
@@ -321,6 +325,8 @@ export function deleteCandidateBranches(repoPath: string, options: CandidateBran
     const [ref, revision] = row.split(" ");
     if (!ref?.startsWith(prefix) || !revision) throw new Error("invalid candidate branch enumeration");
     requireRevision(revision);
+    // refs/heads/jarvis/candidates/<task>/<attempt>: a task outside the allowlist keeps its candidate for recovery.
+    if (options.onlyTasks && !options.onlyTasks.has(ref.slice(prefix.length).split("/")[0]!)) continue;
     command(git, repoPath, ["update-ref", "-d", ref, revision], home);
     deleted.push(ref);
   }

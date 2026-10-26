@@ -13,6 +13,8 @@ export interface ReportOptions {
   locale?: string;
   timeZone?: string;
   verifyEvidence?: EvidenceVerifier;
+  /** Unfinished tasks outside the run's allowlist (RunLoopOptions.only), which it left alone (decision 126). */
+  leftAlone?: readonly string[];
 }
 type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry): Data => entry.data && typeof entry.data === "object" ? entry.data as Data : {};
@@ -118,6 +120,7 @@ export function renderReport(state: RunState, entries: readonly LedgerEntry[], c
   lines.push("", "## Blocked / reconciliation", "", ...orNone([...tasks.blocked, ...outsideUnknowns(entries)]));
   lines.push("", "## Skipped inbox items", "", ...orNone(inboxIssues(entries).map((issue) => `- ${line(issue.id)}: ${line(issue.reason)}`)));
   lines.push("", "## Usage waits", "", ...orNone(usageWaits(entries, options)), "", "## Left", "", ...orNone(tasks.left));
+  if (options.leftAlone?.length) lines.push("", "## Left alone by this run", "", `- ${options.leftAlone.map(line).join(", ")}: other work in this project's ledger; this run may touch only its own tasks.`);
   lines.push("", ...usageReportLines(entries), "", ...footprintReportLines(entries));
   if (claims.length) lines.push("", "## Agent claims", "", ...claims.map((claim) => `- Claim (unverified), ${line(claim.taskId)}, ${line(claim.source)}: ${line(claim.text.slice(0, 2000))}`));
   lines.push("", 'Reply here to steer, or run jarvis steer --project <id> "<note>".', "");

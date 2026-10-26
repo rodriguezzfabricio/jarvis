@@ -25,6 +25,7 @@ describe("mutation stage map", () => {
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");
     expect(stageOf("packages/cli/src/eval/mutations-jarvis.json")).toBe("3"); // the Jarvis arm proves stage 3 (tasks 2, 4, 5)
     expect(stageOf("packages/cli/src/eval/mutations-hidden.json")).toBe("4"); // hidden-check install found by task 06, the stage 4 proof
+    expect(stageOf("packages/cli/src/runner/mutations-review-fix.json")).toBe("4"); // a review that asks for fixes (decision 126), task 3's stage
     expect(stageOf("packages/cli/src/review/mutations-design.json")).toBe("4"); // the design reviewer (decision 124)
     expect(stageOf("packages/cli/src/lanes/mutations-impeccable.json")).toBe("4"); // the Impeccable checks (decision 124)
     expect(stageOf("packages/cli/src/doctor/mutations-doctor.json")).toBe("0-1"); // jarvis doctor is stage 0-1 (backlog 91, 95)
@@ -37,6 +38,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/commands/mutations-commands.json")).toBe("3");
     expect(stageOf("packages/cli/src/commands/mutations-run.json")).toBe("3");
     expect(stageOf("packages/cli/src/runner/mutations-loop.json")).toBe("3");
+    expect(stageOf("packages/cli/src/toolchain/mutations.json")).toBe("3"); // the sessions' pinned Go (decision 123)
     for (const lane of ["review", "security", "lanes"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("4");
     for (const lane of ["release", "setup"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("5");
     expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");

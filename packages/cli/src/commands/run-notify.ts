@@ -30,9 +30,10 @@ export interface RunNotificationOptions {
   timeoutMs?: number;
 }
 
-type Config = { status: "ok"; notifier: Notifier; secrets: string[]; baseUrl: string } | { status: "missing" | "invalid" };
+/** `at(since)` opens the same adapter at a cursor the caller keeps: phone approvals poll from the runner's own. */
+type Config = { status: "ok"; notifier: Notifier; at: (since: string) => Notifier; secrets: string[]; baseUrl: string } | { status: "missing" | "invalid" };
 
-export function loadRunNotifier(o: RunNotificationOptions & { since?: string }): Config {
+export function loadRunNotifier(o: RunNotificationOptions): Config {
   let raw: string;
   try {
     if (!lstatSync(o.configPath, { throwIfNoEntry: false })) return { status: "missing" };
@@ -40,8 +41,9 @@ export function loadRunNotifier(o: RunNotificationOptions & { since?: string }):
   } catch { return { status: "invalid" }; }
   try {
     const config = parseNotifyConfig(JSON.parse(raw));
-    const options: NtfyOptions = { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic, ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}), ...(o.since !== undefined ? { since: o.since } : {}) };
-    return { status: "ok", notifier: (o.createNotifier ?? ((c) => new NtfyNotifier(c)))(options), secrets: [config.topic, config.replyTopic], baseUrl: config.baseUrl };
+    const options: NtfyOptions = { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic, ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}) };
+    const create = o.createNotifier ?? ((c: NtfyOptions) => new NtfyNotifier(c));
+    return { status: "ok", notifier: create(options), at: (since) => create({ ...options, since }), secrets: [config.topic, config.replyTopic], baseUrl: config.baseUrl };
   } catch { return { status: "invalid" }; }
 }
 

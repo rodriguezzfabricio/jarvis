@@ -56,8 +56,7 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
   const timeoutMs = o.timeoutMs ?? 10_000;
   const pollMs = o.pollMs ?? 5000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || !Number.isSafeInteger(pollMs) || pollMs <= 0) throw new Error("invalid approval polling interval or timeout");
-  const cursor = o.ledger.entries().filter((e) => phase(e, "approval-cursor") && data(e).project === o.project).at(-1);
-  const config = loadRunNotifier({ ...o, since: cursor ? String(data(cursor).id) : "all" });
+  const config = loadRunNotifier(o);
   if (config.status === "ok") assertApprovalIsolation(config.baseUrl, o.taskAllowlists);
   else warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; approvals stay terminal-only (jarvis approve / jarvis reject).`);
   const inbox = new ReplyInbox(o.ledger, { approvalProject: o.project });
@@ -66,29 +65,47 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
   let active: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
   let closed = false;
+  /** A ledger failure: phone approvals stop for the run. */
   let disabled = false;
+  /** A timed-out call hasn't settled yet: nothing new is stacked on the adapter until it does. */
+  let stuck = false;
+  /** Failed since the last success: one warning and one ledger entry per outage, not one per poll. */
+  let failing = false;
+
+  /** The last reply this project processed. Polls start here, never at an adapter's own cursor, which a
+   * timed-out poll that answered late would have moved past replies nobody processed. */
+  function cursor(): string {
+    const last = o.ledger.entries().filter((e) => phase(e, "approval-cursor") && data(e).project === o.project).at(-1);
+    return last ? String(data(last).id) : "all";
+  }
 
   function failure(what: string, error: unknown): void {
+    if (failing) return;
+    failing = true;
     const reason = notificationError(error, config.status === "ok" ? config.secrets : []);
     warn(`Phone approval ${what} failed: ${reason}. Pending requests can be answered with jarvis approve / jarvis reject.`);
     o.ledger.append({ kind: "notify", actor: "runner", data: { source: "notify", phase: "approval-error", project: o.project, operation: what } });
   }
 
   async function transport<T>(what: string, work: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
-    if (closed || disabled || config.status !== "ok") return { ok: false };
+    if (closed || disabled || stuck || config.status !== "ok") return { ok: false };
+    const call = Promise.resolve().then(work);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     let cancel = () => {};
     const stopped = new Promise<{ ok: false }>((resolve, reject) => {
       cancel = () => resolve({ ok: false });
       stop.signal.addEventListener("abort", cancel, { once: true });
       deadline = setTimeout(() => {
-        // A stuck adapter is disabled for this run: never accumulate orphaned sends or polls.
-        disabled = true;
-        reject(new Error("timed out; phone polling disabled for this run"));
+        // Pause, never stack calls on a stuck adapter; resume once it answers. A late answer is discarded.
+        stuck = true;
+        void call.then(() => {}, () => {}).finally(() => { stuck = false; });
+        reject(new Error("timed out; phone approvals pause until the notifier answers"));
       }, timeoutMs);
     });
     try {
-      return await Promise.race([Promise.resolve().then(work).then((value) => ({ ok: true as const, value })), stopped]);
+      const result = await Promise.race([call.then((value) => ({ ok: true as const, value })), stopped]);
+      if (result.ok && failing) { failing = false; warn("Phone approvals are reachable again."); }
+      return result;
     } catch (error) {
       failure(what, error);
       return { ok: false };
@@ -126,16 +143,20 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
       if (closed || disabled) return;
     }
     await requests();
-    const replies = await transport("poll", () => config.notifier.poll());
+    const since = cursor();
+    const replies = await transport("poll", () => config.at(since).poll());
     if (!replies.ok || closed) return;
+    let last: string | undefined;
     for (const message of replies.value) {
       const answer = inbox.accept(message);
       const confirmation = recordAnswer(o.ledger, answer, o.broker);
+      last = message.id;
       if (confirmation) await send(confirmation);
-      if (closed) return;
-      // Checkpoint only processed replies. A ledger failure disables polling; restart replays from here.
-      o.ledger.append({ kind: "notify", actor: "runner", data: { source: "notify", phase: "approval-cursor", project: o.project, id: message.id } });
+      if (closed) break;
     }
+    // One checkpoint per processed batch. A crash before it replays the batch, whose replies are then
+    // duplicates; a ledger failure stops phone approvals for the run.
+    if (last !== undefined) o.ledger.append({ kind: "notify", actor: "runner", data: { source: "notify", phase: "approval-cursor", project: o.project, id: last } });
   }
 
   function tick(): Promise<void> {

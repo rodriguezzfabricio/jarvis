@@ -248,8 +248,8 @@
   {
     "name": "phone transport has no deadline",
     "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "return await Promise.race([Promise.resolve().then(work).then((value) => ({ ok: true as const, value })), stopped]);",
-    "replacement": "return await Promise.resolve().then(work).then((value) => ({ ok: true as const, value }));"
+    "anchor": "const result = await Promise.race([call.then((value) => ({ ok: true as const, value })), stopped]);",
+    "replacement": "const result = await call.then((value) => ({ ok: true as const, value }));"
   },
   {
     "name": "phone approval messages exceed 4 KB",
@@ -274,5 +274,35 @@
     "file": "packages/cli/src/commands/run-approvals.ts",
     "anchor": "Promise.race([draining, deadline])",
     "replacement": "draining"
+  },
+  {
+    "name": "phone transport stays paused after a timeout",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "void call.then(() => {}, () => {}).finally(() => { stuck = false; });",
+    "replacement": "void call.then(() => {}, () => {});"
+  },
+  {
+    "name": "phone transport stacks calls on a stuck adapter",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "if (closed || disabled || stuck || config.status !== \"ok\") return { ok: false };",
+    "replacement": "if (closed || disabled || config.status !== \"ok\") return { ok: false };"
+  },
+  {
+    "name": "phone polls start at the adapter's own cursor",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "const replies = await transport(\"poll\", () => config.at(since).poll());",
+    "replacement": "const replies = await transport(\"poll\", () => config.notifier.poll());"
+  },
+  {
+    "name": "phone reply cursor never checkpointed",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "    if (last !== undefined) o.ledger.append(",
+    "replacement": "    if (false) o.ledger.append("
+  },
+  {
+    "name": "phone outage reported on every poll",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "    if (failing) return;\n    failing = true;",
+    "replacement": "    failing = true;"
   }
 ]

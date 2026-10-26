@@ -908,7 +908,7 @@
   {
     "name": "QA backlog 88 worker forwards shell and proxy environment",
     "file": "packages/cli/src/lanes/desktop-worker.ts",
-    "anchor": "for (const key of ENV_KEYS)",
+    "anchor": "for (const key of DESKTOP_BUILD_ENV)",
     "replacement": "for (const key of Object.keys(process.env).filter(key => key !== \"JARVIS_FIXTURES\"))"
   },
   {
@@ -1024,5 +1024,11 @@
     "file": "packages/cli/src/lanes/materialize.ts",
     "anchor": "} finally { io.closeSync(proof); }",
     "replacement": "} finally { void proof; }"
+  },
+  {
+    "name": "QA backlog 89 desktop capture drops its approved checkout root",
+    "file": "packages/cli/src/lanes/desktop-artifact.ts",
+    "anchor": "materializeTree(source, destination, { sourceRoot: realpathSync(checkout) })",
+    "replacement": "materializeTree(source, destination)"
   }
 ]

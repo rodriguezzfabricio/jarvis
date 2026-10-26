@@ -6,6 +6,8 @@ node scripts/review-run.mjs --round stage0-17 \
   --schema "$HOME/.jarvis/codex-review/stage0-17/schema.json" --dry-run
 ```
 
+Add `--confirm-stage <0-1|2|3|4|5|6>` for a stage review: the mutation check then runs only that stage's mutations, all on the full suite, and leaves the other stages' mutations to their own reviews (decision 129); without it, the check runs every mutation (`--confirm`, the v1 close). The check prints how many mutations it will run and a wall-time estimate, and `JARVIS_MUTATION_PLAN=1 node scripts/mutation-check.mjs --confirm-stage <s>` prints the list without running anything (exit 5).
+
 Remove `--dry-run` to execute. Prepare `prompt-A.md`, `prompt-B.md`, `prompt-D.md` and a Codex output schema first. Claude is the sole integrator and owns stage-review launches. This script is a host operator tool for the trusted Jarvis repository; it is not a sandbox for arbitrary third-party build scripts. A scoped Opus review does not replace independent Codex stage review.
 
 Defaults: repository `~/Desktop/jarvis`, pinned Codex absolute path from `config/pins.ts`, model `gpt-6.1-sol`, effort `high`, lanes `A,B,D` (decision 79). Round names use `stage<N>-<N>`, matching review-status. Flags `--repo`, `--codex`, `--model`, `--effort`, `--lanes` override these. An explicit Codex executable must be absolute; overriding it is for trusted fixtures/operators, never PATH lookup. Available efforts: low, medium, high, xhigh.

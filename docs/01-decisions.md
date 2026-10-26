@@ -938,7 +938,7 @@ Running every mutation on the full suite took about 6 hours at the old pace, so 
 ### 93. More Claude workers: up to 6 Claude and 5 Codex at once (new; Oct 24; Fabricio; changes decision 84's limits)
 Fabricio asked for more parallelism, with more of it on Claude Code. Agents mostly wait on the network; local CPU goes to test runs, which stay limited to each worker's own files, with full suites and mutation runs going through the quiet slot. The real ceiling is the shared Claude usage window (this session and every Claude worker draw from it): if a worker reports a usage limit, the integrator drops back to 2 Claude workers until the window resets.
 
-### 94. Each stage review confirms its own stage's mutations; the v1 close confirms all (new; Oct 24; the integrator; tightens 92's cost, not its rule)
+### 94. Each stage review confirms its own stage's mutations; the v1 close confirms all (new; Oct 24; the integrator; tightens 92's cost, not its rule; superseded in part by 129: a stage review no longer runs the other stages' mutations)
 A full confirm run is mutations × suite time: 575 × about 53 s, roughly 8.5 hours, and growing with every lane. So:
 - **A stage review's evidence** runs `--confirm-stage <s>`: that stage's mutations (and any definition file not mapped to a stage) run on the full suite. Every other mutation still runs, in fast mode, and must be caught. A survivor or an error anywhere fails the run.
 - **The stage of a mutation** comes from where it is defined: the inline list and the probe file are stages 0–1, lane files map by folder. One map, with a test that every definition file is mapped.

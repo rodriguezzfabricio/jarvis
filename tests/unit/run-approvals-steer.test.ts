@@ -69,7 +69,8 @@ it("replays a note after a crash between inbox submission and its recorded marke
     if ((input.data as { phase?: string }).phase === "recorded") throw new Error("marker fault"); return add(input);
   })));
   s.reply({ id: "crash", text: "Use green" }); await expect(run.tick()).rejects.toThrow("marker fault"); spy.mockRestore(); await run.close();
-  const inboxDir = join(s.ledger.dir, "inbox"); expect(readdirSync(inboxDir).filter((f) => f.endsWith(".json"))).toHaveLength(1);
+  const inboxDir = join(s.ledger.dir, "inbox"); expect(existsSync(inboxDir)).toBe(true);
+  expect(readdirSync(inboxDir).filter((f) => f.endsWith(".json"))).toHaveLength(1);
   ingestSteerNotes(s.ledger.dir, s.ledger);
   const restart = s.run(); await restart.tick(); await restart.close();
   expect(ingestSteerNotes(s.ledger.dir, s.ledger).entries).toHaveLength(0);

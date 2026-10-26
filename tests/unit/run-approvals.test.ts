@@ -24,7 +24,11 @@ function setup() {
     taskAllowlists: [[], []], createNotifier: () => notifier, now: () => now, warn: (text) => warnings.push(text), timeoutMs: 20, pollMs: 50, ...extra });
   const request = () => broker.handle({ op: "spend", payload: { description: "fake request, private payload stays local" } });
   const reply = (text: string, time: number | undefined = 102, id = "reply") => { replies.push({ id, text, ...(time !== undefined ? { time } : {}) }); };
-  const button = (answer = "approve") => { const a = sent.find((s) => s.actions.length)!.actions[0]!; return `${answer}:${a.requestId}:${a.nonce}`; };
+  const button = (answer = "approve") => {
+    const notification = sent.find((s) => s.actions.length);
+    expect(notification, "an approval notification with buttons was sent").toBeDefined();
+    const a = notification!.actions[0]!; return `${answer}:${a.requestId}:${a.nonce}`;
+  };
   const approvals = () => ledger.entries().filter((e) => e.kind === "approval");
   return { root, ledger, broker, configPath, notifier, sent, warnings, make, request, reply, button, approvals, advance: () => { now += 1000; } };
 }

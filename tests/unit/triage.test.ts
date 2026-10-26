@@ -518,7 +518,7 @@ describe("jarvis triage", () => {
     expect(phone.mockups).toBe(true);
     expect(JSON.parse((await cli(["--json", "--repo", d, "--then", "feature", TASK7])).out).then.type).toBe("feature");
     // Decision 126: the model can name a review's report; a review's fixes are bug work.
-    const review = JSON.parse((await cli(["--json", "--repo", d, "--report", "docs/review.md", "--then", "refactor", "Review the parser"])).out) as Triage;
+    const review = JSON.parse((await cli(["--json", "--repo", d, "--report", "docs/review.md", "--then", "refactor", "Review the parser and fix it"])).out) as Triage;
     expect([review.type, review.review?.report, review.then?.type]).toEqual(["review", "docs/review.md", "bug"]);
   });
 

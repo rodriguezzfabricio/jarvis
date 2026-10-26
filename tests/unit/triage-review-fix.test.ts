@@ -19,7 +19,7 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
     expect(t.steps[0]).toMatchObject({ skill: "review", by: "session", dispatch: true });
     expect(t.never).toEqual(["edits besides the report"]);
     expect(t.handoff).toBe("none");
-    expect(t.review).toEqual({ report: "REVIEW.md", security: true }); // outreach acts on other people (decision 37)
+    expect(t.review).toEqual({ report: "REVIEW.md", security: true, limits: [] }); // outreach acts on other people (decision 37)
     expect(signal(t, "fix-words")?.detail).toContain("fix");
     expect(signal(t, "report-file")?.detail).toContain("REVIEW.md");
     expect(t.then?.type).toBe("bug");
@@ -43,7 +43,7 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
   });
 
   it("reads a fix request after the review, in its own words", () => {
-    for (const request of ["Review the parser. Fix anything serious.", "Review the parser, fix what you find", "Review the parser and then repair what's broken", "Audit the parser and address the problems"]) {
+    for (const request of ["Review the parser. Fix anything serious.", "Review the parser, fix what you find", "Review the parser and then repair what's broken", "Audit the parser and resolve the problems"]) {
       const t = run(request);
       expect(t.then?.type, request).toBe("bug");
       expect(t.review?.report, request).toBe("REVIEW.md");
@@ -55,7 +55,7 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
   it("writes the report a request names, even without fixes; a report alone starts no edits", () => {
     const t = run("Review the auth code and write your findings to docs/auth-review.md");
     expect(ids(t)).toEqual(["review-report"]);
-    expect(t.review).toEqual({ report: "docs/auth-review.md", security: true });
+    expect(t.review).toEqual({ report: "docs/auth-review.md", security: true, limits: [] });
     expect(t.then).toBeNull();
     expect(run("Review the parser, fix the bugs and put the list in `NOTES.md`.").review?.report).toBe("NOTES.md");
   });
@@ -70,8 +70,8 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
   });
 
   it("the model's judgment can name the report, add or drop the fixes; a review's fixes are always bug work", () => {
-    expect(run("Review the parser.", { judgment: { then: "bug" } }).then?.type).toBe("bug");
-    expect(run("Review the parser.", { judgment: { then: "bug" } }).review?.report).toBe("REVIEW.md");
+    expect(run("Review the parser.", { judgment: { then: "bug" } }).then).toBeNull(); // the model can veto fixes, never start them (round 2: fail closed)
+    expect(run("Review the parser.", { judgment: { then: "bug" } }).review?.report).toBeNull();
     expect(run(TASK3, { judgment: { then: "none" } }).then).toBeNull();
     expect(run(TASK3, { judgment: { then: "none" } }).review?.report).toBe("REVIEW.md");
     const refactor = run("Review the parser and fix it", { judgment: { then: "refactor" } });
@@ -93,6 +93,11 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
       "Review the importer; only report what you'd fix.",
       "Review the importer without changing anything, and fix suggestions go in a list.",
       "Review the module and make no changes.",
+      // Codex round 2's reproductions.
+      "Review the parser. Do not make any changes; fix suggestions go in the response.",
+      "Review the parser and do not edit the repository; fix suggestions go in the response.",
+      // A clear imperative, cancelled by a restriction in another sentence.
+      "Review the parser and fix the bugs. Report only.",
     ]) {
       const t = run(request);
       expect(t.then, request).toBeNull();
@@ -110,18 +115,41 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
     expect([fixNothing.then, fixNothing.review?.report, ids(fixNothing)]).toEqual([null, "REVIEW.md", ["review-report"]]);
     const editNothing = run("Review the parser and put the findings in REVIEW.md. Do not edit anything.");
     expect([editNothing.then, editNothing.review?.report, ids(editNothing)]).toEqual([null, null, ["review"]]);
+    // The stricter reading wins, whichever comes first.
+    for (const request of ["Review the parser and put the findings in REVIEW.md. Fix nothing, and do not edit anything.", "Review the parser and put the findings in REVIEW.md. Fix nothing. Do not edit anything."]) {
+      const both = run(request);
+      expect([both.then, both.review?.report, ids(both)], request).toEqual([null, null, ["review"]]);
+    }
   });
 
-  it("a scope constraint is not a no-edit constraint", () => {
+  // Round 2: fail closed. A negation scoped to a named part ("to X", "in X") keeps fixes, as a limit the fix
+  // tasks carry; any other negation of editing, even one that reads like a scope, makes a plain review.
+  it("a negation scoped to a named part keeps fixes and passes the limit on; any other negation stops them", () => {
+    for (const [request, limit] of [
+      ["Review the parser and fix the bugs; make no changes to the public API.", "make no changes to the public API"],
+      ["Review the parser and fix the real problems; no changes to the CLI flags.", "no changes to the CLI flags"],
+    ] as const) {
+      const t = run(request);
+      expect(t.then?.type, request).toBe("bug");
+      expect(t.review?.limits, request).toEqual([limit]);
+    }
     for (const request of [
       "Review the parser and fix the bugs, but don't change the public API.",
       "Review the importer and fix it without changing the file format.",
-      "Review the parser and fix the real problems; no changes to the CLI flags.",
       "Review the parser and fix what's broken, but don't touch the tests.",
     ]) {
-      expect(run(request).then?.type, request).toBe("bug");
-      expect(signal(run(request), "no-edit-words"), request).toBeUndefined();
+      const t = run(request);
+      expect(t.then, request).toBeNull();
+      expect(t.review?.limits, request).toEqual([]);
     }
+  });
+
+  it("says when fix words were seen but no fixes were requested", () => {
+    const t = run("Review the parser; fix suggestions go in the response.");
+    expect(t.then).toBeNull();
+    expect(signal(t, "fixes-not-requested")).toBeDefined();
+    expect(t.headline).toMatch(/Fixes weren't requested/);
+    expect(signal(run(TASK3), "fixes-not-requested")).toBeUndefined();
   });
 
   it("a question's edits honor the same constraint", () => {

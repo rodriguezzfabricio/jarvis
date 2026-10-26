@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_REVIEW_REPORT, reportPathProblem } from "../runner/review-path.ts";
+import { fixAuthorization } from "./authorize.ts";
 
 /**
  * Triage, the deterministic half (architecture §2, decisions 2, 5, 37, 89): classify a request into a
@@ -130,7 +131,7 @@ export type TriageInput = z.input<typeof Input>;
 export type SignalName =
   | "override" | "empty-folder" | "design-md" | "attached-error" | "error-text"
   | "bug-words" | "question-words" | "onboarding-words" | "review-words" | "refactor-words" | "release-words" | "edit-words"
-  | "fix-words" | "report-file" | "report-refused" | "security-words" | "no-edit-words"
+  | "fix-words" | "report-file" | "report-refused" | "security-words" | "no-edit-words" | "fixes-not-requested"
   | "tier2-area" | "several-modules" | "one-sentence" | "no-type-words"
   | "judgment" | "judgment-overruled" | "missing-behavior" | "new-screen" | "new-platform" | "tier-raised";
 export interface Signal { name: SignalName; detail: string }
@@ -158,7 +159,7 @@ export interface Triage extends Pipeline {
    * writes (the one the request names, or REVIEW.md when it asks for fixes), null for a read-only review.
    * `security`: the review also follows the security skill (security words, or a tier-2 area).
    */
-  review: { report: string | null; security: boolean } | null;
+  review: { report: string | null; security: boolean; limits: string[] } | null;
   signals: Signal[];
   upgrade: { from: "bug"; to: "feature"; announcement: string } | null;
   /** The classification in one line, for the first message (after the upgrade sentence, if any). */
@@ -174,20 +175,9 @@ const ONBOARDING = /\b(get familiar|onboard(?:ing)?|walk me through (?:this|the)
 const REVIEW = /^\s*(?:please\s+|(?:can|could|would) you\s+)?(?:do an? (?:security |code )?review of|(?:security[- ]|code[- ])?review|audit)\b/i;
 const REFACTOR = /\b(refactor\w*|clean ?up|restructur\w*|reorganiz\w*|simplif(?:y|ies)|extract|rename|dedupe|deduplicate)\b/i;
 const RELEASE = /\b(deploy\w*|release|ship it|publish|roll ?back|promote (?:it |the \w+ )?to (?:prod\w*|staging)|go live)\b/i;
-// Fixes a review asks for after it: "… and fix the real problems", "… Fix anything serious." (decision 126).
-// Not a bare "fix": "Review the fix for the login bug" asks for a review of a fix.
-const FIX_REQUEST = /(?:\b(?:and|then|also|please)\s+|[,;:]\s*|(?:^|[.!?]\s+))(?:then\s+)?(?:please\s+)?(?:also\s+)?(fix|repair|patch|address|resolve)\b/im;
 // A file the request says to put the findings in: "Put what you find in REVIEW.md", "write them to docs/x.md".
 const REPORT_FILE = /\b(?:put|write|save|record|list|document|keep|log|leave)\b[^.!?\n]{0,80}?\b(?:in|into|to|as)\s+(?:a\s+file\s+(?:called|named)\s+)?[`'"]?([^\s`'"]+?\.(?:md|markdown|txt))(?![\w/])/i;
 const SECURITY = /\b(secur\w*|vulnerab\w*|exploit\w*|injection|ssrf|xss|csrf|owasp|pen-?test\w*|threat model\w*)\b/i;
-// An explicit constraint against editing wins over every fix word and judgment (Codex security review, round 1).
-// Only whole-request constraints count: "don't change the public API" is a scope, not "don't edit".
-const ENDS = String.raw`(?=\s*(?:[.!?;,:]|$))`;
-const WHOLE = String.raw`(?:\s+(?:anything|any\s+(?:code|files?)|the\s+code|code|files?|it|them))?`;
-/** No edits at all, not even a report: "Do not edit;", "don't change anything", "make no changes", "read-only". */
-const NO_EDIT = new RegExp(String.raw`\b(?:do\s+not|don'?t|never)\s+(?:edit|change|modify|touch)${WHOLE}${ENDS}|\bmake\s+no\s+(?:code\s+)?(?:changes|edits)\b|\bno\s+(?:code\s+)?(?:changes|edits)${ENDS}|\bread[- ]only\b|\bwithout\s+(?:editing|changing|modifying|touching)${WHOLE}${ENDS}`, "im");
-/** No fixes, though a report the request names may be written: "fix nothing", "report only", "suggestions only". */
-const NO_FIX = new RegExp(String.raw`\bfix(?:es)?\s+nothing\b|\b(?:do\s+not|don'?t|never)\s+fix(?:\s+(?:anything|any\s+of\s+(?:it|them)|it|them|yet))?${ENDS}|\bno\s+fix(?:es)?${ENDS}|\b(?:report|findings|suggestions?|recommendations?)\s+only\b|\bonly\s+(?:report|suggest|list|flag)\w*|\bwithout\s+fixing${WHOLE}${ENDS}`, "im");
 // Edits a question asks for after it: "… and make it easier for agents to work in" (golden task 7).
 const EDITS = /\b(?:and|also)\s+(?:then\s+)?(?:please\s+)?(make|clean|tidy|simplify|improve|refactor|reorganiz\w*|restructur\w*|fix|add|update|create|build|write|set up|remove)\b/i;
 const EDIT_KIND: Record<string, EditType> = { fix: "bug", make: "refactor", clean: "refactor", tidy: "refactor", simplify: "refactor", improve: "refactor", refactor: "refactor" };
@@ -338,18 +328,22 @@ export function triage(raw: TriageInput): Triage {
     if (kind) then = pipeline(kind, LABELS[kind]);
   }
 
-  // An explicit no-edit or no-fix constraint wins over every word and judgment that would add an editing pipeline.
-  const noEdit = hit(NO_EDIT);
-  const noFix = noEdit ?? hit(NO_FIX);
-  if (noFix) add("no-edit-words", `"${noFix.trim()}": ${noEdit ? "no edits at all" : "no fixes"}`);
+  // Fixes fail closed (triage/authorize.ts): an unscoped negation of editing anywhere stops every editing pipeline.
+  const auth = fixAuthorization(text);
+  const noEdit = auth.forbidden?.kind === "edit" ? auth.forbidden.words : undefined;
+  const noFix = auth.forbidden?.words;
+  if (noFix) add("no-edit-words", `"${noFix}": ${noEdit ? "no edits at all" : "no fixes"}`);
   if (type === "question" && noFix && then) then = null;
 
   // A review that asks for fixes (decision 126) stays a review: its step writes the report, then a bug pipeline repairs the confirmed findings.
   let review: Triage["review"] = null;
+  let fixesDeclined = false;
   if (type === "review") {
-    const verb = hit(FIX_REQUEST);
-    if (verb) add("fix-words", `"${verb.trim()}"`);
-    const fixes = !noFix && (j.then === "none" ? false : j.then !== undefined || verb !== undefined);
+    if (auth.imperative) add("fix-words", `"${auth.imperative}"`);
+    // Only the request's own positive imperative starts fixes. The model's judgment can veto them, never add them.
+    const fixes = !noFix && j.then !== "none" && auth.authorized;
+    fixesDeclined = !fixes && auth.declined;
+    if (fixesDeclined) add("fixes-not-requested", "fix words, but no clear request to fix the code: a review without fixes");
     // "No edits at all" writes no report either: a plain read-only review.
     let named = noEdit ? undefined : j.report;
     const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];
@@ -362,7 +356,8 @@ export function triage(raw: TriageInput): Triage {
     if (report !== null) add("report-file", named !== undefined ? `the findings go to ${report}` : `fixes asked for: the findings go to ${report}`);
     const security = hit(SECURITY);
     if (security) add("security-words", `"${security}"`);
-    review = { report, security: security !== undefined || areas.length > 0 };
+    // A negation scoped to a named part ("make no changes to the public API") rides on the fix tasks as a limit.
+    review = { report, security: security !== undefined || areas.length > 0, limits: fixes ? [...auth.limits] : [] };
     if (report !== null) first = { ...first, ...stepsFor("review", { design: false, onboarding: false, report: true }) };
     if (fixes) then = pipeline("bug", "Bug fixes for the confirmed findings");
   }
@@ -377,6 +372,7 @@ export function triage(raw: TriageInput): Triage {
     `${first.label}${first.tier === null ? "" : `, tier ${first.tier}`}${decidedBy === "override" ? ` (your override: ${input.override})` : ""}.`,
     ...describe(first),
     review?.report ? `Report: ${review.report}.` : undefined,
+    fixesDeclined ? "Fixes weren't requested: the review changes no code." : undefined,
     then ? `Then: ${then.label}, tier ${then.tier}.` : undefined,
     ...(then ? describe(then) : []),
   ].filter((x) => x !== undefined).join(" ");

@@ -6,7 +6,7 @@ import { resolveProject } from "../config/project.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
 import { oneLineSummary } from "./run-approvals.ts";
-import { redactApprovalText, verifiedEntries, type ApprovalsCommandOptions } from "./approvals.ts";
+import { redactApprovalText, redactUrlCredentials, verifiedEntries, type ApprovalsCommandOptions } from "./approvals.ts";
 
 export interface ApproveCommandOptions extends ApprovalsCommandOptions {
   isTTY?: () => boolean;
@@ -14,18 +14,29 @@ export interface ApproveCommandOptions extends ApprovalsCommandOptions {
   by?: string;
 }
 
+/** Where an action goes and what it costs (the broker's schemas): never redacted, URL credentials aside. */
+const TARGET_FIELDS = new Set(["to", "ref", "target", "amount_usd"]);
+
 /** Redact leaf values before formatting, retaining the action's structure. Never alter the approved payload. */
 function redactPayload(value: unknown, key = ""): unknown {
+  if (TARGET_FIELDS.has(key)) return typeof value === "string" ? redactUrlCredentials(value) : value;
   if (/(?:password|passwd|secret|token|authorization|credential|api.?key|private.?key|cookie)/i.test(key)) return "[redacted]";
-  if (typeof value === "string") return redactApprovalText(value).replace(/[\p{Cf}\p{Zl}\p{Zp}]/gu, "");
+  if (typeof value === "string") return redactApprovalText(value);
   if (Array.isArray(value)) return value.map((v) => redactPayload(v));
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactPayload(v, k)]));
   return value;
 }
 
+/** JSON with every invisible, direction-changing or unusual space character written as its \u escape:
+ * dropping them would print `paypal` for `pay​pal`. Still valid JSON for the same values. */
+function visibleJson(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/(?! )[\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Co}\p{Cn}]/gu,
+    (c) => [...Array(c.length).keys()].map((i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join(""));
+}
+
 export function formatApproval(request: LedgerEntry): string {
   const d = request.data as Record<string, unknown>;
-  return `Action: ${oneLineSummary(d.op)}\nSummary: ${oneLineSummary(redactApprovalText(String(d.summary ?? "")))}\nPayload:\n${JSON.stringify(redactPayload(d.payload), null, 2)}\nPayload hash: ${String(d.payloadHash)}`;
+  return `Action: ${oneLineSummary(d.op)}\nSummary: ${oneLineSummary(redactApprovalText(String(d.summary ?? "")))}\nPayload:\n${visibleJson(redactPayload(d.payload))}\nPayload hash: ${String(d.payloadHash)}`;
 }
 
 async function confirm(prompt: string): Promise<string> {

@@ -5,7 +5,7 @@ import { pendingApprovalRequests } from "../broker/broker.ts";
 import { resolveProject } from "../config/project.ts";
 import { LedgerTamperError, verifyLedger, type LedgerEntry, type VerifyResult } from "../ledger/ledger.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
-import { redactReviewText } from "../review/redaction.ts";
+import { findCredentials, findEncodedCredentials, findSecretFields } from "../eval/snapshot.ts";
 import { oneLineSummary } from "./run-approvals.ts";
 
 export interface ApprovalsCommandOptions {
@@ -15,10 +15,26 @@ export interface ApprovalsCommandOptions {
   output?: (text: string) => void;
   verify?: (dir: string) => VerifyResult;
 }
-/** The snapshot scanner exempts placeholders; terminal output also hides fake-looking URL credentials. */
+/** A URL's user and password go; its host and path stay. The snapshot scanner exempts placeholders, so fake-looking ones go too. */
+export function redactUrlCredentials(text: string): string {
+  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/"<>]+@/gi, "$1[redacted]@");
+}
+
+function credentialLike(text: string): boolean {
+  return findCredentials(text).length > 0 || findEncodedCredentials(text).length > 0 || findSecretFields("review", text).length > 0;
+}
+
+/**
+ * Free text a person approves: each secret-looking word goes, the words around it stay. Not the review
+ * redactor's rule for any 32-character run, which hid commit SHAs, repository paths and bucket names.
+ * A secret spread over several words (a key block, `password = x`) hides the whole text.
+ */
 export function redactApprovalText(text: string): string {
-  const urls = text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/"<>]+@/gi, "$1[redacted]@");
-  return redactReviewText(urls);
+  const out = redactUrlCredentials(text).replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .replace(/\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[redacted]");
+  if (!credentialLike(out)) return out;
+  const words = out.split(/(\s+)/).map((word) => (word.trim() && credentialLike(word) ? "[redacted]" : word)).join("");
+  return credentialLike(words) ? `[redacted: ${[...text].length} characters with a secret-looking value]` : words;
 }
 
 export interface PendingApproval {

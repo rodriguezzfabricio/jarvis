@@ -177,6 +177,20 @@ it.each(["link", "fifo"])("refuses a source replaced by a %s between lstat and o
   expect(called).toBe(false); expect(readdirSync(scratch)).toEqual([]);
 });
 
+// The inode check alone would accept this link (same file); only O_NOFOLLOW keeps open() from following any link.
+it("never follows a link at open, even one to the approved file", async () => {
+  const { withMappedSemgrep } = await import("../../packages/cli/src/security/mapped.ts");
+  const { root, checkout } = setup({ "app.mts": "original" }); const scratch = join(root, "scratch"); mkdirSync(scratch);
+  const source = join(checkout, "app.mts"); const moved = join(root, "moved.mts"); const open = fs.openSync;
+  vi.spyOn(fs, "openSync").mockImplementation((path, flags, mode) => {
+    if (path === source) { fs.renameSync(source, moved); symlinkSync(moved, source); }
+    return open(path, flags, mode);
+  });
+  let called = false;
+  const rejected = await withMappedSemgrep(checkout, [], scratch, async () => { called = true; }).then(() => false, () => true);
+  expect(rejected).toBe(true); expect(called).toBe(false); expect(readdirSync(scratch)).toEqual([]);
+});
+
 // O_NOFOLLOW guards only the last component: a parent swapped for a link after the lstat walk must not copy an outside file.
 it("refuses a parent directory replaced by a link between lstat and open", async () => {
   const { withMappedSemgrep } = await import("../../packages/cli/src/security/mapped.ts");

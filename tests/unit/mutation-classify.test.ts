@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
-import { classify, isAssertionFailure, skippedIds, summarize, testIds } from "../../scripts/mutation-classify.mjs";
+import { classify, isAssertionFailure, promiseErrorKey, skippedIds, summarize, testIds } from "../../scripts/mutation-classify.mjs";
 // @ts-expect-error plain .mjs script without types
 import { parseMode, tally } from "../../scripts/mutation-stage.mjs";
 
@@ -18,9 +18,11 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(classify(fail, r, control, ended()).kind).toBe("caught");
   });
 
-  it("counts a failed .rejects expectation as caught", () => {
-    const r = report([t("a", "failed", ['Error: promise resolved "{ x: 1 }" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)']), t("b", "passed")]);
-    expect(classify(fail, r, control, ended()).kind).toBe("caught");
+  it("counts a failed .rejects expectation as caught when the reporter recorded an AssertionError", () => {
+    const m = 'Error: promise resolved "{ x: 1 }" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)';
+    const r = report([t("a", "failed", [m]), t("b", "passed")]);
+    expect(classify(fail, r, control, { ...ended(), promiseErrors: { [promiseErrorKey(m)]: "AssertionError" } }).kind).toBe("caught");
+    expect(classify(fail, r, control, ended()).kind).toBe("error");
   });
 
   it("treats timeouts as errors, not catches", () => {
@@ -74,9 +76,104 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(classify(ok, report([t("a", "failed", ["AssertionError: x"]), t("b", "passed")]), control, ended()).kind).toBe("error");
   });
 
-  it("requires the .rejects message and Vitest's assertion frame together", () => {
-    expect(isAssertionFailure('Error: promise resolved "x" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)')).toBe(true);
-    expect(isAssertionFailure('Error: promise resolved "x" instead of rejecting\n    at somewhere (file:///x)')).toBe(false);
+  it("requires Vitest's assertion frame and the recorded AssertionError together for a .rejects failure", () => {
+    const framed = 'Error: promise resolved "x" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)';
+    const unframed = 'Error: promise resolved "x" instead of rejecting\n    at somewhere (file:///x)';
+    expect(isAssertionFailure(framed, { [promiseErrorKey(framed)]: "AssertionError" })).toBe(true);
+    expect(isAssertionFailure(framed)).toBe(false);
+    expect(isAssertionFailure(unframed, { [promiseErrorKey(unframed)]: "AssertionError" })).toBe(false);
+  });
+
+  // Codex review of the promise-chain classifier, high: a runtime error whose message merely ends like
+  // Vitest's own ("… instead of resolving") counted as an assertion although its record said TypeError.
+  it("never lets the 'instead of rejecting/resolving' wording outrank the recorded name", () => {
+    for (const m of ["Error: failed instead of resolving\n    at _Assertion.__VITEST_REJECTS__ (file:///x)", "Error: failed instead of rejecting\n    at _Assertion.__VITEST_RESOLVES__ (file:///x)"]) {
+      const asTypeError = { [promiseErrorKey(m)]: "TypeError" };
+      expect(isAssertionFailure(m, asTypeError)).toBe(false);
+      const r = report([t("a", "failed", [m]), t("b", "passed")]);
+      expect(classify(fail, r, control, { ...ended(), promiseErrors: asTypeError }).kind).toBe("error");
+      expect(classify(fail, r, control, ended()).kind).toBe("error");
+    }
+  });
+
+  // Vitest rewrites the stack of any error raised in a .rejects/.resolves chain to "Error: <message>" under
+  // its own frame, so a failed matcher there (a wrong rejection, a multi-line "promise rejected … instead of
+  // resolving") looks like a runtime error. The reporter records each such error's real name, keyed by the
+  // exact message the JSON report shows; only an AssertionError record makes it an assertion.
+  it("counts a failed matcher inside .rejects/.resolves only with the reporter's AssertionError record", () => {
+    const m = "Error: expected [Function] to throw error matching /x/ but got 'y'\n    at _Assertion.__VITEST_REJECTS__ (file:///x)";
+    const multi = 'Error: promise rejected "ZodError: [\n  {}\n]" instead of resolving\n    at _Assertion.__VITEST_RESOLVES__ (file:///x)';
+    const named = (msg: string, name: string) => ({ [promiseErrorKey(msg)]: name });
+    expect(isAssertionFailure(m)).toBe(false);
+    expect(isAssertionFailure(multi)).toBe(false);
+    expect(isAssertionFailure(m, named(m, "AssertionError"))).toBe(true);
+    expect(isAssertionFailure(multi, named(multi, "AssertionError"))).toBe(true);
+    // A runtime error in the chain looks the same; its record says so.
+    expect(isAssertionFailure(m, named(m, "TypeError"))).toBe(false);
+    // The record must be for this exact message.
+    expect(isAssertionFailure(m, named(`${m} `, "AssertionError"))).toBe(false);
+    // Without Vitest's frame, a record never turns an error into an assertion.
+    const plain = "Error: expected 1 to be 2\n    at somewhere (file:///x)";
+    expect(isAssertionFailure(plain, named(plain, "AssertionError"))).toBe(false);
+    const r = report([t("a", "failed", [m]), t("b", "passed")]);
+    expect(classify(fail, r, control, { ...ended(), promiseErrors: named(m, "AssertionError") }).kind).toBe("caught");
+    expect(classify(fail, r, control, { ...ended(), promiseErrors: named(m, "TypeError") }).kind).toBe("error");
+    expect(classify(fail, r, control, ended()).kind).toBe("error");
+  });
+
+  it("tells failed matchers from runtime errors inside .rejects/.resolves in an actual Vitest run", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const d = mkdtempSync(join(tmpdir(), "jarvis-promise-errors-"));
+    spawnSync("./node_modules/.bin/vitest", ["run", "--config", "scripts/fixtures/promise-errors/vitest.config.mjs", "--reporter=json", `--outputFile=${join(d, "r.json")}`, "--reporter=./scripts/unhandled-reporter.mjs"], {
+      encoding: "utf8",
+      env: { ...process.env, JARVIS_RUN_END_OUT: join(d, "end.json") },
+      timeout: 60_000,
+    });
+    const rep = JSON.parse(readFileSync(join(d, "r.json"), "utf8"));
+    const end = JSON.parse(readFileSync(join(d, "end.json"), "utf8"));
+    const messages = (title: string): string[] => rep.testResults[0].assertionResults.find((a: { title: string }) => a.title === title).failureMessages;
+    const wrongRejection = messages("rejects with the wrong error");
+    const multiLine = messages("rejects with a multi-line error where it should resolve");
+    const runtime = messages("throws a runtime error inside a .rejects matcher");
+    const resolvedInstead = messages("resolves where it should reject");
+    const runtimeSuffix = messages("throws a runtime error that ends like Vitest's own message");
+    const all = [...wrongRejection, ...multiLine, ...runtime, ...resolvedInstead, ...runtimeSuffix];
+    // Vitest hides every one of them behind "Error: ".
+    for (const m of all) expect(m).toMatch(/^Error: /);
+    expect(wrongRejection.length > 0 && wrongRejection.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
+    expect(multiLine.length > 0 && multiLine.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
+    expect(resolvedInstead.length > 0 && resolvedInstead.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
+    expect(runtime.length > 0 && runtime.some((m) => isAssertionFailure(m, end.promiseErrors))).toBe(false);
+    expect(runtimeSuffix.length > 0 && runtimeSuffix.some((m) => isAssertionFailure(m, end.promiseErrors))).toBe(false);
+    // Without the reporter's record none of them counts, and the run as a whole is an error (a runtime error).
+    expect(all.some((m) => isAssertionFailure(m))).toBe(false);
+    expect(classify({ status: 1, signal: null }, rep, testIds(rep), end).kind).toBe("error");
+  }, 60_000);
+
+  it("records only promise-chain failures, and no name for a message two different errors share", async () => {
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    // @ts-expect-error plain .mjs script without types
+    const { default: Reporter } = await import("../../scripts/unhandled-reporter.mjs");
+    const frame = "\n    at _Assertion.__VITEST_REJECTS__ (file:///x)";
+    const shared = `Error: same message${frame}`;
+    const own = `Error: expected 1 to be 2${frame}`;
+    const errors = [{ name: "AssertionError", stack: own }, { name: "AssertionError", stack: shared }, { name: "TypeError", stack: shared }, { name: "AssertionError", stack: "Error: no promise frame\n    at x" }];
+    const modules = [{ children: { *allTests() { for (const e of errors) yield { result: () => ({ state: "failed", errors: [e] }) }; } } }];
+    const out = join(mkdtempSync(join(tmpdir(), "jarvis-reporter-")), "end.json");
+    const before = process.env.JARVIS_RUN_END_OUT;
+    process.env.JARVIS_RUN_END_OUT = out;
+    try {
+      new Reporter().onTestRunEnd(modules, [], "failed");
+    } finally {
+      if (before === undefined) delete process.env.JARVIS_RUN_END_OUT;
+      else process.env.JARVIS_RUN_END_OUT = before;
+    }
+    expect(JSON.parse(readFileSync(out, "utf8")).promiseErrors).toEqual({ [promiseErrorKey(own)]: "AssertionError", [promiseErrorKey(shared)]: "conflicting names" });
   });
 
   // Backlog #11 (Codex review 5, medium): standalone unhandled errors.

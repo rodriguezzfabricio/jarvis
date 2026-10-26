@@ -1058,6 +1058,13 @@ Both stage 3 Jarvis runs of `02-build-recruiter` ended `plan-failed` before any 
 - **Each planner session is recorded like the first.** The corrective session has its own header, log and usage record (`plan-a2`), and the `planner` session count says 2.
 - **`jarvis run` has no runner-driven planner session,** so it gets no retry: it reads the architect's `.jarvis/plan.json` once, at start, and refuses an invalid plan with the error, which the person or the architect session fixes.
 
+### 115. A failure inside `.rejects`/`.resolves` counts as a catch only if the reporter recorded it as an AssertionError (new; Oct 25; the mutation-hygiene worker, found by the 71bc00f stage 0–1 evidence run; changes the classifier both of decision 92's modes share)
+Vitest 5.0.5 rewrites the stack of every error raised in a `.rejects`/`.resolves` chain to `Error: <message>` under its own frame. In the JSON report a failed matcher there (a wrong rejection, a multi-line "promise rejected … instead of resolving") looks exactly like a runtime error thrown in the chain, so the classifier called real catches ERROR (the three settings mutations, "eval allowlist not enforced at run").
+- **The reporter records the real name.** `scripts/unhandled-reporter.mjs` writes, for each failure under Vitest's promise frame, the error's name keyed by the SHA-256 of the failure message the JSON report shows. Two errors sharing one message get no trusted name.
+- **Only that record counts.** Under the frame, a failure is an assertion only when its record says `AssertionError`. Not even Vitest's own wording ("… instead of rejecting/resolving") counts without it: a runtime error can end the same way. Outside the frame nothing changed: the first line must still start with `AssertionError`.
+- **Still errors:** a TypeError or any other runtime error thrown inside a `.rejects` matcher, with or without that wording, and any promise-chain failure the reporter didn't record.
+*From:* the stage 0–1 mutation-hygiene work; Codex review of 927131c..9dc1d73 (FAIL, high: the wording shortcut let a recorded TypeError count). Tests: `tests/unit/mutation-classify.test.ts`, with a real Vitest run on `scripts/fixtures/promise-errors`.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

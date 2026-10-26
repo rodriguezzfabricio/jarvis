@@ -354,6 +354,7 @@ describe("task lifecycle and session reports for the loop", () => {
     const onSpawn = (_id: number) => true;
     const onGroupExit = (_id: number) => {};
     await createClaudeHarness({ ...s.options, session: scripted([{ type: "result", subtype: "success" }], seen) }).runTask({ ...s.input, onSpawn, onGroupExit });
+    expect(seen).toHaveLength(1); // a refused launch spawns nothing: say so as an assertion, not a TypeError below
     expect(seen[0]!.onSpawn).toBe(onSpawn);
     expect(seen[0]!.onGroupExit).toBe(onGroupExit);
   });
@@ -362,6 +363,7 @@ describe("task lifecycle and session reports for the loop", () => {
     const s = setup();
     const seen: SessionSpec[] = [];
     await createClaudeHarness({ ...s.options, session: scripted([{ type: "result", subtype: "success" }], seen) }).runTask(s.input);
+    expect(seen).toHaveLength(1);
     expect("onSpawn" in seen[0]!).toBe(false);
     expect("onGroupExit" in seen[0]!).toBe(false);
   });

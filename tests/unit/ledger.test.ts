@@ -268,7 +268,10 @@ describe("ledger (decisions 41, 49)", () => {
     // Each marker removal costs 100 ms, as an fsynced claim can on a loaded disk: 4 s of unwinding.
     const clock = virtualClock();
     const ledger = Ledger.open(dir, { lockTimeoutMs: 1000, clock, onLockStep: (step) => void (step === "unwound" && (clock.t += 100)) });
-    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    // Asserted, so a lock that times out fails here as an assertion, not as the ledger's own error.
+    let seq: number | undefined;
+    expect(() => (seq = ledger.append({ kind: "steer", actor: "runner", data: {} }).seq)).not.toThrow();
+    expect(seq).toBe(3);
     expect(clock.t).toBeGreaterThan(4000);
     expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
     expect(lockFiles(dir)).toEqual([]);
@@ -280,7 +283,9 @@ describe("ledger (decisions 41, 49)", () => {
     strandedChain(dir, 40, dead);
     // One tick per clock read: a descent per marker needs about 40 * 41 / 2 reads, a single descent about 41.
     const ledger = Ledger.open(dir, { lockTimeoutMs: 200, clock: virtualClock(1) });
-    expect(ledger.append({ kind: "steer", actor: "runner", data: {} }).seq).toBe(3);
+    let seq: number | undefined;
+    expect(() => (seq = ledger.append({ kind: "steer", actor: "runner", data: {} }).seq)).not.toThrow();
+    expect(seq).toBe(3);
     expect(verifyLedger(dir)).toMatchObject({ ok: true, repairable: [] });
     expect(lockFiles(dir)).toEqual([]);
   });

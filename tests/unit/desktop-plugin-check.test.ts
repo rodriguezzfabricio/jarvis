@@ -24,7 +24,7 @@ describe('desktop compatibility kit host orchestration', () => {
     expect(settings.autoMemoryEnabled).toBe(false);
     expect(readFileSync(join(run.workspace, 'PROMPT.txt'), 'utf8')).toContain("npm publish");
     // A desktop chat carries no JARVIS_SESSION: the marker makes it a Jarvis session, so the tripwire denies.
-    expect(lstatSync(join(run.workspace, '.jarvis')).isDirectory()).toBe(true);
+    expect(lstatSync(join(run.workspace, '.jarvis'), { throwIfNoEntry: false })?.isDirectory()).toBe(true);
     expect(loadCheck(run.directory, options.home)).toEqual(run);
   });
   it('refuses reused ids and path traversal before writing', () => {

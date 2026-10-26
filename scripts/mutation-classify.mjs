@@ -2,18 +2,33 @@
 // "caught" needs: a normal process exit (no signal or spawn error), a JSON report, no file-level
 // errors (collection or unhandled), the same test identities as the control run, and at least one
 // failed test whose failure is an assertion, not a timeout or a runner error.
+import { createHash } from "node:crypto";
 
 const TIMEOUT = /test timed out|timed out in \d+ms/i;
 
+/** Vitest's frame on every error raised in a .rejects/.resolves chain, whose stack it rewrites to "Error: <message>". */
+export const VITEST_PROMISE_FRAME = /\bat _Assertion\.__VITEST_(REJECTS|RESOLVES)__/;
+
+/** The run-end record's key for a failure message, exactly as the JSON report shows it (unhandled-reporter.mjs). */
+export function promiseErrorKey(message) {
+  return createHash("sha256").update(message).digest("hex");
+}
+
 /**
- * True only for a completed assertion: Chai/Vitest's AssertionError, or Vitest's own .rejects/.resolves
- * assertion (its message AND its _Assertion stack frame). No matcher-name substrings: a
+ * True only for a completed assertion: Chai/Vitest's AssertionError, or a failure inside a .rejects/
+ * .resolves chain that the reporter recorded as one. No matcher-name substrings: a
  * "TypeError: expect(...).toBe is not a function" is a runtime error (Codex review 4).
+ * Inside a .rejects/.resolves chain Vitest shows every error as "Error: <message>" under its own frame, a
+ * failed matcher and a runtime error alike, so there only the reporter's record of the error's real name
+ * (`promiseErrors`, from the run-end record) can make it an assertion. Not even Vitest's own wording
+ * ("… instead of rejecting/resolving") counts without that record: a runtime error can end the same way
+ * (decision 115; Codex review of the promise-chain classifier).
  */
-export function isAssertionFailure(message) {
+export function isAssertionFailure(message, promiseErrors) {
   const first = message.split("\n")[0] ?? "";
   if (/^AssertionError\b/.test(first)) return true;
-  return /instead of (rejecting|resolving)$/.test(first) && /\bat _Assertion\.__VITEST_(REJECTS|RESOLVES)__/.test(message);
+  if (!VITEST_PROMISE_FRAME.test(message)) return false;
+  return promiseErrors?.[promiseErrorKey(message)] === "AssertionError";
 }
 
 /** An error thrown by Jarvis's own code under test (its stack runs through the source tree). */
@@ -74,9 +89,10 @@ export function classify(proc, report, control, runEnd) {
   // At least one completed assertion must fail. Other failures are allowed only if they were thrown
   // by Jarvis's own code under test (a safety guard refusing the mutated code); errors from tests,
   // the runner or infrastructure make the run an error (decision 74; Codex review 4).
-  const assertions = failed.filter((a) => a.failureMessages.length > 0 && a.failureMessages.every(isAssertionFailure));
+  const assertion = (m) => isAssertionFailure(m, runEnd.promiseErrors);
+  const assertions = failed.filter((a) => a.failureMessages.length > 0 && a.failureMessages.every(assertion));
   const others = failed.filter((a) => !assertions.includes(a));
-  const unattributed = others.filter((a) => a.failureMessages.length === 0 || !a.failureMessages.every((m) => isAssertionFailure(m) || isSourceError(m)));
+  const unattributed = others.filter((a) => a.failureMessages.length === 0 || !a.failureMessages.every((m) => assertion(m) || isSourceError(m)));
   if (assertions.length === 0) return { kind: "error", detail: `${failed.length} failure(s), none an assertion: ${(failed[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
   if (unattributed.length) return { kind: "error", detail: `${unattributed.length} failure(s) neither assertions nor thrown by Jarvis code: ${(unattributed[0].failureMessages[0] ?? "").split("\n")[0].slice(0, 80)}` };
   return { kind: "caught", detail: `${assertions.length} failing assertion(s)${others.length ? ` + ${others.length} refused by Jarvis guards` : ""}: ${assertions.slice(0, 2).map((a) => a.title).join("; ")}` };

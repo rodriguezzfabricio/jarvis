@@ -614,7 +614,7 @@
   {
     "name": "QA review 1 probes natively without a sandboxed launcher",
     "file": "packages/cli/src/lanes/desktop.ts",
-    "anchor": "    if (!deps.probe) return { status: \"not run\", reason: \"not run: desktop (no sandboxed native launcher)\", result };",
+    "anchor": "    if (!deps.probe && !deps.launch) return { status: \"not run\", reason: \"not run: desktop (no sandboxed native launcher)\", result };",
     "replacement": "    if (false) return { status: \"not run\", reason: \"not run: desktop (no sandboxed native launcher)\", result };"
   },
   {
@@ -628,5 +628,197 @@
     "file": "packages/cli/src/lanes/desktop-build.ts",
     "anchor": "return builtBundle(repo, plan.bundle) ? { ...raw, status: \"observed\" }",
     "replacement": "return true ? { ...raw, status: \"observed\" }"
+  },
+  {
+    "name": "native sandbox default deny",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "\"(deny default)\"",
+    "replacement": "\"(allow default)\""
+  },
+  {
+    "name": "native sandbox network deny",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "\"(deny network*)\"",
+    "replacement": "\"(allow network*)\""
+  },
+  {
+    "name": "native sandbox home deny",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "...[p.home, ...tempRoots(p.hostTmp)].map(denyOutside)",
+    "replacement": "...tempRoots(p.hostTmp).map(denyOutside)"
+  },
+  {
+    "name": "native sandbox system temp deny",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "...[p.home, ...tempRoots(p.hostTmp)].map(denyOutside)",
+    "replacement": "...[p.home].map(denyOutside)"
+  },
+  {
+    "name": "native sandbox bundle read only",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "`(allow file-read* file-map-executable ${subpaths([p.bundle])})`",
+    "replacement": "`(allow file-read* file-write* file-map-executable ${subpaths([p.bundle])})`"
+  },
+  {
+    "name": "native sandbox private writes only",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "const privateDirs = [join(p.scratch, \"home\"), join(p.scratch, \"tmp\")];",
+    "replacement": "const privateDirs = [p.scratch];"
+  },
+  {
+    "name": "native sandbox path literal validation",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!isAbsolute(path) || normalize(path) !== path || /[\"\\\\\\u0000-\\u001f\\u007f]/.test(path))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox overlapping grants",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!p.bundle.endsWith(\".app\") || overlaps(p.bundle, p.scratch))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox protected grant validation",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (insideTree(grant, p.home) || denied.some(dir => overlaps(grant, dir)) || tempRoots(p.hostTmp).some(dir => insideTree(grant, dir)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox real runner home",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "existsSync(jarvis) ? realpathSync(jarvis) : jarvis",
+    "replacement": "jarvis"
+  },
+  {
+    "name": "native sandbox bundle containment",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!insideTree(workRoot, real) || real === workRoot || !lstatSync(real).isDirectory())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox bundle links",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "  assertNoBundleLinks(real);",
+    "replacement": "  void real;"
+  },
+  {
+    "name": "native sandbox bundle hardlinks",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "else if (stat.nlink !== 1)",
+    "replacement": "else if (false)"
+  },
+  {
+    "name": "native sandbox platform",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if ((deps.platform ?? process.platform) !== \"darwin\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox sandbox executable",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!(deps.exists ?? existsSync)(SANDBOX))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox denied canary",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (denied.code !== 1 || denied.timedOut || denied.overflowed || denied.stdout !== \"\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox positive canary",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!good(allowed) || allowed.stdout !== token)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox plist success",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!good(result) || !/^[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}$/.test(name))",
+    "replacement": "if (!/^[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}$/.test(name))"
+  },
+  {
+    "name": "native sandbox executable mode",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || (stat.mode & 0o111) === 0)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox clean environment",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "const env = { PATH, HOME:",
+    "replacement": "const env = { NATIVE_TEST_LEAK: \"fake\", PATH, HOME:"
+  },
+  {
+    "name": "native sandbox sandbox wrapper",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "bin: SANDBOX, args: [\"-f\", profile, bin, ...args]",
+    "replacement": "bin, args"
+  },
+  {
+    "name": "native sandbox stop before cleanup",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "await app.stop(); rmSync(owned, { recursive: true, force: true });",
+    "replacement": "rmSync(owned, { recursive: true, force: true }); await app.stop();"
+  },
+  {
+    "name": "native sandbox failure cleanup",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (scratch) rmSync(scratch, { recursive: true, force: true });",
+    "replacement": "void scratch;"
+  },
+  {
+    "name": "native sandbox runner denial",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "    `(deny file-read* file-write* file-map-executable ${subpaths([...new Set([join(p.home, \".jarvis\"), ...(p.jarvisHome ? [p.jarvisHome] : [])])])})`,",
+    "replacement": "    \"\","
+  },
+  {
+    "name": "native sandbox propagate unavailability",
+    "file": "packages/cli/src/lanes/desktop-observe.ts",
+    "anchor": "    if (error instanceof NativeSandboxUnavailable) throw error;",
+    "replacement": "    void error;"
+  },
+  {
+    "name": "native sandbox unavailable is not run",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "if (error instanceof NativeSandboxUnavailable) return { status: \"not run\", reason: `not run: desktop sandbox (${error.message})`, result };",
+    "replacement": "if (false) return { status: \"not run\", reason: `not run: desktop sandbox (unavailable)`, result };"
+  },
+  {
+    "name": "native sandbox executable name",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!good(result) || !/^[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}$/.test(name))",
+    "replacement": "if (!good(result))"
+  },
+  {
+    "name": "native sandbox bundle completeness",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!lstatSync(join(real, \"Contents/Info.plist\")).isFile() || !lstatSync(join(real, \"Contents/MacOS\")).isDirectory())",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox system read scope",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "const SYSTEM = [\"/System/Library\", \"/usr/lib\", \"/usr/bin\", \"/usr/sbin\", \"/bin\", \"/sbin\", \"/Library/Apple\"];",
+    "replacement": "const SYSTEM = [\"/\"];"
+  },
+  {
+    "name": "native sandbox IPC scope",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "`(allow mach-lookup ${MACH.map(name => `(global-name ${JSON.stringify(name)})`).join(\" \")})`",
+    "replacement": "\"(allow mach-lookup)\""
+  },
+  {
+    "name": "native sandbox app PID",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "return { pid: app.pid, alive:",
+    "replacement": "return { pid: app.pid + 1, alive:"
+  },
+  {
+    "name": "native sandbox bundle root",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "if (!isAbsolute(bundle) || !bundle.endsWith(\".app\") || lstatSync(bundle).isSymbolicLink())",
+    "replacement": "if (false)"
   }
 ]

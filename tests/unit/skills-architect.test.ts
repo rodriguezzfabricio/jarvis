@@ -29,9 +29,9 @@ describe("architect skill", () => {
     for (const m of read().matchAll(/^```(?:sh|bash|shell)\n([\s\S]*?)^```/gm)) expect(m[1]).not.toMatch(/&&|\|\||;|\$\(|\||<</);
   });
   it("ships at least three checkable evals covering planning, gaming and spec-free routing", () => {
-    const data = JSON.parse(readFileSync(new URL("evals/evals.json", path), "utf8")) as { skill_name: string; evals: { id: number; prompt: string; expected_output: string; expectations: string[]; files: string[] }[] };
+    const data = JSON.parse(readFileSync(new URL("../../evals/skills/architect/evals.json", import.meta.url), "utf8")) as { skill_name: string; evals: { id: number; prompt: string; expected_output: string; expectations: string[]; files: string[] }[] };
     expect(data.skill_name).toBe("architect"); expect(data.evals.length).toBeGreaterThanOrEqual(3); expect(new Set(data.evals.map((e) => e.id)).size).toBe(data.evals.length);
-    for (const e of data.evals) { expect(e.prompt.length).toBeGreaterThan(0); expect(e.expected_output.length).toBeGreaterThan(0); expect(e.expectations.length).toBeGreaterThanOrEqual(2); for (const f of e.files) expect(existsSync(new URL(`evals/${f}`, path))).toBe(true); }
+    for (const e of data.evals) { expect(e.prompt.length).toBeGreaterThan(0); expect(e.expected_output.length).toBeGreaterThan(0); expect(e.expectations.length).toBeGreaterThanOrEqual(2); for (const f of e.files) expect(existsSync(new URL(`../../evals/skills/architect/${f}`, import.meta.url))).toBe(true); }
     expect(JSON.stringify(data)).toContain("black box"); expect(JSON.stringify(data)).toContain("bug"); expect(JSON.stringify(data)).toContain("AC1");
   });
 });

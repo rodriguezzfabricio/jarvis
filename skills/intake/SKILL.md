@@ -28,7 +28,7 @@ Research must finish before the round, with a source for every material claim or
 Then read:
 1. **The research file:** its fixed constraints, conflicts, Challenges, product questions raised and engineering decisions.
 2. **The decision register** (`docs/decisions.md`, decision 48) and the backlog.
-3. **The taste profile** (decision 39). Run `jarvis taste show` first (JSON profile or `null`). Reuse an existing profile. If none exists and this adds a UI, offer it once, before the round (about 10 minutes, outside the 7 questions). **Before drafting questions or calling design, send a standalone taste-profile offer**: "Set your taste profile first? About 10 minutes, across projects; skipping is fine." Never append this offer to the question round, and never end the turn on it: keep framing while the user decides. If accepted, collect 3–5 admired apps/sites, one AI-made look, serious or playful, disliked colors/fonts and platforms. Write `.jarvis/intake/taste.json`, run `jarvis taste save .jarvis/intake/taste.json`, and copy it into `PRODUCT.md`'s Taste section. If the user declines, or hasn't replied when the round is ready, send the round without a profile; record that in the summary and let the design direction question carry the taste choice.
+3. **The taste profile** (decision 39). Run `jarvis taste show` first (JSON profile or `null`). Reuse an existing profile. If none exists and this adds a UI, offer it once within the round only if the question budget permits; default to skip. Accept preferences volunteered in that answer, but never add a separate profile questionnaire. Do not wait for a profile before framing the job. Draft the design directions without a profile using product constraints and research; the design direction question carries the choice. Only for a complete supplied profile, write `.jarvis/intake/taste.json`, run `jarvis taste save .jarvis/intake/taste.json`, and copy it into `PRODUCT.md`'s Taste section. Keep partial preferences in `PRODUCT.md` without inventing fields or asking extra questions.
 4. **`PRODUCT.md`, `DESIGN.md` and any design system in the code** (component library, tokens, theme files).
 
 ## Check the decision register
@@ -51,6 +51,8 @@ An implied change becomes the first question, citing the old decision ID and sou
 
 ## Frame the job
 
+For a new product, ask what the person does today and what's broken before solution questions. If their request already answers this, cite it instead of asking again. Put this discovery question first after any register conflict, within the same round; mark any proposed job story as provisional until answered. Do not invent a personal situation from market research.
+
 Before sorting questions (decision 6), write:
 1. One **job story**: "When <situation>, I want <motivation>, so <outcome>."
 2. **The day after launch**: what the user does, sees and where.
@@ -68,30 +70,30 @@ Before any question, list assumptions with a confidence level (high, medium, low
 ## Sort product from engineering
 
 Every open decision is one or the other (decision 7):
-- **Product:** it changes what the user sees, does, pays or risks, or causes something irreversible outside their computer (money, messages to real people, posts, deleting data, account bans). Ask it.
-- **Engineering:** everything else (idempotency, retries, schema, caching, provider fallback order, test strategy). Decide it, and log it as Decision / Rationale / Alternatives with its class (Mechanical or Taste, decision 11), what depends on it (for Taste), and how hard it is to reverse.
+- **Product:** an unresolved outcome, workflow or constraint that only the user can supply. Ask only what only the user can answer. Effects on privacy, cost or outside actions must be visible in assumptions and trade-offs; they do not make every implementation choice a product question or grant permission to act.
+- **Engineering:** fallback ordering, retention, idempotency of side effects, and suppression/opt-out for anyone the product messages; also retries, schema, caching and test strategy. Decide these yourself and record Decision / Rationale / Alternatives with the class (Mechanical or Taste, decision 11), dependencies for Taste and reversibility. Follow project constraints, preserve existing data and honor opt-outs by default. Ask about an unknown personal or business requirement only when it changes the outcome; never ask the user to design the mechanism.
 
 Never ask what the code, the register, the backlog or research already answers. Never ask the user to pick a library.
 
 ## Write the questions
 
-**Rank:** scope first, then security, privacy and legal, then UX, then technical. A register conflict goes first of all, with topic `scope`. The design direction ranks with UX, with topic `design`. The production grant uses topic `security`. Assign Q1–Q7 only after ranking, then keep those IDs and that order through the JSON, session display and answer record.
+**Rank:** scope first, then security, privacy and legal, then UX, then technical. A register conflict goes first of all, with topic `scope`. The design direction ranks with UX, with topic `design`. For a new product, the current-situation question follows any conflict and precedes solution choices. Assign Q1–Q7 only after ranking, then keep those IDs and that order through the JSON, session display and answer record.
 
-**Cap: at most 7 questions.** The design direction and the production grant, when they apply, always keep their place; the rest are cut by rank, and product questions beyond 7 become logged assumptions, using the default you would have offered, marked as such.
+**Cap: at most 7 questions.** The cap counts every question asked in this intake, including any profile offer, whether in prose, a tool or the JSON. Count each independently answerable part of a bundled prompt; grouping asks under one ID does not reduce the count. Reuse any answers already given and subtract any earlier asks before sending the remaining round. The design direction counts when applicable; omit the optional profile offer before cutting necessary product questions. Product questions beyond 7 become logged assumptions with the proposed default and its trade-offs, never extra asks. The spec confirmation is a separate round, labeled as such.
 
 **The design direction** (decision 39) is one of the questions when the work adds a UI and **either** it's a new product **or** it needs a new kind of screen while the project has neither a `DESIGN.md` nor a design system in its code (architecture §2). When a design system exists but `DESIGN.md` doesn't, there's no direction question: the design skill writes `DESIGN.md` from the existing system (decision 51). Backend-only work never gets one.
 
-**The production grant** is one of the questions for a new product that will deploy: may Jarvis promote a release-ready build to production through the broker (decision 12)? Default: no, stop at preview-ready. Only an explicit answer from the user grants it; a default never does.
+**Permissions belong to ship.** Release, production and spending permissions are not intake questions; the ship stage asks them against a concrete release or purchase. Intake records constraints and known costs. A product answer never authorizes an outside action; the broker's hard stops still apply.
 
 **Default honesty.** Name the known costs and limitations from research, not just the upside, in the default's reason and `tradeOff`. Include behavior costs as well as money: what the default gets wrong, repeats or makes the user redo in normal use. Cite the research; unknown costs say "not checked".
 
-**Request fidelity.** Never drop or replace the core of the user's request with the default. A default that makes the user do by hand what they asked to have done for them drops it. If no viable way was found, say so plainly and ask; do not promise a different feature or present missing research as impossibility.
+**Request fidelity.** Never drop or replace the core of the user's request with the default. A default that makes the user do by hand what they asked to have done for them drops it. If the project's own docs forbid the requested behavior, quote the exact doc line with its path and line number and say the default follows it. Keep the conflict visible and apply the register rules above; never imply that a constrained default satisfies the entire request. If no viable way was found, say so plainly and ask; do not promise a different feature or present missing research as impossibility.
 
 **Past data.** Any default or assumption that rewrites or destroys the user's past data must be a question or a listed assumption the user can veto in the round. Include edits that recompute past records, imports or restores that replace existing data, and deletion with no archive or undo. Put the effect in the persisted round summary and printed veto list, not only in the spec. Prefer preserving history; silence is never a destructive-action grant.
 
 **Each question has** the question in one sentence, **why it matters** in one line, a **recommended default** with its reason, and 1–3 **alternatives** (the default is separate). A yes/no question needs only one alternative; never invent a second form of permission to fill the list. Other choices normally have 2–3 **alternatives**.
 
-Defaults are safe, reversible, no-spend choices within the project's rules. A default never spends money, never contacts a real person without approval, and never weakens a project rule.
+Defaults are safe, reversible, no-spend choices within the project's rules. A default never spends money, never messages a real person without approval, and never weakens a project rule.
 
 **The design direction question** comes from the design skill: call it before sending the round for 3 different layouts and flows (decisions 52 and 39). Attach their screenshots, or local-only HTML paths if screenshots are unavailable; name the default and its reason. Mockups use made-up sample data, never real names or addresses.
 
@@ -141,7 +143,7 @@ Never send questions or mockups through any other channel, and never put code, s
 | No answer by the deadline | An unconfirmed default: confirmed with the user once, vetoable in the morning | `default-unconfirmed` | `taste` |
 | A free-text answer in the session that matches no option | The user's explicit decision, in their words; if it's ambiguous, record your reading of it as an assumption rather than asking again | `user` | `mechanical` |
 
-Hard stops still apply after defaults: a default can't authorize spending or an outside action, and only an explicit answer the user gives in the session grants production (the phone's only question button is "Use defaults", and the grant's default is no).
+Hard stops still apply after defaults: a default can't authorize spending or an outside action. Intake answers never grant release, production or spending permission; ship requests those through the broker.
 
 **User attribution requires evidence.** `--by user` requires `--answer <answerSeq>:<questionId>` and the exact recorded answer. The closed answer result returns `answerSeq`. Only explicit session answers qualify; defaults, timeouts and phone notes do not. Supersessions must name the old ID in the question or answer. Never invent references or split an answer into new claims.
 
@@ -151,14 +153,10 @@ Then, in this order:
 
    ```
    jarvis decide --by user --class mechanical --why "<the question's why>" --alternatives "<the options not taken>" --answer <answerSeq>:<questionId> --source docs/intake/<file>.md "<the exact recorded answer>"
-   jarvis decide --by default-accepted --class mechanical --why "<the default's reason>" --alternatives "<the alternatives>" --source docs/intake/<file>.md "Q<n>: <the default>"
-   jarvis decide --by default-unconfirmed --class taste --why "<the default's reason>" --alternatives "<the alternatives>" --depends-on "<the stories or tasks it shapes>" --source docs/intake/<file>.md "Q<n>: <the default>"
    jarvis decide --by jarvis --class mechanical|taste --why "<the rationale>" --alternatives "<the alternatives>" --depends-on "<what depends on it, for Taste>" --source docs/research/<file>.md "<the engineering decision>"
-   jarvis decide --by user --class mechanical --supersedes <id> --reason "<the user's words>" --why "<why the new request wins>" --answer <answerSeq>:<questionId> --source docs/intake/<file>.md "<the exact recorded answer>"
-   jarvis decide --by jarvis --class challenge --why "<why the rule may be wrong>" --alternatives "<what Jarvis would do instead>" --source docs/research/<file>.md "<the challenge>; the user's rule stays active"
    ```
 
-   Lines 1–3 record answers; line 4, engineering; line 5, a provenance-backed supersession; line 6, a Challenge that keeps the user's rule. Jarvis revises its own calls with `--by jarvis` and `--reason`.
+   These forms record explicit answers and engineering decisions. Read `references/decision-examples.md` for accepted/unconfirmed defaults, provenance-backed supersessions and Challenges that keep the user's rule. Jarvis revises its own calls with `--by jarvis` and `--reason`.
 3. **Update `PRODUCT.md`** (decision 51, from `templates/PRODUCT.md`) with the answers and the taste profile. The design pick is recorded here, once, like every other answer; the design skill doesn't record it again.
 4. **Hand off to the spec skill** with the research file, the intake record, the assumptions (each marked fixed constraint or delegated preference, decision 9) and the answers.
 
@@ -166,34 +164,7 @@ Then, in this order:
 
 Write `docs/intake/<YYYY-MM-DD>-<short-slug>.md`, so the reasoning behind the spec survives the session:
 
-```markdown
-# Intake: <request in a few words>
-Date: YYYY-MM-DD · Tier: <1|2> · Research: docs/research/<file> · Round: <n>
-
-## Summary
-<≤5 lines>
-
-## Register conflicts
-- <old decision (id, source, made by)> vs <request> · resolution: superseded (reason) | kept | revisited (note) | question Qn
-
-## Framing
-Job story: …
-Day after launch: …
-Top 3 reasons it could fail: 1. … 2. … 3. …
-Story map: <activity> → <activity> → … (variations under each)
-Umbrella: yes | no (signals: …) · Walking skeleton: …
-
-## Assumptions
-- <assumption> · confidence: high | medium | low · source: …
-
-## Questions
-### Q1 (scope): <question>
-Why it matters: … · Default: … (reason) · Alternatives: …; …
-Answer: <answer> · by: user | default accepted | default unconfirmed
-
-## Engineering decisions
-- <decision> · rationale · alternatives · class · what depends on it (Taste) · reversibility
-```
+Use the bundled `references/intake-record.md` and fill every section. Read `references/principles.md` for the rationale behind the six intake rules. Reference paths resolve relative to this installed skill.
 
 ## Gotchas
 

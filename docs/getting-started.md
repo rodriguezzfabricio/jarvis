@@ -84,8 +84,9 @@ From `jarvis --help` today:
 | `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints |
 | `jarvis intake send\|answer\|answers` | Intake rounds: shown in the session, mirrored to ntfy; `answers --wait` waits for your reply |
 | `jarvis taste save <file>` | Saves your design taste profile |
-| `jarvis spec check` | Checks the structure and references of `docs/spec/vN.md` |
-| `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register |
+| `jarvis taste show` | Prints your taste profile as JSON, or `null` when there is none |
+| `jarvis spec check` | Checks the structure and references of `docs/spec/vN.md`, and the latest version's decision citations against the register |
+| `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register; `--by user` needs `--answer <answerSeq>:<questionId>` from a recorded intake answer, quoted exactly |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
 | `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |

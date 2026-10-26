@@ -85,8 +85,10 @@ function verifyFiles(root: string, files: Record<string, string>): void {
 /** Only an absolute entry in the approved toolchain is required; no checkout resolution or fallback. */
 export function loadBrowserRuntime(manifestPath: string, manifestHash: string, repo: string): BrowserRuntime {
   const verified = verifyQaToolchain(manifestPath, manifestHash, repo);
-  const runtime = createRequire(resolve(manifestPath))(verified.playwrightModule) as { chromium: { launch(options: { headless: boolean; executablePath: string }): ReturnType<BrowserRuntime["launch"]> } };
-  return { launch: () => runtime.chromium.launch({ headless: true, executablePath: verified.chromiumExecutable }), axeSource: readFileSync(verified.axeSource, "utf8") };
+  const runtime = createRequire(resolve(manifestPath))(verified.playwrightModule) as { chromium: { launch(options: { headless: boolean; executablePath: string; args: string[] }): ReturnType<BrowserRuntime["launch"]> } };
+  // srt cannot allow Chromium's Mach registration; single-process avoids its rendezvous server.
+  // installChromiumBundle's smoke launch is outside the gate sandbox and cannot catch this failure.
+  return { launch: () => runtime.chromium.launch({ headless: true, executablePath: verified.chromiumExecutable, args: ["--single-process"] }), axeSource: readFileSync(verified.axeSource, "utf8") };
 }
 
 export { installChromiumBundle, type ChromiumInstallInput } from "./chromium-install.ts";

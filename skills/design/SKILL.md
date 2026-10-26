@@ -57,7 +57,9 @@ Write each plan to `.jarvis/mockups/<direction>/direction.md`.
 
 ## Make the mockups
 
-Make **throwaway static mockups** of the main screens for each direction (decision 39): the screen where first value happens, the main list or dashboard, and one empty state. Everything goes under `.jarvis/mockups/`, which is gitignored (architecture §3.5): `<direction>/<screen>.html`, one self-contained page each, at the width of the platform the user lives on.
+Make **throwaway static mockups** of the main screens for each direction (decision 39): the screen where first value happens, the main list or dashboard, and one empty state. Mockup artifacts go under `.jarvis/mockups/`, which is gitignored (architecture §3.5): `<direction>/<screen>.html`, one self-contained page each, at the width of the platform the user lives on.
+
+Generator scripts go in `.jarvis/scratch/make-mockups.mjs`, directly under the project's scratch folder. Keep temporary browser profiles and auxiliary files in a gitignored project scratch folder outside `.jarvis/` (for example `scratch/mockup-browser/`); never use a shared system temp folder. Under the mockup folder, write only direction-level `.md`, `.html` and `.png` files and the comparison HTML page. Save a comparison screenshot to `.jarvis/mockups/comparison/index.png`. Use the same allowed paths for Bash-generated files as for Write/Edit; never use Bash to bypass a tripwire refusal. A refused path means fix the destination, then retry. No hook exception is needed.
 
 - **Use real wording:** the product's own words from `PRODUCT.md`, real labels and real button text. No lorem ipsum: it hides the hierarchy problems the user is choosing between.
 - **Use made-up sample data**, never real names, emails, addresses or companies. Mockups can reach the phone through a public notification server.

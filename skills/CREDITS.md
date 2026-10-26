@@ -44,6 +44,13 @@ SOFTWARE.
   - `sweep`: the pattern of a scheduled sweep that reports and proposes instead of editing.
 - **What changed:** ideas only, rewritten for Jarvis; no text or code was copied, so no license notice is reproduced. Learnings go to Jarvis's memory files through the CLI instead of a `docs/solutions/` folder, need a runner-written source (decision 49), and a lesson seen twice becomes a rule the user approves (decision 28).
 
+## gitleaks default rules
+
+- **Source:** https://github.com/gitleaks/gitleaks/blob/v8.28.0/config/gitleaks.toml, by Zachary Rice and the gitleaks contributors.
+- **License:** MIT, Copyright (c) 2019 Zachary Rice. The full notice ships beside the copy in `packages/cli/src/security/gitleaks-LICENSE`.
+- **Used in:** the security pass behind the `security` skill. `packages/cli/src/security/gitleaks.toml` is the default config embedded in the pinned gitleaks 8.28.0 binary (all 217 rules).
+- **What changed:** the global `paths` allowlist and three path-scoped rule allowlists were removed, so dependency folders, lockfiles and images are scanned too (backlog 105). Rules and value-based allowlists are unchanged. The runner passes it with `--config`; it is never read from the candidate tree.
+
 ## Ideas only (no text copied)
 
 - **OpenAI, "harness engineering" post:** an `AGENTS.md` of about 100 lines used as a table of contents into `docs/`, which is the system of record, and recurring cleanup agents. Used in `onboard` (the `AGENTS.md` cleanup task) and `sweep`.

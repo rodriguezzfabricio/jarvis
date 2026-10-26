@@ -380,13 +380,13 @@
   {
     "name": "QA round 2 accepts incomplete frame coverage",
     "file": "packages/cli/src/lanes/verify.ts",
-    "anchor": "    verifyFrames(page, expected, problems);",
+    "anchor": "    verifyFrames(page, expected, problems, context);",
     "replacement": "    void page;"
   },
   {
     "name": "QA round 2 skips child frame assertions",
     "file": "packages/cli/src/lanes/verify.ts",
-    "anchor": "    verifyAxe(frame.axe, expected, `${page.width} frame ${frame.id}`, problems);",
+    "anchor": "    verifyAxe(frame.axe, expected, `${page.width} frame ${frames.indexOf(rawFrame)} ${String(frame.url ?? \"\")}`, problems, context);",
     "replacement": "    void frame;"
   },
   {
@@ -844,5 +844,65 @@
     "file": "packages/cli/src/lanes/desktop-sandbox.ts",
     "anchor": "const app = await (deps.launch ?? launchDesktop)(spec(bin, []));",
     "replacement": "const app = await (deps.launch ?? launchDesktop)({ ...spec(bin, []), bin: SANDBOX, args: [\"-f\", profile, bin] });"
+  },
+  {
+    "name": "runtime browser omits single-process sandbox workaround",
+    "file": "packages/cli/src/lanes/toolchain.ts",
+    "anchor": "args: [\"--single-process\"]",
+    "replacement": "args: []"
+  },
+  {
+    "name": "runtime axe ignores runner baseline",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "return verifyObservation(raw, expected, context);",
+    "replacement": "return verifyObservation(raw, expected);"
+  },
+  {
+    "name": "runtime axe reads baseline from candidate output",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "  let context: AxeContext | undefined;",
+    "replacement": "  if (expected.baseline === undefined && object(raw)?.baseline) return verifyWebObservation(raw, { ...expected, baseline: recordWebBaseline(object(raw)!.baseline, expected, \"a\".repeat(40)) });\n  let context: AxeContext | undefined;"
+  },
+  {
+    "name": "runtime axe allows baseline rule node count growth",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "rule.count > baseline.count",
+    "replacement": "false"
+  },
+  {
+    "name": "runtime axe allows new node selectors at the same count",
+    "file": "packages/cli/src/lanes/verify.ts",
+    "anchor": "[...rule.nodes].some(node => !baseline.nodes.has(node))",
+    "replacement": "false"
+  },
+  {
+    "name": "runtime unitless line height treated as spacing",
+    "file": "packages/cli/src/lanes/design.ts",
+    "anchor": "/(?<![\\w-])(padding",
+    "replacement": "/\\b(padding"
+  },
+  {
+    "name": "runtime easing only checks y2 for overshoot",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "[Number(match[2]), Number(match[4])]",
+    "replacement": "[Number(match[4])]"
+  },
+  {
+    "name": "runtime observation reuses one browser for all viewports",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "    const browser = await runtime.launch();",
+    "replacement": "    const browser = await ((runtime as { shared?: ReturnType<BrowserRuntime[\"launch\"]> }).shared ??= runtime.launch());"
+  },
+  {
+    "name": "runtime observation leaves each viewport's browser open",
+    "file": "packages/cli/src/lanes/browser.ts",
+    "anchor": "    } finally { await browser.close(); }",
+    "replacement": "    } finally { /* browser left open */ }"
+  },
+  {
+    "name": "runtime easing treats a negative y control point as bounded",
+    "file": "packages/cli/src/lanes/tells.ts",
+    "anchor": "some(y => y < 0 || y > 1)",
+    "replacement": "some(y => y > 1)"
   }
 ]

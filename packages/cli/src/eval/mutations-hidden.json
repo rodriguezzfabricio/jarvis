@@ -1,0 +1,20 @@
+[
+  {
+    "name": "hidden checks install copies with Node instead of cp clones",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "  if (process.platform === \"darwin\") {",
+    "replacement": "  if (false) {"
+  },
+  {
+    "name": "hidden checks install asks cp for a plain copy, not clones",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "[\"-cR\", source, destination]",
+    "replacement": "[\"-R\", source, destination]"
+  },
+  {
+    "name": "hidden checks install keeps what a failed cp left behind",
+    "file": "packages/cli/src/eval/hidden.ts",
+    "anchor": "    catch { rmSync(destination, { recursive: true, force: true }); }",
+    "replacement": "    catch { /* keep the partial folder */ }"
+  }
+]

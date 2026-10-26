@@ -40,7 +40,7 @@ it("pins all three installed scanners by absolute path and exact version", () =>
 
 it("uses only vendored Semgrep rules, disabled metrics, version checks and nosem", async () => {
   const { checkout, fixtures } = setup(); const pin = pins().semgrep!; const calls: SessionSpec[] = [];
-  const result = await runScanner("semgrep", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => { calls.push(spec); return ok(spec.args.includes("--version") ? "1.182.0\n" : '{"results":[],"errors":[]}'); } });
+  const result = await runScanner("semgrep", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => { calls.push(spec); return ok(spec.args.includes("--version") ? "1.182.0\n" : '{"results":[],"errors":[],"paths":{"scanned":[]}}'); } });
   expect(result.status).toBe("pass");
   const scan = calls[1]!;
   expect(scan.args).toEqual(expect.arrayContaining(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0", "--config", pin.rulesFile]));
@@ -59,7 +59,7 @@ it.each(["auto", "p/security-audit", "https://example.invalid/rules.yml"])("reje
 
 it.each(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0"])("refuses Semgrep pins missing %s", async (flag) => {
   const { checkout } = setup(); const pin = pins().semgrep!;
-  expect((await runScanner("semgrep", { ...pin, args: pin.args.filter((arg) => arg !== flag) }, checkout, { spawn: async (spec) => ok(spec.args.includes("--version") ? "1.182.0" : '{"results":[],"errors":[]}') }))).toMatchObject({ status: "error", detail: "invalid offline semgrep configuration" });
+  expect((await runScanner("semgrep", { ...pin, args: pin.args.filter((arg) => arg !== flag) }, checkout, { spawn: async (spec) => ok(spec.args.includes("--version") ? "1.182.0" : '{"results":[],"errors":[],"paths":{"scanned":[]}}') }))).toMatchObject({ status: "error", detail: "invalid offline semgrep configuration" });
 });
 
 it("recognizes OSV's own version without accepting its library version or a patched version", async () => {
@@ -115,7 +115,7 @@ it("installs and hashes vendored rules and a database; installed workers use fix
   const store = new ChecksStore(join(root, "project")); const ledger = Ledger.open(join(root, "project"));
   const configured = pins(db); const semgrep = configured.semgrep!;
   const bin = join(root, "fake-semgrep");
-  writeFileSync(bin, `#!${process.execPath}\nif(process.argv.includes('--version')) console.log('1.182.0'); else {const fs=require('node:fs');const p=process.argv[process.argv.indexOf('--config')+1];if(!fs.existsSync(p+'/javascript.yml')||!p.includes('/checks/fixtures/'))process.exit(2);console.log('{"results":[],"errors":[]}');}`, { mode: 0o700 });
+  writeFileSync(bin, `#!${process.execPath}\nif(process.argv.includes('--version')) console.log('1.182.0'); else {const fs=require('node:fs');const p=process.argv[process.argv.indexOf('--config')+1];if(!fs.existsSync(p+'/javascript.yml')||!p.includes('/checks/fixtures/'))process.exit(2);console.log('{"results":[],"errors":[],"paths":{"scanned":[]}}');}`, { mode: 0o700 });
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: { ...configured, semgrep: { ...semgrep, bin } } });
   const files = store.approve(ledger, "reviewed offline scanner fixtures"); expect(files.lockHash).toBeTruthy();
   for (const language of ["javascript", "python", "go"]) expect(readFileSync(join(store.checksDir, "fixtures/security/rules/semgrep", `${language}.yml`), "utf8")).toContain("rules:");

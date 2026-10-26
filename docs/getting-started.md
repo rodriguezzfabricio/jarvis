@@ -72,6 +72,33 @@ The interactive session uses your normal Claude Code permissions. Sandboxed unat
 
 A completed run means its required checks and reviews passed on the accepted revision. Hidden evaluations can still find a defect those checks missed.
 
+## All commands
+
+From `jarvis --help` today:
+
+| Command | What it does |
+|---|---|
+| `jarvis setup [--redo <step>] [--send-test]` | One-time, resumable setup: Claude Code check, secrets backend, account tokens (hidden prompt, never sent anywhere), ntfy topics, taste profile, plugin copy for build sessions |
+| `jarvis doctor [--live] [--json]` | Preflight: pinned binaries, clean environment, disk, iCloud, ledgers, plugin, checks sandbox. `--live` adds the canary probe |
+| `jarvis triage "<request>"` | Classifies a request and prints its pipeline. `/jarvis` calls it first |
+| `jarvis lanes select\|lint` | Read-only: which standards lanes a change needs, and the token, DESIGN.md and AI-tells lints |
+| `jarvis intake send\|answer\|answers` | Intake rounds: shown in the session, mirrored to ntfy; `answers --wait` waits for your reply |
+| `jarvis taste save <file>` | Saves your design taste profile |
+| `jarvis spec check` | Checks the structure and references of `docs/spec/vN.md` |
+| `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register |
+| `jarvis why <query>` | Answers from the decision register, with sources |
+| `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
+| `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
+| `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
+| `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
+| `jarvis approve <id> --project <id>` / `jarvis reject <id> --project <id>` | Answers a pending approval from the terminal |
+| `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
+| `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
+| `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
+| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence |
+| `jarvis mode explain\|quiet` | Teach-me mode on or off |
+| `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
+
 ## Notifications
 
 Setup can create ntfy topics for questions and replies. Subscribe using the ntfy app, then run `jarvis setup --send-test`. Treat topic names as secrets: anyone who knows an unprotected topic can read or publish to it. Without notifications, answer intake in the interactive session. Phone approvals during unattended builds are still being implemented.

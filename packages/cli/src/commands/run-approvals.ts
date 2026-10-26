@@ -180,7 +180,7 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
     let last: string | undefined;
     for (const message of replies.value) {
       const answer = inbox.accept(message);
-      const refusal = refusedReply(message, answer);
+      const refusal = refusedReply(message, answer, o.ledger.entries());
       if (refusal && replyNotifier) await transport("reply", () => replyNotifier!.send(refusal, []));
       const confirmation = recordAnswer(o.ledger, answer, o.broker);
       last = message.id;

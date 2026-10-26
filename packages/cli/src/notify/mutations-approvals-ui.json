@@ -88,5 +88,11 @@
     "file": "packages/cli/src/notify/ntfy.ts",
     "anchor": "await readCapped(response, MAX_PUBLISH_BYTES)",
     "replacement": "await readCapped(response, Infinity)"
+  },
+  {
+    "name": "refused tap reply answers a tap without this project's nonce",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "  if (!request || data(request).nonce !== parsed.nonce) return;\n",
+    "replacement": ""
   }
 ]

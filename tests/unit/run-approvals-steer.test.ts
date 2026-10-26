@@ -49,6 +49,20 @@ it("sends a short refusal on the reply topic without the request, payload or non
   s.reply({ id: "later", text: `approve:${a.requestId}:${a.nonce}`, time: 1001 }); await run.tick();
   expect(s.ledger.entries().filter((e) => e.kind === "approval")).toHaveLength(1); await run.close();
 });
+it("answers only taps that carry this project's nonce: the reply topic is shared across projects", async () => {
+  const s = setup(); const pending = await s.broker.handle({ op: "spend", payload: { description: "fake" } });
+  const run = s.run(); await run.tick(); const a = s.sent[0]!.actions[0]!;
+  s.reply({ id: "other-project", text: `approve:6f1d2c3b-0000-4000-8000-000000000000:${"a".repeat(64)}`, time: 2000 },
+    { id: "forged", text: `approve:${a.requestId}:${"b".repeat(64)}`, time: 2000 });
+  await run.tick();
+  expect(s.sent.filter((e) => e.topic === "fake-reply")).toEqual([]);
+  expect(s.ledger.entries().filter((e) => (e.data as { phase?: string }).phase === "ignored").map((e) => (e.data as { reason: string }).reason)).toEqual(["unknown-request", "unknown-nonce"]);
+  s.broker.decide(pending.approvalId!, "reject", "terminal");
+  s.reply({ id: "late", text: `approve:${a.requestId}:${a.nonce}`, time: 2000 }); await run.tick();
+  expect(s.sent.filter((e) => e.topic === "fake-reply").map((e) => e.message.text)).toEqual(["Not counted: this request already has an answer."]);
+  await run.close();
+});
+
 it("replays a note after a crash between inbox submission and its recorded marker without duplicate application", async () => {
   const s = setup(); const run = s.run(); const transact = s.ledger.transact.bind(s.ledger);
   const spy = vi.spyOn(s.ledger, "transact").mockImplementation((fn) => transact((entries, add) => fn(entries, (input) => {

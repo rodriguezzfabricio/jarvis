@@ -268,10 +268,14 @@ function queueSteer(dir: string, note: string, id: string): void {
 }
 
 /** Fixed reasons only: never reflect payloads, request ids, nonces or the incoming body. */
-export function refusedReply(message: ReplyMessage, answer: ReplyResult): Message | undefined {
+export function refusedReply(message: ReplyMessage, answer: ReplyResult, entries: readonly LedgerEntry[]): Message | undefined {
   const parsed = parseReply(message.text);
   if (answer.status !== "ignored" || answer.reason === "duplicate" || answer.reason === "not-approval"
     || parsed.kind !== "button" || parsed.requestId.startsWith("intake-")) return;
+  // Only a tap carrying this ledger's nonce for its request gets an answer. The reply topic is shared
+  // by every project's run, so any other tap is another project's, or a forgery probing for requests.
+  const request = entries.find((e) => isPhase(e, "request") && data(e).requestId === parsed.requestId);
+  if (!request || data(request).nonce !== parsed.nonce) return;
   const reasons: Record<IgnoredReason, string> = {
     "before-send": "tap time could not be verified; tap again.",
     "already-answered": "this request already has an answer.",

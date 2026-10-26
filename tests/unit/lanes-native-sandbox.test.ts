@@ -43,6 +43,11 @@ describe("native Seatbelt policy", () => {
     expect(text).toContain('(allow signal (target same-sandbox))');
     expect(text).not.toContain('(allow file-write* (subpath "/Users/test/work/Test.app"))');
   });
+  it("opens the root folder itself, never below it: dyld reads it, and without it every binary aborts (live test)", () => {
+    const text = nativeSeatbeltProfile(policy);
+    expect(text).toMatch(/^\(allow file-read\* [^\n]*\(literal "\/"\)/m);
+    expect(text).not.toMatch(/\(subpath "\/"\)|\(allow file-write\*[^\n]*\(literal "\/"\)/);
+  });
   it.each(["relative.app", '/bad"path.app', "/bad\\path.app", "/bad\npath.app", "/bad\u007fpath.app", "/bad/../path.app"])("rejects unsafe profile path %j", bundle => {
     expect(() => nativeSeatbeltProfile({ ...policy, bundle })).toThrow(NativeSandboxUnavailable);
   });

@@ -61,7 +61,8 @@ export function nativeSeatbeltProfile(p: NativeSandboxPolicy): string {
     "(allow process-exec process-fork)", "(allow signal (target same-sandbox))", "(allow process-info* (target same-sandbox))",
     "(allow sysctl-read)", "(allow file-read-metadata file-test-existence)",
     `(allow file-read* file-map-executable ${subpaths(SYSTEM)})`,
-    `(allow file-read* ${subpaths(SYSTEM_DATA)} (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom"))`,
+    // The root folder itself (not below it): dyld reads it at startup, and every binary aborts without it.
+    `(allow file-read* ${subpaths(SYSTEM_DATA)} (literal "/") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom"))`,
     '(allow file-read* file-write* (literal "/dev/null"))',
     `(allow mach-lookup ${MACH.map(name => `(global-name ${JSON.stringify(name)})`).join(" ")})`,
     `(allow file-read* file-map-executable ${subpaths([p.bundle])})`,

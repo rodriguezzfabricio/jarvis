@@ -820,5 +820,17 @@
     "file": "packages/cli/src/lanes/desktop-sandbox.ts",
     "anchor": "if (!isAbsolute(bundle) || !bundle.endsWith(\".app\") || lstatSync(bundle).isSymbolicLink())",
     "replacement": "if (false)"
+  },
+  {
+    "name": "native sandbox root folder unreadable (every binary aborts)",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "${subpaths(SYSTEM_DATA)} (literal \"/\") (literal \"/dev/zero\")",
+    "replacement": "${subpaths(SYSTEM_DATA)} (literal \"/dev/zero\")"
+  },
+  {
+    "name": "native sandbox root folder read widened to the whole disk",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "${subpaths(SYSTEM_DATA)} (literal \"/\") (literal \"/dev/zero\")",
+    "replacement": "${subpaths(SYSTEM_DATA)} (subpath \"/\") (literal \"/dev/zero\")"
   }
 ]

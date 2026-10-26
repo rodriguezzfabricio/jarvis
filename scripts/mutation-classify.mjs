@@ -104,8 +104,8 @@ export function classify(proc, report, control, runEnd) {
  * review 16) and exits 4, never 0.
  * `unconfirmed` counts catches seen on related tests only, never on the full suite, that the run needed
  * confirmed: such a run is not the gate and exits 3 (Codex review of the subset mutation check). With
- * `scope` (--confirm-stage, decision 94), catches outside the stage may stay in fast mode, and the line
- * says how many were confirmed and how many weren't.
+ * `scope` (--confirm-stage, decision 129), `total` is the stage's mutation count, not everything defined, and
+ * the line says how many were confirmed and how many of other stages' mutations were not run.
  */
 export function summarize({ total, selected, filtered, results, unconfirmed = 0, scope }) {
   if (selected === 0) return { line: "no mutation matches the filter", exitCode: 2 };
@@ -121,6 +121,6 @@ export function summarize({ total, selected, filtered, results, unconfirmed = 0,
   // checked, let alone confirmed (Codex review of decision 94). Exit 4: partial run, not the gate.
   const line = partial ? `partial run: ${selected} of ${total} mutations selected, all ${selected} caught (not a complete proof, not the gate)` : `all ${total} mutations caught`;
   const exitCode = partial ? 4 : 0;
-  if (scope) return { line: `${line}; stage ${scope.stage}: ${scope.confirmed} confirmed, ${scope.fast} caught in fast mode (outside stage ${scope.stage})`, exitCode };
+  if (scope) return { line: `${line}; stage ${scope.stage}: ${scope.confirmed} confirmed on the full suite; other stages' mutations not run (decision 129): ${scope.notRun}`, exitCode };
   return { line, exitCode };
 }

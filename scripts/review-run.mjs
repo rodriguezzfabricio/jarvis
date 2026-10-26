@@ -20,8 +20,9 @@ export function reserveLaneManifest(roundDir, lanes) {
   writeFileSync(join(roundDir, 'lanes'), `lanes ${lanes.join(',')}\n`, { flag: 'wx', mode: 0o600 });
 }
 /**
- * The evidence commands. The mutation check confirms every mutation on the full suite, or with
- * confirmStage only that stage's (decision 94: a stage review confirms its own stage's mutations).
+ * The evidence commands. The mutation check runs every mutation on the full suite, or with confirmStage
+ * only that stage's, also on the full suite (decision 129: a stage review runs its own stage's mutations
+ * and leaves the other stages' to their own reviews; the v1 close runs them all).
  */
 export function defaultEvidence({ confirmStage } = {}) {
   if (confirmStage !== undefined && !STAGES.includes(confirmStage)) throw Error(`confirm stage must be one of ${STAGES.join(', ')}`);

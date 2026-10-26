@@ -67,6 +67,9 @@ it("requires a delivery receipt before accepting a phone tap", async () => {
   const request = s.deps.ledger.entries().find((e) => (e.data as { phase?: string }).phase === "request")!.data as { nonce: string };
   expect(receiveRoundReply(1, { id: "tap", text: `defaults:intake-1:${request.nonce}`, time: 1 }, s.deps)?.text).toContain("Not counted");
   expect((await getRoundAnswers(1, s.deps)).state).toBe("open");
+  // Refused because the round was never delivered, not because `time >= null` happens to read as late.
+  const ignored = s.deps.ledger.entries().filter((e) => (e.data as { phase?: string }).phase === "ignored").map((e) => e.data as { id: string; reason: string });
+  expect(ignored).toEqual([expect.objectContaining({ id: "tap", reason: "not-delivered" })]);
 });
 it("an answer typed while a wait is pending closes it and is returned by that wait", async () => {
   const s = setup(); await sendRound(s.file, s.deps);

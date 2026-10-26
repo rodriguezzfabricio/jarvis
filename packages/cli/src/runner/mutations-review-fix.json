@@ -1,0 +1,236 @@
+[
+  {
+    "name": "review fix: a fix request in the request's words is ignored",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const fixes = j.then === \"none\" ? false : j.then !== undefined || verb !== undefined;",
+    "replacement": "const fixes = j.then === \"none\" ? false : j.then !== undefined;"
+  },
+  {
+    "name": "review fix: a plain review gets a fix pipeline",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (fixes) then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");",
+    "replacement": "then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");"
+  },
+  {
+    "name": "review fix: a report path typed in the request is taken unchecked",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "if (problem) add(\"report-refused\", `\"${typed}\": ${problem}`);",
+    "replacement": "if (false) add(\"report-refused\", `\"${typed}\": ${problem}`);"
+  },
+  {
+    "name": "review fix: the review writing a report keeps the read-only step",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    if (report !== null) first = { ...first, ...stepsFor(\"review\", { design: false, onboarding: false, report: true }) };\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a tier-2 area no longer makes it a security review",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "review = { report, security: security !== undefined || areas.length > 0 };",
+    "replacement": "review = { report, security: security !== undefined };"
+  },
+  {
+    "name": "review fix: a report path may leave the checkout",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (parts.some((p) => p === \"\" || p === \".\" || p === \"..\")) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a report path may sit in git or runner metadata",
+    "file": "packages/cli/src/runner/review-path.ts",
+    "anchor": "if (parts.some((p) => METADATA.has(p.toLowerCase()))) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a missing report is not said as such",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!present(join(root, report))) throw new ReviewOutputError(\"no-report\",",
+    "replacement": "if (false) throw new ReviewOutputError(\"no-report\","
+  },
+  {
+    "name": "review fix: the report is read following symlinks and links",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "try { reportText = readPlanningFile(root, report); }",
+    "replacement": "try { reportText = process.getBuiltinModule(\"node:fs\").readFileSync(join(root, report), \"utf8\"); }"
+  },
+  {
+    "name": "review fix: an empty report is accepted",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!reportText.trim()) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: findings naming another report are accepted",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (data.report !== report) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: a finding missing from the report is accepted",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!new RegExp(`\\\\b${escapeRe(f.id)}\\\\b`).test(reportText)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: the report needn't show a finding's file:line",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!reportText.includes(`${f.file}:${f.line}`)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: a finding about a file not in the checkout gets a fix task",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!opts.inCheckout || opts.inCheckout(f.file)) return true;",
+    "replacement": "return true;"
+  },
+  {
+    "name": "review fix: the prompt drops the reachable-path rule",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "A dangerous-looking line with no reachable path is not a finding. Where the project's tests can run",
+    "replacement": "Where the project's tests can run"
+  },
+  {
+    "name": "review fix: the prompt drops \"Not a problem\"",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "    \"Say \\\"Not a problem\\\" explicitly: for every piece of suspicious-looking code you checked and cleared, add it under a \\\"Not a problem\\\" heading in the report, with its file:line and why it is safe, and to the JSON's cleared list. Don't drop it silently, and don't pad the findings to fill a category.\",\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a security review gets the review skill only",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "(security ? [\"review\", \"security\"] : [\"review\"])",
+    "replacement": "([\"review\"])"
+  },
+  {
+    "name": "review fix: a fix task's exit condition drops decision 114's",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "If ${f.id} is real: ${BUG_EXIT_CONDITION} The report",
+    "replacement": "If ${f.id} is real: it is fixed. The report"
+  },
+  {
+    "name": "review fix: a low-confidence finding may be fixed unconfirmed",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "...(f.confidence === \"low\" ? [",
+    "replacement": "...(false ? ["
+  },
+  {
+    "name": "review fix: the builder isn't told to confirm the finding first",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "The finding is the review session's claim, not evidence. Confirm it before you change anything: trace",
+    "replacement": "Trace"
+  },
+  {
+    "name": "review fix: fix task ids restart at T1 over the ledger's tasks",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "let next = Math.max(0, ...existing.map(",
+    "replacement": "let next = 0 * Math.max(0, ...existing.map("
+  },
+  {
+    "name": "review fix: a task the loop didn't finish counts as fixed",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!i.done.includes(task)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "review fix: a pass with no file change counts as fixed",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "if (!files.length) return { ...base, status: \"unchanged\" as const,",
+    "replacement": "if (false) return { ...base, status: \"unchanged\" as const,"
+  },
+  {
+    "name": "review fix: the report update may touch any file",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": " requiredReviews: [\"code\"], mayTouch: [output.report],",
+    "replacement": " requiredReviews: [\"code\"],"
+  },
+  {
+    "name": "review fix: the report update never runs",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "const update = await r.runUpdate(reportUpdateTask(r.output, outcomes, r.fix.updateTaskId));",
+    "replacement": "const update = fixes;"
+  },
+  {
+    "name": "review fix: the report is written through a symlinked folder",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "else if (!st.isDirectory() || st.isSymbolicLink()) throw new Error(`the report's folder",
+    "replacement": "else if (false) throw new Error(`the report's folder"
+  },
+  {
+    "name": "review fix: the report is written through a symlink or a hard link",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "  if (st && (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1)) throw new Error(`the report ${report} must be a plain file: refusing to write through a symlink or a link`);\n  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);",
+    "replacement": "  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 0o644);"
+  },
+  {
+    "name": "review fix: session skill names aren't checked",
+    "file": "packages/cli/src/runner/session-skills.ts",
+    "anchor": "if (!/^[a-z][a-z-]{0,31}$/.test(name)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: a review's findings are read as a session plan",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (kind === \"review\") throw new Error(\"a review's findings are not a plan",
+    "replacement": "if (false) throw new Error(\"a review's findings are not a plan"
+  },
+  {
+    "name": "review fix: eval gives a plain review a build-loop arm",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (type === \"review\" && then === \"bug\") return \"review-fix\";",
+    "replacement": "if (type === \"review\") return \"review-fix\";"
+  },
+  {
+    "name": "review fix: eval checks the unit gate only after the preflight",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (pipeline === \"review-fix\" && !loopChecks.checks.unit) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: eval reviews fix tasks without the bug brief",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "...(fixTasks.has(taskId) ? { kind: \"bug\" as const } : {}), ",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: eval's review step follows the build skills",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "skills: loadSkills(reviewStepSkills(i.security))",
+    "replacement": "skills: loadSkills([\"build\", \"debug\"])"
+  },
+  {
+    "name": "review fix: eval never commits the review's report",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "baseRevision = commitReport(p.workspace, output.report, output.reportText, p.home) ?? baseRevision;",
+    "replacement": "void commitReport;"
+  },
+  {
+    "name": "review fix: eval keeps quiet about the review session's other edits",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (!changed.length) return [];\n",
+    "replacement": "  return [];\n"
+  },
+  {
+    "name": "review fix: run leaves the session's report uncommitted",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "if (git([\"status\", \"--porcelain\", \"--untracked-files=all\", \"--\", report]) !== \"\") {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "review fix: run numbers fix tasks over the ledger's own",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  return { output, fix: reviewFixPlan(output, checks, existing) };",
+    "replacement": "  return { output, fix: reviewFixPlan(output, checks, existing.slice(0, 0)) };"
+  },
+  {
+    "name": "review fix: run reviews fix tasks without the bug brief",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "      ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: \"bug\" as const } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: run ignores a prepared run's phases",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "result = run.drive ? await run.drive(loop) : await loop(run.loop);",
+    "replacement": "result = await loop(run.loop);"
+  }
+]

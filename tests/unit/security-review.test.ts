@@ -186,4 +186,5 @@ it("uses a fresh unpredictable nonce when the runner supplies no nonce override"
 it("records history and dependency-directory scan coverage limits", () => {
   const skill = readFileSync(new URL("../../skills/security/SKILL.md", import.meta.url), "utf8");
   expect(skill).toContain("does not scan Git history"); expect(skill).toContain("allowlists node_modules/");
+  expect(skill).toContain("protected default rules without path allowlists"); // backlog 105
 });

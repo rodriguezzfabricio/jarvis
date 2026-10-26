@@ -1,12 +1,12 @@
 import type { Command } from "commander";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { Broker } from "../broker/broker.ts";
+import { Broker, pendingApprovalRequests } from "../broker/broker.ts";
 import { resolveProject } from "../config/project.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
 import { oneLineSummary } from "./run-approvals.ts";
-import { readApprovalRequests, redactApprovalText, type ApprovalsCommandOptions } from "./approvals.ts";
+import { redactApprovalText, verifiedEntries, type ApprovalsCommandOptions } from "./approvals.ts";
 
 export interface ApproveCommandOptions extends ApprovalsCommandOptions {
   isTTY?: () => boolean;
@@ -41,8 +41,13 @@ export function register(program: Command, seams: ApproveCommandOptions = {}): v
       .action(async (id: string, options: { project?: string; yes?: boolean }) => {
         const project = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd: seams.cwd ?? process.cwd() });
         const dir = runnerProjectDir(project, seams.jarvisHome);
-        const request = readApprovalRequests(dir, project, seams.verify).find((e) => (e.data as { approvalId: string }).approvalId === id);
-        if (!request) throw new Error(`No pending approval ${id} in project ${project}.`);
+        const entries = verifiedEntries(dir, seams.verify);
+        const request = pendingApprovalRequests(entries, project).find((e) => (e.data as { approvalId: string }).approvalId === id);
+        if (!request) {
+          const answer = entries.find((e) => e.kind === "approval" && (e.data as { approvalId?: unknown }).approvalId === id);
+          if (answer) throw new Error(`Approval ${id} was already answered: ${String((answer.data as { decision?: unknown }).decision)}.`);
+          throw new Error(`No pending approval ${id} in project ${project}.`);
+        }
         const out = seams.output ?? console.log;
         out(formatApproval(request));
         if (!options.yes) {

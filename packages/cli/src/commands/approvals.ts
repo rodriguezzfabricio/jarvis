@@ -33,12 +33,16 @@ export interface PendingApproval {
 }
 
 /** No writer, lock acquisition, or crash repair: even a missing project is left untouched. */
-export function readApprovalRequests(projectDir: string, project: string, verify = verifyLedger): LedgerEntry[] {
+export function verifiedEntries(projectDir: string, verify = verifyLedger): LedgerEntry[] {
   if (!existsSync(join(projectDir, "ledger.jsonl"))) return [];
   const result = verify(projectDir);
   if (result.contended) throw new Error("Approvals contended: ledger writers are active; try again shortly.");
   if (!result.ok) throw new LedgerTamperError("Approval ledger failed verification; refusing to show or answer requests.");
-  return pendingApprovalRequests(result.entries, project);
+  return result.entries;
+}
+
+export function readApprovalRequests(projectDir: string, project: string, verify = verifyLedger): LedgerEntry[] {
+  return pendingApprovalRequests(verifiedEntries(projectDir, verify), project);
 }
 
 export function readApprovals(projectDir: string, project: string, verify = verifyLedger): PendingApproval[] {

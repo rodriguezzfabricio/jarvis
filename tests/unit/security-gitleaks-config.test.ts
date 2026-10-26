@@ -30,13 +30,15 @@ it("ships all 217 pinned default rules without path allowlists or default inheri
   // The exact vendored policy is checked, including value-based exceptions and every rule.
   expect(createHash("sha256").update(text).digest("hex")).toBe("77342d97f53ef7c2f5bb23c1a3139b63b0dc358272d8c720bbe9d953f258e145");
 });
-it("keeps the upstream MIT notice beside the vendored config and in the credits", () => {
-  for (const file of ["../../packages/cli/src/security/gitleaks-LICENSE", "../../skills/CREDITS.md"]) {
-    const text = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\s+/g, " ");
-    expect(text, file).toContain("Copyright (c) 2019 Zachary Rice");
-    expect(text, file).toContain("The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.");
-  }
-  expect(readFileSync(new URL("../../skills/CREDITS.md", import.meta.url), "utf8")).toContain("https://github.com/gitleaks/gitleaks/blob/v8.28.0/config/gitleaks.toml");
+// The full notice ships beside the copy; CREDITS names it without repeating the text (whose sentence the
+// superpowers notice check relies on finding once).
+it("keeps the upstream MIT notice beside the vendored config and credits it", () => {
+  const license = readFileSync(new URL("../../packages/cli/src/security/gitleaks-LICENSE", import.meta.url), "utf8").replace(/\s+/g, " ");
+  expect(license).toContain("Copyright (c) 2019 Zachary Rice");
+  expect(license).toContain("The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.");
+  expect(license).toContain('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND');
+  const credits = readFileSync(new URL("../../skills/CREDITS.md", import.meta.url), "utf8");
+  for (const text of ["https://github.com/gitleaks/gitleaks/blob/v8.28.0/config/gitleaks.toml", "Copyright (c) 2019 Zachary Rice", "packages/cli/src/security/gitleaks-LICENSE"]) expect(credits).toContain(text);
 });
 it("passes the runner-owned config with the existing pinned invocation", async () => {
   const { checkout } = setup(); const pin = pinnedSecurityScanners().gitleaks!; const calls: SessionSpec[] = [];

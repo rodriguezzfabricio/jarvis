@@ -622,5 +622,11 @@
     "file": "packages/cli/src/security/coverage.ts",
     "anchor": "return words.some((word) => interpreters.test(basename(word)));",
     "replacement": "return interpreters.test(basename(words[words[0] === \"-S\" ? 1 : 0] ?? \"\"));"
+  },
+  {
+    "name": "security coverage: vendored gitleaks licence notice dropped",
+    "file": "packages/cli/src/security/gitleaks-LICENSE",
+    "anchor": "The above copyright notice and this permission notice shall be included in all\n",
+    "replacement": ""
   }
 ]

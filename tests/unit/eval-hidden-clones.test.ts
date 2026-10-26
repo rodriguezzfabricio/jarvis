@@ -75,9 +75,11 @@ macOnly("falls back to an ordinary copy when cp fails, and clears what the faile
     // A cp that dies halfway: some of the tree is already in place when it fails.
     realExecFileSync(file, ["-R", ...args.slice(1)]);
     throw new Error("cp: clonefile failed");
-  }) as typeof execFileSync);
+  }) as unknown as typeof execFileSync);
   const project = join(root, "project"), ledger = Ledger.open(project);
-  const store = installHiddenChecks(project, ledger, loadHiddenChecks(hidden), "cp failed");
+  let installed: ReturnType<typeof installHiddenChecks> | undefined;
+  expect(() => { installed = installHiddenChecks(project, ledger, loadHiddenChecks(hidden), "cp failed"); }).not.toThrow();
+  const store = installed!;
   expect(cloneCalls()).toHaveLength(1);
   expect(cpSync).toHaveBeenCalledTimes(1);
   expect(readFileSync(join(store.checksDir, "fixtures", "fixture"), "utf8")).toBe("original fixture bytes");
@@ -94,7 +96,7 @@ it("refuses a copy whose bytes changed before approval", () => {
   vi.mocked(execFileSync).mockImplementationOnce(((file: string, args: string[]) => {
     racing(args[1]);
     return realExecFileSync(file, args);
-  }) as typeof execFileSync);
+  }) as unknown as typeof execFileSync);
   const project = join(root, "project"), ledger = Ledger.open(project);
   expect(() => installHiddenChecks(project, ledger, loadHiddenChecks(hidden), "raced")).toThrow(/changed while/);
   expect(ledger.entries().filter(e => e.kind === "checks_approved")).toEqual([]);

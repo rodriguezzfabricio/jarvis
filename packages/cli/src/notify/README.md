@@ -77,7 +77,9 @@ Persist `notifier.lastId` in runner state **after the entire returned batch has 
 processed**, including ignored messages. Retain/retry the batch on processing errors.
 Omitting `since` starts at the notifier construction time in Unix seconds; pass a
 saved cursor explicitly when resuming a run. Retained-history replay is opt-in.
-`lastId` is unchanged if JSON or a `message` event is malformed. Unknown event
+`lastId` is unchanged if JSON or a `message` event is malformed, or the body exceeds
+`MAX_POLL_BYTES` (4 MiB, read no further); those errors are fixed strings that quote nothing,
+because ntfy's events carry the reply topic. Message ids must be `[A-Za-z0-9_-]{1,64}`. Unknown event
 types are skipped; only `message` events are validated strictly. The adapter has a
 ten-second HTTP timeout by default and refuses redirects; it never includes topic URLs or HTTP
 response bodies in its status errors.

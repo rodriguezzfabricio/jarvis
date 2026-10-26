@@ -58,5 +58,29 @@
     "file": "packages/cli/src/notify/replies.ts",
     "anchor": "  if (entries.some((e) => e.kind === \"approval\" && data(e).approvalId === request.requestId\n    && data(e).payloadHash === pending.payloadHash && data(e).op === pending.op\n    && (data(e).decision === \"approve\" || data(e).decision === \"reject\"))) return \"already-answered\";",
     "replacement": ""
+  },
+  {
+    "name": "ntfy poll reads an unbounded body",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "    if (size > max) {",
+    "replacement": "    if (false) {"
+  },
+  {
+    "name": "ntfy poll echoes malformed JSON",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "try { return JSON.parse(line); } catch { throw new Error(\"ntfy poll returned malformed JSON\"); }",
+    "replacement": "return JSON.parse(line);"
+  },
+  {
+    "name": "ntfy poll echoes a malformed event",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "if (!parsed.success) throw new Error(\"ntfy poll returned a malformed message event\");",
+    "replacement": "if (!parsed.success) throw parsed.error;"
+  },
+  {
+    "name": "ntfy accepts any event id",
+    "file": "packages/cli/src/notify/ntfy.ts",
+    "anchor": "id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)",
+    "replacement": "id: z.string().min(1)"
   }
 ]

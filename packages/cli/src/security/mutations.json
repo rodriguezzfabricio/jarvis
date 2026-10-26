@@ -628,5 +628,95 @@
     "file": "packages/cli/src/security/gitleaks-LICENSE",
     "anchor": "The above copyright notice and this permission notice shall be included in all\n",
     "replacement": ""
+  },
+  {
+    "name": "security mapped: second pass skipped",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "const mapped = await mappedSemgrep(pin, cwd, scanned, args, runtime);",
+    "replacement": "const mapped = { findings: [], scanned: [], complete: true };"
+  },
+  {
+    "name": "security mapped: finding paths not restored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "return { ...value, file, fingerprint: hash(`${value.rule}:${file}:${value.line}`) };",
+    "replacement": "return value;"
+  },
+  {
+    "name": "security mapped: missing mapped coverage accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (!mapped.complete) return error(\"semgrep mapped coverage missing\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: link copied after source replacement",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK",
+    "replacement": "constants.O_RDONLY | constants.O_NONBLOCK"
+  },
+  {
+    "name": "security mapped: special source silently skipped",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (!stat.isFile()) throw Error(\"Mapped source must be regular\");",
+    "replacement": "if (!stat.isFile()) return 0;"
+  },
+  {
+    "name": "security mapped: mapped file count unbounded",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (files.length > MAX_MAPPED_FILES) throw Error(\"Mapped file limit\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped bytes unbounded",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (stat.size > remaining) throw Error(\"Mapped byte limit\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped aggregate byte accounting disabled",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "MAX_MAPPED_BYTES - bytes",
+    "replacement": "MAX_MAPPED_BYTES"
+  },
+  {
+    "name": "security mapped: mapped tree retained",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "finally { rmSync(cwd, { recursive: true, force: true }); }",
+    "replacement": "finally {}"
+  },
+  {
+    "name": "security mapped: mapped scanner faults ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.timedOut || r.overflowed || (r.code !== 0 && r.code !== 1)) throw Error(\"Mapped scanner failed\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped empty exit one accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.code !== 0 && findings.length === 0) throw Error(\"Mapped scanner failed\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped driver omitted from fixtures",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "\"coverage.ts\", \"mapped.ts\",",
+    "replacement": "\"coverage.ts\","
+  },
+  {
+    "name": "security mapped: snapshot age check disabled",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (ageError) return error(ageError);",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: snapshot age compared backwards",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "age > OSV_MAX_SNAPSHOT_AGE_MS",
+    "replacement": "age < OSV_MAX_SNAPSHOT_AGE_MS"
+  },
+  {
+    "name": "security mapped: future snapshot accepted",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "if (age < 0) return `osv snapshot date is in the future (${fetchedAt}); ${refresh}`;",
+    "replacement": ""
   }
 ]

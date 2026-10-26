@@ -175,7 +175,7 @@ function snapshot(dir: string, scannerVersion: string) {
 it.each([["2.8.1", "2.8.1", "pass"], ["2.7.0", "2.8.1", "not_run"], ["2.8.1", "2.7.0", "not_run"]] as const)("scans with an OSV snapshot fetched by %s only when the pin is %s: %s", async (fetchedBy, pinned, status) => {
   const { root, checkout } = setup(); const fixtures = join(root, "fixtures"); snapshot(join(fixtures, "security/osv-db"), fetchedBy);
   const pin = { ...pins.pinnedSecurityScanners()["osv-scanner"]!, version: pinned };
-  expect(await runScanner("osv-scanner", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => ok(spec.args.includes("--version") ? `osv-scanner version: ${pinned}\nosv-scalibr version: 0.5.3\n` : '{"results":[]}') })).toMatchObject({ status });
+  expect(await runScanner("osv-scanner", pin, checkout, { fixturesDir: fixtures, now: () => new Date("2026-10-26T00:00:00.000Z"), spawn: async (spec) => ok(spec.args.includes("--version") ? `osv-scanner version: ${pinned}\nosv-scalibr version: 0.5.3\n` : '{"results":[]}') })).toMatchObject({ status });
 });
 
 it.each([["2.8.1", "2.8.1", true], ["2.7.0", "2.8.1", false]] as const)("installs an OSV snapshot fetched by %s for a %s pin: %s", (fetchedBy, pinned, installs) => {

@@ -3,6 +3,7 @@ import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 
 export const OSV_ECOSYSTEMS = ["npm", "Go", "PyPI"] as const;
+export const OSV_MAX_SNAPSHOT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 export type OsvEcosystem = (typeof OSV_ECOSYSTEMS)[number];
 export interface OsvDatabaseManifest {
   schema: 1;
@@ -17,6 +18,20 @@ const names: Record<OsvEcosystem, readonly string[]> = {
   PyPI: ["pyproject.toml", "requirements.txt", "requirements.in", "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", "setup.py", "setup.cfg"],
 };
 const skipped = new Set([".git", "node_modules", ".venv", "venv", "vendor", "__pycache__"]);
+
+/** Freshness is checked at scan time, after integrity; a stale cache is an error, never an exemption. */
+export function osvSnapshotAgeError(dir: string, now: Date): string | undefined {
+  const refresh = "refresh with node scripts/osv-db-fetch.mjs <project> <new-folder>, then reinstall and approve security checks";
+  try {
+    const { fetchedAt } = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { fetchedAt?: unknown };
+    const fetched = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : NaN;
+    if (!Number.isFinite(fetched) || !Number.isFinite(now.getTime()) || new Date(fetched).toISOString() !== fetchedAt) return `osv snapshot date invalid; ${refresh}`;
+    const age = now.getTime() - fetched;
+    if (age < 0) return `osv snapshot date is in the future (${fetchedAt}); ${refresh}`;
+    if (age > OSV_MAX_SNAPSHOT_AGE_MS) return `osv snapshot stale (fetched ${fetchedAt}; maximum age 14 days); ${refresh}`;
+    return undefined;
+  } catch { return `osv snapshot date unavailable; ${refresh}`; }
+}
 
 export function pathInside(root: string, path: string): boolean {
   const rel = relative(root, path);

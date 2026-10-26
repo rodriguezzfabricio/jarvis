@@ -7,15 +7,15 @@ import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 import { runScanner } from "../../packages/cli/src/security/scanners.ts";
 
 const enabled = process.env.JARVIS_SECURITY_LIVE === "1";
-it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/semgrep"))("live Semgrep cannot silently pass eval in mts and extensionless Node scripts", async () => {
+it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/semgrep"))("live Semgrep finds eval in mts and extensionless scripts with original paths", async () => {
   const root = mkdtempSync(join(tmpdir(), "security-coverage-live-"));
   try {
     for (const [name, prefix] of [["app.mts", ""], ["script", "#!/usr/bin/env -S node --no-warnings\n"], ["seed", "#!/usr/bin/env tsx\n"]]) {
       const checkout = join(root, name! + "-checkout"); mkdirSync(checkout);
       writeFileSync(join(checkout, name!), `${prefix}eval(input);\n`, { mode: 0o600 });
       const result = await runScanner("semgrep", pinnedSecurityScanners().semgrep, checkout, { timeoutMs: 45_000 });
-      if (result.status === "fail") expect(result.findings.some((finding) => finding.file.endsWith(name!) && finding.rule.endsWith("jarvis.js.eval"))).toBe(true);
-      else expect(result).toMatchObject({ status: "error", detail: `semgrep coverage missing: ${JSON.stringify([name])}` });
+      expect(result.status).toBe("fail");
+      expect(result.findings.some((finding) => finding.file === name && finding.rule.endsWith("jarvis.js.eval"))).toBe(true);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 110_000);

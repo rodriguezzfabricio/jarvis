@@ -122,7 +122,7 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: pins });
   const db = join(store.checksDir, "fixtures/security/osv-db"); mkdirSync(db); writeFileSync(join(db, "cache.zip"), "fake database");
   // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", fetchedAt: new Date().toISOString(), ecosystems: [], files: hashOsvDatabase(db) }));
   store.approve(ledger, "approved");
   let runs = 0;
   const gate = async (g: GateInput): Promise<GateResult> => {

@@ -36,7 +36,7 @@ export function installSecurityChecks(store: ChecksStore, plan: SecurityPlan): v
   for (const tool of SCANNERS) if (plan.scanners[tool] && plan.exemptions?.[tool] !== undefined) throw Error("Cannot exempt a pinned scanner");
   const fixture = join(store.checksDir, "fixtures", "security");
   for (const dir of [join(fixture, "security"), join(fixture, "proc"), join(fixture, "rules"), join(store.checksDir, "security")]) mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const sources = ["scanners.ts", "runtime.ts", "offline.ts", "coverage.ts", "gitleaks-config.ts", "osv-database.ts", "trifecta.ts", "trial.ts", "worker.ts"];
+  const sources = ["scanners.ts", "runtime.ts", "offline.ts", "coverage.ts", "mapped.ts", "gitleaks-config.ts", "osv-database.ts", "trifecta.ts", "trial.ts", "worker.ts"];
   for (const file of sources) copyFileSync(fileURLToPath(new URL(file, import.meta.url)), join(fixture, "security", file));
   copyFileSync(fileURLToPath(new URL("../proc/session.ts", import.meta.url)), join(fixture, "proc", "session.ts"));
   copyFileSync(fileURLToPath(new URL("verify.ts", import.meta.url)), join(store.checksDir, "security", "verify.ts"));

@@ -5,7 +5,7 @@ import { pinnedClaudeBin } from "../../config/pins.ts";
 import type { Harness, TaskInput, TaskOutcome, TaskResult } from "../../runner/harness.ts";
 import { routeTask, validateRouting, type RoutingTable } from "../../runner/routing.ts";
 import { assertSafeTaskArgs, buildTaskArgs } from "./args.ts";
-import { buildChildEnv } from "./env.ts";
+import { buildChildEnv, fixedPath } from "./env.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "./session.ts";
 import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type TaskSettingsInput } from "./settings.ts";
 import { hitRateLimitError, parseStreamJson, rateLimits, usageWaitUntil } from "./streamjson.ts";
@@ -31,6 +31,8 @@ export interface ClaudeHarnessOptions {
    * as `jarvis act`. Reopened read-only; it must not overlap the worktrees, caches or runner folder.
    */
   installDir?: string;
+  /** The Node the install's launcher runs `jarvis act` with (JARVIS_NODE). Default: this runner's own, by real path. */
+  nodeBin?: string;
   /** The repo's plugin/; each session gets its own runner-owned copy with only the task skills (task-plugin.ts). */
   pluginDir?: string;
   home?: string;
@@ -107,9 +109,14 @@ function removeTaskDirectory(path: string): void {
   rmSync(path, { recursive: true, force: true });
 }
 
+/** The `jarvis` command inside sessions: a launcher in the install, first on the session's PATH. */
+export const SESSION_BIN = join("packages", "cli", "bin");
+
 function trustedInstall(installDir: string, roots: readonly string[]): string[] {
   if (!isAbsolute(installDir) || realpathSync(installDir) !== installDir) throw new Error("the Jarvis install must be an absolute real path");
   if (!lstatSync(join(installDir, "packages", "cli", "src", "cli.ts"), { throwIfNoEntry: false })?.isFile()) throw new Error("the Jarvis install has no packages/cli/src/cli.ts");
+  const launcher = lstatSync(join(installDir, SESSION_BIN, "jarvis"), { throwIfNoEntry: false });
+  if (!launcher?.isFile() || (launcher.mode & 0o111) === 0) throw new Error(`the Jarvis install has no executable ${join(SESSION_BIN, "jarvis")} launcher (a real file, not a link)`);
   // What act loads: the install, and its dependencies' real folders when they live elsewhere (a checkout
   // whose node_modules link to another one). Nothing else is reopened.
   const deps = ["node_modules", join("packages", "cli", "node_modules")]
@@ -122,7 +129,7 @@ function trustedInstall(installDir: string, roots: readonly string[]): string[] 
   return dirs;
 }
 
-function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string; installDirs?: string[] } {
+function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string; installDirs?: string[]; node?: string } {
   const worktree = realpathSync(input.workspace);
   const worktreeRoot = realpathSync(opts.worktreeRoot);
   if (!isAbsolute(input.workspace) || worktree === worktreeRoot || !under(worktree, worktreeRoot)) throw new Error("workspace must be below the worktree root");
@@ -135,8 +142,13 @@ function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { workt
     if (under(home, root)) throw new Error("session home must be outside worktrees, cache and jarvisHome");
     if (!isAbsolute(binaryTarget) || under(resolve(binaryTarget), root)) throw new Error("pinned binary must resolve outside worktrees, cache and jarvisHome");
   }
-  const installDirs = opts.installDir === undefined ? undefined : trustedInstall(opts.installDir, [worktreeRoot, cacheRoot, jarvisHome]);
-  return { worktree, jarvisHome, cacheRoot, home, binary, ...(installDirs ? { installDirs } : {}) };
+  if (opts.installDir === undefined) return { worktree, jarvisHome, cacheRoot, home, binary };
+  const roots = [worktreeRoot, cacheRoot, jarvisHome];
+  const installDirs = trustedInstall(opts.installDir, roots);
+  // The launcher runs the CLI with this Node, by real path: never one a session could have written.
+  const node = realpathSync(opts.nodeBin ?? process.execPath);
+  if (!isAbsolute(node) || roots.some((root) => under(node, root))) throw new Error("the Node that runs jarvis act must resolve outside worktrees, cache and jarvisHome");
+  return { worktree, jarvisHome, cacheRoot, home, binary, installDirs, node };
 }
 
 function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string, sessionTmpDir: string): SessionSpec {
@@ -164,6 +176,8 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
   const env = buildChildEnv({ ...(opts.parentEnv ?? process.env), HOME: home }, {
     ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir),
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
+    // The skills say `jarvis act` (decision 12): the install's launcher comes first on PATH, run by the runner's Node.
+    ...(locations.installDirs && locations.node ? { PATH: `${join(locations.installDirs[0]!, SESSION_BIN)}:${fixedPath(home)}`, JARVIS_NODE: locations.node } : {}),
     JARVIS_SESSION: "1", // the plugin's tripwire enforces in Jarvis sessions only
   });
   return {

@@ -5,12 +5,12 @@ import type { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { z } from "zod";
 import { Ledger } from "../ledger/ledger.ts";
 import { projectRoot, resolveProject } from "../config/project.ts";
 import { Broker } from "../broker/broker.ts";
 import type { Clock } from "../notify/intake.ts";
 import type { Notifier } from "../notify/notifier.ts";
+import { parseNotifyConfig } from "../notify/config.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
 import { answerRound, getRoundAnswers, readReplyCursor, sendRound, type IntakeDeps } from "./round.ts";
 import { saveTaste } from "./taste.ts";
@@ -25,9 +25,8 @@ export interface CommandDeps {
   createNotifier?: (config: NtfyOptions) => Notifier;
   setExitCode?: (code: number) => void;
 }
-/** ~/.jarvis/notify.json, as jarvis setup writes it. */
-export const notifyConfigSchema = z.object({ baseUrl: z.string().url(), topic: z.string().min(1), replyTopic: z.string().min(1),
-  since: z.string().optional(), timeoutMs: z.number().int().positive().optional() }).strict();
+/** ~/.jarvis/notify.json, as jarvis setup writes it (one format for setup, intake and jarvis run: notify/config.ts). */
+export { notifyConfigSchema } from "../notify/config.ts";
 // A broken notifier config never blocks a round (decision 90): the round is recorded and answered in the session.
 function loadNotifier(home: string, factory: (config: NtfyOptions) => Notifier, ledger: Ledger, now: number, warn: (text: string) => void): Notifier | undefined {
   const off = () => { warn("Invalid notifier configuration; notifications are off for this round"); return undefined; };
@@ -37,7 +36,7 @@ function loadNotifier(home: string, factory: (config: NtfyOptions) => Notifier, 
     return off();
   }
   try {
-    const config = notifyConfigSchema.parse(JSON.parse(raw));
+    const config = parseNotifyConfig(JSON.parse(raw));
     const rounds = ledger.entries().filter((e) => e.kind === "notify" && (e.data as { source?: string }).source === "intake");
     const sent = rounds.map((e) => (e.data as { sentAt?: number }).sentAt).filter((time): time is number => typeof time === "number");
     const since = readReplyCursor(ledger) ?? config.since ?? String(Math.floor(Math.min(now, ...sent) / 1000));

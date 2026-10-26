@@ -3,11 +3,13 @@ import { isUtf8 } from "node:buffer";
 import { createHash, createPrivateKey } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import { parse as parseToml } from "smol-toml";
 import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments, type YAMLMap } from "yaml";
 import { safeGit } from "./git.ts";
 import { containerMembers, credentialContainer } from "./snapshot-containers.ts";
-import { argumentFields, commandFields, literalFields, sourcePrivateJwk } from "./snapshot-literals.ts";
+import { mediaText } from "./snapshot-media.ts";
+import { argumentFields, commandFields, literalFields, readsAsWords, sourcePrivateJwk } from "./snapshot-literals.ts";
 
 /**
  * Sanitized snapshots for golden tasks (02-golden-tasks.md, "How every task runs"): the task's
@@ -45,9 +47,9 @@ const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|postgres|red
 // Apostrophes are valid in userinfo (Codex review 5); only the host part ends at quotes.
 const CRED_URL = /([a-z][a-z0-9+.-]*:\/\/)([^\s/:@"<>`]*):([^\s/@"<>`]+)@([^\s/:'"?#<>`]+)/gi;
 
-/** Credential URLs pointing anywhere but local dev services keep their host and lose user:password. */
+/** Credential URLs keep their host and lose user:password, unless they are a local service's placeholder login. */
 function redactCredUrls(v: string): string {
-  return v.replace(CRED_URL, (m, scheme: string, _u: string, _p: string, host: string) => (LOCAL_HOSTS.test(host) ? m : `${scheme}REDACTED:REDACTED@${host}`));
+  return v.replace(CRED_URL, (m, scheme: string, user: string, pw: string, host: string) => (isPlaceholderCredential(pw, user, host) ? m : `${scheme}REDACTED:REDACTED@${host}`));
 }
 
 export class SnapshotRefused extends Error {}
@@ -155,20 +157,75 @@ export function isPlaceholderPassword(raw: string): boolean {
   return template.test(raw) || template.test(pw) || word.test(pw);
 }
 
-/** Standard or URL-safe base64, without arbitrary credential-length exemptions. */
+/**
+ * A credential URL's password, or a URL query value, that is a placeholder (Codex review: localhost
+ * suppressed "svc:e7Kq2mVx9PzR4tLw"; a real value is refused whatever the host). Anywhere: a placeholder
+ * word or template, or one character repeated ("00000000"). For a local or documentation host, also local
+ * defaults: the username again ("hire:hire"), 1 to 3 characters ("u:p"), a value that reads as words
+ * ("dev_password", "pool_max_conns=99") or placeholder words in leetspeak ("sup3rsecret"). "admin:hunter2"
+ * at a real host stays a credential, and random characters or letters are one at any host.
+ */
+export function isPlaceholderCredential(raw: string, user: string, host: string): boolean {
+  if (isPlaceholderPassword(raw) || /^(.)\1{2,}$/.test(raw)) return true;
+  if (!LOCAL_HOSTS.test(host)) return false;
+  let pw = raw;
+  try {
+    pw = decodeURIComponent(raw);
+  } catch {
+    // classify the raw text
+  }
+  if ((user !== "" && pw === user) || pw.length <= 3) return true;
+  const plain = pw.toLowerCase().replace(/[-_.]/g, "").replace(/[0134578$@]/g, (c) => ({ "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b", $: "s", "@": "a" })[c]!);
+  return readsAsWords(pw) || LEET_WORDS.test(plain);
+}
+
+/** Placeholder vocabulary, once leetspeak is undone: "s3cr3t", "sup3rsecret", "p4ssw0rd". */
+const LEET_WORDS = /^(?:super|secret|pass|password|passwd|admin|test|dev|changeme|example|dummy|hunter|root|my|your|app|db|local)+$/;
+
+/** Standard or URL-safe base64 runs. Most are words or identifiers: see isPlausibleBase64. */
 const BASE64_RUN = /(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_-]{4,}={0,2}(?![A-Za-z0-9+/_=-])/g;
+/** Base64 runs of any length, for assembling wrapped columns: a column's last line may be 1 to 3 characters. */
+const COLUMN_RUN = /(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_-]+={0,2}(?![A-Za-z0-9+/_=-])/g;
+/** Characters joined for wrapped DER candidates per file, before the file needs review. */
+const MAX_WRAPPED_CHARS = 8 * 1024 * 1024;
+
+/** The name under which an image's or font's recovered text is scanned. */
+const MEDIA_TEXT = "media.txt";
+
+/** A scan bound was reached: the file needs review (fail closed). */
+class ScanLimit extends Error {}
+/** Shortest run decoded as a login: 8 bytes, "svc:8k2Z". */
+const MIN_LOGIN_RUN = 11;
+/** Shortest canonical padded run decoded as a login on a credential line: 4 bytes, "u:pw" (Codex review). */
+const MIN_PADDED_LOGIN_RUN = 6;
+/** A line that names a login: "registryLogin", "auth", "Basic", "password", npm and Docker settings. */
+const LOGIN_CONTEXT = /auth|login|cred|passw|pwd|secret|token|basic|registry|docker|npm/i;
+/** Shortest standalone run decoded and inspected recursively (wrapped lines are joined first). */
+const MIN_PAYLOAD_RUN = 16;
+
+/**
+ * True if a run is plausibly encoded rather than a word or identifier (decision 79: "Only" decodes to
+ * ":yr"): at least min characters, mixing at least two of lowercase, uppercase past the first character,
+ * and digits. Encoded bytes of any length worth inspecting practically always do.
+ */
+export function isPlausibleBase64(run: string, min: number): boolean {
+  const raw = run.replace(/=+$/, "");
+  return raw.length >= min && [/[a-z]/.test(raw), /[A-Z]/.test(raw.slice(1)), /\d/.test(raw)].filter(Boolean).length >= 2;
+}
 
 /**
  * True if a base64 string decodes to printable user:password text: HTTP Basic credentials, as in
  * npm's _auth, Docker's auths.*.auth and "Authorization: Basic …", wherever they appear (Codex review 10).
  */
-export function isBase64UserPassword(b64: string): boolean {
+export function isBase64UserPassword(b64: string, min = MIN_LOGIN_RUN): boolean {
+  if (!isPlausibleBase64(b64, min)) return false;
   const buf = Buffer.from(b64, "base64");
   if (!isUtf8(buf)) return false;
   const decoded = buf.toString("utf8");
   // Public URI data has a scheme and authority, not a Basic-auth username and password.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(decoded)) return false;
-  const m = /^([\w.@+~!$%&*=#|-]*):([^\s\x00-\x1f\x7f]+)$/u.exec(decoded);
+  // A username, then printable password text: letters, digits, punctuation and symbols only.
+  const m = /^([\w.@+~!$%&*=#|-]+):([\p{L}\p{N}\p{P}\p{S}]+)$/u.exec(decoded);
   return m !== null && !isPlaceholderPassword(m[2]!);
 }
 
@@ -188,16 +245,22 @@ export function isPlaceholderAuth(v: string): boolean {
   return /^[\w-]{0,8}(…|\.\.\.)$/.test(v) || /^&lt;[\w -]+&gt;?;?$/.test(v);
 }
 
+/** Only the literal credential patterns (keys and tokens), without field or URL rules. */
+export function findCredentialPatterns(text: string): string[] {
+  return CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+}
+
 export function findCredentials(text: string): string[] {
-  const hits = CREDENTIAL_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+  const hits = findCredentialPatterns(text);
   for (const m of text.matchAll(AUTH_HEADER)) {
     if (!isInertString(m[1]!) && !isPlaceholderAuth(m[1]!)) {
       hits.push("Authorization header");
       break;
     }
   }
+  // Placeholder values are exempt, not hosts: a real password is as real at localhost (Codex review).
   for (const m of text.matchAll(CRED_URL)) {
-    if (!isPlaceholderPassword(m[3] ?? "") && !LOCAL_HOSTS.test(m[4] ?? "")) {
+    if (!isPlaceholderCredential(m[3] ?? "", m[2] ?? "", m[4] ?? "")) {
       hits.push("credential URL");
       break;
     }
@@ -205,13 +268,23 @@ export function findCredentials(text: string): string[] {
   for (const m of text.matchAll(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>]+/gi)) {
     try {
       const url = new URL(m[0]);
-      for (const [key, value] of url.searchParams) if (isSecretName(key) && !isInertString(value)) hits.push("credential URL query");
+      // Placeholders, whatever the host; an all-digit value is an id (Greenhouse's token=7826765).
+      for (const [key, value] of url.searchParams) if (isSecretName(key) && !isInertString(value) && !isPlaceholderCredential(value, "", url.hostname) && !/^\d+$/.test(value)) hits.push("credential URL query");
     } catch {
       // Not a complete literal URL.
     }
   }
+  // A short login counts when it is canonical padded base64 on a line that names a login: "dTpxOFpyMg==".
+  // Only the 80 characters around it on its line are read, so minified files stay linear.
+  const paddedLogin = (run: string, at: number) => {
+    if (!run.endsWith("=") || run.replace(/=+$/, "").length >= MIN_LOGIN_RUN || Buffer.from(run, "base64").toString("base64") !== run) return false;
+    const before = text.slice(Math.max(0, at - 80), at);
+    const after = text.slice(at + run.length, at + run.length + 80);
+    const line = `${before.slice(before.lastIndexOf("\n") + 1)}${after.split("\n", 1)[0]}`;
+    return LOGIN_CONTEXT.test(line) && isBase64UserPassword(run, MIN_PADDED_LOGIN_RUN);
+  };
   for (const m of text.matchAll(BASE64_RUN)) {
-    if (isBase64UserPassword(m[0])) {
+    if (isBase64UserPassword(m[0]) || paddedLogin(m[0], m.index)) {
       hits.push("base64 user:password");
       break;
     }
@@ -219,29 +292,170 @@ export function findCredentials(text: string): string[] {
   return hits;
 }
 
-/** Whitespace-wrapped base64 is joined only across complete encoding lines. */
-function* encodedPayloads(text: string): Generator<Buffer> {
-  const matches = [...text.matchAll(BASE64_RUN)];
-  const runs = matches.map((m) => m[0]);
-  let wrapped: string[] = [];
-  const flush = () => {
-    if (wrapped.length > 1) runs.push(wrapped.join(""));
-    wrapped = [];
+/** Largest DER value looked for across wrapped lines: isDerPrivateKey's own limit. */
+const MAX_WRAPPED_DER = 64 * 1024;
+
+/** The total length a DER SEQUENCE header announces, if the bytes start with one. */
+function derLength(head: Buffer): number | undefined {
+  if (head[0] !== 0x30 || head[1] === undefined) return undefined;
+  if (head[1] < 0x80) return 2 + head[1];
+  const n = head[1] & 0x7f;
+  if (n === 0 || n > 3 || head.length < 2 + n) return undefined;
+  return 2 + n + head.readUIntBE(2, n);
+}
+
+/**
+ * The last of the lines from `start` that encode exactly one DER SEQUENCE, by the length its header
+ * announces: a key wrapped at any width, between other words in the same column (Codex review: uneven and
+ * 8-character wrapping hid keys). ends[j] is the unpadded length of lines[0..j].
+ */
+function wrappedDer(lines: string[], ends: number[], start: number): number | undefined {
+  let head = "";
+  for (let j = start; j < lines.length && head.length < 8; j++) head += lines[j];
+  const total = derLength(Buffer.from(head.slice(0, 8), "base64"));
+  if (total === undefined || total > MAX_WRAPPED_DER) return undefined;
+  const target = (start ? ends[start - 1]! : 0) + Math.ceil((total * 4) / 3);
+  // ends is increasing: binary search for the line that ends exactly where the DER value does.
+  let lo = start;
+  let hi = lines.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (ends[mid]! === target) return mid;
+    if (ends[mid]! < target) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return undefined;
+}
+
+/**
+ * Whitespace-wrapped base64 is joined across lines. Equal-width lines (the last may be shorter, 16 or more
+ * characters wide) are wrapped encodings; any other column is joined too, but its decoded bytes count only
+ * if they are complete structures (Codex review: widths alone hid keys; a column of words is not one). A
+ * column's last line may be 1 to 3 characters ("v"). Candidates are decoded one at a time, and the
+ * characters joined for DER candidates count against `budget`: past it, the file needs review (Codex
+ * round 2: 14,000 lines announcing 64 KB each exhausted the heap).
+ */
+function* encodedPayloads(text: string, budget: { chars: number }, embedded = false): Generator<Buffer> {
+  const seen = new Set<string>();
+  const spend = (chars: number) => {
+    budget.chars -= chars;
+    if (budget.chars < 0) throw new ScanLimit("wrapped base64 candidate limit");
   };
-  let end = 0;
-  for (const m of matches) {
-    if (wrapped.length && !/^[ \t]*\r?\n[ \t\r\n]*$/.test(text.slice(end, m.index))) flush();
-    wrapped.push(m[0]);
-    end = m.index + m[0].length;
-  }
-  flush();
-  for (const run of new Set(runs)) {
+  const decode = (run: string, strict: boolean): Buffer | undefined => {
     const raw = run.replace(/=+$/, "");
-    if (raw.length % 4 === 1) continue;
+    if (raw.length % 4 === 1) return undefined;
     const data = Buffer.from(raw, "base64url");
-    if (data.toString("base64url") !== raw.replaceAll("+", "-").replaceAll("/", "_")) continue;
-    yield data;
+    if (data.toString("base64url") !== raw.replaceAll("+", "-").replaceAll("/", "_")) return undefined;
+    return isPlausiblePayload(data, strict) ? data : undefined;
+  };
+  let wrapped: string[] = [];
+  function* flush(): Generator<Buffer> {
+    const lines = wrapped;
+    wrapped = [];
+    if (lines.length < 2) return;
+    const width = lines[0]!.length;
+    const even = width >= MIN_PAYLOAD_RUN && lines.every((w, i) => (i < lines.length - 1 ? w.length === width : w.length <= width));
+    const whole = decode(lines.join(""), !even);
+    if (whole) yield whole;
+    let sum = 0;
+    const ends = lines.map((w) => (sum += w.replace(/=+$/, "").length));
+    for (let i = 0; i < lines.length; i++) {
+      const span = wrappedDer(lines, ends, i);
+      if (span === undefined) continue;
+      spend(ends[span]! - (i ? ends[i - 1]! : 0));
+      const der = decode(lines.slice(i, span + 1).join(""), true);
+      if (der) yield der;
+    }
   }
+  let end = 0;
+  for (const m of text.matchAll(COLUMN_RUN)) {
+    const run = m[0];
+    const joins = wrapped.length > 0 && /^[ \t]*\r?\n[ \t\r\n]*$/.test(text.slice(end, m.index));
+    if (!joins) yield* flush();
+    end = m.index + run.length;
+    if (run.replace(/=+$/, "").length < 4) {
+      // A 1 to 3 character fragment only ends a column.
+      if (joins) wrapped.push(run);
+      yield* flush();
+      continue;
+    }
+    if (isPlausibleBase64(run, MIN_PAYLOAD_RUN) && !seen.has(run)) {
+      seen.add(run);
+      const data = decode(run, false);
+      if (data) yield data;
+      // Text recovered from binary (media.txt) has no word boundaries: a key may be glued to the bytes
+      // around it ("IDATMC4C…"), so a DER value is also looked for from every "M" by its announced length.
+      if (embedded) {
+        const raw = run.replace(/=+$/, "");
+        for (let i = raw.indexOf("M"); i >= 0 && i + 8 <= raw.length; i = raw.indexOf("M", i + 1)) {
+          const total = derLength(Buffer.from(raw.slice(i, i + 8), "base64"));
+          if (total === undefined || total > MAX_WRAPPED_DER) continue;
+          const need = Math.ceil((total * 4) / 3);
+          if (i + need > raw.length || (i === 0 && need === raw.length)) continue;
+          spend(need);
+          const der = decode(raw.slice(i, i + need), true);
+          if (der) yield der;
+        }
+      }
+    }
+    wrapped.push(run);
+  }
+  yield* flush();
+}
+
+/** True if bounded decompression of `data` succeeds with some output, or exceeds the probe's limit. */
+function decompresses(data: Buffer, decompress: (b: Buffer, o: { maxOutputLength: number }) => Buffer): boolean {
+  try {
+    return decompress(data, { maxOutputLength: 1024 * 1024 }).length > 0;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE";
+  }
+}
+
+/**
+ * Decoded bytes worth inspecting: DER, a recognized compressed or archive format, text (UTF-8, or UTF-16
+ * with its NULs dropped, mostly printable), or a Brotli stream, which has no magic bytes and so is probed
+ * (Codex review: an npm token in base64 Brotli). Bytes decoded from an identifier are none of these.
+ * strict: only complete structures count, a DER value of exactly its announced length and compressed data
+ * that decompresses, not a header alone.
+ */
+export function isPlausiblePayload(data: Buffer, strict = false): boolean {
+  if (data[0] === 0x30) return !strict || derLength(data) === data.length;
+  if (data[0] === 0x1f && data[1] === 0x8b) return !strict || decompresses(data, gunzipSync);
+  if (data.length > 2 && data[0] === 0x78 && ((data[0] << 8) + data[1]!) % 31 === 0) return !strict || decompresses(data, inflateSync);
+  if ((data.length >= 4 && data.readUInt32LE(0) === 0x04034b50) || (data.length >= 262 && data.toString("ascii", 257, 262) === "ustar")) return true;
+  const utf8 = isUtf8(data);
+  if (utf8 || data.includes(0)) {
+    const bytes = data.filter((b) => b !== 0);
+    const printable = bytes.filter((b) => (b >= 0x20 && b < 0x7f) || b === 9 || b === 10 || b === 13 || (utf8 && b >= 0x80)).length;
+    if (bytes.length > 0 && printable >= 0.9 * bytes.length) return true;
+  }
+  return !utf8 && decompresses(data, brotliDecompressSync);
+}
+
+/**
+ * Images and fonts by their magic bytes, unless the bytes are UTF-8 text (text in disguise). Their pixel
+ * and glyph payload is scanned only for literal credential patterns; the rest goes through the bounded
+ * decoding pipeline as text (mediaText).
+ */
+export function isMediaData(buf: Buffer): boolean {
+  if (isUtf8(buf)) return false;
+  const head = buf.toString("latin1", 0, 12);
+  return (
+    head.startsWith("\x89PNG\r\n\x1a\n") ||
+    head.startsWith("\xff\xd8\xff") ||
+    /^GIF8[79]a/.test(head) ||
+    (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") ||
+    /^(\x00\x01\x00\x00|OTTO|true|ttcf|wOFF|wOF2)/.test(head)
+  );
+}
+
+/** UTF-16LE and UTF-16BE readings of every byte, at both alignments. */
+function utf16Views(buf: Buffer): string[] {
+  return [0, 1].flatMap((offset) => {
+    const le = buf.subarray(offset, buf.length - ((buf.length - offset) % 2));
+    return [le.toString("utf16le"), Buffer.from(le).swap16().toString("utf16le")];
+  });
 }
 
 /** The same bounded pipeline applies to every decoded wrapper, not only to its raw text. */
@@ -342,6 +556,8 @@ export function isInertString(raw: string): boolean {
   // An Authorization value is as inert as its credential: "Bearer ${API_TOKEN}".
   const scheme = /^(?:Bearer|Basic|Token|Bot|Digest|ApiKey)\s+(.+)$/i.exec(v);
   if (scheme) return isInertString(scheme[1]!) || isPlaceholderAuth(scheme[1]!);
+  // A bracketed elision marks a documentation example, not a complete credential: "ExponentPushToken[...]".
+  if (/[[<({](?:\.\.\.|…)[\]>)}]/.test(v)) return true;
   if (/^\$\{\{.*\}\}$/.test(v) || /^\{\{.*\}\}$/.test(v) || /^%\([A-Za-z_]\w*\)s$/.test(v)) return true;
   if (/^(env|ENV)\(|^process\.env\.|^os\.environ|^!(env|Ref|Sub|GetAtt|ImportValue)\b|^(secretref|vault|op|aws-sm|gcp-sm):/.test(v)) return true;
   if (/^(password|passwd|pass|secret|token|api[ _-]?key|changeme|example|test|testing|dummy|placeholder|redacted|your[_-][\w-]*|x{3,})$/i.test(v)) return true;
@@ -657,6 +873,7 @@ export function findSnapshotCredentials(name: string, bytes: Buffer, limits: Sna
   const seen = new Set<string>();
   let remaining = limits.maxExpandedBytes ?? 16 * 1024 * 1024;
   const maxDepth = limits.maxDepth ?? 6;
+  const wrappedBudget = { chars: MAX_WRAPPED_CHARS };
   const visit = (file: string, buf: Buffer, depth: number): void => {
     const id = `${file}:${createHash("sha256").update(buf).digest("hex")}`;
     if (seen.has(id)) return;
@@ -669,6 +886,23 @@ export function findSnapshotCredentials(name: string, bytes: Buffer, limits: Sna
     const inspect = depth > 0 || !limits.encodedOnly;
     if (inspect && isDerPrivateKey(buf)) { hits.add("binary private key"); return; }
     if (inspect && credentialContainer(buf)) { hits.add("credential container; needs review"); return; }
+    if (isMediaData(buf)) {
+      // Literal patterns anywhere, pixels included, as bytes and as UTF-16 of either byte order at either
+      // alignment; the rest is decoded as text (mediaText).
+      if (inspect) {
+        for (const h of findCredentials(buf.toString("latin1"))) hits.add(h);
+        for (const view of utf16Views(buf)) for (const h of findCredentialPatterns(view)) hits.add(h);
+      }
+      let text: string;
+      try {
+        text = mediaText(buf, remaining);
+      } catch (e) {
+        hits.add(`container cannot be inspected (limit or invalid format); needs review: ${(e as Error).message}`);
+        return;
+      }
+      visit(MEDIA_TEXT, Buffer.from(text), depth + 1);
+      return;
+    }
     try {
       const members = containerMembers(file, buf, remaining);
       if (members) {
@@ -691,7 +925,13 @@ export function findSnapshotCredentials(name: string, bytes: Buffer, limits: Sna
           if (!text.includes("\u0000")) for (const h of findSecretFields(file, text)) if (i === 0 || !h.startsWith("unparseable")) hits.add(h);
         }
       }
-      for (const payload of encodedPayloads(text)) visit("decoded.txt", payload, depth + 1);
+      try {
+        for (const payload of encodedPayloads(text, wrappedBudget, file === MEDIA_TEXT)) visit("decoded.txt", payload, depth + 1);
+      } catch (e) {
+        if (!(e instanceof ScanLimit)) throw e;
+        hits.add(`${e.message}; needs review`);
+        return;
+      }
       // Hex, RFC 4648 base32 and byte arrays are inspected only as key material, not arbitrary fields.
       for (const payload of keyPayloads(text)) {
         if (isDerPrivateKey(payload) || credentialContainer(payload)) hits.add("encoded private key");

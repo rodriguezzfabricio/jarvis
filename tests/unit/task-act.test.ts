@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Broker } from "../../packages/cli/src/broker/broker.ts";
 import { outboxAdapters } from "../../packages/cli/src/broker/outbox.ts";
 import { startBrokerServer } from "../../packages/cli/src/broker/server.ts";
+import { fixedPath } from "../../packages/cli/src/harness/claude/env.ts";
 import type { buildTaskSettings } from "../../packages/cli/src/harness/claude/settings.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../../packages/cli/src/harness/claude/task.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
@@ -20,6 +22,7 @@ const install = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
 type Settings = ReturnType<typeof buildTaskSettings>;
+const secretsFile = (jarvisHome: string) => join(jarvisHome, "secrets", "p.env");
 
 function setup(extra: Partial<ClaudeHarnessOptions> = {}, session?: (spec: SessionSpec, settings: Settings) => Promise<void>) {
   const root = mkdtempSync(join(realpathSync("/tmp"), "jarvis-act-")); roots.push(root);
@@ -60,7 +63,9 @@ describe("jarvis act inside a task session", () => {
   function fakeInstall(root: string, deps: string) {
     const dir = join(root, "install");
     mkdirSync(join(dir, "packages", "cli", "src"), { recursive: true });
+    mkdirSync(join(dir, "packages", "cli", "bin"), { recursive: true });
     writeFileSync(join(dir, "packages", "cli", "src", "cli.ts"), "");
+    writeFileSync(join(dir, "packages", "cli", "bin", "jarvis"), "#!/bin/sh\n", { mode: 0o755 });
     mkdirSync(deps, { recursive: true });
     symlinkSync(deps, join(dir, "node_modules"));
     return dir;
@@ -133,6 +138,112 @@ describe("jarvis act inside a task session", () => {
           expect(actOut).toMatch(/Operation not permitted|EPERM|Cannot find module/);
           expect(pending).toBe(false);
         }
+      } finally { await server.close(); }
+    });
+  }
+
+  // `jarvis run` wiring: the skills tell sessions to run `jarvis act` (decision 12), so the session's PATH
+  // starts with the install's launcher, which runs the CLI with the runner's own Node (JARVIS_NODE).
+  it("puts the install's jarvis launcher first on the session's PATH, run by the runner's own Node", async () => {
+    const s = setup({ installDir: install });
+    expect((await createClaudeHarness(s.options).runTask(s.input)).status).toBe("finished");
+    const env = s.seen.spec!.env;
+    expect(env.PATH!.split(":")[0]).toBe(join(install, "packages", "cli", "bin"));
+    expect(env.PATH!.split(":").slice(1).join(":")).toBe(fixedPath(s.options.home!));
+    expect(env.JARVIS_NODE).toBe(realpathSync(process.execPath));
+    expect(lstatSync(join(install, "packages", "cli", "bin", "jarvis")).mode & 0o111).not.toBe(0);
+  });
+
+  it("the launcher runs the install's CLI with JARVIS_NODE, and refuses to guess a Node without it", () => {
+    const s = setup();
+    const node = join(s.root, "recording-node"); writeFileSync(node, "#!/bin/sh\necho \"NODE $*\"\n", { mode: 0o755 });
+    const launcher = join(install, "packages", "cli", "bin", "jarvis");
+    const ran = spawnSync(launcher, ["act", "email.send"], { env: { PATH: "/usr/bin:/bin", JARVIS_NODE: node }, encoding: "utf8" });
+    expect(ran.status).toBe(0);
+    expect(ran.stdout.trim()).toBe(`NODE ${join(install, "packages", "cli", "bin")}/../src/cli.ts act email.send`);
+    const unset = spawnSync(launcher, ["act"], { env: { PATH: `${dirname(node)}:/usr/bin:/bin` }, encoding: "utf8" });
+    expect(unset.status).not.toBe(0);
+    expect(unset.stderr).toMatch(/JARVIS_NODE is not set/);
+  });
+
+  it("leaves PATH alone and names no Node when no install is reopened", async () => {
+    const s = setup();
+    expect((await createClaudeHarness(s.options).runTask(s.input)).status).toBe("finished");
+    expect(s.seen.spec!.env.PATH).toBe(fixedPath(s.options.home!));
+    expect(s.seen.spec!.env.JARVIS_NODE).toBeUndefined();
+  });
+
+  it("refuses an install whose jarvis launcher is missing, a link, or not executable", async () => {
+    for (const kind of ["missing", "link", "not executable"] as const) {
+      const base = setup();
+      const dir = fakeInstall(base.root, join(base.root, "deps"));
+      const launcher = join(dir, "packages", "cli", "bin", "jarvis");
+      rmSync(launcher);
+      if (kind === "link") symlinkSync(join(install, "packages", "cli", "bin", "jarvis"), launcher);
+      if (kind === "not executable") writeFileSync(launcher, "#!/bin/sh\n", { mode: 0o644 });
+      const s = setup({ installDir: dir });
+      const r = await createClaudeHarness(s.options).runTask(s.input);
+      expect(r.status, kind).toBe("refused");
+      expect(r.status === "refused" ? r.reason : "", kind).toMatch(/launcher/);
+      expect(s.seen.spec, kind).toBeUndefined();
+    }
+  });
+
+  it("refuses a Node for the launcher that lives in the worktrees, caches or runner folder", async () => {
+    for (const where of ["worktreeRoot", "cacheRoot", "jarvisHome"] as const) {
+      const probe = setup();
+      const node = join(probe.options[where], "node"); writeFileSync(node, "", { mode: 0o755 });
+      const s = setup({ installDir: install, nodeBin: node });
+      s.options.worktreeRoot = probe.options.worktreeRoot; s.options.cacheRoot = probe.options.cacheRoot; s.options.jarvisHome = probe.options.jarvisHome;
+      s.input.workspace = probe.input.workspace; s.input.runHeaderPath = probe.input.runHeaderPath; s.input.logPath = probe.input.logPath;
+      const r = await createClaudeHarness(s.options).runTask(s.input);
+      expect(r.status, where).toBe("refused");
+      expect(r.status === "refused" ? r.reason : "", where).toMatch(/Node/);
+      expect(s.seen.spec, where).toBeUndefined();
+    }
+  });
+
+  // The session's own PATH and environment, under the task settings' filesystem lists in the pinned sandbox
+  // runtime (the user's home denied, standing in for blockReadsOutsideWorkingDirectories).
+  for (const [label, extra, reopen, want] of [
+    ["with the install reopened", { installDir: install }, true, "pending"],
+    ["when the sandbox doesn't reopen the install", { installDir: install }, false, "blocked"],
+    ["without an install", {}, true, "blocked"],
+  ] as const) {
+    it(`a session's bare \`jarvis act\` reaches the bound broker ${label} only if reopened, and never reads a secret`, { timeout: 120_000 }, async () => {
+      let actOut = ""; let secretOut = "";
+      const s = setup(extra, async (spec, settings) => {
+        const fs = settings.sandbox.filesystem;
+        const outFile = join(spec.cwd, "act.out"); const secretFile = join(spec.cwd, "secret.out");
+        const allowRead = reopen ? fs.allowRead : fs.allowRead.filter((d) => d !== install);
+        const r = await runSandboxed({
+          policy: { denyRead: [...fs.denyRead, realpathSync(homedir())], allowRead: [...allowRead, spec.cwd], allowWrite: [...fs.allowWrite, spec.cwd], allowUnixSockets: settings.sandbox.network.allowUnixSockets },
+          command: `jarvis act email.send --json '{"to":"jane@example.com","subject":"Hi","body":"Hello"}' > ${outFile} 2>&1; echo "ACT:$?" >> ${outFile}; cat ${secretsFile(s.options.jarvisHome)} > ${secretFile} 2>&1; echo "CAT:$?" >> ${secretFile}`,
+          cwd: spec.cwd, env: spec.env, timeoutMs: 60_000,
+        });
+        expect(r.timedOut).toBe(false);
+        actOut = readFileSync(outFile, "utf8"); secretOut = readFileSync(secretFile, "utf8");
+      });
+      mkdirSync(join(s.options.jarvisHome, "secrets"), { mode: 0o700 });
+      writeFileSync(secretsFile(s.options.jarvisHome), "EMAIL_TOKEN=fake-sentinel-a41b\n", { mode: 0o600 });
+      const ledger = Ledger.open(join(s.options.jarvisHome, "projects", "p"));
+      const broker = new Broker({ ledger, project: "p", adapters: outboxAdapters(join(s.options.jarvisHome, "outbox")), secrets: { get: () => undefined } });
+      const server = await startBrokerServer(broker, join(s.options.jarvisHome, "b.sock"));
+      try {
+        s.options.brokerSocket = server.socketPath;
+        expect((await createClaudeHarness(s.options).runTask(s.input)).status).toBe("finished");
+        const pending = ledger.entries().some((e) => e.kind === "approval_request");
+        if (want === "pending") {
+          expect(actOut).toMatch(/ACT:2\b/);
+          expect(actOut).toMatch(/"status": "pending"/);
+          expect(pending).toBe(true);
+        } else {
+          expect(actOut).not.toMatch(/ACT:2\b/);
+          expect(actOut).toMatch(/Operation not permitted|EPERM|not found|Cannot find module/);
+          expect(pending).toBe(false);
+        }
+        expect(secretOut).not.toContain("fake-sentinel-a41b");
+        expect(secretOut).not.toMatch(/CAT:0\b/);
       } finally { await server.close(); }
     });
   }

@@ -24,6 +24,9 @@
 //   { "delete": "src/a.mjs" }
 //   { "notes": "text", "task": "T1" }           writes .jarvis/notes/<task>.md (task defaults to the session's)
 //   { "bash": "node --test", "output": "...", "isError": false }   events only; nothing is executed
+//   { "exec": "jarvis act …", "saveAs": "act.out" }   runs the command with /bin/sh in the session's own
+//        environment and cwd, as a Bash tool call (unsandboxed: the sandbox is tested elsewhere); "saveAs"
+//        also writes its output and "EXIT:<status>" to that workspace path
 //   { "text": "assistant text" }
 //   { "event": { ...raw stream-json event... } }
 //   { "rateLimit": { "status": "rejected", "resetsInSec": 2 } }    or "resetsAt" (Unix seconds); also
@@ -37,6 +40,7 @@
 //
 // Every launch is also checked against the permanent safety envelope (AGENTS.md); a launch that misses
 // any requirement does nothing, logs the problems and exits 3.
+import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -186,6 +190,13 @@ export async function runScenario({ scenarioPath, argv, flag, settings, out }) {
       const id = `toolu_s${++n}`;
       out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: st.bash } }] } });
       out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: st.isError === true, content: st.output ?? "" }] } });
+    } else if ("exec" in st) {
+      tool("Bash", { command: st.exec }, () => {
+        const r = spawnSync("/bin/sh", ["-c", st.exec], { cwd, env: process.env, encoding: "utf8", timeout: st.timeoutMs ?? 60_000 });
+        const text = `${r.stdout ?? ""}${r.stderr ?? ""}EXIT:${r.status ?? r.signal}\n`;
+        if (st.saveAs !== undefined) write(target(st.saveAs, st.escape), text);
+        return text;
+      });
     } else if ("text" in st) {
       out({ type: "assistant", message: { content: [{ type: "text", text: st.text }] } });
     } else if ("event" in st) {

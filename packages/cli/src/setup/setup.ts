@@ -5,7 +5,7 @@ import { envFileSecretsWriter, isStorableSecret, type SecretsWriter } from "../b
 import { pinnedClaudeBin, CLAUDE_CODE_VERSION } from "../config/pins.ts";
 import { checkTrustedDir, checkTrustedTree, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import { checkClaudePinned } from "../doctor/doctor.ts";
-import { notifyConfigSchema } from "../intake/commands.ts";
+import { parseNotifyConfig } from "../notify/config.ts";
 import { saveTaste } from "../intake/taste.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
@@ -216,7 +216,7 @@ function printSubscribe(config: { topic: string; replyTopic: string }, print: (t
 }
 
 function readNotifyConfig(path: string): NtfyOptions {
-  const config = notifyConfigSchema.parse(JSON.parse(readNoFollow(path)));
+  const config = parseNotifyConfig(JSON.parse(readNoFollow(path)));
   new NtfyNotifier({ baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic });
   return { baseUrl: config.baseUrl, topic: config.topic, replyTopic: config.replyTopic };
 }

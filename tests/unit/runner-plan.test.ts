@@ -74,6 +74,51 @@ describe("planner plans", () => {
     expect(() => readPlan(root, context)).toThrow(/bound|large|limit/i);
     writeFileSync(join(root, ".jarvis/plan.json"), "{"); expect(() => readPlan(root, context)).toThrow();
   });
+  describe("top-level planner notes (decision 113)", () => {
+    function planWith(plan: Record<string, unknown>) {
+      const root = workspace(); writeFileSync(join(root, ".jarvis/plan.json"), JSON.stringify(plan)); return root;
+    }
+    const twoTasks = () => [task(), { ...task("T2"), dependencies: ["T1"] }];
+    it.each([
+      ["a feature title", { feature: "Recruiter outreach" }],
+      ["a summary", { summary: "two tasks" }],
+      ["a singular note", { note: "keep it small" }],
+    ])("still refuses any other top-level key: %s", (_name, extra) => {
+      expect(() => readPlan(planWith({ notes: ["fine"], tasks: [task()], ...extra }), context)).toThrow(/Unrecognized key/);
+      expect(PlanSchema.safeParse({ tasks: [task()], ...extra }).success).toBe(false);
+    });
+    it("accepts trimmed notes and gives every task's ledger definition the same notes", () => {
+      const plan = readPlan(planWith({ notes: ["  No new dependencies.  ", "Keep the store behind an interface."], tasks: twoTasks() }), context);
+      expect(plan.notes).toEqual(["No new dependencies.", "Keep the store behind an interface."]);
+      expect(planEntries(plan).map((e) => [e.task_id, (e.data as { planNotes?: unknown }).planNotes])).toEqual([
+        ["T1", ["No new dependencies.", "Keep the store behind an interface."]],
+        ["T2", ["No new dependencies.", "Keep the store behind an interface."]],
+      ]);
+    });
+    it.each([["no notes", {}], ["an empty notes list", { notes: [] }]])("adds no planNotes for %s", (_name, extra) => {
+      const plan = readPlan(planWith({ tasks: twoTasks(), ...extra }), context);
+      for (const e of planEntries(plan)) expect(e.data).not.toHaveProperty("planNotes");
+    });
+    it("accepts notes at the bounds: 32 notes, 2000 characters each after trimming, 16000 in all", () => {
+      expect(readPlan(planWith({ notes: Array.from({ length: 32 }, (_, i) => `note ${i}`), tasks: [task()] }), context).notes).toHaveLength(32);
+      expect(readPlan(planWith({ notes: [`  ${"x".repeat(2000)}  `], tasks: [task()] }), context).notes).toEqual(["x".repeat(2000)]);
+      expect(readPlan(planWith({ notes: Array.from({ length: 8 }, () => "x".repeat(2000)), tasks: [task()] }), context).notes).toHaveLength(8);
+    });
+    it.each([
+      ["33 notes", Array.from({ length: 33 }, (_, i) => `note ${i}`)],
+      ["a note over 2000 characters", ["x".repeat(2001)]],
+      ["a blank note", ["   "]],
+      ["an empty note", [""]],
+      ["a non-string note", [42]],
+      ["notes over 16000 characters in all", Array.from({ length: 9 }, () => "x".repeat(2000))],
+      ["notes as one string", "keep it small"],
+    ])("refuses %s", (_name, notes) => {
+      expect(() => readPlan(planWith({ notes, tasks: [task()] }), context)).toThrow();
+    });
+    it("revalidates the notes in planEntries", () => {
+      expect(() => planEntries({ notes: ["x".repeat(2001)], tasks: [task()] })).toThrow();
+    });
+  });
   it("revalidates planEntries instead of trusting typed caller input", () => {
     expect(() => planEntries({ tasks: [{ ...task(), requiredReviews: [] }] })).toThrow();
     expect(PlanSchema.safeParse({ tasks: [] }).success).toBe(false);

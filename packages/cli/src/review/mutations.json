@@ -280,5 +280,89 @@
     "file": "packages/cli/src/harness/claude/review.ts",
     "anchor": "...sessionTmpEnv(sessionTmp), TMPDIR: tmp",
     "replacement": "TMPDIR: tmp"
+  },
+  {
+    "name": "review evidence never refused for size",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(\"invalid review evidence\");",
+    "replacement": "if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) throw new Error(\"invalid or oversized review evidence\");"
+  },
+  {
+    "name": "review evidence shows a log's end",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "return text.slice(text.length - fit(text, cap, (take) => text.slice(text.length - take)));",
+    "replacement": "return headWithin(text, cap);"
+  },
+  {
+    "name": "review evidence per-file bound",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "fileBytes: 16 * 1024,",
+    "replacement": "fileBytes: 64 * 1024 * 1024,"
+  },
+  {
+    "name": "review evidence total bound",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "totalBytes: 192 * 1024,",
+    "replacement": "totalBytes: 64 * 1024 * 1024,"
+  },
+  {
+    "name": "review evidence says what was cut",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "file = { ...base, format: \"text\", excerpt, cut: `showing the last ${Buffer.byteLength(excerpt)} of ${raw.length} bytes` };",
+    "replacement": "file = { ...base, format: \"text\", excerpt };"
+  },
+  {
+    "name": "review evidence go test json read as a summary",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "const summary = raw.length > limits.fileBytes ? goTestSummary(",
+    "replacement": "const summary = false ? goTestSummary("
+  },
+  {
+    "name": "review evidence go test json failing tests shown",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "for (const k of failedTests) sections.push(",
+    "replacement": "for (const k of failedTests.slice(0, 0)) sections.push("
+  },
+  {
+    "name": "review evidence go test json final package lines",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "sections.push(`Final package lines:\\n${packageLines.join(\"\\n\")}`);",
+    "replacement": ""
+  },
+  {
+    "name": "review evidence leaves out the protected check's commands",
+    "file": "packages/cli/src/review/evidence.ts",
+    "anchor": "check: d.check, status: d.status,",
+    "replacement": "check: d.check, status: d.status, cases: d.cases, verify: d.verify,"
+  },
+  {
+    "name": "review diff bounded at file boundaries",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "if (jsonBytes(diff) <= budget) return { diff };",
+    "replacement": "return { diff };"
+  },
+  {
+    "name": "review diff names the files it left out",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "else left.push(",
+    "replacement": "else void ("
+  },
+  {
+    "name": "review input bound below the argument limit",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "const MAX_INPUT_BYTES = 768 * 1024;",
+    "replacement": "const MAX_INPUT_BYTES = 1024 * 1024;"
+  },
+  {
+    "name": "review records no model when no reviewer ran",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "model: reviews.length ? reviews.map((r) => r.model).join(\" + \") : null,",
+    "replacement": "model: reviews.map((r) => r.model).join(\" + \"),"
+  },
+  {
+    "name": "review records why no verdict came",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": ": verdict === \"error\" ? active.find((r) => r.verdict === \"error\")?.error : undefined;",
+    "replacement": ": undefined;"
   }
 ]

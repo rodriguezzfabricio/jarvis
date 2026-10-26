@@ -271,7 +271,11 @@ export function realGateLoop(files: Record<string, string> = { "src/citizen.mjs"
       const r = await runGate({ ledger, store, projectDir: o.projectDir, jarvisHome: o.jarvisHome, workRoot: o.workRoot, repoPath: o.repoPath, revision: rev, check: o.checks[name]!, taskId: "T1", attemptId: "a1" });
       passed &&= r.status === "pass";
     }
-    if (!passed || (await o.review({ taskId: "T1", attemptId: "a1", revision: rev })) !== "pass") return { status: "blocked", done: [], blocked: ["T1"] };
+    if (!passed) return { status: "blocked", done: [], blocked: ["T1"] };
+    const verdict = await o.review({ taskId: "T1", attemptId: "a1", revision: rev, reviewer: "code" });
+    // As runner/loop.ts does: a plain verdict is the loop's to record; a recorded one was appended by the review service.
+    if (typeof verdict === "string") ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", revision: rev, status: verdict } });
+    if ((typeof verdict === "string" ? verdict : verdict.status) !== "pass") return { status: "blocked", done: [], blocked: ["T1"] };
     g(["merge", "-q", "--ff-only", rev]);
     ledger.append({ kind: "state_reached", actor: "runner", task_id: "T1", attempt_id: "a1", data: { state: "passed", revision: rev } });
     g(["tag", "-f", "last-green", rev]);

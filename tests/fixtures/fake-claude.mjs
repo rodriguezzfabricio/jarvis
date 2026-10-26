@@ -25,12 +25,13 @@ if (!restricted && existsSync(".claude/settings.json")) {
   for (const h of proj.hooks?.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
 }
 
-// Plugins passed with --plugin-dir always load and their hooks run (they are runner-owned).
+// Plugins passed with --plugin-dir always load and their hooks run (they are runner-owned), with
+// CLAUDE_PLUGIN_ROOT set, as the real binary sets it for plugin hooks.
 const pluginDir = flag("--plugin-dir");
 const pluginHooks = pluginDir && existsSync(`${pluginDir}/hooks/hooks.json`) ? JSON.parse(readFileSync(`${pluginDir}/hooks/hooks.json`, "utf8")).hooks ?? {} : {};
-if (mode !== "plugin-hooks-off") for (const h of pluginHooks.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command);
-// PreToolUse hooks run before each tool call, outside the sandbox; exit 2 blocks the call, stderr is the reason.
 const hookEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir ?? "", PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}` };
+if (mode !== "plugin-hooks-off") for (const h of pluginHooks.SessionStart ?? []) for (const c of h.hooks ?? []) execSync(c.command, { env: hookEnv });
+// PreToolUse hooks run before each tool call, outside the sandbox; exit 2 blocks the call, stderr is the reason.
 function preToolUse(tool, input) {
   if (mode === "pretool-hooks-off") return undefined;
   for (const h of pluginHooks.PreToolUse ?? []) {

@@ -29,6 +29,7 @@ const MAP = [
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
+  [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)

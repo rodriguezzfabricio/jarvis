@@ -80,8 +80,12 @@ export function readPlan(workspace: string, context: PlanContext): Plan {
   return plan;
 }
 
-/** Session-owned plans the runner reads only when `jarvis run --plan <kind>` names them. */
-export const SESSION_PLAN_KINDS = ["onboard", "sweep"] as const;
+/**
+ * Session-owned plans the runner reads only when `jarvis run --plan <kind>` names them. "review" is a
+ * review's findings (.jarvis/review/findings.json), which the runner turns into its own fix plan
+ * (runner/review-fix.ts, decision 126); it is never read as a plan file.
+ */
+export const SESSION_PLAN_KINDS = ["onboard", "sweep", "review"] as const;
 export type SessionPlanKind = (typeof SESSION_PLAN_KINDS)[number];
 
 /**
@@ -92,6 +96,7 @@ export type SessionPlanKind = (typeof SESSION_PLAN_KINDS)[number];
  */
 export function readSessionPlan(repo: string, kind: SessionPlanKind, checks: readonly { name: string }[]): Plan {
   if (!(SESSION_PLAN_KINDS as readonly string[]).includes(kind)) throw new Error(`unknown plan kind: ${String(kind)}`);
+  if (kind === "review") throw new Error("a review's findings are not a plan: the runner plans their fixes itself (runner/review-fix.ts)");
   const plan = PlanSchema.parse(JSON.parse(readPlanningFile(repo, `.jarvis/${kind}/plan.json`)));
   const installed = new Set(checks.map((c) => c.name));
   for (const task of plan.tasks) {

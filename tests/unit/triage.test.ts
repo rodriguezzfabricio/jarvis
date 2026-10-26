@@ -388,6 +388,9 @@ describe("triage: the result is consistent", () => {
   for (const o of Object.keys(OVERRIDES)) inputs.push({ request: TASK6, folder: repo, override: o as keyof typeof OVERRIDES });
   for (const then of ["feature", "refactor", "bug", "none"] as const) inputs.push({ request: TASK7, folder: repo, judgment: { then, newScreen: true, newPlatform: true } });
   inputs.push({ request: "Review the outreach code before I ship it.", folder: repo });
+  // Golden task 3 as the Jarvis arm types it: a review that asks for fixes (decision 126).
+  inputs.push({ request: "Review the outreach code before I ship it. Put what you find in REVIEW.md and fix the real problems.", folder: repo });
+  inputs.push({ request: "Review the parser and write the findings to docs/parser-review.md", folder: repo });
   const pipelines = (t: Triage) => (t.then ? [t, t.then] : [t]);
 
   it("no step that runs is also listed as never running; steps name a known skill at its stage", () => {
@@ -404,7 +407,9 @@ describe("triage: the result is consistent", () => {
         if (p.type === "bug") for (const s of ["intake", "mockups", "design"]) expect(p.never).toContain(s);
         expect(t.headline).toContain(p.label);
       }
-      if (t.then) expect(["question"]).toContain(t.type);
+      if (t.then) expect(["question", "review"]).toContain(t.type);
+      if (t.type === "review" && t.then) expect(t.then.type).toBe("bug"); // a review's fixes are bug work (decision 126)
+      expect(t.review === null).toBe(t.type !== "review");
       expect(t.signals.length, t.type).toBeGreaterThan(0);
     }
   });
@@ -512,6 +517,9 @@ describe("jarvis triage", () => {
     const phone = JSON.parse((await cli(["--json", "--repo", designed, "--judgment", "feature", "--new-screen", "--new-platform", "--platform", "ios", "Approve drafts from my phone"])).out) as Triage;
     expect(phone.mockups).toBe(true);
     expect(JSON.parse((await cli(["--json", "--repo", d, "--then", "feature", TASK7])).out).then.type).toBe("feature");
+    // Decision 126: the model can name a review's report, never start its fixes.
+    const review = JSON.parse((await cli(["--json", "--repo", d, "--report", "docs/review.md", "--then", "refactor", "Review the parser and fix it"])).out) as Triage;
+    expect([review.type, review.review?.report, review.then]).toEqual(["review", "docs/review.md", null]); // the model can never start a review's fixes (round 3)
   });
 
   it("prints the headline and the signals without --json", async () => {
@@ -522,7 +530,7 @@ describe("jarvis triage", () => {
 
   it("refuses an unknown judgment, tier or override with a non-zero exit", async () => {
     const d = dir("src/");
-    for (const bad of [["--judgment", "sweep"], ["--judgment-tier", "3"], ["--judgment-tier", "one"], ["--override", "ship"], ["--questions", "9"], ["--questions", "two"], ["--then", "sweep"]]) {
+    for (const bad of [["--judgment", "sweep"], ["--judgment-tier", "3"], ["--judgment-tier", "one"], ["--override", "ship"], ["--questions", "9"], ["--questions", "two"], ["--then", "sweep"], ["--report", "../outside.md"], ["--report", ".jarvis/r.md"]]) {
       const r = await cli(["--json", "--repo", d, ...bad, "x"]);
       expect(r.code, bad.join(" ")).toBe(2);
     }

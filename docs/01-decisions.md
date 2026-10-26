@@ -1217,6 +1217,91 @@ Settled:
 *Why:* each was found by the real machine and none was visible in the lane's fakes: the lane's clone option copied everything, and its single-process browser could not take a second viewport.
 *From:* the Codex stage 4 fixes lane (gpt-6.1-sol) and its Sonnet review; backlog 127 (baseline wiring), 128 (baseline edges), 129 (single-process).
 
+### 126. A review that asks for fixes: the review writes the report, one bug task per finding, then the report says what happened (new; Oct 26; the review-fix worker, backlog 109, golden task 3; extends 89 and 114; the integrator may renumber; Fabricio can veto)
+Golden task 3 says "Put what you find in REVIEW.md and fix the real problems", and triage made it a read-only review with no edit pipeline, so the Jarvis arm couldn't run it and `/jarvis` had no way to fix what a review found.
+
+> **Round 3 supersedes the triage rules below.** Triage no longer starts a review's fixes from its wording, and no longer reads limits from it either. Round 2's ledger exemption for reports is gone too. Fixes start only on an explicit, structured opt-in; see "Round 3" at the end. The pipeline itself (the report, one bug task per finding, the report update) is unchanged.
+
+**Triage** (extends 89; superseded by round 3):
+- **A review stays a review.** When its words ask for fixes ("and fix …", ". Fix …", ", repair …"), or the model passes `--then`, triage adds a bug pipeline as its `then`, the way a question with edits gets one. A review's fixes are always bug work. A bare "fix" is not a request: "Review the fix for the login bug" asks for a review of a fix.
+- **Its one step becomes `review-report`.** The findings go to the report the request names ("put what you find in REVIEW.md", or `--report`), and to REVIEW.md when it names none. A typed path outside the checkout, or in `.git` or `.jarvis`, gets a `report-refused` signal and the default. The report is the step's only edit.
+- **A named report alone starts no fixes.** The review writes the file and stops. A named file is a deliverable, not permission to change code. A plain "review this" stays read-only, as before, and still has no Jarvis build-loop arm in evals.
+- **Security lens:** the review also follows the security skill when the request has security words or touches a tier-2 area (decision 37). Task 3's "outreach" is one.
+
+**The pipeline** (`runner/review-fix.ts`, shared by the eval arm and `jarvis run --plan review`):
+1. **The review step writes the report.** A session writes the report and `.jarvis/review/findings.json` in its checkout; the runner never writes the findings itself. In evals the runner starts that session as the reviewer, in a fresh checkout, with the review (and security) skills as text and the static trifecta detector's result as evidence. In production the interactive `/jarvis` session runs the review skill's new report mode. The prompt asks, for each finding, for:
+   - file:line, severity and confidence;
+   - the code path from an input the code really receives, and why that path is reachable ("a dangerous-looking line with no reachable path is not a finding");
+   - a proposed fix.
+
+   It also asks the session to say "Not a problem" explicitly for suspicious code it checked and cleared.
+2. **The runner reads both files once the session ends,** with the bounded no-follow reader:
+   - No report means no fixes, and the run says so ("the review session wrote no report at REVIEW.md; no fixes were started"). The eval outcome is `review-failed`.
+   - A symlink, a hard link, a symlinked folder or a path outside the checkout is refused the same way.
+   - Every finding must appear in the report with its id and file:line, so the JSON the fixes come from matches the report a person reads.
+   - A finding about a file the base revision lacks gets no task.
+   - Anything else the session changed is discarded, and the run says so.
+3. **The runner commits the report** on the run branch, that one path only. In evals it is the fixes' base revision, as task 2's spec is. In `jarvis run --plan review` it is committed before anything is hosted, since promotion needs a clean checkout. The findings stay claims.
+4. **One bug task per finding,** not one per file:
+   - Each exit condition embeds decision 114's for that one finding: confirmed in the code before anything changes, and fixed on every path. A low-confidence finding that can't be confirmed is left unchanged.
+   - The reviewer gets the bug brief, with the finding as the report.
+   - So each fixed or not-fixed line comes from that task's own gate, review and promotion, never from a session's account of which findings in a group it fixed. One false or stuck finding blocks only itself.
+   - Two findings in one file can overlap. That costs a runner merge and a second check, or a redo, which the loop already handles.
+   - A low-confidence finding's goal says to change code only once it is confirmed.
+   - Each fix task requires the `unit` check and a code review.
+   - Ids follow the ledger's own tasks, since the loop never re-creates an id. A task with the same definition keeps its id, so planning the same findings twice adds nothing.
+5. **A last task writes the outcome into the report.** It is gated and reviewed like any task and may touch only the report. It records what the runner's records say happened to each finding:
+   - fixed: passed and merged, with the files it touched;
+   - left unchanged: passed with no file change;
+   - not fixed: with the reason it was blocked;
+   - not attempted.
+
+   The session writes the report; the facts are the runner's. A fix loop that throws runs no update. In evals the run counts as complete only when every fix and the update passed. In production, `PreparedRun.drive` runs the two loops one after the other.
+
+*Why:* task 3 needs both the report and fixes that hold up. Review work and bug work already have their rules (the review skill, decision 114), so the pipeline joins them instead of inventing a third kind of task. False alarms are a review's known failure, and task 3 counts them. So the prompt asks for evidence per finding and an explicit "Not a problem", and the runner checks what code can check: each finding's id and file:line in the report.
+*Not done:* the protected scanners (gitleaks, semgrep, osv-scanner) don't run in the review step. They run only as gate checks recorded against a task, and a gate result for a task the ledger never created breaks state replay. The step says "not run" rather than imply a clean scan (backlog 160).
+**Round 1 of the Codex security review (three highs, fixed):** the report commit is the one change no gate or reviewer sees, so:
+- **The runner owns the report path.** It comes from the request (triage), or from `jarvis run --plan review --report <path>`, default REVIEW.md. The findings file's `report` is only compared with it, so a session can't name a different file for the runner to commit.
+- **A report is a file only people read:**
+  - a .md, .markdown or .txt path with no git pattern characters (`[ ] { } ! * ?`);
+  - not hidden, and not under `docs/spec/`, where the approved specs live;
+  - not a name that builds, agents or Jarvis read (README, CHANGELOG, LICENSE, AGENTS, CLAUDE, GEMINI, DESIGN, PRODUCT, SKILL, SECURITY, CONTRIBUTING and the like);
+  - for .txt, a name that says review, finding, report or audit, so it is never `requirements.txt` or `CMakeLists.txt`.
+
+  An existing file can be the report only when it is REVIEW.md or the file the request names, because the path is never the session's.
+- **The commit names the report as a literal pathspec** (`:(literal)…`), so a name like `[C]MakeLists.md` can't take `CMakeLists.md` with it. Afterwards the runner checks that the commit changes exactly the report against its parent; otherwise it undoes the commit (the branch goes back, the work tree stays) and refuses (`commitReportOnly`).
+- **An explicit constraint wins over fix words and the model's judgment,** for a review and for a question's edits alike:
+  - "do not edit", "don't change anything", "make no changes", "read-only" or "without changing anything" means a plain read-only review: no report, no fixes;
+  - "fix nothing", "don't fix anything", "report only", "suggestions only" or "only report" means no fixes, though a report the request names is still written;
+  - a scope ("don't change the public API", "no changes to the CLI flags", "without changing the file format") is not a constraint.
+
+**Round 2 (one high left from round 1, one new): fail closed, instead of listing what not to do.**
+- **Fixes need a positive authorization** (`triage/authorize.ts`).
+  - Fixes start only on an imperative to fix, repair or resolve something: the verb at the start of a clause or after "and", "then", "also", "please" or a comma, followed by what to fix ("the real problems", "them", "what you find").
+  - The clause it sits in holds no negation at all.
+  - Descriptive uses never authorize: "fix suggestions go in the response", "the fix for", "fixes go in", "address", "patch".
+- **Any negation of editing anywhere in the request means a plain review.** That covers edit, change, modify, touch, write, fix and commit, plus "read-only" and "report only". The one exception is a change scoped to a named part with "to", "in", "inside", "within" or "on" ("make no changes to the public API"). Such a scope becomes a limit the fix tasks carry: in the goal, and in the exit condition the reviewer checks.
+- **"The whole repository" is not a named part:** "no changes to the code" or "to the repository" stops fixes. A write or a commit can never be scoped, so "don't write to disk" stops fixes too.
+- **The model's judgment can veto fixes but never add them.** When fix words were seen but authorize nothing, triage says so: "Fixes weren't requested".
+- **A report name may not start with a reserved stem, with any suffix and in any case:** CLAUDE*, AGENTS*/AGENT*, GEMINI*, COPILOT*, CODEX*, CURSOR*, WINDSURF*, CLINE*, AIDER*, WARP*, MEMORY*, SKILL*, DESIGN*, PRODUCT*, README*, CHANGELOG*, HISTORY*, LICENSE*, COPYING*, NOTICE*, SECURITY*, CONTRIBUTING*, CODE_OF_CONDUCT*, CODEOWNERS*, CONVENTIONS*. It also may not contain "instruction", "rules" or "prompt", and hidden names were already refused. `CLAUDE.local.md` and `AGENTS.override.md` are refused, and so is `SECURITY-REVIEW.md`.
+- **The report commit never replaces a file the base revision already has,** unless this pipeline wrote that file before. The runner records each report it commits in the ledger (`reconciled`, type `review_report`). A new REVIEW.md is fine; one the project already has is refused. The eval arm checks this before starting the review session, and `jarvis run --plan review` checks it before anything is hosted.
+
+**Round 3: no edit permission from free text.** Three rounds of the Codex review found phrasings that got edit permission out of prose: negations, scopes ("no changes to any files"), quoted text, explanations ("Explain how to review and fix the bugs") and conditionals ("If I approve, fix the bugs"). So triage stops trying:
+- **A review is always a review, and triage never sets its `then`.** That holds whatever the wording and whatever the model's `--then`. Fix words only give a `fixes-mentioned` signal, which prompts the opt-in question. `triage/authorize.ts` is gone. `triage/fix-words.ts` keeps only that signal and a fail-closed prohibition check, with no scope exemption. The prohibition check only ever removes edits: a question's edits (decision 89 still reads those from words) and a named report.
+- **Fixes start only on an explicit, structured opt-in:**
+  - **Interactive.** The `/jarvis` session asks one intake question with id `review-fix`: "Fix the confirmed findings after the review?", default "no", the one alternative "yes". Decision 119's rule applies: only the user's recorded, confirmed, session-typed "yes" counts.
+  - **`jarvis run --plan review`.** It needs `--fix`, or `--fix-answer <answerSeq>:review-fix`. The runner checks the second against the ledger and refuses a no, a default, a timeout, a phone tap or another question's answer. Without either, the run is refused before the probe.
+  - **The eval arm.** The golden task's `task.json` carries a runner-owned `"reviewFix": true`, or `{ "limits": ["…"] }`. Any other value refuses the task before the preflight, and a review without it has no Jarvis build-loop arm.
+- **Limits come only with the opt-in:** `--limit <text>` (repeatable) on the run, or the eval opt-in's `limits`. They are never derived from prose, and they ride on every fix task's goal and exit condition as before.
+- **A report never replaces a file the base revision has, whoever wrote it.** The ledger record and its exemption are dropped. The eval arm refuses before the review session. `jarvis run --plan review` refuses unless the branch already has that report exactly as it stands (a rerun commits nothing, so it replaces nothing). The refusal names `--report <path>` for a new file.
+
+**Round 4: a review run touches only its own tasks.** The loop picked ready tasks from the whole project ledger, so a review run dispatched unrelated unfinished work, including when the review found nothing. That work kept its own goal, which this review's limits never reached.
+- **The loop takes an allowlist** (`RunLoopOptions.only`). It dispatches, retries, recovers and blocks only those task ids. Its result, its `run_ended` entry and REPORT.md ("Left alone by this run") list every other unfinished task as left alone, and `jarvis run` prints them. An empty allowlist runs nothing; with no allowlist, the loop behaves as before.
+- **The allowlists:** the fix loop gets this review's fix task ids. The report update gets those ids plus its own; the fix tasks are done or blocked by then, so only the update can run, and the result covers the whole review. This holds in production and in the eval arm.
+- **No findings means no fix loop at all,** only the report update. `jarvis run --plan review` always drives its own phases, and never falls through to the ordinary build loop.
+- **A scoped run keeps what it leaves alone recoverable** (round 5). At the end it deletes only its own tasks' candidate branches; `deleteCandidateBranches` takes the allowlist. At the start it keeps the other tasks' workspaces. A task that crashed after committing its candidate is still recovered by the next unrestricted run.
+
+*From:* the review-fix worker (Opus), Oct 26; round 1 after the Codex `gpt-6-astra` security review of 5316a3c..f686919, round 2 after its review of 5316a3c..2cc72ae, round 3 (the integrator's design) after its review of 191837e, round 4 after its review of d765748.
 ### 116. A stage proof counts runs from one frozen Jarvis revision, rated by blind judges (new; Oct 26; the integrator, after the first stage 3 runs)
 - **One revision per proof.** The counted runs of a stage proof all come from one frozen clone of Jarvis; runs from an earlier revision move to `~/.jarvis/evals/_superseded/<task>/` with a README, and their results stay recorded. When a fix changes what both arms' sessions get (decision 123's toolchain), both arms are rerun.
 - **Ratings by two blind judges** (decision 105): each task's runs from both arms are shown to a fresh Claude `claude-opus-5-5` judge and a Codex `gpt-6-astra` judge under neutral labels; a run's rating is the two judges' mean rounded down, the same rule for both arms. A gap above 1 point or a split goes to Fabricio.
@@ -1253,7 +1338,7 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **The plant isn't a plain revert of 971efc2.** Later commits call what that fix added, so undoing it doesn't compile, and the compiler errors would name two of the three answers. The plant reverses 971efc2 and keeps the later callers compiling with the guards gone (a plain HTTP client behind the same constructor, the two validation calls and one later test removed, three comments that named the guards reworded). It is built by a script in the private eval repo from FreeHire's own objects; FreeHire is only read.
 - **The prompt names the report and asks for fixes:** "Review the outreach code before I ship it. Put what you find in REVIEW.md and fix the real problems." A report needs a known path to be graded black-box, and the hostile-content trial needs real fixes (§3's "finding it isn't enough").
 - **Graded by five protected checks:** the report names each of the three findings with a file and a fix in one unit of REVIEW.md (other finding-shaped units are counted as possible false alarms, not failures); SSRF, header-injection and prompt-injection trials against the wired code; and the project's own suite. Proven on the real gate: the planted tree fails, the reference fix plus a hand-written report passes, and each half-fix fails only its own check.
-- **The Jarvis arm can't run it yet:** a review that asks for fixes needs the review-then-fix pipeline (backlog 109, being built).
+- **The Jarvis arm can't run it yet:** a review that asks for fixes needs the review-then-fix pipeline (backlog 109, being built). It can since decision 126 (pipeline `review-fix`).
 
 ### 132. Recorded research, uncontaminated skills and bounded intake (new; Oct 26; the Codex stage2-r3 lane and its Opus review, the stage 2 round 2 prerequisites in docs/reviews/stage2-run2-summary.md; extends 15, 70, 119 and 121; refines 7; supersedes 120's profile-offer placement and architecture §4 step 7's intake production grant; Fabricio can veto)
 - **No answers in the plugin.** Skill evaluations live in `evals/skills/<name>/`, outside the installed plugin, byte-for-byte as before. Plugin-reachable instructions, templates and roles contain no evaluation answers or task-specific examples; `tests/unit/stage2-plugin-contamination.test.ts` walks the plugin through its symlinks for eval files and a domain ban-list that lives only in the test.

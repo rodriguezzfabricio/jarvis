@@ -6,7 +6,8 @@ import { canonical, LedgerTamperError, type Ledger, type LedgerEntry } from "../
 import type { Broker } from "../broker/broker.ts";
 import { confirmation, type Answer, type Message, type ReplyMessage } from "./notifier.ts";
 
-/** Only compensate a Mac ahead of the server; never bound the age of a later tap. */
+/** How far ntfy's own time for a publish may stand in for the Mac's later record of the send, when the
+ * Mac's clock runs ahead (decision 130). It never bounds how late a tap may come. */
 export const MAX_APPROVAL_CLOCK_SKEW_SECONDS = 120;
 
 export type ParsedReply = { kind: "button"; answer: Answer; requestId: string; nonce: string }
@@ -85,14 +86,16 @@ export class ReplyInbox {
     });
   }
 
-  /** Record only after a successful send. A failed or ambiguous send grants no phone capability. */
-  sent(requestId: string, sentAt: number): void {
+  /** Record only after a successful send. A failed or ambiguous send grants no phone capability.
+   * `serverTime` is ntfy's own time for this publish, in seconds, when the response gave one. */
+  sent(requestId: string, sentAt: number, serverTime?: number): void {
     if (!Number.isSafeInteger(sentAt) || sentAt < 0) throw new Error("invalid notification send time");
+    if (serverTime !== undefined && (!Number.isSafeInteger(serverTime) || serverTime < 0)) throw new Error("invalid notification server time");
     this.ledger.transact((entries, add) => {
       const request = entries.find((e) => isPhase(e, "request") && data(e).requestId === requestId);
       if (!request || typeof data(request).project !== "string") throw new Error("no project-bound notification request");
       if (entries.some((e) => isPhase(e, "sent") && data(e).requestId === requestId)) return;
-      add({ kind: "notify", actor: "runner", data: { source: "notify", phase: "sent", requestId, sentAt } });
+      add({ kind: "notify", actor: "runner", data: { source: "notify", phase: "sent", requestId, sentAt, ...(serverTime !== undefined ? { serverTime } : {}) } });
     });
   }
 
@@ -124,8 +127,10 @@ export class ReplyInbox {
         if (this.approvalProject !== undefined || request.project !== undefined) {
           const reason = approvalGuard(entries, request, this.approvalProject ?? request.project!, message.time);
           if (reason) return ignore(reason);
-          const skewSeconds = sendGap(entries, request, message.time!);
-          if (skewSeconds > 0) add({ kind: "notify", actor: "runner", data: { source: "notify", phase: "clock-skew", id: message.id, requestId: request.requestId, skewSeconds } });
+          // Counted only because ntfy's clock stood in for the Mac's: record by how much (decision 130).
+          const sent = sentRecord(entries, request);
+          if (sent && message.time! * 1000 <= (sent.sentAt as number)) add({ kind: "notify", actor: "runner", data: { source: "notify", phase: "clock-skew", id: message.id, requestId: request.requestId,
+            skewSeconds: (sent.sentAt as number) / 1000 - (sent.serverTime as number), allowedSeconds: (sent.sentAt as number) / 1000 - sendReference(sent) } });
         }
         intent = { source: "notify", phase: "answer", id: message.id, answer: parsed.answer, requestId: parsed.requestId, nonce: parsed.nonce,
           ...(request.project !== undefined ? { approvalProject: request.project } : {}) };
@@ -145,9 +150,16 @@ export class ReplyInbox {
   }
 }
 
-function sendGap(entries: readonly LedgerEntry[], request: Request, time: number): number {
+function sentRecord(entries: readonly LedgerEntry[], request: Request): Data | undefined {
   const sent = entries.find((e) => isPhase(e, "sent") && data(e).requestId === request.requestId);
-  return Number(sent && data(sent).sentAt) / 1000 - time;
+  return sent && data(sent);
+}
+
+/** The send's time in seconds on the clock that stamps taps: ntfy's own time for the publish, standing
+ * in for the Mac's record by at most MAX_APPROVAL_CLOCK_SKEW_SECONDS; without one, the Mac's record. */
+function sendReference(sent: Data): number {
+  const mac = (sent.sentAt as number) / 1000;
+  return typeof sent.serverTime === "number" ? Math.max(sent.serverTime, mac - MAX_APPROVAL_CLOCK_SKEW_SECONDS) : mac;
 }
 
 /** Both the notification and the exact pending broker request must belong to this project. */
@@ -160,12 +172,12 @@ function approvalGuard(entries: readonly LedgerEntry[], request: Request, projec
   if (entries.some((e) => e.kind === "approval" && data(e).approvalId === request.requestId
     && data(e).payloadHash === pending.payloadHash && data(e).op === pending.op
     && (data(e).decision === "approve" || data(e).decision === "reject"))) return "already-answered";
-  const sent = entries.find((e) => isPhase(e, "sent") && data(e).requestId === request.requestId);
-  if (!sent || typeof data(sent).sentAt !== "number") return "not-sent";
+  const sent = sentRecord(entries, request);
+  if (!sent || typeof sent.sentAt !== "number") return "not-sent";
   if (!Number.isSafeInteger(time) || time! < 0) return "before-send";
-  const gap = sendGap(entries, request, time!);
-  // Same-second taps still need a retry. Earlier seconds get only the bounded, audited Mac-ahead allowance.
-  if (time! * 1000 <= (data(sent).sentAt as number) && !(gap >= 1 && gap <= MAX_APPROVAL_CLOCK_SKEW_SECONDS)) return "before-send";
+  // ntfy's second-resolution timestamp must prove the tap followed the completed send, on one clock.
+  // A same-second tap can't prove it and is refused; a later tap with the same nonce can still count.
+  if (time! <= sendReference(sent)) return "before-send";
   return undefined;
 }
 

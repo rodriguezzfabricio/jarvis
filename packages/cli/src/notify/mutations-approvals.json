@@ -14,8 +14,8 @@
   {
     "name": "phone reply accepts an unsent request",
     "file": "packages/cli/src/notify/replies.ts",
-    "anchor": "  if (!sent || typeof data(sent).sentAt !== \"number\") return \"not-sent\";",
-    "replacement": "  if (!sent || typeof data(sent).sentAt !== \"number\") return undefined;"
+    "anchor": "  if (!sent || typeof sent.sentAt !== \"number\") return \"not-sent\";",
+    "replacement": "  if (!sent || typeof sent.sentAt !== \"number\") return undefined;"
   },
   {
     "name": "phone reply accepts a missing timestamp",

@@ -230,8 +230,8 @@
   {
     "name": "phone approval send falsely acknowledged",
     "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "if (await send({ kind: \"approval\", text }, actionsFor(\"approval\", id, nonce)) && !closed) inbox.sent(id, now());",
-    "replacement": "await send({ kind: \"approval\", text }, actionsFor(\"approval\", id, nonce)); if (!closed) inbox.sent(id, now());"
+    "anchor": "if (published.ok && !closed) inbox.sent(",
+    "replacement": "if (!closed) inbox.sent("
   },
   {
     "name": "phone approvals forget terminal-only notice",
@@ -334,5 +334,17 @@
     "file": "packages/cli/src/commands/run-approvals.ts",
     "anchor": "${oneLineSummary(r.summary)} (request ${id}",
     "replacement": "(request ${id}"
+  },
+  {
+    "name": "run poller drops ntfy's publish time",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "const serverTime = published.ok ? published.value?.time : undefined;",
+    "replacement": "const serverTime = undefined as number | undefined;"
+  },
+  {
+    "name": "run poller records an unusable publish time",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "Number.isSafeInteger(serverTime) && serverTime! >= 0 ? serverTime : undefined",
+    "replacement": "serverTime"
   }
 ]

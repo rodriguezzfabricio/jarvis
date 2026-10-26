@@ -61,7 +61,7 @@ it.each(["bare", "nonce", "unknown", "project", "early", "same-second", "missing
     const other = await foreign.handle({ op: "data.delete", payload: { description: "fake other project" } });
     text = text.replace(p.approvalId!, other.approvalId!);
   }
-  if (fault === "early") time = -21;
+  if (fault === "early") time = 99;
   if (fault === "same-second") time = 100;
   if (fault === "missing-time") time = undefined;
   if (fault === "malformed") text += ":extra";

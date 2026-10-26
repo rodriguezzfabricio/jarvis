@@ -1,7 +1,7 @@
 import type { Broker } from "../broker/broker.ts";
 import { assertTaskDomains } from "../eval/allowlist.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
-import { actionsFor, limitText, type Action, type Message, type Notifier } from "../notify/notifier.ts";
+import { actionsFor, limitText, type Action, type Message, type Notifier, type SendReceipt } from "../notify/notifier.ts";
 import { ReplyInbox, recordAnswer, refusedReply } from "../notify/replies.ts";
 import { NtfyNotifier } from "../notify/ntfy.ts";
 import { loadRunNotifier, notificationError, type RunNotificationOptions } from "./run-notify.ts";
@@ -143,9 +143,9 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
     }
   }
 
-  async function send(message: Message, actions: readonly Action[] = []): Promise<boolean> {
-    if (config.status !== "ok") return false;
-    return (await transport("send", () => config.notifier.send({ ...message, text: limitText(message.text) }, actions))).ok;
+  async function send(message: Message, actions: readonly Action[] = []): Promise<{ ok: true; value: SendReceipt | void } | { ok: false }> {
+    if (config.status !== "ok") return { ok: false };
+    return transport("send", () => config.notifier.send({ ...message, text: limitText(message.text) }, actions));
   }
 
   async function requests(): Promise<void> {
@@ -159,7 +159,10 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
       if (entries.some((e) => phase(e, "sent") && data(e).requestId === id)) continue;
       const nonce = registered ? String(data(registered).nonce) : inbox.register(id, "approval", o.project).nonce;
       const text = `Jarvis ${o.project}: approve ${String(r.op)}? ${oneLineSummary(r.summary)} (request ${id}, payload ${String(r.payloadHash).slice(0, 12)}). The full payload is in the runner ledger on your Mac.`;
-      if (await send({ kind: "approval", text }, actionsFor("approval", id, nonce)) && !closed) inbox.sent(id, now());
+      const published = await send({ kind: "approval", text }, actionsFor("approval", id, nonce));
+      // ntfy's own time for the publish lets a tap be checked on one clock (decision 130).
+      const serverTime = published.ok ? published.value?.time : undefined;
+      if (published.ok && !closed) inbox.sent(id, now(), Number.isSafeInteger(serverTime) && serverTime! >= 0 ? serverTime : undefined);
     }
   }
 

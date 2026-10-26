@@ -1225,8 +1225,8 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **Intake decides engineering and asks only what only the user can answer** (refines 7). It records engineering policies itself, asks about the person's current situation before solution choices for a new product, and counts every independently answerable question toward seven, a profile offer included. The profile offer no longer precedes the round; incomplete preferences stay product context without invented answers. Spec confirmation is a separately labeled round. Release, production and spending permissions belong to ship, against concrete actions.
 - **Defaults preserve the requested outcome.** A conflicting project constraint is quoted with its path and line, and the constrained default says it follows it.
 - **The spec reader loop is bounded.** It ends on a clean pass, or stops after three passes with no new blocking gap; unresolved blockers keep the spec draft.
-
 - **The verifier fails closed (Codex review rounds 3 and 4).** A stage 2 run counts only if the post-run verifier passes on its transcript: every Read of a recording returns exactly the original lines, in order and within the requested range; any other route that could return recorded content (a Bash command with a reading tool near `.jarvis`, a recursive search that includes hidden folders, a Grep or Glob into `.jarvis` or with a hidden-folder pattern, a script that names the recordings, a duplicate or missing tool result) voids the run instead of being trusted. Residual risk: a session that reaches the recordings through a route the verifier doesn't recognise. The stand-in denies any command that touches `.jarvis` beyond the session's own files, and the judges see the transcript.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

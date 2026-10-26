@@ -1,12 +1,12 @@
 import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixedPath } from "../../packages/cli/src/harness/claude/env.ts";
 import { createClaudeHarness, SESSION_BIN, type ClaudeHarnessOptions } from "../../packages/cli/src/harness/claude/task.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import type { TaskInput } from "../../packages/cli/src/runner/harness.ts";
 import { DEFAULT_ROUTING } from "../../packages/cli/src/runner/routing.ts";
-import { prepareGoToolchain, type SessionToolchain } from "../../packages/cli/src/toolchain/go.ts";
+import { prepareGoToolchain, toolchainHost, type SessionToolchain } from "../../packages/cli/src/toolchain/go.ts";
 import { shortTmp } from "../helpers.ts";
 import { makeGoFixture } from "./helpers/go-fixture.ts";
 
@@ -16,7 +16,9 @@ function removeAll(path: string): void {
   if (st?.isDirectory()) { chmodSync(path, 0o700); for (const n of readdirSync(path)) removeAll(join(path, n)); }
   rmSync(path, { recursive: true, force: true });
 }
-afterEach(() => roots.splice(0).forEach(removeAll));
+afterEach(() => { roots.splice(0).forEach(removeAll); vi.restoreAllMocks(); });
+// The disk floor has its own test (toolchain-zip.test.ts); here the host's free disk must not decide the outcome.
+beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); });
 const flag = (args: readonly string[], name: string) => args[args.indexOf(name) + 1];
 interface Captured { spec: SessionSpec; settings: { sandbox: { filesystem: { allowRead: string[]; allowWrite: string[]; denyWrite: string[] } } } }
 

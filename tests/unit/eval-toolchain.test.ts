@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toolchainHost } from "../../packages/cli/src/toolchain/go.ts";
 import { loadTask, runBaseline } from "../../packages/cli/src/eval/baseline.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { runJarvis } from "../../packages/cli/src/eval/jarvis.ts";
@@ -11,7 +12,9 @@ import { addHidden, addTask, BUG_PROMPT, createEvalFixture, FIXED, harnessLoop, 
 import { FIXTURE_GO, makeGoFixture, toolchainModule } from "./helpers/go-fixture.ts";
 
 const fixtures: EvalFixture[] = [];
-afterEach(() => fixtures.splice(0).forEach((f) => f.cleanup()));
+afterEach(() => { fixtures.splice(0).forEach((f) => f.cleanup()); vi.restoreAllMocks(); });
+// The disk floor has its own test (toolchain-zip.test.ts); here the host's free disk must not decide the outcome.
+beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); });
 const GO_KEYS = ["GOTOOLCHAIN", "GOMODCACHE", "GOPROXY", "GOSUMDB", "GOFLAGS", "CGO_ENABLED"] as const;
 type Settings = { sandbox: { filesystem: { allowRead: string[]; allowWrite: string[]; denyWrite: string[] } } };
 

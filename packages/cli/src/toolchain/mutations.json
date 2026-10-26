@@ -172,5 +172,71 @@
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), \".jarvis-work\")), p.jarvisHome]);\n",
     "replacement": ""
+  },
+  {
+    "name": "toolchain zip entries may climb out",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if (body.split(\"/\").some((s) => s === \"\" || s === \".\" || s === \"..\")) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip entries may sit outside the module",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if (!body.startsWith(`${within}/`) && !(dir && body === within)) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip links and special files accepted",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if ((type !== 0 && type !== S_IFREG && type !== S_IFDIR) || (dir && type === S_IFREG) || (!dir && type === S_IFDIR)) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip declared expansion unbounded",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if (totalBytes > limits.maxTotalBytes) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip entries may expand past their size",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "inflateRawSync(raw, { maxOutputLength: Math.max(1, Math.min(e.size, limits.maxTotalBytes - written)) })",
+    "replacement": "inflateRawSync(raw)"
+  },
+  {
+    "name": "toolchain zip checksums unchecked",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if ((crc32(out) >>> 0) !== e.crc) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip entry count unbounded",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "  if (count > limits.maxEntries) refuse(",
+    "replacement": "  if (false) refuse("
+  },
+  {
+    "name": "toolchain zip archive size unbounded",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if (size > limits.maxZipBytes) refuse(",
+    "replacement": "    if (false) refuse("
+  },
+  {
+    "name": "toolchain zip unpack never times out",
+    "file": "packages/cli/src/toolchain/zip.ts",
+    "anchor": "    if (now() > deadline) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "toolchain partial folder kept on refusal",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "    removeGoToolchain(dest);\n    if (e instanceof Error && e.message.startsWith(\"refused:\")) throw e;",
+    "replacement": "    if (e instanceof Error && e.message.startsWith(\"refused:\")) throw e;"
+  },
+  {
+    "name": "toolchain unpacked below the disk floor",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  if (free - listing.totalBytes < DISK_FLOOR_BYTES) return unavailable(",
+    "replacement": "  if (false) return unavailable("
   }
 ]

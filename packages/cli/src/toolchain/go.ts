@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process";
-import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statfsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { DISK_FLOOR_BYTES } from "../config/pins.ts";
+import { extractZip, listZip, type ZipLimits } from "./zip.ts";
 
 /**
  * A pinned, offline Go for task sessions (decision 123). A session's own Go was the host's (Homebrew
@@ -37,6 +38,21 @@ export interface PreparedToolchain {
 }
 
 const VERSION = /^go1\.\d{1,3}(?:\.\d{1,3})?(?:(?:rc|beta)\d{1,3})?$/;
+const MiB = 1024 * 1024;
+
+/**
+ * Bounds for the toolchain zip, unpacked outside any sandbox. go1.26.10 darwin-arm64 is 69.6 MB with 11,523
+ * entries and 211.7 MB expanded; these leave room for later versions. It unpacks in about 23 s at load 17, so
+ * the deadline (the last guard: bytes and entries are already bounded) leaves room for a loaded machine.
+ */
+export const GO_TOOLCHAIN_ZIP_LIMITS: ZipLimits = { maxZipBytes: 256 * MiB, maxEntries: 20_000, maxTotalBytes: 512 * MiB, timeoutMs: 300_000 };
+
+/** The host facts preparation reads; tests replace them. */
+export const toolchainHost = {
+  now: (): number => Date.now(),
+  /** Bytes an unprivileged writer may still use on the volume holding `dir`. */
+  freeBytes: (dir: string): number => { const s = statfsSync(dir); return s.bavail * s.bsize; },
+};
 
 /** The toolchain a go.mod asks for: its `toolchain` line, else its `go` line; anything malformed is undefined. */
 export function goModToolchain(goMod: string): string | undefined {
@@ -74,7 +90,8 @@ const unavailable = (reason: string): PreparedToolchain => ({ report: { status: 
  * `dest` a fresh, runner-made folder outside every session-writable folder (the caller's to check).
  * Throws on a fixture that is, or holds, a link: that is tampering or a mistake, never a missing fixture.
  */
-export function prepareGoToolchain(i: { workspace: string; fixture: string | undefined; dest: string; platform?: string }): PreparedToolchain {
+export function prepareGoToolchain(i: { workspace: string; fixture: string | undefined; dest: string; platform?: string; /** Test seam. */ limits?: ZipLimits }): PreparedToolchain {
+  const limits = i.limits ?? GO_TOOLCHAIN_ZIP_LIMITS;
   const goModPath = join(i.workspace, "go.mod");
   if (!existsSync(goModPath)) return { report: { status: "not-needed" } };
   const version = goModToolchain(readFileSync(goModPath, "utf8"));
@@ -97,10 +114,13 @@ export function prepareGoToolchain(i: { workspace: string; fixture: string | und
   const realDest = realPathOf(dest);
   if (under(realDest, fixture) || under(fixture, realDest)) throw new Error(`refused: the toolchain folder and the Go fixture overlap: ${dest}`);
   if (existsSync(dest)) throw new Error(`refused: the toolchain folder must be fresh: ${dest}`);
+  // Every entry is checked before anything is written; a bad archive is refused (toolchain/zip.ts).
+  const listing = listZip(zip, `golang.org/${module}`, limits);
+  const free = toolchainHost.freeBytes(nearestExisting(dest));
+  if (free - listing.totalBytes < DISK_FLOOR_BYTES) return unavailable(`not enough free disk to unpack the ${version} toolchain (${listing.totalBytes} bytes) above the ${DISK_FLOOR_BYTES}-byte floor: ${free} bytes free; sessions get the host's go`);
   mkdirSync(dest, { recursive: true, mode: 0o700 });
   try {
-    execFileSync("/usr/bin/unzip", ["-q", zip, "-d", dest], { stdio: ["ignore", "ignore", "pipe"] });
-    refuseLinks(dest, "unpacked Go toolchain");
+    extractZip(listing, dest, limits, toolchainHost.now);
     const goBin = join(dest, "golang.org", module, "bin", "go");
     const bin = lstatSync(goBin, { throwIfNoEntry: false });
     if (!bin?.isFile() || (bin.mode & 0o111) === 0) throw new Error(`the ${version} toolchain module has no bin/go`);
@@ -125,10 +145,15 @@ export function prepareGoToolchain(i: { workspace: string; fixture: string | und
   };
 }
 
-/** The real path `p` will have: its nearest existing folder resolved, the rest appended. */
-function realPathOf(p: string): string {
+function nearestExisting(p: string): string {
   let d = p;
   while (!existsSync(d) && dirname(d) !== d) d = dirname(d);
+  return d;
+}
+
+/** The real path `p` will have: its nearest existing folder resolved, the rest appended. */
+function realPathOf(p: string): string {
+  const d = nearestExisting(p);
   return join(realpathSync(d), p.slice(d.length));
 }
 

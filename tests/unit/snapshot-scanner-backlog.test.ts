@@ -9,7 +9,8 @@ import { createSnapshot, findCredentials, findEncodedCredentials, findSecretFiel
 import { shortTmp } from "../helpers.ts";
 
 const root = shortTmp("jts-backlog-");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Removing ~200 repositories can outlast a short hook limit under a loaded full run (Oct 25: 14 s).
+afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const key = (() => {
   for (;;) {
     const candidate = generateKeyPairSync("ed25519");

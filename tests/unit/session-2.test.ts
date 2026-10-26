@@ -109,7 +109,11 @@ describe("session lifecycle hooks: onSpawn and onGroupExit (stage 3 runner loop)
     chmodSync(payload, 0o755);
     let command = "";
     await runSession({ ...base, bin: payload, onSpawn: (id) => {
-      command = execFileSync("/bin/ps", ["-o", "command=", "-p", String(id)], { encoding: "utf8" }).trim();
+      const read = () => execFileSync("/bin/ps", ["-o", "command=", "-p", String(id)], { encoding: "utf8" }).trim();
+      command = read();
+      // ps shows "(sh)" while it can't read the arguments yet (a full suite under load, Oct 26); the hold
+      // and an exec'd payload are both sh, so read again, briefly, until the command line is there.
+      for (const end = Date.now() + 2_000; /^\(.*\)$/.test(command) && Date.now() < end; command = read()) busyWait(20);
       return true;
     } });
     expect(command.startsWith(payload)).toBe(false); // the payload is only an argument of the hold so far

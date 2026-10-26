@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { findCredentials, findSnapshotCredentials } from "../../packages/cli/src/eval/snapshot.ts";
 import { isCredentialShaped } from "../../packages/cli/src/eval/snapshot-literals.ts";
 import { isWellFormedMedia } from "../../packages/cli/src/eval/snapshot-media.ts";
+import { FAKE_NPM_TOKEN } from "./helpers/fake-tokens.ts";
 
 /**
  * Codex review of the false-positive narrowing (decision 79): six inputs the narrowed scanner let through.
@@ -141,7 +142,7 @@ describe("3. wrapped base64 is joined by what it decodes to, not by line widths"
   });
 
   it("refuses base64 text wrapped at uneven widths", () => {
-    const encoded = Buffer.from("token npm_q8Zr2vLm0TxSynthetic9qvM2abcdefghijZ").toString("base64");
+    const encoded = Buffer.from(`token ${FAKE_NPM_TOKEN}`).toString("base64");
     expect(scan("notes.md", `${encoded.slice(0, 10)}\n${encoded.slice(10, 37)}\n${encoded.slice(37)}\n`)).toContain("npm token");
   });
 });

@@ -71,5 +71,5 @@ it("requires portable shell patterns in the command and research skill", () => {
 });
 it("checks evidence-backed state and labels, and rereads the final spec against the register", () => {
   const text = skill("spec");
-  for (const rule of ["Copying a draft is not reaching out", "inferred labels need evidence or lower confidence", "re-read the whole spec after the last fixes", "until a pass finds no blocking gaps", "no superseded citations", "no answered question left open", "decision header ranges are current", "do not reintroduce plan pricing or metering that an active decision excludes"]) expect(text).toContain(rule);
+  for (const rule of ["the user confirming they did it and an outside service confirming it are distinct states", "inferred labels need evidence or lower confidence", "re-read the whole spec after the last fixes", "until a pass finds no blocking gaps", "no superseded citations", "no answered question left open", "decision header ranges are current", "do not reintroduce anything an active decision excludes"]) expect(text).toContain(rule);
 });

@@ -32,7 +32,7 @@ it("offers taste as a separate step before drafting questions or mockups, with a
   expect(body).toContain("Run `jarvis taste show` first");
   expect(body).toContain("Before drafting questions or calling design, send a standalone taste-profile offer");
   expect(body).toContain("about 10 minutes"); expect(body).toContain("Never append this offer to the question round");
-  expect(body).toContain("If the user declines or isn't there, continue without it");
+  expect(body).toContain("If the user declines, or hasn't replied when the round is ready, send the round without a profile");
 });
 
 it("requires the triage headline before any progress narration or pipeline dispatch", () => {
@@ -52,7 +52,7 @@ it("stage 2 hands off ready artifacts and a start instruction without invoking t
 
 it("records an explicit yes with CONFIRM and the user's words instead of an empty map", () => {
   const body = section(skill("spec"), "Confirm");
-  expect(body).toContain('{"CONFIRM": "yes. A24, A25 and A33 are fine as written."}');
+  expect(body).toContain('{"CONFIRM": "yes, A2 and A4 are fine as written."}');
   expect(body).toContain("An explicit yes is a user answer even when it matches the default");
   expect(body).not.toContain('`{}` means "Yes, build as written"');
   expect(section(skill("intake"), "Take the answers")).toContain("Include every explicit answer under its question id, even when it matches the default");

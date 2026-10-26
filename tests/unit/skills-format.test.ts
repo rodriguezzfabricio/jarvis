@@ -413,6 +413,21 @@ describe("jarvis decide calls in every skill (decision 85)", () => {
   });
 });
 
+// Decision 119: `--by user` needs a recorded explicit answer (`--answer <answerSeq>:<questionId>`) and
+// its exact words. A skill showing `--by user` without them teaches a call the CLI refuses, in any skill.
+describe("user-attributed decide calls in every skill folder (decision 119)", () => {
+  const all = readdirSync(skillsDir, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(`${skillsDir}${d.name}/SKILL.md`)).map((d) => d.name);
+
+  it.each(all)("%s: every --by user call cites --answer and quotes the exact recorded answer", (name) => {
+    for (const call of decideCalls(readSkill(name))) {
+      const { flags, positional } = parseDecide(call);
+      if (!(flags.get("by") ?? "").split("|").includes("user")) continue;
+      expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
+      expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
+    }
+  });
+});
+
 describe("intake round file (decision 83)", () => {
   it("shows the exact round shape the notifier reads", () => {
     const text = readSkill("intake");

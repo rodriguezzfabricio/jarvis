@@ -42,7 +42,7 @@ Bundled `templates/` paths resolve relative to this installed skill. Copy `templ
 - **Empty sections say `None.`** on a line of their own. Only Goals, Non-goals, Assumptions and Open questions may be empty; User stories and Acceptance criteria are never empty.
 - **Delete the template's comments** once the spec is filled.
 
-Copy the user's original request verbatim into Goals prose. Any default or assumption that rewrites or destroys the user's past data must surface in intake or the confirmation round's veto list: target edits recalculating old completion/streaks, restore replacement and deletion without archive all count. Never hide these as mechanical details.
+Copy the user's original request verbatim into Goals prose. Any default or assumption that rewrites or destroys the user's past data must surface in intake or the confirmation round's veto list: edits that recompute past records, imports or restores that replace existing data, and deletion with no archive or undo all count. Never hide these as mechanical details.
 
 What goes in:
 - **Goals:** what must be true for the user when this is done. Test each one: if it were cut, would the product still solve the problem? If yes, it's a P2 or P3 story, not a goal.
@@ -80,12 +80,12 @@ Ask it to report, each with the line it refers to:
 - missing empty, loading, error and offline cases, and a missing first-value budget for a UI,
 - anything a builder would have to ask about before starting,
 - whether the defaults still deliver the user's core request and the known trade-offs are visible,
-- whether recorded state matches what happened. Copying a draft is not reaching out: copying, opening a mail client, user-confirmed sending and provider-confirmed delivery are distinct states,
-- whether inferred labels need evidence or lower confidence; never label someone Recruiter as a fact solely from a guess.
+- whether recorded state matches what happened: preparing something, handing it to another app, the user confirming they did it and an outside service confirming it are distinct states,
+- whether inferred labels need evidence or lower confidence; never state a guessed role or category as fact.
 
 Fix each gap in the draft, or record why not. The reader's findings and what you did with each go in the intake record under "Spec check vN".
 
-**No second round of questions** (decision 8). A gap that turns out to be a product question becomes a `[delegated]` assumption using the default you would have offered, labeled "default unconfirmed", and is listed first in the confirmation. After fixing, re-read the whole spec after the last fixes, and run a fresh reader against the whole current decision register, until a pass finds no blocking gaps. Check no superseded citations, no answered question left open, and decision header ranges are current. Check goals, non-goals, stories, criteria and assumptions together; do not reintroduce plan pricing or metering that an active decision excludes. Re-run `jarvis spec check` after each final edit. Nonblocking gaps may stay under Open questions with explicit defaults; unresolved blocking gaps leave the spec draft and prevent hand-off. Repeat this check after applying confirmation changes too.
+**No second round of questions** (decision 8). A gap that turns out to be a product question becomes a `[delegated]` assumption using the default you would have offered, labeled "default unconfirmed", and is listed first in the confirmation. After fixing, re-read the whole spec after the last fixes, and run a fresh reader against the whole current decision register, until a pass finds no blocking gaps. Check no superseded citations, no answered question left open, and decision header ranges are current. Check goals, non-goals, stories, criteria and assumptions together; do not reintroduce anything an active decision excludes. Re-run `jarvis spec check` after each final edit. Nonblocking gaps may stay under Open questions with explicit defaults; unresolved blocking gaps leave the spec draft and prevent hand-off. Repeat this check after applying confirmation changes too.
 
 ## Confirm
 
@@ -107,13 +107,13 @@ Confirmation happens once, at the initial hand-off (decision 86). It goes out li
 2. At the same time, print the same page in the session as **plain text**, never in a tool that waits for the user (decision 86).
 3. Wait with `jarvis intake answers <n> --wait 540`, at most twice, with the Bash tool's `run_in_background: true`. Never require Esc. End the turn so the user can type while a wait is pending; submit their response once with `jarvis intake answer <n> <file>`, then read the background result. Never run your own timer. `deadline: null` means undelivered: wait for an answer in the session, never infer a timeout from two completed waits. Only a successful phone delivery creates a deadline. Print the actual delivery status, not a promise that a phone tap works.
 
-   An explicit yes is a user answer even when it matches the default: write `{"CONFIRM": "yes. A24, A25 and A33 are fine as written."}` with the user's actual words. `{"CONFIRM": "<the changes>"}` asks for changes; `{"CONFIRM": "Don't build yet"}` stops. Only "defaults" uses `{}` or `"defaults"`. Do not split a confirmation into invented user decisions: a `--by user` entry needs its verified `--answer` reference and exact recorded text. Never relabel defaults as user answers.
+   An explicit yes is a user answer even when it matches the default: write `{"CONFIRM": "yes, A2 and A4 are fine as written."}` with the user's actual words. `{"CONFIRM": "<the changes>"}` asks for changes; `{"CONFIRM": "Don't build yet"}` stops. Only "defaults" uses `{}` or `"defaults"`. Do not split a confirmation into invented user decisions: a `--by user` entry needs its verified `--answer` reference and exact recorded text. Never relabel defaults as user answers.
 4. Set the status line from what came back:
 
 | Came back | Status | Then |
 |---|---|---|
 | "Yes", "defaults", or the phone's "Use defaults" | `status: confirmed` | Hand off |
-| Changes | `status: confirmed` on the changed draft | Apply the changes to the draft, run the checker and the reader again, record each change as the user's decision with `jarvis decide` (the intake skill's first form, with `--source docs/spec/vN.md`), hand off. The answer is the confirmation; there's no second round |
+| Changes | `status: confirmed` on the changed draft | Apply the changes to the draft, run the checker and the reader again, record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM` (`jarvis decide`, the intake skill's first form, with `--source docs/spec/vN.md`), hand off. The answer is the confirmation; there's no second round |
 | "Don't build yet" | stays `draft` | Stop, and say what would unblock it |
 | A closed round reported by the CLI as a delivery-backed timeout | `status: unconfirmed` | Hand off; the unconfirmed spec goes at the top of the morning report |
 

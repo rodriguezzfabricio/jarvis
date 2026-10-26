@@ -236,7 +236,7 @@
   {
     "name": "skills spec explicit yes becomes empty defaults",
     "file": "skills/spec/SKILL.md",
-    "anchor": "{\"CONFIRM\": \"yes. A24, A25 and A33 are fine as written.\"}",
+    "anchor": "{\"CONFIRM\": \"yes, A2 and A4 are fine as written.\"}",
     "replacement": "{}"
   },
   {
@@ -354,10 +354,10 @@
     "replacement": "Assume `jarvis <cmd> --help` exits 0"
   },
   {
-    "name": "skills spec records copy as outreach",
+    "name": "skills spec records a hand-off as done",
     "file": "skills/spec/SKILL.md",
-    "anchor": "Copying a draft is not reaching out",
-    "replacement": "Copying a draft is reaching out"
+    "anchor": "the user confirming they did it and an outside service confirming it are distinct states",
+    "replacement": "handing it to another app counts as the user doing it"
   },
   {
     "name": "skills spec inferred labels become facts",
@@ -374,7 +374,55 @@
   {
     "name": "skills spec ignores active register exclusions",
     "file": "skills/spec/SKILL.md",
-    "anchor": "do not reintroduce plan pricing or metering that an active decision excludes",
-    "replacement": "reintroduce upstream plan pricing when convenient"
+    "anchor": "do not reintroduce anything an active decision excludes",
+    "replacement": "reintroduce excluded features when convenient"
+  },
+  {
+    "name": "skills intake request fidelity names a rerun task",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "A default that makes the user do by hand what they asked to have done for them drops it.",
+    "replacement": "Automatic contact finding cannot silently become manual contact entry."
+  },
+  {
+    "name": "skills spec past data names a rerun task",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "veto list: edits that recompute past records",
+    "replacement": "veto list: target edits that recalculate old streaks"
+  },
+  {
+    "name": "skills intake drops the surface question",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "- **\"Where will you see it?\" is usually a real question.** Agents skip the surface: which screen, notification or digest. If the request names no surface, ask.\n",
+    "replacement": ""
+  },
+  {
+    "name": "skills intake asks engineering questions",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "- **Don't ask engineering questions to look careful.**",
+    "replacement": "- **Ask a few engineering questions to show care.**"
+  },
+  {
+    "name": "skills intake taste offer holds the round",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "and never end the turn on it: keep framing while the user decides.",
+    "replacement": "and end the turn until the user answers it."
+  },
+  {
+    "name": "skills spec splits a confirmation into user decisions",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM`",
+    "replacement": "record each change as the user's decision"
+  },
+  {
+    "name": "skills onboard writes user decisions without an answer",
+    "file": "skills/onboard/SKILL.md",
+    "anchor": "`jarvis decide --by default-accepted --class mechanical --why \"Inferred during onboarding",
+    "replacement": "`jarvis decide --by user --class mechanical --why \"Inferred during onboarding"
+  },
+  {
+    "name": "skills bundled spec template drifts",
+    "file": "skills/spec/templates/spec.md",
+    "anchor": "- **S2 (P2):** As <who>, I want <what>, so <why>.",
+    "replacement": "- **S2 (P2):** As <who>, I want <what>."
   }
 ]

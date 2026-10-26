@@ -21,14 +21,14 @@ Mid-run changes of mind (`jarvis steer`, morning vetoes) are not intake: they pr
 
 ## Inputs
 
-Read these before writing assumptions or questions. Read these documents in full (paginate to the end): the project's README, IMPLEMENTATION/ARCHITECTURE-type docs, AGENTS.md/CLAUDE.md and existing specs relevant to the request or project scope, when present. A keyword grep is not a full read. Their explicit ownership, privacy, scope and deployment rules are fixed constraints: never ask or assume what they settle. Private forks do not inherit upstream plans.
+Read these before writing assumptions or questions. Read these documents in full (paginate to the end): the project's README, IMPLEMENTATION/ARCHITECTURE-type docs, AGENTS.md/CLAUDE.md and existing specs relevant to the request or project scope, when present. A keyword grep is not a full read. Their explicit ownership, privacy, scope and deployment rules are fixed constraints: never ask or assume what they settle. A fork's own docs override what it inherited upstream.
 
 Research must finish before the round, with a source for every material claim or an explicit "not checked" line per unsupported claim. Missing web access never proves that only manual or paid options exist.
 
 Then read:
 1. **The research file:** its fixed constraints, conflicts, Challenges, product questions raised and engineering decisions.
 2. **The decision register** (`docs/decisions.md`, decision 48) and the backlog.
-3. **The taste profile** (decision 39). Run `jarvis taste show` first (JSON profile or `null`). Reuse an existing profile. If none exists and this adds a UI, offer it once, before the round (about 10 minutes, outside the 7 questions). **Before drafting questions or calling design, send a standalone taste-profile offer**: "Set your taste profile first? About 10 minutes, across projects; skipping is fine." Never append this offer to the question round. If accepted, collect 3–5 admired apps/sites, one AI-made look, serious or playful, disliked colors/fonts and platforms. Write `.jarvis/intake/taste.json`, run `jarvis taste save .jarvis/intake/taste.json` (the CLI owns global memory writes), and copy it into `PRODUCT.md`'s Taste section. If the user declines or isn't there, continue without it; record that in the summary and let the design direction question carry the taste choice.
+3. **The taste profile** (decision 39). Run `jarvis taste show` first (JSON profile or `null`). Reuse an existing profile. If none exists and this adds a UI, offer it once, before the round (about 10 minutes, outside the 7 questions). **Before drafting questions or calling design, send a standalone taste-profile offer**: "Set your taste profile first? About 10 minutes, across projects; skipping is fine." Never append this offer to the question round, and never end the turn on it: keep framing while the user decides. If accepted, collect 3–5 admired apps/sites, one AI-made look, serious or playful, disliked colors/fonts and platforms. Write `.jarvis/intake/taste.json`, run `jarvis taste save .jarvis/intake/taste.json`, and copy it into `PRODUCT.md`'s Taste section. If the user declines, or hasn't replied when the round is ready, send the round without a profile; record that in the summary and let the design direction question carry the taste choice.
 4. **`PRODUCT.md`, `DESIGN.md` and any design system in the code** (component library, tokens, theme files).
 
 ## Check the decision register
@@ -83,11 +83,11 @@ Never ask what the code, the register, the backlog or research already answers. 
 
 **The production grant** is one of the questions for a new product that will deploy: may Jarvis promote a release-ready build to production through the broker (decision 12)? Default: no, stop at preview-ready. Only an explicit answer from the user grants it; a default never does.
 
-**Default honesty.** Name the known costs and limitations from research, not just the upside, in the default's reason and `tradeOff`. Include behavior costs as well as money: calendar reminders may fire on logged days, repeat daily for weekly goals and require re-import after schedule changes. Cite the research; unknown costs say "not checked".
+**Default honesty.** Name the known costs and limitations from research, not just the upside, in the default's reason and `tradeOff`. Include behavior costs as well as money: what the default gets wrong, repeats or makes the user redo in normal use. Cite the research; unknown costs say "not checked".
 
-**Request fidelity.** Never drop or replace the core of the user's request with the default. Automatic contact finding cannot silently become manual contact entry. If no viable way was found, say so plainly and ask; do not promise a different feature or present missing research as impossibility.
+**Request fidelity.** Never drop or replace the core of the user's request with the default. A default that makes the user do by hand what they asked to have done for them drops it. If no viable way was found, say so plainly and ask; do not promise a different feature or present missing research as impossibility.
 
-**Past data.** Any default or assumption that rewrites or destroys the user's past data must be a question or a listed assumption the user can veto in the round. Include retroactive completion/streak recalculation after target edits, restore replacement, and deletion without archive. Put the effect in the persisted round summary and printed veto list, not only in the spec. Prefer preserving history; silence is never a destructive-action grant.
+**Past data.** Any default or assumption that rewrites or destroys the user's past data must be a question or a listed assumption the user can veto in the round. Include edits that recompute past records, imports or restores that replace existing data, and deletion with no archive or undo. Put the effect in the persisted round summary and printed veto list, not only in the spec. Prefer preserving history; silence is never a destructive-action grant.
 
 **Each question has** the question in one sentence, **why it matters** in one line, a **recommended default** with its reason, and 1–3 **alternatives** (the default is separate). A yes/no question needs only one alternative; never invent a second form of permission to fill the list. Other choices normally have 2–3 **alternatives**.
 
@@ -101,7 +101,7 @@ Defaults are safe, reversible, no-spend choices within the project's rules. A de
 
 **No questions, no round.** When nothing needs asking (common at tier 1), record the assumptions and go straight to the spec.
 
-**Every round goes to the runner, whether or not the user seems to be at the computer** (decisions 10 and 83). The CLI records the round and delivery. Only successful phone delivery starts the 15-minute timer. Read `jarvis intake answers <n>` immediately after sending: `deadline: null` means undelivered; wait for an answer in the session. Never promise a timeout or a working phone tap when delivery failed. Print the actual delivery status and deadline; only a real deadline can turn defaults into unconfirmed choices. Stage 2 prepares artifacts.
+**Every round goes to the runner, whether or not the user seems to be at the computer** (decisions 10 and 83). The CLI records the round and delivery. Only successful phone delivery starts the 15-minute timer. Read `jarvis intake answers <n>` immediately after sending: `deadline: null` means undelivered; wait for an answer in the session. Never promise a timeout or a working phone tap when delivery failed. Print the actual delivery status and deadline.
 1. Pick `<n>`: one more than the highest round number in `.jarvis/intake/`, starting at 1. Never reuse a number.
 2. Write `.jarvis/intake/round-<n>.json`:
 
@@ -113,7 +113,7 @@ Defaults are safe, reversible, no-spend choices within the project's rules. A de
      "mockups": [".jarvis/mockups/<direction>/<screen>.png"] }
    ```
 
-   New rounds use `formatVersion: 2`, requiring every default's nonblank `tradeOff`; legacy rounds still load. Bundled `templates/` paths resolve relative to this installed skill, never the project cwd.
+   New rounds use `formatVersion: 2`, requiring every default's nonblank `tradeOff`. Bundled `templates/` paths resolve relative to this installed skill, never the project cwd.
 
    `spec` is the version the spec skill will write next. `topic` is one of scope, security, privacy, legal, ux, technical or design. At most 7 questions. Mockups are the design skill's screenshot paths under `.jarvis/mockups/` (an empty list when there's no direction question); the notifier fits what it can into its 4 KB message, and the full text stays on the Mac.
 3. Run `jarvis intake send .jarvis/intake/round-<n>.json`.
@@ -130,7 +130,7 @@ Never send questions or mockups through any other channel, and never put code, s
 - **On the phone, a tap** answers only "Use defaults" for the whole round.
 - **Free text from the phone** is a steer note, never a partial answer, even when it reads "Q2: weekly". The publish box is unauthenticated, so a steer note **never grants or widens anything**: production, spending, outside actions, security and privacy keep their defaults.
 - **At a delivery-backed deadline (15 minutes after successful delivery),** all unanswered questions become "unconfirmed" defaults. Keep the label for the report.
-- **If still open after either background wait,** inspect the returned deadline. `deadline: null` means wait for an answer in the session; leave the round open and stop the turn. A second wait ending does not simulate a deadline. Do not hand off until the CLI reports closed.
+- **If still open after either background wait,** inspect the returned deadline. `deadline: null` means wait for an answer in the session; leave the round open and stop the turn. Do not hand off until the CLI reports closed.
 - **An answer after closure** is a steer, not another submission. Do not manufacture user-attributed supersessions from unrecorded text; retain it in the intake record until the answer path can record it.
 
 
@@ -143,7 +143,7 @@ Never send questions or mockups through any other channel, and never put code, s
 
 Hard stops still apply after defaults: a default can't authorize spending or an outside action, and only an explicit answer the user gives in the session grants production (the phone's only question button is "Use defaults", and the grant's default is no).
 
-**User attribution requires evidence.** `--by user` requires `--answer <answerSeq>:<questionId>` and the exact recorded answer. The closed answer result returns `answerSeq`. Only explicit session answers qualify; defaults, timeouts and phone notes do not. Supersessions must name the old ID in the question or answer. Never invent references, split answers into new claims, or use TTY/environment flags as authority.
+**User attribution requires evidence.** `--by user` requires `--answer <answerSeq>:<questionId>` and the exact recorded answer. The closed answer result returns `answerSeq`. Only explicit session answers qualify; defaults, timeouts and phone notes do not. Supersessions must name the old ID in the question or answer. Never invent references or split an answer into new claims.
 
 Then, in this order:
 1. **Complete the intake record** (see Output) with every answer and who gave it.
@@ -197,7 +197,9 @@ Answer: <answer> · by: user | default accepted | default unconfirmed
 
 ## Gotchas
 
-- **Read the project's rules in full.** A grep can miss its single-owner scope; never re-ask a settled constraint.
+- **Read the project's rules in full.** A grep can miss an ownership or scope rule; re-asking what the project settled is the classic failure.
 - **Seven is a cap, not a target.** Put consequential past-data effects in the veto list when the question cap is reached.
-- **No delivery means no timer.** Keep undelivered rounds open, and run waits in the background so answers never require Esc.
+- **"Where will you see it?" is usually a real question.** Agents skip the surface: which screen, notification or digest. If the request names no surface, ask.
+- **Don't ask engineering questions to look careful.** Retry policies, schemas and libraries are yours to decide and log.
+- **Unconfirmed isn't confirmed.** Keep the label all the way to the report; the user may veto any of them in the morning.
 - **Never send anything outside the session and the runner.** Drafting is not sending.

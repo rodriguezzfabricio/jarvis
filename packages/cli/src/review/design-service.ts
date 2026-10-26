@@ -6,7 +6,7 @@ import { verifyEvidence } from "../checks/gate.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { verifyDesignObservation, type DesignBrowserPlan } from "./design-browser.ts";
 import { createCodexDesignReviewer, DESIGN_REVIEW_MODEL, type DesignReviewer } from "./design-codex.ts";
-import { buildDesignPrompt, designEvidence } from "./design-evidence.ts";
+import { buildDesignPrompt, designEvidence, DESIGN_INSTRUCTIONS } from "./design-evidence.ts";
 import { DESIGN_RUBRIC, evaluateDesignVerdict, type DesignEvaluation } from "./design-verdict.ts";
 import type { VerifiedGate } from "./evidence.ts";
 import { redactReviewText } from "./redaction.ts";
@@ -14,7 +14,13 @@ import type { ReviewRequest } from "./types.ts";
 import { checkoutHash, prepareCheckout, type ReviewGit } from "./workspace.ts";
 
 const sha = (raw: string | Buffer) => createHash("sha256").update(raw).digest("hex");
-export const DESIGN_POLICY_HASH = sha(JSON.stringify({version: 1, rubric: DESIGN_RUBRIC, model: DESIGN_REVIEW_MODEL}));
+/** A calibration counts only for this exact model, rubric and instruction text (decision 56): any change needs a new negative control. */
+export const DESIGN_POLICY_HASH = sha(JSON.stringify({version: 2, rubric: DESIGN_RUBRIC, model: DESIGN_REVIEW_MODEL, instructions: DESIGN_INSTRUCTIONS}));
+/** The friction choices the generic fixture plants (docs/02-golden-tasks.md); its calibration must name all three. */
+const FRICTION_RULES = ["launch-tour", "multiple-primary", "apologetic-error"] as const;
+type DesignFinding = DesignEvaluation["findings"][number];
+/** Reviewer-written text is redacted before the ledger or a caller sees it (decision 110: the jail can read the auth file). */
+const redactFinding = (f: DesignFinding): DesignFinding => ({...f, screen: redactReviewText(f.screen), element: redactReviewText(f.element), principle: redactReviewText(f.principle), explanation: redactReviewText(f.explanation), fix: redactReviewText(f.fix)});
 const REQUIRED_CHECKS = ["impeccable-source", "impeccable-url", "ai-tells", "token-lint", "design-md-lint", "design-browser"];
 const under = (root: string, path: string) => root === path || path.startsWith(`${root}/`);
 export interface DesignReviewMaterial {
@@ -44,8 +50,9 @@ function calibrated(options: DesignReviewServiceOptions): boolean {
     const data = entry?.data as Record<string, unknown> | undefined;
     if (entry?.kind !== "review_result" || entry.actor !== "runner" || data?.reviewer !== "design" || data.model !== DESIGN_REVIEW_MODEL || data.policyHash !== DESIGN_POLICY_HASH || data.purpose !== "calibration" || data.fixture !== fixture || data.designVerdict !== (fixture === "generic" ? "fail" : "pass")) return false;
     if (fixture === "good") return data.verdict === "pass";
-    const findings = data.findings as {principle?: string}[] | undefined;
-    return Array.isArray(findings) && ["launch-tour", "multiple-primary", "apologetic-error"].every(rule => findings.some(f => f.principle?.includes(rule)));
+    // The runner's own record of the rules the findings named, taken before redaction.
+    const friction = data.friction;
+    return Array.isArray(friction) && FRICTION_RULES.every(rule => friction.includes(rule));
   });
 }
 
@@ -108,13 +115,15 @@ export function createDesignReviewService(options: DesignReviewServiceOptions): 
       counts = !calibration && evaluation.verdict !== "error";
     } catch (error) { evaluation = {verdict:"error",findings:[],error:redactReviewText(error instanceof Error ? error.message : String(error))}; }
     finally { if (directory) rmSync(directory,{recursive:true,force:true}); }
+    const friction = FRICTION_RULES.filter(rule => evaluation.findings.some(f => f.principle.includes(rule)));
+    evaluation = {...evaluation, findings: evaluation.findings.map(redactFinding)};
     const files: Record<string,string> = {};
     if (outputDir) {
       writeFileSync(join(outputDir,"raw.json"),raw,{flag:"wx",mode:0o600}); files["raw.json"] = sha(raw);
       // Images are retained across rounds; the ledger binds exactly what was shown.
       for (let i=0; ; i++) { try { const image=readFileSync(join(outputDir,`screen-${i}.png`)); files[`screen-${i}.png`]=sha(image); } catch { break; } }
     }
-    const entry = options.ledger.append({kind:"review_result",actor:"runner",task_id:request.taskId,attempt_id:request.attemptId,data:{reviewer:"design",model:DESIGN_REVIEW_MODEL,policyHash:DESIGN_POLICY_HASH,revision:request.revision,status:evaluation.verdict,...evaluation,designVerdict,counts,purpose:calibration?"calibration":"gate",...(calibration?{fixture:calibration.fixture}:{}),...(outputDir?{evidence:{dir:outputDir,files}}:{})}});
+    const entry = options.ledger.append({kind:"review_result",actor:"runner",task_id:request.taskId,attempt_id:request.attemptId,data:{reviewer:"design",model:DESIGN_REVIEW_MODEL,policyHash:DESIGN_POLICY_HASH,revision:request.revision,status:evaluation.verdict,...evaluation,friction,designVerdict,counts,purpose:calibration?"calibration":"gate",...(calibration?{fixture:calibration.fixture}:{}),...(outputDir?{evidence:{dir:outputDir,files}}:{})}});
     return {...evaluation,designVerdict,counts,entry};
   }};
 }

@@ -28,9 +28,42 @@ function fixture() {
     return Buffer.from(args.includes("rev-parse")?request.revision:"");
   };
   const options={ledger,projectDir,workRoot,home:root,git,reviewer,resolveMaterial:async()=>({repoPath:join(root,"repo"),baseRevision:"b".repeat(40),principles:"List first",design:"tokens",product:"habits",plan,axeVersion:"4.14.0",captureFile:"stdout"})};
-  const calibration=(label:"generic"|"good")=>ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:label,policyHash:DESIGN_POLICY_HASH,verdict:label==="generic"?"fail":"pass",designVerdict:label==="generic"?"fail":"pass",findings:label==="generic"?["launch-tour","multiple-primary","apologetic-error"].map(principle=>({principle})):[]}}).hash;
+  const calibration=(label:"generic"|"good")=>ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:label,policyHash:DESIGN_POLICY_HASH,verdict:label==="generic"?"fail":"pass",designVerdict:label==="generic"?"fail":"pass",findings:label==="generic"?["launch-tour","multiple-primary","apologetic-error"].map(principle=>({principle})):[],friction:label==="generic"?["launch-tour","multiple-primary","apologetic-error"]:[]}}).hash;
   return {options,request,reviewer,file,ledger,root,calibration,service:createDesignReviewService(options)};
 }
+const JWT="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+const TOKEN="sk_live_4eC39HqLyjWDarjtT1zdp7dcAbCdEfGh12";
+describe("reviewer text reaching the ledger (decision 110: findings stay redacted)",()=>{
+  it("redacts every reviewer-written finding field before the ledger and the caller see it",async()=>{
+    const f=fixture();
+    const finding={screen:`today ${TOKEN}`,element:`button ${JWT}`,principle:"launch-tour",severity:"high",explanation:`auth.json says ${JWT}`,fix:`remove ${TOKEN}`};
+    f.reviewer.mockResolvedValue({reviewer:"codex",model:"gpt-6-astra",rawOutput:"trace",rawVerdict:JSON.stringify({...good,verdict:"fail",findings:[finding]})});
+    const result=await f.service.reviewDetailed(f.request,{fixture:"generic"});
+    const recorded=JSON.stringify(f.ledger.entries().at(-1)!.data);
+    expect(recorded).not.toContain(JWT);expect(recorded).not.toContain(TOKEN);
+    expect(recorded).toContain("[redacted:sha256:");
+    expect(JSON.stringify(result.findings)).not.toContain(JWT);expect(JSON.stringify(result.findings)).not.toContain(TOKEN);
+    expect(result.findings[0]!.principle).toBe("launch-tour");
+  });
+  it("records the friction rules a finding named from the unredacted principle, and calibrates from that record",async()=>{
+    const f=fixture();
+    const long=(rule:string)=>({screen:"today",element:"main",principle:`ux-checklist/${rule}-applies-on-every-first-run-screen`,severity:"high",explanation:"x",fix:"y"});
+    f.reviewer.mockResolvedValue({reviewer:"codex",model:"gpt-6-astra",rawOutput:"trace",rawVerdict:JSON.stringify({...good,verdict:"fail",findings:["launch-tour","multiple-primary","apologetic-error"].map(long)})});
+    const generic=await f.service.reviewDetailed(f.request,{fixture:"generic"});
+    const data=generic.entry.data as {friction:string[];findings:{principle:string}[]};
+    expect(data.friction).toEqual(["launch-tour","multiple-primary","apologetic-error"]);
+    expect(data.findings.every(x=>x.principle.includes("[redacted:sha256:"))).toBe(true);
+    const service=createDesignReviewService({...f.options,calibration:{generic:generic.entry.hash,good:f.calibration("good")}});
+    f.reviewer.mockResolvedValue({reviewer:"codex",model:"gpt-6-astra",rawOutput:"trace",rawVerdict:JSON.stringify(good)});
+    expect((await service.reviewDetailed(f.request)).verdict).toBe("pass");
+  });
+  it("does not calibrate from principles alone without the runner's friction record",async()=>{
+    const f=fixture();
+    const generic=f.ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:"generic",policyHash:DESIGN_POLICY_HASH,designVerdict:"fail",verdict:"fail",findings:["launch-tour","multiple-primary","apologetic-error"].map(principle=>({principle}))}}).hash;
+    const service=createDesignReviewService({...f.options,calibration:{generic,good:f.calibration("good")}});
+    expect((await service.reviewDetailed(f.request)).verdict).toBe("error");expect(f.reviewer).not.toHaveBeenCalled();
+  });
+});
 describe("revision-bound design review",()=>{
   it("calibrates one design per fresh call and never counts calibration as a gate",async()=>{
     const f=fixture();const result=await f.service.reviewDetailed(f.request,{fixture:"good"});

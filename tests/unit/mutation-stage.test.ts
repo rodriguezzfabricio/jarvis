@@ -40,6 +40,8 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-usage.json")).toBe("6");
     expect(stageOf("packages/cli/src/runner/mutations-usage-extra.json")).toBe("3");
     expect(stageOf("packages/cli/src/broker/mutations.json")).toBeUndefined();
+    expect(stageOf("packages/cli/src/broker/mutations-secrets.json")).toBe("0-1"); // the secrets reader (backlog 103)
+    expect(stageOf("packages/cli/src/notify/mutations-approvals.json")).toBe("2");
   });
 
   it("leaves anything else unmapped, never guessing from a similar path", () => {

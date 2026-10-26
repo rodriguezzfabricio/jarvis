@@ -14,9 +14,10 @@ export interface SecretsReadOptions extends TrustOptions {
   fstat?: (fd: number) => Stats;
 }
 
-/** ACL checks use the existing absolute /bin/ls adapter on macOS. Other platforms currently check
- * POSIX ownership/mode only unless an ACL reader is supplied (config/private-file.ts's limit).
- * The parent must be trusted; descriptor checks and identity checks bind the reads to the checked paths. */
+/** ACL checks use the existing absolute /bin/ls adapter on macOS. Elsewhere there is no ACL reader
+ * (config/private-file.ts's limit); on Linux the mode check still covers POSIX ACLs, whose group bits
+ * are the ACL mask, so 0600 leaves every named entry without rights. The parent must be trusted;
+ * descriptor checks and identity checks bind the reads to the checked paths (backlog 103). */
 function readSecrets(path: string, options: SecretsReadOptions): string {
   const directory = dirname(path);
   checkTrustedDir(directory, options);
@@ -26,14 +27,14 @@ function readSecrets(path: string, options: SecretsReadOptions): string {
   const dirFd = open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try {
     const parent = stat(dirFd);
-    if (!parent.isDirectory() || (parent.mode & 0o022) !== 0 || (uid !== undefined && parent.uid !== uid)) throw new Error("untrusted secrets parent");
+    if (!parent.isDirectory() || (parent.mode & 0o022) !== 0 || (uid !== undefined && parent.uid !== uid)) throw new Error(`${directory}: the secrets folder must be yours, a real folder, and writable only by you`);
     checkAcl(directory, options);
     sameFile(directory, parent);
     const fd = open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
       const st = stat(fd);
       if (!st.isFile()) throw new Error(`${path} must be a regular file`);
-      if ((st.mode & 0o177) !== 0) throw new Error(`${path} must have mode 0600 or stricter`);
+      if ((st.mode & 0o177) !== 0) throw new Error(`${path} must be readable by its owner only (chmod 600); it is ${(st.mode & 0o777).toString(8)}`);
       if (uid !== undefined && st.uid !== uid) throw new Error(`${path} must belong to the current user`);
       checkAcl(path, options);
       sameFile(path, st);

@@ -1088,7 +1088,7 @@ Settled:
 
 *Why these are general, not fixes for these two tasks:* each is a standard debugging or review practice: reproduce, trace the real input, list every trigger, fix at the cause's layer, check against the report, and review with new inputs. None names a task, file or phrase from tasks 4 or 5. The examples are generic categories (encoding, markup, case; the container, a deploy configuration, the build), but two of them match these tasks' root-cause families. That is one more reason the held-out task decides. The skill evals were not changed. The scaffolding that covers a model weakness is listed in `docs/harness-assumptions.md`.
 
-*Found, not fixed: sessions can't run these projects' tests.* The gate runs Go 1.26.10 offline from its protected module-cache fixture. A session gets an empty per-run cache, the host's Go 1.24.5 and a toolchain download that fails inside the sandbox. No session in any of the four runs, the passing one included, finished `go test`. Every Go bug task therefore falls under the debug skill's "can't reproduce" exception, and the gate is the builder's only test run. Giving sessions a read-only copy of the gate's toolchain and module cache (never its checks) is an envelope change, so it is a separate decision (backlog).
+*Found, not fixed: sessions can't run these projects' tests.* The gate runs Go 1.26.10 offline from its protected module-cache fixture. A session gets an empty per-run cache, the host's Go 1.24.5 and a toolchain download that fails inside the sandbox. No session in any of the four runs, the passing one included, finished `go test`. Every Go bug task therefore falls under the debug skill's "can't reproduce" exception, and the gate is the builder's only test run. Giving sessions a read-only copy of the gate's toolchain and module cache (never its checks) is an envelope change, so it is a separate decision (backlog). Settled by decision 123.
 
 *Not changed:* routing. The first attempt stays on the fast tier and escalates after a gate or review failure (decision 24); the passing smoke run shows escalation works once something fails. If a held-out bug task still gets through the gate and review with an incomplete fix, the next lever is the strong tier for bug reviews (backlog). These changes were tuned on tasks 4 and 5, so they count as general only after a bug task never used in tuning passes (backlog). The Jarvis-arm runs made before this decision measured an arm without skills. As with decision 101, they are kept as history, and new runs replace them for the proof.
 
@@ -1114,6 +1114,43 @@ Vitest 5.0.5 rewrites the stack of every error raised in a `.rejects`/`.resolves
 - **Files and network aren't enough for a GUI app.** Seatbelt doesn't cover WindowServer, and WindowServer judges synthetic input by the TCC-responsible process: the runner, which holds the Accessibility grant the osascript probes need. Verified on Darwin 25.5: a binary under the profile posted a key and a mouse move into the user's session.
 - **So the launcher refuses without input isolation.** `NativeSandboxDeps.isolateInput` is required with no default; without it native smoke stays "not run". The verified remedy (a helper that spawns with a disclaimed TCC responsibility, `responsibility_spawnattrs_setdisclaim`, a private API, plus a per-run input canary) is backlog 111 and needs Fabricio's go before it ships.
 *From:* the Opus review of the Codex native-launch lane (backlog 87); backlog 110 (gate hook), 111 (input isolation), 112 (bundle defects).
+
+### 123. Task sessions get the gate's pinned Go, offline and read-only (new; Oct 26; the session-toolchain worker, from decision 114's "found, not fixed"; settles backlog 121; tightens 69, 95 and 97; Fabricio can veto; the integrator may renumber)
+No session in the stage 3 Go runs finished `go test`, in either arm: four of the six baselines tried, and so did both 05 Jarvis runs. The cause was reproduced without a model session: the pinned sandbox runtime ran a session's own settings (`buildTaskSettings`) and environment on a sanitized FreeHire snapshot. Three things go wrong together:
+- **The host's Go is older than go.mod.** A session's `go` is Homebrew's go1.24.5, and FreeHire's go.mod says `go 1.26.10`, so Go (`GOTOOLCHAIN=auto`) tries to download go1.26.10.
+- **Go can't download anything in the sandbox, not even from the allowlisted proxy.** Go checks TLS through macOS's trust service, which Seatbelt keeps closed: `tls: failed to verify certificate: x509: OSStatus -26276`. curl, which has its own CA file, gets 200 from the same host. So decision 99's Go proxy entries were never usable by Go in a session.
+- **Even `GOTOOLCHAIN=local` fails.** go1.24.5 refuses (`go.mod requires go >= 1.26.10`), and the per-run module cache is empty.
+
+The sessions' workarounds made it worse. Under `blockReadsOutsideWorkingDirectories`, `dontAsk` refuses three kinds of command it can't check against the read block: an environment assignment outside a safe list (`GOTOOLCHAIN=local go …`), code read from stdin (`python3 - <<EOF`), and a `cd` to a computed path. Each refusal looked like Bash being off (backlog 6). With the environment set by the runner, a plain `go test ./...` runs.
+
+Settled:
+- **The runner unpacks the toolchain go.mod asks for, once per run** (`toolchain/go.ts`). It takes the `toolchain` line, else the `go` line, and unpacks that version's toolchain module zip from a fixture module cache in the gate's layout (`cache/download/golang.org/toolchain/@v/`). The toolchain goes in `~/.jarvis-work/toolchains/<task>/<run>` and is removed after the run's sessions.
+- **Sessions get two folders read-only, and nothing else.** These are the unpacked toolchain and the fixture's module cache, each in `allowRead` and `denyWrite` (the install's read-only mechanism). The environment matches the gate's go-env:
+  - the toolchain's `bin` on PATH, after the jarvis launcher;
+  - `GOTOOLCHAIN=local`, `GOMODCACHE=<fixture>`, `GOPROXY=off` and `GOSUMDB=off`;
+  - `GOFLAGS=-buildvcs=false -mod=readonly` and `CGO_ENABLED=0`.
+
+  `GOCACHE` and `GOPATH` stay in the session's private, writable cache (decision 69). Nothing is downloaded.
+- **Refused before any session starts:**
+  - a fixture that is a symlink, is reached through a linked folder, or holds a link or a special file;
+  - a toolchain folder or path variable that overlaps the runner folder or any folder that a session or a gate's candidate code writes (worktrees, caches, eval workspaces and check runs of any run), checked by the harness and by both eval arms;
+  - a PATH entry outside the read-only folders;
+  - any variable but the six above.
+
+  The settings themselves also refuse a read-only folder that overlaps the session's cache or temp folder.
+- **No fixture, no change.** A Go project without a fixture, or without the toolchain its go.mod asks for, runs as before. The run says so with `toolchain` in manifest.json and summary.json and a log line.
+- **In evals, both arms read the same fixture:** the gate's `hidden/<task>/gate/fixtures/gomodcache`, reopened read-only in place.
+  - The gate reads its own installed copy in the runner folder, so the gate's input is never a path a candidate can reach.
+  - Only that subfolder of `hidden/` becomes readable; `hidden/<task>/checks` and the rest of `gate/` stay closed (checked live). A fixture that leads into the grading checks is refused.
+  - *Why in place, not a copy:* on this Mac, an APFS clone of the 739 MB, 47,000-file cache takes 2 to 3.5 minutes from Node, `cp -c` or `ditto --clone`. Only `clonefile(2)` on the whole folder is fast (1 s), and Node can't call it.
+- **`jarvis run` keeps today's behaviour.** Production checks live in the runner folder, which sessions can't read, so a production fixture would need a runner-made copy, and no production fixture format exists yet (backlog 132).
+
+*Proof (no model session, Oct 26):* sandbox runtime 0.0.81, a fresh snapshot of FreeHire 9c1dbd4, the production preparation, check and settings:
+- before: `go version` fails with the x509 error;
+- after: `go version go1.26.10 darwin/arm64` and `ok github.com/strelov1/freehire/internal/dict/location`;
+- `touch` into either folder gives "Operation not permitted".
+
+*Known noise:* Go's telemetry prints `error acquiring upload token … operation not permitted` on every command, because it reads `~/Library/Application Support/go/telemetry`, which sessions can't read, and `GOTELEMETRYDIR` can't be set. It is harmless. Node and pnpm projects and the unused Go proxy entries are backlog 133 and 134.
 
 ## 6. Models, effort and cost
 

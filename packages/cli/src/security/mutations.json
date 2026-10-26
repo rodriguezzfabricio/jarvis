@@ -724,5 +724,11 @@
     "file": "packages/cli/src/security/mapped.ts",
     "anchor": "if (stat.dev !== source.dev || stat.ino !== source.ino) throw Error(\"Mapped source changed before copy\");",
     "replacement": ""
+  },
+  {
+    "name": "security mapped: path-filtered protected rule",
+    "file": "packages/cli/src/security/rules/javascript.yml",
+    "anchor": "    pattern: $DB.query($SQL + $INPUT, ...)\n",
+    "replacement": "    pattern: $DB.query($SQL + $INPUT, ...)\n    paths:\n      include: [\"src/\"]\n"
   }
 ]

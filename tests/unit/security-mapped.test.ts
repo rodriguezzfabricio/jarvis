@@ -193,6 +193,13 @@ it("refuses a parent directory replaced by a link between lstat and open", async
   expect(rejected).toBe(true); expect(readdirSync(scratch)).toEqual([]);
 });
 
+// The copy's names carry no folders, so a path-filtered rule would match differently in the second pass (decision 127).
+it("keeps every protected Semgrep rule free of path filters", () => {
+  const dir = pinnedSecurityScanners().semgrep!.rulesFile!; const files = readdirSync(dir).filter((name) => name.endsWith(".yml"));
+  expect(files.sort()).toEqual(["go.yml", "javascript.yml", "python.yml"]);
+  for (const file of files) expect(readFileSync(join(dir, file), "utf8")).not.toMatch(/^\s*(?:paths|include|exclude)\s*:/m);
+});
+
 it("retains findings from both passes", async () => {
   const { checkout } = setup({ "a.js": "eval(input);", "b.mts": "eval(input);" });
   const pin = pinnedSecurityScanners().semgrep!;

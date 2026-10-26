@@ -176,7 +176,7 @@
   {
     "name": "stage2 r3 tripwire fixture reads through ..",
     "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !/(^|\\/)\\.\\.(\\/|$)/.test(path);",
+    "anchor": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !path.split(\"/\").includes(\"..\");",
     "replacement": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path);"
   },
   {
@@ -208,5 +208,17 @@
     "file": "skills/research/README.md",
     "anchor": "retrieved-at: 2026-10-25T14:31:10Z\nkind: search\n",
     "replacement": "retrieved-at: 2026-10-25T14:31:10Z\n"
+  },
+  {
+    "name": "stage2 r3 ban-list loses the answers' neighbours",
+    "file": "tests/unit/stage2-plugin-contamination.test.ts",
+    "anchor": "/\\bSMTP\\b/i, /\\bport\\s+25\\b/i, /\\bmail\\s+servers?\\b/i, ",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 engineering rule names no mechanism",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "the mechanism for an outcome that the request, the project's rules, the law or the code already settle",
+    "replacement": "anything the user has not decided"
   }
 ]

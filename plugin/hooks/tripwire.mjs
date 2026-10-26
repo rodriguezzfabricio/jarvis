@@ -98,7 +98,7 @@ const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep"]);
 const FIXTURES = new RegExp(`(^|\\/)\\.jarvis\\/research-fixtures(\\/|\\/(${NAME}|\\*|\\*\\.md))?$`);
 
 function fixtureRead(tool, path) {
-  return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
+  return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !path.split("/").includes("..");
 }
 
 /** A marker that exists as any kind of entry (a symlink, even a dangling one), or can't be checked. */

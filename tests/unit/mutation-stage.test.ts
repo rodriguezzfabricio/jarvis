@@ -15,6 +15,9 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/harness/claude/mutations-probe.json")).toBe("0-1");
     for (const lane of ["decisions", "notify", "spec", "triage", "intake"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("2");
     expect(stageOf("tests/unit/skills-mutations.json")).toBe("2");
+    // The stage2-fixes lane's follow-up definitions (decisions 119, 120).
+    expect(stageOf("packages/cli/src/intake/mutations-followup.json")).toBe("2");
+    expect(stageOf("packages/cli/src/decisions/mutations-followup.json")).toBe("2");
     expect(stageOf("packages/cli/src/runner/mutations-runner-core.json")).toBe("3");
     expect(stageOf("packages/cli/src/runner/mutations-planning.json")).toBe("3");
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");

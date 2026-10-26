@@ -65,7 +65,8 @@ describe("recorded research takes precedence over live research", () => {
     const text = read("plugin/agents/recorded-researcher.md");
     expect(text).toMatch(/^name: recorded-researcher$/m);
     expect(text).toMatch(/^model: claude-sonnet-5-5$/m);
-    expect(text).toMatch(/^tools: Read, Glob, Grep$/m);
+    expect(text).toMatch(/^tools: Read, Glob$/m); // Grep recurses, so the tripwire refuses it on the fixtures
+    expect(text).toContain("list the folder with Glob (`path` set to `.jarvis/research-fixtures`, pattern `*.md`)");
     for (const rule of [
       ".jarvis/research-fixtures/", "read in full every source you use", "Enumerate all of them", "original URL", "file path", "retrieval date",
       "a search's is a synthetic `websearch:?q=…` naming the query", "is a table of contents (file, kind, URL or query, title), not a source",

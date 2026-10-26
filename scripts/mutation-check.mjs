@@ -259,7 +259,7 @@ const mutations = [
   ["tripwire ignores .jarvis-routing.json", TW, ' || marked(d, ".jarvis-routing.json")', ""],
   ["tripwire lets Bash into the runner home outside Jarvis sessions", TW, '  if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;\n', ""],
   // Codex round 18, lane D, low: relative Bash operands and cd.
-  ["tripwire leaves relative Bash paths unresolved", TW, "    const full = resolve(dir, expand(t));\n    if (full === runnerHome || full.startsWith(`${runnerHome}/`)) return true;\n", ""],
+  ["tripwire leaves relative Bash paths unresolved", TW, "    const full = resolve(dir, expand(t));\n    if (within(full, runnerHome)) return true;\n", ""],
   ["tripwire ignores cd in Bash", TW, "      if (next === undefined || operator(next)) dir = home;\n      else { dir = resolve(dir, expand(next)); i++; }\n", "      i++;\n"],
   ["tripwire ignores HOME for the runner home", TW, "  if (RUNNER_HOME.test(path)) return true;\n  if (!env.HOME || !isAbsolute(env.HOME)) return false;\n", "  if (RUNNER_HOME.test(path)) return true;\n  return false;\n"],
   ["tripwire ignores HOME for Bash's runner home", TW, "  if (RUNNER_HOME_BASH.test(command)) return true;\n  if (!env.HOME || !isAbsolute(env.HOME)) return false;\n", "  if (RUNNER_HOME_BASH.test(command)) return true;\n  return false;\n"],

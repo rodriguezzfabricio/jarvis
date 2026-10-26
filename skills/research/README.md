@@ -40,7 +40,7 @@ query: catalogue interchange format
 
 An optional `INDEX.md` in the same folder has no front matter: it lists every file with its kind, URL or query and title. It is a table of contents, never a source to cite. This is a documented text convention, not a runtime parser.
 
-A folder may hold hundreds of sources. Choose the ones relevant to the capability from `INDEX.md` or from each file's front matter (search the folder for `title:` and `url:` lines), then read each source you use in full. A search result list shows only what the search returned; a claim about a result's content needs that page's own recording.
+A folder may hold hundreds of sources. List the folder with Glob (`path` set to the folder, pattern `*.md`) and choose the sources relevant to the capability from `INDEX.md` or each file's front matter (its first lines), then read each source you use in full. Sessions can Read these files and list the folder, nothing more: writes, Grep and shell commands that name the folder are refused, and links or extra hard links don't count as sources. A search result list shows only what the search returned; a claim about a result's content needs that page's own recording.
 
 Cite every used source by its project-relative file path, original URL (a search's query) and retrieval date, for example `.jarvis/research-fixtures/catalogue-format.md` — `https://example.org/catalogue/format` — retrieved `2026-10-25T14:30:00Z`. Record the title alongside the citation. The original URL is attribution, never permission to fetch it.
 

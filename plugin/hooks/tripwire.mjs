@@ -20,8 +20,16 @@ export const RULES = [
 ];
 
 // The runner home holds the ledger, evidence and secrets: off limits in every session, Jarvis or not.
-const RUNNER_HOME_BASH = /(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/;
-const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/;
+// Every `.jarvis` rule ignores case: APFS, the default on macOS, does (decision 132).
+const RUNNER_HOME_BASH = /(~|\$HOME|\/Users\/[^/\s]+)\/\.jarvis(\/|\s|$)/i;
+const RUNNER_HOME = /(^~|\$HOME|^\/Users\/[^/]+|^\/home\/[^/]+)\/\.jarvis(\/|$)/i;
+const JARVIS_PATH = /(^|\/)\.jarvis(\/|$)/i;
+
+/** path is root or inside it, ignoring case. */
+function within(path, root) {
+  const p = path.toLowerCase(), r = root.toLowerCase();
+  return p === r || p.startsWith(`${r}/`);
+}
 
 /** By spelling (~, $HOME, /Users/<u>, /home/<u>), or by the resolved path under this HOME, ".." included. */
 function inRunnerHome(path, cwd, env) {
@@ -29,7 +37,7 @@ function inRunnerHome(path, cwd, env) {
   if (!env.HOME || !isAbsolute(env.HOME)) return false;
   const home = join(resolve(env.HOME), ".jarvis");
   const full = resolve(typeof cwd === "string" ? cwd : "/", path);
-  return full === home || full.startsWith(`${home}/`);
+  return within(full, home);
 }
 
 /**
@@ -53,12 +61,12 @@ function bashInRunnerHome(command, cwd, env) {
       const next = tokens[i + 1];
       if (next === undefined || operator(next)) dir = home;
       else { dir = resolve(dir, expand(next)); i++; }
-      if (dir === runnerHome || dir.startsWith(`${runnerHome}/`)) return true;
+      if (within(dir, runnerHome)) return true;
       continue;
     }
-    if (!t.includes(".jarvis")) continue;
+    if (!/\.jarvis/i.test(t)) continue;
     const full = resolve(dir, expand(t));
-    if (full === runnerHome || full.startsWith(`${runnerHome}/`)) return true;
+    if (within(full, runnerHome)) return true;
   }
   return false;
 }
@@ -88,17 +96,60 @@ const SESSION_FILES = [
 const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")})$`);
 
 function sessionOwned(path) {
-  return SESSION_OWNED.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
+  return SESSION_OWNED.test(path.toLowerCase()) && !/(^|\/)\.\.(\/|$)/.test(path);
 }
 
-// The run provider's recorded research (decision 132): one file per source directly in
-// `.jarvis/research-fixtures/`. Sessions may list, search and read them, never write them, so a
-// session can't plant its own evidence. No subfolders, hidden files or "..".
-const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep"]);
-const FIXTURES = new RegExp(`(^|\\/)\\.jarvis\\/research-fixtures(\\/|\\/(${NAME}|\\*|\\*\\.md))?$`);
+// The run provider's recorded research (decision 132): one regular file per source directly in the
+// project's `.jarvis/research-fixtures/`. Sessions may Read those files and list the folder with Glob; no
+// tool and no Bash command may write there, so a session can't plant evidence. A guard, not the
+// boundary: the eval's prep makes the files read-only and checks them against a manifest kept outside
+// the project. A read must name a regular file with one link, directly in the session's own folder
+// (same inode), with neither the file, the folder nor its `.jarvis` a symlink, so no link can alias the
+// runner home. Grep recurses, so it gets no exception; a Glob pattern can't leave the folder.
+const FIXTURE_FILE = new RegExp(`(^|\\/)\\.jarvis\\/research-fixtures\\/${NAME}$`, "i");
+const FIXTURE_DIR = /(^|\/)\.jarvis\/research-fixtures\/?$/i;
+const FIXTURES_NAMED = /research-fixtures/i;
+const FIXTURES_READ_ONLY = "the recorded research fixtures are read-only: Read their files and list them with Glob";
 
-function fixtureRead(tool, path) {
-  return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !path.split("/").includes("..");
+/** The session's fixture folder, under the nearest `.jarvis` from the cwd up to its git toplevel: a real folder in a real `.jarvis`. */
+function fixtureFolder(cwd) {
+  for (let d = realpathSync.native(cwd); ; d = dirname(d)) {
+    const jarvis = lstatSync(join(d, ".jarvis"), { throwIfNoEntry: false });
+    if (jarvis) {
+      const folder = jarvis.isDirectory() ? lstatSync(join(d, ".jarvis", "research-fixtures"), { throwIfNoEntry: false }) : undefined;
+      return folder?.isDirectory() ? folder : undefined;
+    }
+    if (marked(d, ".git") || dirname(d) === d) return undefined;
+  }
+}
+
+/** dir, as spelled, is that folder: neither it nor its parent is a link, and it has the folder's inode. */
+function isFolder(dir, folder) {
+  const own = lstatSync(dir, { throwIfNoEntry: false });
+  const parent = lstatSync(dirname(dir), { throwIfNoEntry: false });
+  return !!own?.isDirectory() && !!parent?.isDirectory() && own.dev === folder.dev && own.ino === folder.ino;
+}
+
+function fixtureRead(tool, ti, cwd) {
+  try {
+    if (typeof cwd !== "string" || !isAbsolute(cwd)) return false;
+    const folder = fixtureFolder(cwd);
+    if (!folder) return false;
+    if (tool === "Read") {
+      const p = String(ti.file_path ?? "");
+      if (!FIXTURE_FILE.test(p) || p.split("/").includes("..")) return false;
+      const target = resolve(cwd, p);
+      const file = lstatSync(target, { throwIfNoEntry: false });
+      return !!file?.isFile() && file.nlink === 1 && isFolder(dirname(target), folder);
+    }
+    if (tool === "Glob") {
+      const p = String(ti.path ?? ""), pattern = String(ti.pattern ?? "");
+      if (!FIXTURE_DIR.test(p) || p.split("/").includes("..")) return false;
+      if (pattern === "" || pattern.includes("/") || pattern.includes("**") || pattern.includes("..")) return false;
+      return isFolder(resolve(cwd, p), folder);
+    }
+    return false;
+  } catch { return false; } // anything unreadable is refused
 }
 
 /** A marker that exists as any kind of entry (a symlink, even a dangling one), or can't be checked. */
@@ -135,11 +186,16 @@ export function check(input, env = process.env) {
   const tool = input?.tool_name;
   const ti = input?.tool_input ?? {};
   const text = tool === "Bash" ? String(ti.command ?? "") : String(ti.file_path ?? ti.path ?? ti.pattern ?? "");
+  // Glob's pattern and Grep's glob also name paths, beside the path they search from.
+  const also = tool === "Glob" && ti.path !== undefined ? [String(ti.pattern ?? "")] : tool === "Grep" && ti.glob !== undefined ? [String(ti.glob)] : [];
   if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
+  if (also.some((t) => inRunnerHome(t, input?.cwd, env))) return OFF_LIMITS;
   if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
   if (!isJarvisSession(input, env)) return undefined;
-  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text) && !fixtureRead(tool, text)) return OFF_LIMITS;
+  const named = tool === "Bash" ? [] : [text, ...also].filter((t) => JARVIS_PATH.test(t));
+  if (named.length && !named.every(sessionOwned) && !fixtureRead(tool, ti, input?.cwd)) return OFF_LIMITS;
   if (tool !== "Bash") return undefined;
+  if (FIXTURES_NAMED.test(text)) return FIXTURES_READ_ONLY;
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;
 }

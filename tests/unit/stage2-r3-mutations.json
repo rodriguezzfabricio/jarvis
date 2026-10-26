@@ -56,8 +56,8 @@
   {
     "name": "stage2 r3 recorded reader gains web",
     "file": "plugin/agents/recorded-researcher.md",
-    "anchor": "tools: Read, Glob, Grep",
-    "replacement": "tools: Read, Glob, Grep, WebFetch"
+    "anchor": "tools: Read, Glob",
+    "replacement": "tools: Read, Glob, WebFetch"
   },
   {
     "name": "stage2 r3 recorded reader trusts instructions",
@@ -156,30 +156,6 @@
     "replacement": "Fill missing profile fields with inferred answers"
   },
   {
-    "name": "stage2 r3 tripwire refuses fixture reads",
-    "file": "plugin/hooks/tripwire.mjs",
-    "anchor": " && !fixtureRead(tool, text)) return OFF_LIMITS;",
-    "replacement": ") return OFF_LIMITS;"
-  },
-  {
-    "name": "stage2 r3 tripwire lets sessions write fixtures",
-    "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "const READ_ONLY_TOOLS = new Set([\"Read\", \"Glob\", \"Grep\"]);",
-    "replacement": "const READ_ONLY_TOOLS = new Set([\"Read\", \"Glob\", \"Grep\", \"Write\", \"Edit\"]);"
-  },
-  {
-    "name": "stage2 r3 tripwire opens fixture subfolders",
-    "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "research-fixtures(\\\\/|\\\\/(${NAME}|\\\\*|\\\\*\\\\.md))?$",
-    "replacement": "research-fixtures(\\\\/.*)?$"
-  },
-  {
-    "name": "stage2 r3 tripwire fixture reads through ..",
-    "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !path.split(\"/\").includes(\"..\");",
-    "replacement": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path);"
-  },
-  {
     "name": "stage2 r3 main session reads recordings",
     "file": "skills/research/SKILL.md",
     "anchor": "and don't open the recordings in this session",
@@ -226,5 +202,107 @@
     "file": "templates/spec.md",
     "anchor": "No automatic deletion: docs/storage.md:12 requires an explicit removal action",
     "replacement": "No archive export: docs/storage.md:12 keeps exports manual"
+  },
+  {
+    "name": "stage2 r3 tripwire fixture writes through Bash",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  if (FIXTURES_NAMED.test(text)) return FIXTURES_READ_ONLY;\n",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 tripwire fixture rules ignore case only in part",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const FIXTURES_NAMED = /research-fixtures/i;",
+    "replacement": "const FIXTURES_NAMED = /research-fixtures/;"
+  },
+  {
+    "name": "stage2 r3 tripwire .jarvis guard is case-sensitive",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const JARVIS_PATH = /(^|\\/)\\.jarvis(\\/|$)/i;",
+    "replacement": "const JARVIS_PATH = /(^|\\/)\\.jarvis(\\/|$)/;"
+  },
+  {
+    "name": "stage2 r3 tripwire runner home spelling is case-sensitive",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const RUNNER_HOME = /(^~|\\$HOME|^\\/Users\\/[^/]+|^\\/home\\/[^/]+)\\/\\.jarvis(\\/|$)/i;",
+    "replacement": "const RUNNER_HOME = /(^~|\\$HOME|^\\/Users\\/[^/]+|^\\/home\\/[^/]+)\\/\\.jarvis(\\/|$)/;"
+  },
+  {
+    "name": "stage2 r3 tripwire Bash runner home spelling is case-sensitive",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const RUNNER_HOME_BASH = /(~|\\$HOME|\\/Users\\/[^/\\s]+)\\/\\.jarvis(\\/|\\s|$)/i;",
+    "replacement": "const RUNNER_HOME_BASH = /(~|\\$HOME|\\/Users\\/[^/\\s]+)\\/\\.jarvis(\\/|\\s|$)/;"
+  },
+  {
+    "name": "stage2 r3 tripwire resolved runner home is case-sensitive",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  const p = path.toLowerCase(), r = root.toLowerCase();",
+    "replacement": "  const p = path, r = root;"
+  },
+  {
+    "name": "stage2 r3 tripwire Bash skips other-case .jarvis operands",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    if (!/\\.jarvis/i.test(t)) continue;",
+    "replacement": "    if (!t.includes(\".jarvis\")) continue;"
+  },
+  {
+    "name": "stage2 r3 tripwire session files are case-sensitive",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  return SESSION_OWNED.test(path.toLowerCase()) && ",
+    "replacement": "  return SESSION_OWNED.test(path) && "
+  },
+  {
+    "name": "stage2 r3 tripwire reads fixtures through links",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "      const file = lstatSync(target, { throwIfNoEntry: false });",
+    "replacement": "      const file = lstatSync(realpathSync(target), { throwIfNoEntry: false });"
+  },
+  {
+    "name": "stage2 r3 tripwire reads extra hard links",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": " && file.nlink === 1 && ",
+    "replacement": " && "
+  },
+  {
+    "name": "stage2 r3 tripwire reads another folder's fixtures",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": " && own.dev === folder.dev && own.ino === folder.ino;",
+    "replacement": ";"
+  },
+  {
+    "name": "stage2 r3 tripwire reads through a linked .jarvis",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  return !!own?.isDirectory() && !!parent?.isDirectory() && ",
+    "replacement": "  return !!own?.isDirectory() && "
+  },
+  {
+    "name": "stage2 r3 tripwire accepts a linked fixture folder",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "      return folder?.isDirectory() ? folder : undefined;",
+    "replacement": "      return folder ? lstatSync(realpathSync(join(d, \".jarvis\", \"research-fixtures\"))) : undefined;"
+  },
+  {
+    "name": "stage2 r3 tripwire Glob patterns leave the folder",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": " || pattern.includes(\"/\") || pattern.includes(\"**\")",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 tripwire ignores Glob's pattern beside a path",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  if (also.some((t) => inRunnerHome(t, input?.cwd, env))) return OFF_LIMITS;\n",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 tripwire checks only the first path for .jarvis",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "[text, ...also].filter((t) => JARVIS_PATH.test(t))",
+    "replacement": "[text].filter((t) => JARVIS_PATH.test(t))"
+  },
+  {
+    "name": "stage2 r3 tripwire lets Grep search the fixtures",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    if (tool === \"Glob\") {\n      const p = String(ti.path ?? \"\"), pattern",
+    "replacement": "    if (tool === \"Grep\") return true;\n    if (tool === \"Glob\") {\n      const p = String(ti.path ?? \"\"), pattern"
   }
 ]

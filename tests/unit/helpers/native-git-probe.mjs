@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { useRealGit } from '../../setup/use-real-git.ts';
 
-const [api, root, mode] = process.argv.slice(2);
+const [api, root, mode, selection] = process.argv.slice(2);
+const selected = JSON.parse(selection);
 const originals = { execFileSync, spawnSync, spawn, execFile };
 const custom = execFile[promisify.custom];
 const promised = promisify(execFile);
@@ -46,6 +47,7 @@ mkdirSync(join(root, 'parent'));
 process.chdir(join(root, 'parent'));
 const cases = {};
 const controls = {};
+const executions = [];
 function faults(name) {
   if (name === 'first PATH executable') return [
     ['unchanged', call => call],
@@ -62,15 +64,16 @@ function faults(name) {
   return [];
 }
 async function compare(name, file, args, options) {
-  const changes = mode === 'faults' ? faults(name) : [];
+  const changes = mode === 'faults' ? faults(name).filter(([fault]) => selected.includes(fault)) : [];
+  if (mode !== 'faults' && !selected.includes(name)) return;
   if (mode === 'faults' && changes.length === 0) return;
-  const capture = async native => {
+  const capture = async (observation, native) => {
+    executions.push({ name: observation, native });
     try { return { value: await run(native, file, args, options) }; }
     catch (error) { return { error: { message: error.message, code: error.code, path: error.path, spawnargs: error.spawnargs, stderr: error.stderr?.toString() } }; }
   };
-  const native = await capture(true);
-  const pair = async () => ({ native, configured: await capture(false) });
-  if (mode !== 'faults') cases[name] = await pair();
+  const pair = async observation => ({ native: await capture(observation, true), configured: await capture(observation, false) });
+  if (mode !== 'faults') cases[name] = await pair(name);
   for (const [fault, transform] of changes) {
     // Faults live only in this disposable probe. A no-op wrapper checks callback/promisify fidelity.
     const key = api === 'promisified' ? 'execFile' : api;
@@ -78,7 +81,7 @@ async function compare(name, file, args, options) {
     const intercepted = (...call) => saved(...transform(call));
     if (api === 'promisified') intercepted[promisify.custom] = (...call) => promised(...transform(call));
     cp[key] = intercepted;
-    try { controls[fault] = await pair(); }
+    try { controls[fault] = await pair(fault); }
     finally { cp[key] = saved; }
   }
 }
@@ -116,4 +119,4 @@ for (const key of ['CPATH', 'LIBRARY_PATH', 'MANPATH', 'SDKROOT']) {
   await compare(key, 'git', ['-c', 'alias.e=!env', 'e'], { cwd: root, env: { ...env, [key]: '/callers/own' } });
 }
 await compare('failed git', 'git', ['--not-a-real-option'], { cwd: root, env });
-process.stdout.write(JSON.stringify({ identities, cases, controls }));
+process.stdout.write(JSON.stringify({ identities, cases, controls, executions }));

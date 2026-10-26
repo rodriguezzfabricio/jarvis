@@ -1,8 +1,9 @@
 import type { Broker } from "../broker/broker.ts";
 import { assertTaskDomains } from "../eval/allowlist.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
-import { actionsFor, limitText, type Action, type Message } from "../notify/notifier.ts";
-import { ReplyInbox, recordAnswer } from "../notify/replies.ts";
+import { actionsFor, limitText, type Action, type Message, type Notifier, type SendReceipt } from "../notify/notifier.ts";
+import { ReplyInbox, recordAnswer, refusedReply } from "../notify/replies.ts";
+import { NtfyNotifier } from "../notify/ntfy.ts";
 import { loadRunNotifier, notificationError, type RunNotificationOptions } from "./run-notify.ts";
 
 export interface RunApprovalOptions extends RunNotificationOptions {
@@ -75,13 +76,18 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
   const timeoutMs = o.timeoutMs ?? 10_000;
   const pollMs = o.pollMs ?? 5000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || !Number.isSafeInteger(pollMs) || pollMs <= 0) throw new Error("invalid approval polling interval or timeout");
-  const loaded = loadRunNotifier(o);
+  let replyNotifier: Notifier | undefined;
+  const create = o.createNotifier ?? ((config) => new NtfyNotifier(config));
+  const loaded = loadRunNotifier({ ...o, createNotifier: (config) => {
+    replyNotifier ??= create({ ...config, topic: config.replyTopic, replyTopic: config.topic });
+    return create(config);
+  } });
   if (loaded.status === "ok") assertApprovalIsolation(loaded.baseUrl, o.taskAllowlists);
   const config = loaded.status === "ok" && onLoopback(loaded.baseUrl) ? { status: "loopback" as const } : loaded;
   const off = "approvals stay terminal-only (jarvis approve / jarvis reject).";
   if (config.status === "loopback") warn(`Phone approvals are off for this run: the notifier in ${o.configPath} is on this Mac's loopback, which sandboxed checks can reach and a phone can't; ${off}`);
   else if (config.status !== "ok") warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; ${off}`);
-  const inbox = new ReplyInbox(o.ledger, { approvalProject: o.project });
+  const inbox = new ReplyInbox(o.ledger, { approvalProject: o.project, steerInbox: true });
   const stop = new AbortController();
   let timer: ReturnType<typeof setInterval> | undefined;
   let active: Promise<void> | undefined;
@@ -137,9 +143,9 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
     }
   }
 
-  async function send(message: Message, actions: readonly Action[] = []): Promise<boolean> {
-    if (config.status !== "ok") return false;
-    return (await transport("send", () => config.notifier.send({ ...message, text: limitText(message.text) }, actions))).ok;
+  async function send(message: Message, actions: readonly Action[] = []): Promise<{ ok: true; value: SendReceipt | void } | { ok: false }> {
+    if (config.status !== "ok") return { ok: false };
+    return transport("send", () => config.notifier.send({ ...message, text: limitText(message.text) }, actions));
   }
 
   async function requests(): Promise<void> {
@@ -153,7 +159,10 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
       if (entries.some((e) => phase(e, "sent") && data(e).requestId === id)) continue;
       const nonce = registered ? String(data(registered).nonce) : inbox.register(id, "approval", o.project).nonce;
       const text = `Jarvis ${o.project}: approve ${String(r.op)}? ${oneLineSummary(r.summary)} (request ${id}, payload ${String(r.payloadHash).slice(0, 12)}). The full payload is in the runner ledger on your Mac.`;
-      if (await send({ kind: "approval", text }, actionsFor("approval", id, nonce)) && !closed) inbox.sent(id, now());
+      const published = await send({ kind: "approval", text }, actionsFor("approval", id, nonce));
+      // ntfy's own time for the publish lets a tap be checked on one clock (decision 130).
+      const serverTime = published.ok ? published.value?.time : undefined;
+      if (published.ok && !closed) inbox.sent(id, now(), Number.isSafeInteger(serverTime) && serverTime! >= 0 ? serverTime : undefined);
     }
   }
 
@@ -171,6 +180,8 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
     let last: string | undefined;
     for (const message of replies.value) {
       const answer = inbox.accept(message);
+      const refusal = refusedReply(message, answer, o.ledger.entries());
+      if (refusal && replyNotifier) await transport("reply", () => replyNotifier!.send(refusal, []));
       const confirmation = recordAnswer(o.ledger, answer, o.broker);
       last = message.id;
       if (confirmation) await send(confirmation);

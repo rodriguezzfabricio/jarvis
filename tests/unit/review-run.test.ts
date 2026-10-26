@@ -16,7 +16,7 @@ let n = 0;
 // they were started (a filtered mutation check sets JARVIS_MUTATIONS for the whole suite).
 function cliEnv(extra: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = { ...process.env, ...extra };
-  for (const k of ['JARVIS_MUTATIONS', 'JARVIS_MUTATION_CONFIRM', 'JARVIS_MUTATION_JOBS']) if (!(k in extra)) delete env[k];
+  for (const k of ['JARVIS_MUTATIONS', 'JARVIS_MUTATION_CONFIRM', 'JARVIS_MUTATION_JOBS', 'JARVIS_MUTATION_PLAN']) if (!(k in extra)) delete env[k];
   return env;
 }
 function fixture() {
@@ -174,7 +174,7 @@ it('runs the review evidence mutation check in confirm mode', () => {
   expect(defaultEvidence().find((c: { name: string }) => c.name === 'mutation-check').args).toEqual(['scripts/mutation-check.mjs', '--confirm']);
 });
 
-// Decision 94: a stage review confirms its own stage's mutations.
+// Decisions 94 and 129: a stage review runs its own stage's mutations, and only those.
 it('passes --confirm-stage through to the mutation check, and refuses an unknown stage', async () => {
   const m = defaultEvidence({ confirmStage: '0-1' }).find((c: { name: string }) => c.name === 'mutation-check');
   expect(m.args).toEqual(['scripts/mutation-check.mjs', '--confirm-stage', '0-1']);
@@ -245,10 +245,10 @@ it('CLI takes --confirm-stage', () => {
 it('passes a review whose mutation evidence is a successful --confirm-stage run, and fails a partial one', async () => {
   const results = Array.from({ length: 7 }, (_, i) => `caught   m${i} (1 failing assertion(s): t)`);
   const withMutationLine = (f: ReturnType<typeof fixture>, line: string) => f.evidence.map((c: { name: string }) => (c.name === 'mutation-check' ? { ...c, args: ['-e', `console.log(${JSON.stringify(line)})`] } : c));
-  const scoped = summarize({ total: 7, selected: 7, filtered: false, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 4, fast: 3 } });
+  const scoped = summarize({ total: 7, selected: 7, filtered: false, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 7, notRun: 3 } });
   const f = fixture();
   expect((await runReview({ ...f, evidence: withMutationLine(f, scoped.line) })).exitCode).toBe(0);
-  const partial = summarize({ total: 9, selected: 7, filtered: true, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 4, fast: 3 } });
+  const partial = summarize({ total: 9, selected: 7, filtered: true, results, unconfirmed: 0, scope: { stage: '0-1', confirmed: 7, notRun: 3 } });
   const g = fixture();
   expect((await runReview({ ...g, evidence: withMutationLine(g, partial.line) })).exitCode).toBe(1);
 });

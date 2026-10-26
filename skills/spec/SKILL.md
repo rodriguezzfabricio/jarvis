@@ -46,12 +46,12 @@ Copy the user's original request verbatim into Goals prose. Any default or assum
 
 What goes in:
 - **Goals:** what must be true for the user when this is done. Test each one: if it were cut, would the product still solve the problem? If yes, it's a P2 or P3 story, not a goal.
-- **Non-goals:** what this version deliberately doesn't do, each with its reason. Everything a fixed constraint rules out goes here with its source ("No follow-up emails: backlog P4 rules out a follow-up campaign"), so nobody adds it back later.
+- **Non-goals:** what this version deliberately doesn't do, each with its reason. Everything a fixed constraint rules out goes here with its source ("No automatic deletion: docs/storage.md:12 requires an explicit removal action"), so nobody adds it back later.
 - **Stories:** from the story map, in its order. A walking-skeleton crutch (a manual step standing in for an open choice) is a story too, so the build makes it real.
 - **Criteria** cover more than the happy path:
-  - for a product with a UI, **the first-value budget** from the intake record (decision 55), as its own criterion: "WHEN a new user opens the app THE SYSTEM SHALL let them add their first habit in 3 taps or fewer";
+  - for a product with a UI, **the first-value budget** from the intake record (decision 55), as its own criterion: "WHEN a new user opens the app THE SYSTEM SHALL let them save their first catalogue item in 3 taps or fewer";
   - the empty, loading, error and offline states of each screen the stories touch (decision 53);
-  - every outside action through the broker, stated as behavior: "WHEN the user approves a draft THE SYSTEM SHALL send exactly that message, and nothing without approval";
+  - every outside action through the broker, stated as behavior: "WHEN the user approves a payment THE SYSTEM SHALL charge exactly the approved amount, and nothing without approval";
   - nothing vague: "fast", "intuitive", "secure" and "user-friendly" become numbers or observable behavior, or they come out.
 - **Assumptions:** every fixed constraint from research and every answer, then every default and every Jarvis choice a story depends on. Tasks cite them by ID, and a morning veto of one replans what depends on it.
 - **Open questions:** only what doesn't block the build, each with the default the build uses meanwhile. A blocking product question belongs in intake; if one turns up now, see the reader check.
@@ -85,17 +85,19 @@ Ask it to report, each with the line it refers to:
 
 Fix each gap in the draft, or record why not. The reader's findings and what you did with each go in the intake record under "Spec check vN".
 
-**No second round of questions** (decision 8). A gap that turns out to be a product question becomes a `[delegated]` assumption using the default you would have offered, labeled "default unconfirmed", and is listed first in the confirmation. After fixing, re-read the whole spec after the last fixes, and run a fresh reader against the whole current decision register, until a pass finds no blocking gaps. Check no superseded citations, no answered question left open, and decision header ranges are current. Check goals, non-goals, stories, criteria and assumptions together; do not reintroduce anything an active decision excludes. Re-run `jarvis spec check` after each final edit. Nonblocking gaps may stay under Open questions with explicit defaults; unresolved blocking gaps leave the spec draft and prevent hand-off. Repeat this check after applying confirmation changes too.
+**No second round of questions** (decision 8). A gap that turns out to be a product question becomes a `[delegated]` assumption using the default you would have offered, labeled "default unconfirmed", and is listed first in the confirmation. After fixing, re-read the whole spec after the last fixes, and run a fresh reader against the whole current decision register, until a pass finds no blocking gaps, subject to the stop rule below. Check no superseded citations, no answered question left open, and decision header ranges are current. Check goals, non-goals, stories, criteria and assumptions together; do not reintroduce anything an active decision excludes. Re-run `jarvis spec check` after each final edit. Nonblocking gaps may stay under Open questions with explicit defaults; unresolved blocking gaps leave the spec draft and prevent hand-off. Repeat this check after applying confirmation changes too.
+
+**Bound the reader loop.** A clean pass ends the loop immediately. Stop after 3 passes with no new blocking gap; compare findings by the concrete failure, not its wording. Do not reset the count for wording or nonblocking suggestions. If the same blockers persist at that limit, keep the spec draft and report them instead of dispatching another reader. Record the pass count and unresolved blockers in the intake record. Nonblocking polish never prolongs the loop.
 
 ## Confirm
 
-The user gets one page: **"here's what I'm building, and what I'm not"**. Build it from the spec: the goals, the P1 stories in plain words, the non-goals, and the assumptions the user hasn't confirmed, those first. It must fit the round's summary of at most 5 lines; the full spec stays on the Mac.
+Start by saying **"This is the separate spec confirmation round"**. The user gets one page: **"here's what I'm building, and what I'm not"**. Build it from the spec: the goals, the P1 stories in plain words, the non-goals, and the assumptions the user hasn't confirmed, those first. It must fit the round's summary of at most 5 lines; the full spec stays on the Mac.
 
 Confirmation happens once, at the initial hand-off (decision 86). It goes out like an intake round (decisions 10 and 83), as one more round in `.jarvis/intake/` with one question:
 
 ```json
 { "formatVersion": 2, "round": 2, "spec": "docs/spec/v1.md",
-  "summary": "Building: …\nNot building: …\nUnconfirmed: A4 (weekly reminders), A6 (local storage)",
+  "summary": "Separate spec confirmation round\nBuilding: …\nNot building: …\nUnconfirmed: A4 (archive format), A6 (local storage)",
   "questions": [ { "id": "CONFIRM", "topic": "scope", "question": "Build spec v1 as written?",
     "why": "It's the only up-front approval; later changes replan part of the work.",
     "default": { "answer": "Yes, build as written", "reason": "It follows your answers and the project's rules", "tradeOff": "The unconfirmed choices and their known costs are listed above; no build has started" },
@@ -130,8 +132,8 @@ Hand back to the `/jarvis` pipeline with the spec path, its status, and the unco
 - **The grammar is exact.** A missing blank front matter line, `## User Stories` with a capital S, or a `## Notes` section fails the checker, and a spec that fails the checker blocks the whole run. Copy the template; don't type the structure from memory.
 - **Keep other files out of `docs/spec/`.** The checker treats every `v*.md` there as a version, so `v1-review.md` or `v1.old.md` breaks the history. Reader notes go in the intake record.
 - **Renumbering breaks replanning.** Sorting stories by renumbering them makes every task look stale. Keep IDs; reorder lines instead (the ID numbers don't have to be in order, the priorities do).
-- **"Should" isn't a criterion.** "The list should load quickly" can't fail a test. "WHEN the list has 500 habits THE SYSTEM SHALL show it within 1 second" can.
-- **Non-goals stop scope creep.** If the backlog rules out follow-ups and the spec doesn't say so, a later session will helpfully add them.
+- **"Should" isn't a criterion.** "The list should load quickly" can't fail a test. "WHEN the list has 500 catalogue items THE SYSTEM SHALL show it within 1 second" can.
+- **Non-goals stop scope creep.** If the backlog rules out automatic deletion and the spec doesn't say so, a later session will helpfully add them.
 - **Unconfirmed stays labeled.** An unconfirmed default copied into the spec without its label becomes a fake user decision; the morning report and the veto depend on the label.
 - **The reader must not see your reasoning.** Giving it the intake conversation turns it into a second author who shares your blind spots.
 - **Change only what the user asked.** When the confirmation asks for changes, apply exactly those to the draft (plus what the checker needs). Anything else you'd like to change waits for the next version, or the user approved one spec and got another.

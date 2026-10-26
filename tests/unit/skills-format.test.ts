@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 // is measured by the golden tasks, not here.
 
 const skillsDir = fileURLToPath(new URL("../../skills/", import.meta.url));
+const evalsDir = fileURLToPath(new URL("../../evals/skills/", import.meta.url));
 
 const MAX_LINES = 500;
 const MAX_BYTES = 20 * 1024;
@@ -49,13 +50,13 @@ const skills: Record<string, SkillRules> = {
       { section: "Build-vs-buy spike", phrase: "the existing repo and its dependencies" },
       { section: "Build-vs-buy spike", phrase: "package registries" },
       { section: "Build-vs-buy spike", phrase: "GitHub topics and curated lists" },
-      { section: "Build-vs-buy spike", phrase: "vendor APIs, with pricing pages read live" },
+      { section: "Build-vs-buy spike", phrase: "vendor APIs, with pricing pages read in the selected source mode" },
       { section: "Build-vs-buy spike", phrase: "MCP servers and existing skills" },
       { section: "Build-vs-buy spike", phrase: "terms of service" },
       { section: "Build-vs-buy spike", phrase: "lock-in" },
       { section: "Build-vs-buy spike", phrase: "no outbound network calls" }, // quick tests stay offline (decisions 12, 70)
       { section: "Build-vs-buy spike", phrase: "never uses credentials, never spends money, never signs up" },
-      { section: "Build-vs-buy spike", phrase: "never contacts or looks up a real person" },
+      { section: "Build-vs-buy spike", phrase: "never messages or looks up a real person" },
       { section: "Build-vs-buy spike", phrase: "Decision / Rationale / Alternatives" },
       { section: "Build-vs-buy spike", phrase: "product-or-engineering rule" }, // decision 7
       { section: "Sources and freshness", phrase: "researcher" }, // decision 70: live web only there
@@ -83,7 +84,7 @@ const skills: Record<string, SkillRules> = {
     ],
     phrases: [
       { section: "When to use", phrase: "Bugs go straight to" }, // tier 0 skips intake (decision 37)
-      { section: "Inputs", phrase: "offer it once, before the round" }, // decision 39 taste profile
+      { section: "Inputs", phrase: "offer it once within the round" }, // decision 39 taste profile
       { section: "When to use", phrase: "No mockups when a `DESIGN.md` exists" }, // architecture §2
       { section: "Check the decision register", phrase: "An explicit new request beats an older decision" }, // decision 48
       { section: "Check the decision register", phrase: "Silence never overrides an old decision" },
@@ -106,17 +107,17 @@ const skills: Record<string, SkillRules> = {
       { section: "Sort product from engineering", phrase: "Never ask what the code, the register, the backlog or research already answers" },
       { section: "Write the questions", phrase: "scope first, then security, privacy and legal, then UX, then technical" }, // decision 8
       { section: "Write the questions", phrase: "at most 7 questions" },
-      { section: "Write the questions", phrase: "always keep their place" },
+      { section: "Write the questions", phrase: "counts every question asked" },
       { section: "Write the questions", phrase: "The design direction** (decision 39) is one of the questions when the work adds a UI" },
       { section: "Write the questions", phrase: "Backend-only work never gets one" }, // architecture §2
       { section: "Write the questions", phrase: "the design skill writes `DESIGN.md` from the existing system" }, // decision 51
-      { section: "Write the questions", phrase: "Default: no, stop at preview-ready" }, // decision 12 production grant
-      { section: "Write the questions", phrase: "a default never does" },
+      { section: "Write the questions", phrase: "the ship stage asks them" }, // decision 12 production grant
+      { section: "Write the questions", phrase: "never authorizes an outside action" },
       { section: "Write the questions", phrase: "beyond 7 become logged assumptions" },
       { section: "Write the questions", phrase: "why it matters" },
       { section: "Write the questions", phrase: "recommended default" },
       { section: "Write the questions", phrase: "2–3 **alternatives**" },
-      { section: "Write the questions", phrase: "A default never spends money, never contacts a real person without approval" },
+      { section: "Write the questions", phrase: "A default never spends money, never messages a real person without approval" },
       { section: "Write the questions", phrase: "made-up sample data" },
       { section: "Send the round", phrase: "One round, all at once" },
       { section: "Send the round", phrase: "Reply 'defaults' to accept all" },
@@ -510,7 +511,7 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
   });
 
   it("has at least 3 evals, each with a prompt, an expected output and checkable expectations", () => {
-    const file = `${skillsDir}${name}/evals/evals.json`;
+    const file = `${evalsDir}${name}/evals.json`;
     expect(existsSync(file)).toBe(true);
     const evals = JSON.parse(readFileSync(file, "utf8")) as {
       skill_name: unknown;
@@ -526,11 +527,11 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
       expect(typeof e.expected_output === "string" && e.expected_output.length > 0).toBe(true);
       expect(Array.isArray(e.expectations) && e.expectations.length >= 2).toBe(true);
       for (const x of e.expectations as unknown[]) expect(typeof x === "string" && x.length > 0).toBe(true);
-      // Every file an eval names ships with the skill.
+      // Every file an eval names stays with its eval outside the plugin.
       expect(Array.isArray(e.files)).toBe(true);
       for (const f of e.files as unknown[]) {
         expect(typeof f).toBe("string");
-        expect(existsSync(`${skillsDir}${name}/evals/${f as string}`), f as string).toBe(true);
+        expect(existsSync(`${evalsDir}${name}/${f as string}`), f as string).toBe(true);
       }
     }
   });

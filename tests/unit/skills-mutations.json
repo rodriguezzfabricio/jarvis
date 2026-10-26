@@ -12,10 +12,10 @@
     "replacement": "Edit `docs/decisions.md` if that's quicker."
   },
   {
-    "name": "skills intake production grant defaults to no",
+    "name": "skills intake permissions wait for ship",
     "file": "skills/intake/SKILL.md",
-    "anchor": "Default: no, stop at preview-ready.",
-    "replacement": "Default: yes, promote when release-ready."
+    "anchor": "Release, production and spending permissions are not intake questions; the ship stage asks them",
+    "replacement": "Ask for release, production and spending permissions in intake"
   },
   {
     "name": "skills intake steer note never grants",
@@ -104,7 +104,7 @@
   {
     "name": "skills research search step deleted",
     "file": "skills/research/SKILL.md",
-    "anchor": "2. **Search, in parallel:**\n   - the existing repo and its dependencies (is it already half-built?),\n   - package registries,\n   - GitHub topics and curated lists,\n   - vendor APIs, with pricing pages read live and the date recorded,\n   - MCP servers and existing skills,\n   - practitioner write-ups.\n",
+    "anchor": "2. **Search, in parallel:**\n   - the existing repo and its dependencies (is it already half-built?),\n   - package registries,\n   - GitHub topics and curated lists,\n   - vendor APIs, with pricing pages read in the selected source mode and the date recorded,\n   - MCP servers and existing skills,\n   - practitioner write-ups.\n",
     "replacement": ""
   },
   {
@@ -228,10 +228,10 @@
     "replacement": "Read the intake conversation and author notes too."
   },
   {
-    "name": "skills taste offer moves into the round",
+    "name": "skills taste offer stays within the round",
     "file": "skills/intake/SKILL.md",
-    "anchor": "Before drafting questions or calling design, send a standalone taste-profile offer",
-    "replacement": "Append a taste offer to the question round"
+    "anchor": "offer it once within the round",
+    "replacement": "offer it outside the question round"
   },
   {
     "name": "skills triage headline follows progress",
@@ -284,7 +284,7 @@
   {
     "name": "skills researcher takes credentialed outside actions",
     "file": "plugin/agents/researcher.md",
-    "anchor": "Never use shell commands, install packages, use credentials or contact people.",
+    "anchor": "Never use shell commands, install packages, use credentials or message people.",
     "replacement": "Use shell commands, credentials and live contacts to quick-test findings."
   },
   {
@@ -404,7 +404,7 @@
   {
     "name": "skills intake drops the surface question",
     "file": "skills/intake/SKILL.md",
-    "anchor": "- **\"Where will you see it?\" is usually a real question.** Agents skip the surface: which screen, notification or digest. If the request names no surface, ask.\n",
+    "anchor": "- **\"Where will you see it?\" is usually a real question.** Agents skip the surface: which screen, page or export. If the request names no surface, ask.\n",
     "replacement": ""
   },
   {
@@ -416,8 +416,8 @@
   {
     "name": "skills intake taste offer holds the round",
     "file": "skills/intake/SKILL.md",
-    "anchor": "and never end the turn on it: keep framing while the user decides.",
-    "replacement": "and end the turn until the user answers it."
+    "anchor": "Do not wait for a profile before framing the job.",
+    "replacement": "Wait for a profile before framing the job."
   },
   {
     "name": "skills spec splits a confirmation into user decisions",

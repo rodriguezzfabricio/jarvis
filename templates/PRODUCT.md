@@ -21,7 +21,7 @@ Updated: <YYYY-MM-DD> · Spec: docs/spec/v<N>.md · Sources: docs/research/<file
 - <…>
 
 ## First value
-<!-- The core result a new user should reach first ("first habit added"). The spec sets the
+<!-- The core result a new user should reach first ("first catalogue item saved"). The spec sets the
      budget to reach it as an acceptance criterion (decision 55); cite that criterion here. -->
 - Core result: <…>
 - Budget: see docs/spec/v<N>.md, AC<n>

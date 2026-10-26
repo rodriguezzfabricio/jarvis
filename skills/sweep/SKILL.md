@@ -66,9 +66,9 @@ Code drifts a little every week: a helper nobody calls, a TODO from last spring,
   "tasks": [
     {
       "id": "T1",
-      "title": "Remove the unused formatSalary helper",
-      "goal": "Delete src/lib/format.ts's formatSalary export, which nothing references, and its own test",
-      "exitCondition": "formatSalary no longer exists, a search finds no reference to it, and the unit check and code review pass",
+      "title": "Remove the unused formatLegacyDate helper",
+      "goal": "Delete src/lib/format.ts's formatLegacyDate export, which nothing references, and its own test",
+      "exitCondition": "formatLegacyDate no longer exists, a search finds no reference to it, and the unit check and code review pass",
       "acceptanceCriteria": [],
       "storyIds": [],
       "dependencies": [],

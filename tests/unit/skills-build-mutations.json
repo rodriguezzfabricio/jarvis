@@ -97,25 +97,25 @@
   },
   {
     "name": "debug eval: Chromium file-boundary expectation dropped",
-    "file": "skills/debug/evals/evals.json",
+    "file": "evals/skills/debug/evals.json",
     "anchor": "\"Only Dockerfile and docker-compose.yml change: no other file is added or modified, and no test is written anywhere\",",
     "replacement": ""
   },
   {
     "name": "debug eval: Chromium prompt loses its stated boundary",
-    "file": "skills/debug/evals/evals.json",
+    "file": "evals/skills/debug/evals.json",
     "anchor": " May touch only: Dockerfile, docker-compose.yml.",
     "replacement": ""
   },
   {
     "name": "build eval: runner trial's recipient check moved into the session",
-    "file": "skills/build/evals/evals.json",
+    "file": "evals/skills/build/evals.json",
     "anchor": "In the runner-executed trial through discovery → drafting → approval → stub delivery, the draft's recipient",
     "replacement": "In the session, the draft's recipient"
   },
   {
     "name": "build eval: runner trial's approval-before-delivery check dropped",
-    "file": "skills/build/evals/evals.json",
+    "file": "evals/skills/build/evals.json",
     "anchor": "the local SMTP stub receives nothing before approval, then",
     "replacement": "the local SMTP stub receives"
   },

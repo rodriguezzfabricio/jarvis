@@ -18,6 +18,8 @@ Use the schema in `packages/cli/src/release/manifest.ts`: version, project, comm
 
 ## Handoff and states
 
+Ask for release, production and spending permissions here, against the concrete action and its evidence, through the broker. Intake answers and spec confirmation are not grants. Reuse an existing valid grant only for its exact approved scope.
+
 Your manifest and notes are claims. Do not write ledger entries or manufacture check output. The runner runs checks, rehearses migrations, tests restore and collects deploy receipts and live smoke evidence after the session ends (decisions 44, 49).
 
 Outside actions go through `jarvis act` on the run's explicit broker socket. Deploy payloads contain only `{ "ref": "release:<manifest SHA-256>:preview|promote|rollback" }`; the runner supplies that reference after accepting the manifest. Never run a provider CLI, read a token, pass a credential to a command, or create a grant from the task session.

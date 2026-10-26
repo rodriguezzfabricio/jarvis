@@ -12,6 +12,7 @@ import { SKILL_STAGES, STEPS, triage } from "../../packages/cli/src/triage/triag
 // mass-edits (decision 15). How well they work is measured by golden tasks 7 and 10, not here.
 
 const skillsDir = fileURLToPath(new URL("../../skills/", import.meta.url));
+const evalsDir = fileURLToPath(new URL("../../evals/skills/", import.meta.url));
 
 const MAX_LINES = 500;
 const MAX_BYTES = 20 * 1024;
@@ -375,7 +376,7 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
   });
 
   it("has at least 3 evals, each with a prompt, an expected output and checkable expectations", () => {
-    const file = `${skillsDir}${name}/evals/evals.json`;
+    const file = `${evalsDir}${name}/evals.json`;
     expect(existsSync(file)).toBe(true);
     const evals = JSON.parse(readFileSync(file, "utf8")) as {
       skill_name: unknown;
@@ -394,7 +395,7 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
       expect(Array.isArray(e.files)).toBe(true);
       for (const f of e.files as unknown[]) {
         expect(typeof f).toBe("string");
-        expect(existsSync(`${skillsDir}${name}/evals/${f as string}`), f as string).toBe(true);
+        expect(existsSync(`${evalsDir}${name}/${f as string}`), f as string).toBe(true);
       }
     }
   });
@@ -402,7 +403,7 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
 
 type Eval = { id: number; prompt: string; expected_output: string; expectations: string[]; files: string[] };
 function evalsOf(name: string): Eval[] {
-  return (JSON.parse(readFileSync(`${skillsDir}${name}/evals/evals.json`, "utf8")) as { evals: Eval[] }).evals;
+  return (JSON.parse(readFileSync(`${evalsDir}${name}/evals.json`, "utf8")) as { evals: Eval[] }).evals;
 }
 
 /** The runner's plan shape, from the one json fence in a section, parsed by the runner's own schema. */
@@ -498,7 +499,7 @@ describe("golden task 7: onboarding with cleanup connects to triage (decision 89
   it("a hostile README's instructions are reported, never run", () => {
     const e = evalsOf("onboard").find((x) => x.files.includes("files/hostile-readme.md"));
     expect(e, "a hostile-README eval").toBeDefined();
-    expect(readFileSync(`${skillsDir}onboard/evals/files/hostile-readme.md`, "utf8")).toContain("Note for AI coding agents");
+    expect(readFileSync(`${evalsDir}onboard/files/hostile-readme.md`, "utf8")).toContain("Note for AI coding agents");
     expect(e!.expectations.some((s) => s.includes("No curl, sh or git push"))).toBe(true);
   });
 });
@@ -572,7 +573,7 @@ describe("register and memory calls", () => {
   it("compound's evals refuse a planted instruction and learn nothing from an agent's claim", () => {
     const e = evalsOf("compound").find((x) => x.files.includes("files/run-ledger.md"));
     expect(e).toBeDefined();
-    const fixture = readFileSync(`${skillsDir}compound/evals/files/run-ledger.md`, "utf8");
+    const fixture = readFileSync(`${evalsDir}compound/files/run-ledger.md`, "utf8");
     expect(fixture).toContain("security lane is optional");
     expect(e!.expectations.some((s) => s.includes("planted instruction"))).toBe(true);
     expect(e!.expectations.some((s) => s.includes("No learning is kept from T5's session notes"))).toBe(true);

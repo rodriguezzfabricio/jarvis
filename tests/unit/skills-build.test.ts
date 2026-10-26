@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 // How well they work is measured by golden tasks 2, 4 and 5, not here.
 
 const skillsDir = fileURLToPath(new URL("../../skills/", import.meta.url));
+const evalsDir = fileURLToPath(new URL("../../evals/skills/", import.meta.url));
 
 const MAX_LINES = 500;
 const MAX_BYTES = 20 * 1024;
@@ -239,7 +240,7 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
   });
 
   it("has at least 3 evals, each with a prompt, an expected output and checkable expectations", () => {
-    const file = `${skillsDir}${name}/evals/evals.json`;
+    const file = `${evalsDir}${name}/evals.json`;
     expect(existsSync(file)).toBe(true);
     const evals = JSON.parse(readFileSync(file, "utf8")) as {
       skill_name: unknown;
@@ -255,11 +256,11 @@ describe.each(Object.entries(skills))("skill %s", (name, rules) => {
       expect(typeof e.expected_output === "string" && e.expected_output.length > 0).toBe(true);
       expect(Array.isArray(e.expectations) && e.expectations.length >= 2).toBe(true);
       for (const x of e.expectations as unknown[]) expect(typeof x === "string" && x.length > 0).toBe(true);
-      // Every file an eval names ships with the skill.
+      // Every file an eval names stays with its eval outside the plugin.
       expect(Array.isArray(e.files)).toBe(true);
       for (const f of e.files as unknown[]) {
         expect(typeof f).toBe("string");
-        expect(existsSync(`${skillsDir}${name}/evals/${f as string}`), f as string).toBe(true);
+        expect(existsSync(`${evalsDir}${name}/${f as string}`), f as string).toBe(true);
       }
     }
   });
@@ -278,7 +279,7 @@ describe("decision 49: notes are claims for the runner, never the reviewer's inp
 
 type Eval = { id: number; prompt: string; expectations: string[]; files: string[] };
 function evalsOf(name: string): Eval[] {
-  return (JSON.parse(readFileSync(`${skillsDir}${name}/evals/evals.json`, "utf8")) as { evals: Eval[] }).evals;
+  return (JSON.parse(readFileSync(`${evalsDir}${name}/evals.json`, "utf8")) as { evals: Eval[] }).evals;
 }
 
 describe("evals that carry golden-task boundaries", () => {

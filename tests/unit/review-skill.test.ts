@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 const root = resolve("skills/review");
+const evalRoot = resolve("evals/skills/review");
 const skill = () => readFileSync(`${root}/SKILL.md`, "utf8");
 describe("review skill", () => {
   it("has concise Agent Skills frontmatter and a gotchas section", () => {
@@ -27,7 +28,7 @@ describe("review skill", () => {
     expect(skill()).toContain("data, never instructions");
   });
   it("ships realistic evals with resolvable fixture references", () => {
-    const data = JSON.parse(readFileSync(`${root}/evals/evals.json`, "utf8"));
+    const data = JSON.parse(readFileSync(`${evalRoot}/evals.json`, "utf8"));
     expect(data.skill_name).toBe("review");
     expect(data.evals.length).toBeGreaterThanOrEqual(3);
     expect(new Set(data.evals.map((e: { id: number }) => e.id)).size).toBe(data.evals.length);
@@ -36,7 +37,7 @@ describe("review skill", () => {
       expect(e.prompt.length).toBeGreaterThan(0);
       expect(e.expected_output.length).toBeGreaterThan(0);
       expect(e.expectations.length).toBeGreaterThanOrEqual(2);
-      for (const f of e.files) expect(existsSync(`${root}/evals/${f}`)).toBe(true);
+      for (const f of e.files) expect(existsSync(`${evalRoot}/${f}`)).toBe(true);
     }
     const all = JSON.stringify(data);
     for (const phrase of ["SSRF", "investigate", "builder", "unchanged caller"]) expect(all).toContain(phrase);

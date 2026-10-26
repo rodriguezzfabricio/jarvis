@@ -20,6 +20,7 @@ const MAP = [
   [/^packages\/cli\/src\/harness\/claude\/mutations-probe\.json$/, "0-1"],
   [/^packages\/cli\/src\/harness\/claude\/mutations-settings\.json$/, "0-1"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
+  [/^tests\/unit\/stage2-r3-mutations\.json$/, "2"], // recorded research, plugin contamination, general intake rules (decision 132)
   [/^packages\/cli\/src\/eval\/mutations-jarvis\.json$/, "3"],
   [/^packages\/cli\/src\/eval\/mutations-network\.json$/, "0-1"],
   [/^packages\/cli\/src\/eval\/mutations-hidden\.json$/, "4"], // how hidden checks are installed; found building task 06, the stage 4 proof

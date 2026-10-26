@@ -23,7 +23,7 @@ For the changed flow, cover:
 | Stale data / offline | Show freshness, preserve work, and explain retry or reconciliation |
 | Keyboard only | Logical order, visible focus, no trap, reachable primary and secondary actions |
 
-Check one primary action per screen, reduced-motion behavior, and WCAG 2.2 AA. Run axe-core and require zero serious or critical issues. Accessibility automation supplements keyboard and focus interaction checks. Verify the first-value budget from the spec without hiding information someone needs to decide: an outreach approval still shows the recipient, provenance and exact message.
+Check one primary action per screen, reduced-motion behavior, and WCAG 2.2 AA. Run axe-core and require zero serious or critical issues. Accessibility automation supplements keyboard and focus interaction checks. Verify the first-value budget from the spec without hiding information someone needs to decide: a deletion approval still shows the affected files, source and recovery options.
 
 ## Use the real target
 

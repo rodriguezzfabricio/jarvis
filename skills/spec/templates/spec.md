@@ -27,7 +27,7 @@ supersedes: none
 
 ## Non-goals
 <!-- What this version deliberately doesn't do, each with a reason. Include what the project's
-     own rules rule out (for example "No follow-up emails: backlog P4 forbids a follow-up campaign"). -->
+     own rules rule out (for example "No automatic deletion: docs/storage.md:12 requires an explicit removal action"). -->
 - <non-goal>: <reason>
 
 ## User stories

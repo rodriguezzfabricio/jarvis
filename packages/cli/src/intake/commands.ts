@@ -13,7 +13,7 @@ import type { Notifier } from "../notify/notifier.ts";
 import { parseNotifyConfig } from "../notify/config.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
 import { answerRound, getRoundAnswers, readReplyCursor, sendRound, type IntakeDeps } from "./round.ts";
-import { saveTaste } from "./taste.ts";
+import { loadTaste, saveTaste } from "./taste.ts";
 
 export interface CommandDeps {
   home?: string;
@@ -76,11 +76,12 @@ export function register(program: Command, deps: CommandDeps = {}): void {
     .action(async (file: string, options: ProjectOptions) => {
       const context = projectDeps(options, deps, true);
       const result = await sendRound(resolve(context.repoDir, file), context);
+      const deadline = result.deadline === null ? "No deadline until delivery succeeds." : `Deadline: ${new Date(result.deadline).toISOString()}.`;
       print(result.state === "closed" ? `Intake round ${result.round} already closed (${result.status}).`
-        : result.deliveryFailed ? `Intake round ${result.round} recorded; notification not delivered; answer in the session`
-        : result.delivered ? `Intake round ${result.round} sent.` : `Intake round ${result.round} recorded; answers must be typed in the session.`);
+        : result.deliveryFailed ? `Intake round ${result.round} recorded; notification not delivered; answer in the session. ${deadline}`
+        : result.delivered ? `Intake round ${result.round} sent.` : `Intake round ${result.round} recorded; answers must be typed in the session. ${deadline}`);
     });
-  projectOptions(intake.command("answer").description("Submit a complete response; omitted questions accept their defaults").argument("<round>").argument("<file>"))
+  projectOptions(intake.command("answer").description("Submit a JSON map or string (defaults, or an answer to one question); omitted ids accept defaults").argument("<round>").argument("<file>"))
     .action((n: string, file: string, options: ProjectOptions) => {
       const result = answerRound(integer(n, "round", 1), file, projectDeps(options, deps));
       if (!result.counted) {
@@ -94,7 +95,10 @@ export function register(program: Command, deps: CommandDeps = {}): void {
       const waitMs = integer(options.wait, "wait") * 1000;
       print(JSON.stringify(await getRoundAnswers(integer(n, "round", 1), projectDeps(options, deps, waitMs > 0), { waitMs })));
     });
-  program.command("taste").description("Global design preferences").command("save").argument("<file>")
+  const taste = program.command("taste").description("Global design preferences");
+  taste.command("show").description("Print the taste profile as JSON, or null when absent")
+    .action(() => { print(JSON.stringify(loadTaste({ home: deps.home ?? homedir() }) ?? null)); });
+  taste.command("save").argument("<file>")
     .action((file: string) => {
       const target = saveTaste(resolve(projectRoot(deps.cwd ?? process.cwd()), file), { home: deps.home ?? homedir() });
       print(`Taste profile saved to ${target}.`);

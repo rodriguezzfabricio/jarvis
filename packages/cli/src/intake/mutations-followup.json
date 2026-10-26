@@ -1,0 +1,56 @@
+[
+  {
+    "name": "intake undelivered round starts a timer",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "round.deliveredAt === undefined ? null : round.deliveredAt + round.timeoutMs",
+    "replacement": "round.deliveredAt === undefined ? round.sentAt + round.timeoutMs : round.deliveredAt + round.timeoutMs"
+  },
+  {
+    "name": "intake deadline starts at registration",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "null : round.deliveredAt + round.timeoutMs",
+    "replacement": "null : round.sentAt + round.timeoutMs"
+  },
+  {
+    "name": "intake duplicate delivery receipts accumulate",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (current.deliveredAt === undefined) add(",
+    "replacement": "if (true) add("
+  },
+  {
+    "name": "intake delivery receipt is not durable",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (current.deliveredAt === undefined) add(",
+    "replacement": "if (false) add("
+  },
+  {
+    "name": "intake accepts an undelivered phone tap",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": ": deadlineOf(round) === null ? \"not-delivered\"",
+    "replacement": ""
+  },
+  {
+    "name": "intake format two omits known costs",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "if (round.formatVersion !== 2) return;",
+    "replacement": "if (true) return;"
+  },
+  {
+    "name": "intake phone hides tradeoffs",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "${oneLine(q.default.tradeOff ?? \"not checked (legacy round)\")}",
+    "replacement": "not shown"
+  },
+  {
+    "name": "intake answer result omits durable provenance sequence",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "by, answerSeq: intent.seq, answers:",
+    "replacement": "by, answers:"
+  },
+  {
+    "name": "intake retry hides an existing delivery deadline",
+    "file": "packages/cli/src/intake/commands.ts",
+    "anchor": "result.deadline === null ? \"No deadline until delivery succeeds.\"",
+    "replacement": "true ? \"No deadline until delivery succeeds.\""
+  }
+]

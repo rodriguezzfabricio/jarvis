@@ -1,0 +1,68 @@
+[
+  {
+    "name": "decisions user attribution skips answer proof",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "if (options.by === \"user\") verifyUserAnswer(",
+    "replacement": "if (false) verifyUserAnswer("
+  },
+  {
+    "name": "decisions user answer proof permits defaults",
+    "file": "packages/cli/src/decisions/answer.ts",
+    "anchor": "if (!recorded || value.by !== \"user\" || value.confirmed !== true || !intent || intent.kind !== \"notify\"\n    || data(intent).source !== \"notify\" || data(intent).phase !== \"answer\" || data(intent).intakeOwned !== true || data(intent).intakeBy !== \"session\"\n    || value.requestId !== data(intent).requestId || !supplied || typeof supplied !== \"object\" || !Object.hasOwn(supplied, id)\n    || (supplied as Data)[id] !== value.answer) throw new Error(\"Reference does not identify a recorded explicit user answer\");",
+    "replacement": "if (false) throw new Error(\"Reference does not identify a recorded explicit user answer\");"
+  },
+  {
+    "name": "decisions proof authorizes different text",
+    "file": "packages/cli/src/decisions/answer.ts",
+    "anchor": "!question || decision !== value.answer",
+    "replacement": "!question"
+  },
+  {
+    "name": "decisions proof authorizes unrelated supersession",
+    "file": "packages/cli/src/decisions/answer.ts",
+    "anchor": "options.supersedes !== undefined && !new RegExp",
+    "replacement": "false && !new RegExp"
+  },
+  {
+    "name": "decisions proof trusts tampered ledger",
+    "file": "packages/cli/src/decisions/answer.ts",
+    "anchor": ")).entries();",
+    "replacement": ")).verify().entries;"
+  },
+  {
+    "name": "decisions user rationale can be blank",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "if (!options.why.trim()) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "decisions user proof is not retained",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "`${options.why}\\nRecorded user answer: ${options.answer}`",
+    "replacement": "options.why"
+  },
+  {
+    "name": "decisions spec allows superseded citations",
+    "file": "packages/cli/src/decisions/spec-check.ts",
+    "anchor": "else if (entry.status.kind === \"superseded\")",
+    "replacement": "else if (false)"
+  },
+  {
+    "name": "decisions spec allows unknown citations",
+    "file": "packages/cli/src/decisions/spec-check.ts",
+    "anchor": "if (!entry) problems.push({ line, code: \"unknown-decision\", message: `Unknown decision ${match[0]}` });",
+    "replacement": "if (!entry) continue;"
+  },
+  {
+    "name": "decisions spec allows stale header range",
+    "file": "packages/cli/src/decisions/spec-check.ts",
+    "anchor": "if (Number(range[1]) !== Math.min(...ids) || Number(range[2]) !== Math.max(...ids))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "decisions spec validates oldest instead of latest",
+    "file": "packages/cli/src/decisions/spec-check.ts",
+    "anchor": "result.versions.at(-1)",
+    "replacement": "result.versions.at(0)"
+  }
+]

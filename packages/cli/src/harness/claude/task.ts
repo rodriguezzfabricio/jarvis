@@ -11,6 +11,8 @@ import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings, type Tas
 import { hitRateLimitError, parseStreamJson, rateLimits, usageWaitUntil } from "./streamjson.ts";
 import { assembleTaskPlugin, checkTaskPluginSource } from "./task-plugin.ts";
 import { sessionUsage } from "./usage.ts";
+import { checkSessionToolchain, toolchainEnv, type ToolchainParts } from "./toolchain.ts";
+import type { SessionToolchain } from "../../toolchain/go.ts";
 
 export interface TaskPreflight {
   ok: boolean;
@@ -35,6 +37,11 @@ export interface ClaudeHarnessOptions {
   nodeBin?: string;
   /** The repo's plugin/; each session gets its own runner-owned copy with only the task skills (task-plugin.ts). */
   pluginDir?: string;
+  /**
+   * A pinned toolchain the runner prepared for this run (toolchain/go.ts, decision 123): reopened read-only,
+   * first on PATH after the jarvis launcher. It must not overlap the worktrees, caches or runner folder.
+   */
+  toolchain?: SessionToolchain;
   home?: string;
   parentEnv?: Readonly<Record<string, string | undefined>>;
   /** Trusted snapshot loaded once by the runner at run start. */
@@ -129,7 +136,7 @@ function trustedInstall(installDir: string, roots: readonly string[]): string[] 
   return dirs;
 }
 
-function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string; installDirs?: string[]; node?: string } {
+function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { worktree: string; jarvisHome: string; cacheRoot: string; home: string; binary: string; toolchain: ToolchainParts; installDirs?: string[]; node?: string } {
   const worktree = realpathSync(input.workspace);
   const worktreeRoot = realpathSync(opts.worktreeRoot);
   if (!isAbsolute(input.workspace) || worktree === worktreeRoot || !under(worktree, worktreeRoot)) throw new Error("workspace must be below the worktree root");
@@ -142,13 +149,15 @@ function trustedLocations(input: TaskInput, opts: ClaudeHarnessOptions): { workt
     if (under(home, root)) throw new Error("session home must be outside worktrees, cache and jarvisHome");
     if (!isAbsolute(binaryTarget) || under(resolve(binaryTarget), root)) throw new Error("pinned binary must resolve outside worktrees, cache and jarvisHome");
   }
-  if (opts.installDir === undefined) return { worktree, jarvisHome, cacheRoot, home, binary };
+  // Decision 123: a pinned toolchain is read-only, and never where any session writes.
+  const toolchain = checkSessionToolchain(opts.toolchain, [worktreeRoot, cacheRoot, jarvisHome]);
+  if (opts.installDir === undefined) return { worktree, jarvisHome, cacheRoot, home, binary, toolchain };
   const roots = [worktreeRoot, cacheRoot, jarvisHome];
   const installDirs = trustedInstall(opts.installDir, roots);
   // The launcher runs the CLI with this Node, by real path: never one a session could have written.
   const node = realpathSync(opts.nodeBin ?? process.execPath);
   if (!isAbsolute(node) || roots.some((root) => under(node, root))) throw new Error("the Node that runs jarvis act must resolve outside worktrees, cache and jarvisHome");
-  return { worktree, jarvisHome, cacheRoot, home, binary, installDirs, node };
+  return { worktree, jarvisHome, cacheRoot, home, binary, toolchain, installDirs, node };
 }
 
 function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: RoutingTable, locations: ReturnType<typeof trustedLocations>, cacheDir: string, sessionDir: string, sessionTmpDir: string): SessionSpec {
@@ -159,6 +168,8 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
     worktree, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: opts.allowedDomains,
     // `jarvis act` loads the installed CLI: read-only, and only that folder.
     ...(locations.installDirs ? { readOnlyDirs: locations.installDirs } : {}),
+    // A pinned toolchain (decision 123): read-only too, beside the install.
+    ...(locations.toolchain.readOnlyDirs.length ? { readOnlyDirs: [...(locations.installDirs ?? []), ...locations.toolchain.readOnlyDirs] } : {}),
     ...(opts.brokerSocket ? { brokerSocket: opts.brokerSocket } : {}),
   };
   writeTaskSettings(settingsPath, context);
@@ -178,6 +189,8 @@ function prepareTask(input: TaskInput, opts: ClaudeHarnessOptions, routing: Rout
     ...(opts.brokerSocket ? { JARVIS_BROKER_SOCKET: opts.brokerSocket } : {}),
     // The skills say `jarvis act` (decision 12): the install's launcher comes first on PATH, run by the runner's Node.
     ...(locations.installDirs && locations.node ? { PATH: `${join(locations.installDirs[0]!, SESSION_BIN)}:${fixedPath(home)}`, JARVIS_NODE: locations.node } : {}),
+    // A pinned toolchain (decision 123): its variables, and its bin after the launcher; GOCACHE stays the session's.
+    ...toolchainEnv(locations.toolchain, locations.installDirs && locations.node ? [join(locations.installDirs[0]!, SESSION_BIN)] : [], fixedPath(home)),
     JARVIS_SESSION: "1", // the plugin's tripwire enforces in Jarvis sessions only
   });
   return {

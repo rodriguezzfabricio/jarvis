@@ -63,6 +63,20 @@ it("claims a nonce once even before the broker answer is recorded", async () => 
   expect(s.inbox.pending()).toHaveLength(1);
 });
 
+it("passes over steer notes and intake taps without a trace, so the inbox that owns them still reads them", async () => {
+  const s = await setup();
+  const before = s.ledger.entries().length;
+  expect(s.inbox.accept({ id: "steer-1", text: "a fake steer note", time: 101 })).toEqual({ status: "ignored", reason: "not-approval" });
+  expect(s.inbox.accept({ id: "intake-1", text: "defaults:intake-1-fake:nonce", time: 101 })).toEqual({ status: "ignored", reason: "not-approval" });
+  expect(s.ledger.entries()).toHaveLength(before);
+  expect(new ReplyInbox(s.ledger).accept({ id: "steer-1", text: "a fake steer note" }).status).toBe("counted");
+  // Approval-shaped faults are still recorded: a bare word, or Use defaults on an approval request.
+  const r = s.inbox.register(s.pending.approvalId!, "approval", "test"); s.inbox.sent(r.requestId, 100_500);
+  expect(s.inbox.accept({ id: "bare", text: "approve", time: 101 })).toEqual({ status: "ignored", reason: "invalid" });
+  expect(s.inbox.accept({ id: "kind", text: `defaults:${r.requestId}:${r.nonce}`, time: 101 })).toEqual({ status: "ignored", reason: "wrong-answer" });
+  expect(s.ledger.entries().filter((e) => (e.data as { phase?: string }).phase === "ignored")).toHaveLength(2);
+});
+
 it("a phone inbox recovers only its own project-bound intents", async () => {
   const s = await setup();
   const generic = new ReplyInbox(s.ledger);

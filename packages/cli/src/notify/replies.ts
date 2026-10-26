@@ -5,7 +5,7 @@ import { confirmation, type Answer, type Message, type ReplyMessage } from "./no
 
 export type ParsedReply = { kind: "button"; answer: Answer; requestId: string; nonce: string }
   | { kind: "steer"; text: string } | { kind: "invalid" };
-export type IgnoredReason = "invalid" | "duplicate" | "unknown-request" | "unknown-nonce" | "reused-nonce" | "already-answered" | "wrong-answer" | "wrong-project" | "not-sent" | "before-send";
+export type IgnoredReason = "invalid" | "duplicate" | "unknown-request" | "unknown-nonce" | "reused-nonce" | "already-answered" | "wrong-answer" | "wrong-project" | "not-sent" | "before-send" | "not-approval";
 export type CountedAnswer = { status: "counted"; seq: number; id: string } & (
   { answer: Answer; requestId: string; confirmation: Message } | { answer: "steer"; text: string; confirmation: Message }
 );
@@ -98,6 +98,9 @@ export class ReplyInbox {
       };
       if (entries.some((e) => (isPhase(e, "answer") || isPhase(e, "ignored")) && data(e).id === message.id)) return { status: "ignored", reason: "duplicate" };
       if (parsed.kind === "invalid") return ignore("invalid");
+      // Steer notes and intake taps belong to the reply topic's other readers. Recording them here would
+      // make every later inbox on this ledger drop them as duplicates, so the phone poller leaves no trace.
+      if (this.approvalProject !== undefined && (parsed.kind === "steer" || parsed.requestId.startsWith("intake-"))) return { status: "ignored", reason: "not-approval" };
       if (this.approvalProject !== undefined && (parsed.kind !== "button" || parsed.answer === "defaults")) return ignore("wrong-answer");
       let intent: Intent;
       if (parsed.kind === "button") {

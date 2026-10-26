@@ -82,5 +82,11 @@
     "file": "packages/cli/src/notify/ntfy.ts",
     "anchor": "id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)",
     "replacement": "id: z.string().min(1)"
+  },
+  {
+    "name": "phone inbox records the reply topic's other messages",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "      if (this.approvalProject !== undefined && (parsed.kind === \"steer\" || parsed.requestId.startsWith(\"intake-\"))) return { status: \"ignored\", reason: \"not-approval\" };",
+    "replacement": ""
   }
 ]

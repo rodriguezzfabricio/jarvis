@@ -1,0 +1,62 @@
+[
+  {
+    "name": "approval clock skew is unbounded",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "gap <= MAX_APPROVAL_CLOCK_SKEW_SECONDS",
+    "replacement": "true"
+  },
+  {
+    "name": "approval skew bounds both clock directions",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (time! * 1000 <= (data(sent).sentAt as number) && !(gap >= 1 && gap <= MAX_APPROVAL_CLOCK_SKEW_SECONDS))",
+    "replacement": "if (Math.abs(gap) > MAX_APPROVAL_CLOCK_SKEW_SECONDS || gap === 0)"
+  },
+  {
+    "name": "approval same-second tap counts",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "gap >= 1 && gap <= MAX_APPROVAL_CLOCK_SKEW_SECONDS",
+    "replacement": "gap >= 0 && gap <= MAX_APPROVAL_CLOCK_SKEW_SECONDS"
+  },
+  {
+    "name": "approval skew use leaves no audit",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (skewSeconds > 0) add(",
+    "replacement": "if (false) add("
+  },
+  {
+    "name": "phone steer route consumes intake taps",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "      if (this.approvalProject !== undefined && parsed.kind === \"button\" && parsed.requestId.startsWith(\"intake-\")) return { status: \"ignored\", reason: \"not-approval\" };",
+    "replacement": ""
+  },
+  {
+    "name": "phone steer bypasses the runner inbox",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (data(intent).steerInbox === true) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "phone steer replay uses a fresh file identity",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "const id = `notify-${answer.seq}`;",
+    "replacement": "const id = `notify-${randomBytes(8).toString(\"hex\")}`;"
+  },
+  {
+    "name": "phone refusal echo becomes a steer note",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": " || /^Not counted:/i.test(trimmed)",
+    "replacement": ""
+  },
+  {
+    "name": "oversized phone steer disables polling",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": " || Buffer.byteLength(trimmed) > 16_384",
+    "replacement": ""
+  },
+  {
+    "name": "phone steer recovery follows a symlink",
+    "file": "packages/cli/src/notify/replies.ts",
+    "anchor": "if (stat && (!stat.isDirectory() || stat.isSymbolicLink()))",
+    "replacement": "if (false)"
+  }
+]

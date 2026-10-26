@@ -243,3 +243,15 @@ export class Broker {
     return { kind: "execute", executionSeq: intent.seq, approvalId };
   }
 }
+
+/** Read-only projection of verified entries; legacy requests belong to their containing project ledger. */
+export function pendingApprovalRequests(entries: readonly LedgerEntry[], project: string): LedgerEntry[] {
+  return entries.filter((request) => {
+    if (request.kind !== "approval_request") return false;
+    const r = request.data as D;
+    if (r.project !== undefined && r.project !== project) return false;
+    return !entries.some((e) => e.kind === "approval" && (e.data as D).approvalId === r.approvalId
+      && (e.data as D).payloadHash === r.payloadHash && (e.data as D).op === r.op
+      && ((e.data as D).decision === "approve" || (e.data as D).decision === "reject"));
+  });
+}

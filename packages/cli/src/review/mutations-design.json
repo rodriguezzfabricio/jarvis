@@ -172,5 +172,17 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "    if (input.reviewer === \"design\" && design) return { status: (await design.reviewDetailed(request)).verdict, recorded: true };\n",
     "replacement": ""
+  },
+  {
+    "name": "Design source reaches the reviewer",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": " designSource: input.designSource,",
+    "replacement": ""
+  },
+  {
+    "name": "Design source required",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "if (input.designSource !== \"new\" && input.designSource !== \"existing\") throw",
+    "replacement": "if (false) throw"
   }
 ]

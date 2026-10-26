@@ -27,12 +27,22 @@ function fixture() {
     if(args.includes("clone")) {mkdirSync(String(args.at(-1)));writeFileSync(join(String(args.at(-1)),"app.tsx"),"fake app");}
     return Buffer.from(args.includes("rev-parse")?request.revision:"");
   };
-  const options={ledger,projectDir,workRoot,home:root,git,reviewer,resolveMaterial:async()=>({repoPath:join(root,"repo"),baseRevision:"b".repeat(40),principles:"List first",design:"tokens",product:"habits",plan,axeVersion:"4.14.0",captureFile:"stdout"})};
+  const options={ledger,projectDir,workRoot,home:root,git,reviewer,resolveMaterial:async()=>({repoPath:join(root,"repo"),baseRevision:"b".repeat(40),principles:"List first",designSource:"new" as const,design:"tokens",product:"habits",plan,axeVersion:"4.14.0",captureFile:"stdout"})};
   const calibration=(label:"generic"|"good")=>ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:label,policyHash:DESIGN_POLICY_HASH,verdict:label==="generic"?"fail":"pass",designVerdict:label==="generic"?"fail":"pass",findings:label==="generic"?["launch-tour","multiple-primary","apologetic-error"].map(principle=>({principle})):[],friction:label==="generic"?["launch-tour","multiple-primary","apologetic-error"]:[]}}).hash;
   return {options,request,reviewer,file,ledger,root,calibration,service:createDesignReviewService(options)};
 }
 const JWT="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
 const TOKEN="sk_live_4eC39HqLyjWDarjtT1zdp7dcAbCdEfGh12";
+describe("runner material",()=>{
+  it("refuses material that doesn't say where DESIGN.md came from, before any reviewer runs",async()=>{
+    const f=fixture();
+    const material=await f.options.resolveMaterial();
+    const service=createDesignReviewService({...f.options,resolveMaterial:async()=>({...material,designSource:undefined as never})});
+    const result=await service.reviewDetailed(f.request,{fixture:"good"});
+    expect(result.verdict).toBe("error");expect(result.error).toMatch(/design source/);
+    expect(f.reviewer).not.toHaveBeenCalled();
+  });
+});
 describe("reviewer text reaching the ledger (decision 110: findings stay redacted)",()=>{
   it("redacts every reviewer-written finding field before the ledger and the caller see it",async()=>{
     const f=fixture();

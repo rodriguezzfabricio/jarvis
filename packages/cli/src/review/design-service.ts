@@ -6,7 +6,7 @@ import { verifyEvidence } from "../checks/gate.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { verifyDesignObservation, type DesignBrowserPlan } from "./design-browser.ts";
 import { createCodexDesignReviewer, DESIGN_REVIEW_MODEL, type DesignReviewer } from "./design-codex.ts";
-import { buildDesignPrompt, designEvidence, DESIGN_INSTRUCTIONS } from "./design-evidence.ts";
+import { buildDesignPrompt, designEvidence, DESIGN_INSTRUCTIONS, type DesignSource } from "./design-evidence.ts";
 import { DESIGN_RUBRIC, evaluateDesignVerdict, type DesignEvaluation } from "./design-verdict.ts";
 import type { VerifiedGate } from "./evidence.ts";
 import { redactReviewText } from "./redaction.ts";
@@ -27,6 +27,8 @@ export interface DesignReviewMaterial {
   repoPath: string; baseRevision: string;
   /** Runner-owned approved snapshots, never a candidate's summary or instructions. */
   principles: string; design: string; product: string;
+  /** Where DESIGN.md came from: only an existing product's own system excuses its choices (decisions 51, 53). */
+  designSource: DesignSource;
   plan: DesignBrowserPlan; axeVersion: string;
   /** Evidence-relative stdout file of the protected design-browser gate. */
   captureFile: string;
@@ -104,7 +106,7 @@ export function createDesignReviewService(options: DesignReviewServiceOptions): 
       outputDir = mkdtempSync(join(evidenceRoot, "design-review-"));
       const images = evidence.images.map((bytes, index) => { const path = join(outputDir!, `screen-${index}.png`); writeFileSync(path, bytes, {flag:"wx",mode:0o600}); return path; });
       const sessionDir = join(outputDir, "session"); mkdirSync(sessionDir, {mode:0o700});
-      const prompt = buildDesignPrompt({designId:capture.designId, principles:material.principles, design:material.design, product:material.product, evidence, gates});
+      const prompt = buildDesignPrompt({designId:capture.designId, principles:material.principles, designSource:material.designSource, design:material.design, product:material.product, evidence, gates});
       const before = checkoutHash(workspace);
       const result = await reviewer({workspace,outputDir:sessionDir,images,prompt,timeoutMs:options.timeoutMs??600_000});
       raw = JSON.stringify(result);

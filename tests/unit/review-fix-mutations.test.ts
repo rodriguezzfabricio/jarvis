@@ -9,7 +9,7 @@ it("keeps unique review-fix-prefixed mutation names and exactly one occurrence o
   expect(new Set(definitions.map((d) => d.name)).size).toBe(definitions.length);
   for (const d of definitions) {
     expect(d.name).toMatch(/^review fix: /);
-    expect(d.file).toMatch(/^packages\/cli\/src\/(triage\/triage|runner\/(review-path|review-fix|session-skills|plan)|eval\/jarvis|commands\/(run|run-compose))\.ts$/);
+    expect(d.file).toMatch(/^packages\/cli\/src\/(triage\/(triage|authorize)|runner\/(review-path|review-fix|session-skills|plan)|eval\/jarvis|commands\/(run|run-compose))\.ts$/);
     expect(readFileSync(d.file, "utf8").split(d.anchor).length - 1, d.name).toBe(1);
     expect(d.replacement).not.toBe(d.anchor);
   }

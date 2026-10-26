@@ -1229,7 +1229,18 @@ Golden task 3 says "Put what you find in REVIEW.md and fix the real problems", a
   - "fix nothing", "don't fix anything", "report only", "suggestions only" or "only report" means no fixes, though a report the request names is still written;
   - a scope ("don't change the public API", "no changes to the CLI flags", "without changing the file format") is not a constraint.
 
-*From:* the review-fix worker (Opus), Oct 26; round 1 after the Codex `gpt-6-astra` security review of 5316a3c..f686919.
+**Round 2 (one high left from round 1, one new): fail closed, instead of listing what not to do.**
+- **Fixes need a positive authorization** (`triage/authorize.ts`).
+  - Fixes start only on an imperative to fix, repair or resolve something: the verb at the start of a clause or after "and", "then", "also", "please" or a comma, followed by what to fix ("the real problems", "them", "what you find").
+  - The clause it sits in holds no negation at all.
+  - Descriptive uses never authorize: "fix suggestions go in the response", "the fix for", "fixes go in", "address", "patch".
+- **Any negation of editing anywhere in the request means a plain review.** That covers edit, change, modify, touch, write, fix and commit, plus "read-only" and "report only". The one exception is a change scoped to a named part with "to", "in", "inside", "within" or "on" ("make no changes to the public API"). Such a scope becomes a limit the fix tasks carry: in the goal, and in the exit condition the reviewer checks.
+- **"The whole repository" is not a named part:** "no changes to the code" or "to the repository" stops fixes. A write or a commit can never be scoped, so "don't write to disk" stops fixes too.
+- **The model's judgment can veto fixes but never add them.** When fix words were seen but authorize nothing, triage says so: "Fixes weren't requested".
+- **A report name may not start with a reserved stem, with any suffix and in any case:** CLAUDE*, AGENTS*/AGENT*, GEMINI*, COPILOT*, CODEX*, CURSOR*, WINDSURF*, CLINE*, AIDER*, WARP*, MEMORY*, SKILL*, DESIGN*, PRODUCT*, README*, CHANGELOG*, HISTORY*, LICENSE*, COPYING*, NOTICE*, SECURITY*, CONTRIBUTING*, CODE_OF_CONDUCT*, CODEOWNERS*, CONVENTIONS*. It also may not contain "instruction", "rules" or "prompt", and hidden names were already refused. `CLAUDE.local.md` and `AGENTS.override.md` are refused, and so is `SECURITY-REVIEW.md`.
+- **The report commit never replaces a file the base revision already has,** unless this pipeline wrote that file before. The runner records each report it commits in the ledger (`reconciled`, type `review_report`). A new REVIEW.md is fine; one the project already has is refused. The eval arm checks this before starting the review session, and `jarvis run --plan review` checks it before anything is hosted.
+
+*From:* the review-fix worker (Opus), Oct 26; round 1 after the Codex `gpt-6-astra` security review of 5316a3c..f686919, round 2 after its review of 5316a3c..2cc72ae.
 ### 116. A stage proof counts runs from one frozen Jarvis revision, rated by blind judges (new; Oct 26; the integrator, after the first stage 3 runs)
 - **One revision per proof.** The counted runs of a stage proof all come from one frozen clone of Jarvis; runs from an earlier revision move to `~/.jarvis/evals/_superseded/<task>/` with a README, and their results stay recorded. When a fix changes what both arms' sessions get (decision 123's toolchain), both arms are rerun.
 - **Ratings by two blind judges** (decision 105): each task's runs from both arms are shown to a fresh Claude `claude-opus-5-5` judge and a Codex `gpt-6-astra` judge under neutral labels; a run's rating is the two judges' mean rounded down, the same rule for both arms. A gap above 1 point or a split goes to Fabricio.

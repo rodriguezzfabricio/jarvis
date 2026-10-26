@@ -6,6 +6,9 @@ import {
   buildChildEnv,
   buildTaskArgs,
   cacheEnv,
+  checkSessionToolchain,
+  fixedPath,
+  toolchainEnv,
   makeSessionTmpDir,
   sessionTmpEnv,
   hitRateLimitError,
@@ -23,6 +26,8 @@ import { assertTaskDomains } from "./allowlist.ts";
 import { assertHiddenAbsent } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
+import { evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
+import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
  * Plain-Claude-Code baselines (decision 47): the golden task's prompt, typed as Fabricio would,
@@ -91,6 +96,8 @@ export interface BaselineRunResult {
   finalCommit: string;
   diffStat: string;
   snapshot: SnapshotManifest;
+  /** The session's Go (decision 123): the gate's pinned toolchain, or why it had the host's. */
+  toolchain: ToolchainReport;
 }
 
 export interface BaselineOptions {
@@ -104,6 +111,9 @@ export interface BaselineOptions {
   extraEnv?: Readonly<Record<string, string>>;
   /** The task's hidden folders (grading and gate checks): the snapshot must hold none of their files, checked before the session. */
   hiddenDirs?: readonly string[];
+  /** The gate's Go module cache (eval/toolchain.ts evalGoFixture): the Jarvis arm's sessions get the same (decision 123). */
+  goFixture?: string;
+  log?: (m: string) => void;
 }
 
 /** Build output and tool folders kept out of candidate commits (both arms). */
@@ -136,31 +146,47 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   if (opts.hiddenDirs?.length) {
     try { assertHiddenAbsent(workspace, opts.hiddenDirs); } catch (e) { rmSync(cacheDir, { recursive: true, force: true }); throw e; }
   }
+  // Decision 123: the gate's pinned Go, offline and read-only, exactly as the Jarvis arm's sessions get it.
+  const { go, tc } = ((): { go: PreparedToolchain; tc: ReturnType<typeof checkSessionToolchain> } => {
+    let prepared: PreparedToolchain | undefined;
+    try {
+      prepared = prepareGoToolchain({ workspace, fixture: opts.goFixture, dest: evalToolchainDir(workRoot, task.id, runId) });
+      return { go: prepared, tc: checkSessionToolchain(prepared.toolchain, [...evalWritableRoots(workRoot), cacheDir, jarvisHome]) };
+    } catch (e) {
+      rmSync(cacheDir, { recursive: true, force: true });
+      if (prepared?.dir) removeGoToolchain(prepared.dir);
+      // Fail closed: a present but refused toolchain stops the run before its session, and summary.json says why.
+      return recordToolchainRefusal(resultsDir, { task: task.id, runId, resultsDir, workspace, snapshot }, e);
+    }
+  })();
+  if (go.report.status === "unavailable") opts.log?.(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
 
   const settingsPath = join(resultsDir, "settings.json");
   const mcpPath = join(resultsDir, "mcp.json");
   const sessionTmpDir = makeSessionTmpDir(); // Claude Code's own temp root (decision 93)
-  writeTaskSettings(settingsPath, { worktree: workspace, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: task.allowedDomains });
+  writeTaskSettings(settingsPath, { worktree: workspace, jarvisHome, cacheDir, sessionTmpDir, allowedDomains: task.allowedDomains, ...(tc.readOnlyDirs.length ? { readOnlyDirs: tc.readOnlyDirs } : {}) });
   writeFileSync(mcpPath, '{"mcpServers":{}}\n', { mode: 0o600 });
   const args = buildTaskArgs({ prompt: task.prompt, settingsPath, mcpConfigPath: mcpPath, model: task.model, maxTurns: task.maxTurns });
   const bin = opts.claudeBin ?? pinnedClaudeBin();
   writeFileSync(
     join(resultsDir, "manifest.json"),
-    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, cacheDir, snapshot, startedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, cacheDir, snapshot, toolchain: go.report, startedAt: new Date().toISOString() }, null, 2)}\n`,
   );
 
   const streamPath = join(resultsDir, "stream.jsonl");
+  const parentEnv = opts.parentEnv ?? process.env;
   const outcome = await runSession({
     bin,
     args,
     cwd: workspace,
-    env: buildChildEnv(opts.parentEnv ?? process.env, { ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir), ...(opts.extraEnv ?? {}) }),
+    env: buildChildEnv(parentEnv, { ...cacheEnv(cacheDir), ...sessionTmpEnv(sessionTmpDir), ...toolchainEnv(tc, [], fixedPath(parentEnv.HOME ?? home)), ...(opts.extraEnv ?? {}) }),
     timeoutMs: task.timeoutMinutes * 60_000,
     stdoutPath: streamPath,
     stderrPath: join(resultsDir, "stderr.txt"),
   }).finally(() => {
     rmSync(cacheDir, { recursive: true, force: true });
     rmSync(sessionTmpDir, { recursive: true, force: true });
+    if (go.dir) removeGoToolchain(go.dir);
   });
 
   const events = parseStreamJson(readFileSync(streamPath, "utf8"));
@@ -193,6 +219,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     finalCommit,
     diffStat,
     snapshot,
+    toolchain: go.report,
   };
   writeFileSync(join(resultsDir, "summary.json"), `${JSON.stringify(out, null, 2)}\n`);
   return out;

@@ -19,6 +19,17 @@ export function pinnedCodexBin(home: string = homedir()): string {
   return join(home, ".npm-global", "bin", "codex");
 }
 
+/**
+ * The Go toolchain zips sessions may get (decision 123), by `<version>.<os>-<arch>`: the SHA-256 of the module
+ * zip as proxy.golang.org serves it (golang.org/toolchain@v0.0.1-<key>.zip). The runner unpacks one only if its
+ * bytes hash to this; any other zip, or a version not listed, stops the run. go1.26.10 darwin-arm64 is the zip in
+ * jarvis-evals' Go fixture (hidden/go-fixture.sha256 lists the same hash; its go.sum-style hash is
+ * h1:SfEWw1me2He9ojf4S+M6xTnGOP6CosVO88yaBsEgjJ0=).
+ */
+export const GO_TOOLCHAIN_ZIPS: Readonly<Record<string, string>> = {
+  "go1.26.10.darwin-arm64": "afb16ae24c172f008db87119f34cf903a295bbad3fa526f7443914b0240b33c7",
+};
+
 /** Full model IDs, never aliases (decision 61). */
 export const MODELS = {
   strong: "claude-opus-5-5",

@@ -40,6 +40,7 @@ const MAP = [
   [/^packages\/cli\/src\/doctor\/mutations[^/]*\.json$/, "0-1"],
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
+  [/^packages\/cli\/src\/toolchain\/mutations[^/]*\.json$/, "3"], // the sessions' pinned Go, found by the stage 3 evals (decision 123)
   [/^packages\/cli\/src\/(review|security|lanes)\/mutations[^/]*\.json$/, "4"],
   [/^packages\/cli\/src\/(release|setup)\/mutations[^/]*\.json$/, "5"],
   [/^packages\/cli\/src\/broker\/adapters\/(?:[^/]+\/)*mutations[^/]*\.json$/, "5"],

@@ -112,5 +112,17 @@
     "file": "packages/cli/src/harness/claude/task.ts",
     "anchor": "  const dirs = [installDir, ...new Set(deps)];",
     "replacement": "  const dirs = [installDir];"
+  },
+  {
+    "name": "settings read-only dir may sit in the session cache",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "    if (under(input.cacheDir, d) || under(d, input.cacheDir)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "settings read-only dir may sit in the session temp folder",
+    "file": "packages/cli/src/harness/claude/settings.ts",
+    "anchor": "    if (t !== undefined && (under(t, d) || under(d, t))) throw",
+    "replacement": "    if (false) throw"
   }
 ]

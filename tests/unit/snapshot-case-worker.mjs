@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { createSnapshot } from "../../packages/cli/src/eval/snapshot.ts";
 import { useRealGit } from "../setup/use-real-git.ts";
-import { copyRepoTemplate } from "./helpers/git-repo.ts";
+import { copyRepoTemplate } from "./helpers/git-template.ts";
 
 const { root, template, realGit } = workerData;
 useRealGit(realGit); // a worker thread has its own child_process: skip the /usr/bin/git shim here too

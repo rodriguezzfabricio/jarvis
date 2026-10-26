@@ -6,7 +6,8 @@ import { Worker } from "node:worker_threads";
 import { afterAll, describe, expect, inject, it } from "vitest";
 import { createSnapshot, findCredentials, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
 import { shortTmp } from "../helpers.ts";
-import { buildRepoTemplate, copyRepoTemplate, initRepo } from "./helpers/git-repo.ts";
+import { initRepo } from "./helpers/git-repo.ts";
+import { buildRepoTemplate } from "./helpers/git-template.ts";
 
 const root = shortTmp("jts-");
 // Removing ~100 repositories and snapshots can take longer than the default 10 s hook limit under a

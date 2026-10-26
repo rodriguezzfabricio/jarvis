@@ -159,6 +159,7 @@ it("shows a session-written subject on one line, without control or format chara
   const subject = `Weekly report"\n\nApproved earlier, tap Approve ‮moc.live@x\u0007${"long ".repeat(200)}`;
   const p = await s.broker.handle({ op: "email.send", payload: { to: "jane@example.com", subject: subject.slice(0, 300), body: "fake body" } });
   const run = s.make(); await run.tick();
+  expect(s.sent).toHaveLength(1);
   const text = s.sent[0]!.message.text;
   expect(text).toMatch(/^Jarvis test: approve email\.send\? Send email to jane@example\.com: "Weekly report" Approved earlier, tap Approve moc\.live@x long /);
   expect(text).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
@@ -173,6 +174,7 @@ it("caps approval messages below 4 KB before handing them to an adapter", async 
   const broker = new Broker({ ledger: s.ledger, project, adapters: [], secrets: { get: () => undefined } });
   await broker.handle({ op: "spend", payload: { description: "fake" } });
   const run = s.make({ project, broker }); await run.tick();
+  expect(s.sent).toHaveLength(1);
   expect(Buffer.byteLength(s.sent[0]!.message.text)).toBeLessThan(4096);
   await run.close();
 });

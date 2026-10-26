@@ -1,7 +1,9 @@
 // Where a test (or the code under test) starts a bare `git` and PATH would find macOS's /usr/bin/git shim,
 // useRealGit(path) makes this process start the git binary the shim would have run instead. Same binary,
 // same arguments, same environment; only the shim's lookup (about 14 ms of CPU per spawn) is skipped. A
-// spawn that names any other git, finds a different one first on PATH, or uses a shell is left alone.
+// spawn that names any other git, finds a different one first on PATH, or uses a shell is left alone. One
+// visible difference: an error from a failed git names the real binary's path ("Command failed: /Applications/
+// Xcode.app/.../git ...") instead of "git", so a test that matches that text should match the arguments.
 // tests/setup/real-git.ts calls it for every test file. Worker threads and child Node processes have their
 // own module instances and are not covered; a worker that starts git calls useRealGit itself (the path is
 // tests/setup/real-git-global.ts's `realGit`, which a test passes along with inject("realGit")).

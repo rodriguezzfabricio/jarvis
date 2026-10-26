@@ -314,8 +314,8 @@
   {
     "name": "stage2 r3 tripwire session areas are case-sensitive",
     "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "|^\\/plan\\.json$/i;",
-    "replacement": "|^\\/plan\\.json$/;"
+    "anchor": "|^\\\\/plan\\\\.json$`, \"i\");",
+    "replacement": "|^\\\\/plan\\\\.json$`);"
   },
   {
     "name": "stage2 r3 tripwire fixture writes through Bash",
@@ -350,8 +350,8 @@
   {
     "name": "stage2 r3 tripwire redirections into .jarvis pass",
     "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "      if (t.includes(\">\")) { if (next !== undefined && !OPERATOR.test(next)) { if (foreign(dir, next)) return true; i++; } continue; }",
-    "replacement": "      if (t.includes(\">\")) { if (next !== undefined && !OPERATOR.test(next)) i++; continue; }"
+    "anchor": "{ if (!strict(resolve(dir, expand(next)))) return true; i++; }",
+    "replacement": "{ i++; }"
   },
   {
     "name": "stage2 r3 tripwire Bash changes ignore cd",
@@ -392,7 +392,79 @@
   {
     "name": "stage2 r3 tripwire Bash may not touch the session's own files",
     "file": "plugin/hooks/tripwire.mjs",
-    "anchor": "return JARVIS_PATH.test(p) && !sessionOwned(p); };",
-    "replacement": "return JARVIS_PATH.test(p); };"
+    "anchor": "  const strict = (p) => !JARVIS_PATH.test(p) || sessionOwned(p) || BELOW_AREA.test(p);",
+    "replacement": "  const strict = (p) => !JARVIS_PATH.test(p) || BELOW_AREA.test(p);"
+  },
+  {
+    "name": "stage2 r3 tripwire mkdir can't make the session's folders",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  const roomy = (p) => strict(p) || IN_AREA.test(p);",
+    "replacement": "  const roomy = (p) => strict(p);"
+  },
+  {
+    "name": "stage2 r3 tripwire destructive Bash reaches area folders",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "|| sessionOwned(p) || BELOW_AREA.test(p);",
+    "replacement": "|| sessionOwned(p) || IN_AREA.test(p);"
+  },
+  {
+    "name": "stage2 r3 tripwire mv may move an area folder away",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "operands.slice(0, -1).every(strict)",
+    "replacement": "operands.slice(0, -1).every(roomy)"
+  },
+  {
+    "name": "stage2 r3 tripwire links may be made under .jarvis",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    const ok = prog === \"ln\" || prog === \"link\" ? [...operands, target ?? \"\"].every((p) => !JARVIS_PATH.test(p)) // a link could alias anything\n      : ",
+    "replacement": "    const ok = "
+  },
+  {
+    "name": "stage2 r3 tripwire the areas lose checks",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const AREAS = \"notes|scratch|intake|mockups|checks|onboard|sweep|release\";",
+    "replacement": "const AREAS = \"notes|scratch|intake|mockups|onboard|sweep|release\";"
+  },
+  {
+    "name": "stage2 r3 tripwire globbed fixture names pass",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  if (bashNamesFixtures(words, input?.cwd, env)) return FIXTURES_READ_ONLY;\n",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 tripwire .jarvis/research words pass",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    if (/\\.jarvis\\/research/i.test(full) || globsIntoFixtures(full)) return true;",
+    "replacement": "    if (globsIntoFixtures(full)) return true;"
+  },
+  {
+    "name": "stage2 r3 tripwire globs never reach the fixtures",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "|| globsIntoFixtures(full)) return true;",
+    "replacement": ") return true;"
+  },
+  {
+    "name": "stage2 r3 tripwire globs match a leading dot",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "  if (name.startsWith(\".\") && !/^[.{[]/.test(part)) return false;\n",
+    "replacement": ""
+  },
+  {
+    "name": "stage2 r3 tripwire braces read literally",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    else if (c === \"{\" && close > 0) {",
+    "replacement": "    else if (false) {"
+  },
+  {
+    "name": "stage2 r3 tripwire brackets read literally",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "    else if (c === \"[\" && close > 0) {",
+    "replacement": "    else if (false) {"
+  },
+  {
+    "name": "stage2 r3 tripwire fixture names ignore cd",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "      else { dir = resolve(dir, expand(next)); }\n",
+    "replacement": "      else { }\n"
   }
 ]

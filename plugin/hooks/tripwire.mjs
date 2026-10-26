@@ -80,27 +80,46 @@ export function shellWords(command) {
 const MUTATORS = new Set(["chmod", "chown", "chgrp", "chflags", "xattr", "mv", "rm", "rmdir", "unlink", "ln", "link", "cp", "ditto",
   "install", "rsync", "tee", "truncate", "dd", "touch", "mkdir", "shred"]);
 const WRAPPERS = new Set(["sudo", "doas", "env", "command", "builtin", "exec", "nohup", "time", "nice", "xargs"]);
+// Commands that only create: they may name the session's area folders themselves (`mkdir -p .jarvis/notes`).
+const CREATORS = new Set(["mkdir", "touch", "cp", "install"]);
 const OPERATOR = /^[;&|()<>\n]+$/;
+// The areas the session's own files live in (SESSION_FILES below); shared with the search rule.
+const AREAS = "notes|scratch|intake|mockups|checks|onboard|sweep|release";
+const IN_AREA = new RegExp(`(^|\\/)\\.jarvis\\/(${AREAS})(\\/|$)`, "i"); // an area folder, or anything in one
+const BELOW_AREA = new RegExp(`(^|\\/)\\.jarvis\\/(${AREAS})\\/[^/]`, "i"); // strictly inside one
 
 /**
- * Bash that changes a `.jarvis` path other than the session's own files (decision 132): within one
- * pipeline, a changing command (the list above, `sed -i`, `perl -i`, `find -delete` or `-exec`) and such a
- * path, or a redirection into one. Follows plain `cd`. Best effort, like the rest: not a parser.
+ * Bash that changes a `.jarvis` path other than the session's own (decision 132): within one pipeline, a
+ * changing command (the list above, `sed -i`, `perl -i`, `find -delete` or `-exec`) that names such a path,
+ * or a redirection into one. Any command may name the session's own files and what is inside its areas;
+ * a creating command (and mv's destination) may name an area folder itself; nothing changes `.jarvis`
+ * itself, an area folder or a runner-owned path, and no link is made anywhere under `.jarvis`. Follows
+ * plain `cd`. Best effort, like the rest: not a parser.
  */
 function bashChangesJarvis(command, cwd, env) {
   const home = env.HOME && isAbsolute(env.HOME) ? resolve(env.HOME) : undefined;
   const expand = (w) => w.replace(/^(?:--?[\w-]+|[A-Za-z_]\w*)=/, "").replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, home ?? "~");
-  const foreign = (dir, w) => { const p = resolve(dir, expand(w)); return JARVIS_PATH.test(p) && !sessionOwned(p); };
+  const strict = (p) => !JARVIS_PATH.test(p) || sessionOwned(p) || BELOW_AREA.test(p);
+  const roomy = (p) => strict(p) || IN_AREA.test(p);
   const tokens = command.match(/[;&|()<>\n]+|[^\s;&|()<>`]+/g) ?? [];
   let dir = typeof cwd === "string" && isAbsolute(cwd) ? cwd : "/";
-  let changes = false, names = false, head = true, prog = "";
+  let changes = false, names = false, head = true, prog = "", operands = [], target;
+  const settle = () => { // judge the finished simple command's operands by its class
+    const ok = prog === "ln" || prog === "link" ? [...operands, target ?? ""].every((p) => !JARVIS_PATH.test(p)) // a link could alias anything
+      : CREATORS.has(prog) ? operands.every(roomy) && (target === undefined || roomy(target))
+      : prog === "mv" && target === undefined ? operands.slice(0, -1).every(strict) && operands.slice(-1).every(roomy)
+      : prog === "mv" ? operands.every(strict) && roomy(target)
+      : operands.every(strict) && (target === undefined || strict(target));
+    if (!ok) names = true;
+    head = true; prog = ""; operands = []; target = undefined;
+  };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     const next = tokens[i + 1];
     if (OPERATOR.test(t)) {
-      if (t.includes(">")) { if (next !== undefined && !OPERATOR.test(next)) { if (foreign(dir, next)) return true; i++; } continue; }
+      if (t.includes(">")) { if (next !== undefined && !OPERATOR.test(next)) { if (!strict(resolve(dir, expand(next)))) return true; i++; } continue; }
       if (t.includes("<")) { if (next !== undefined && !OPERATOR.test(next)) i++; continue; }
-      head = true; prog = "";
+      settle();
       if (t === "|" || t === "|&") continue; // one pipeline: xargs and tee act on what came before
       if (changes && names) return true;
       changes = false; names = false;
@@ -120,9 +139,64 @@ function bashChangesJarvis(command, cwd, env) {
     }
     if ((prog === "sed" || prog === "perl") && (/^-[a-zA-Z]*i/.test(t) || t.startsWith("--in-place"))) changes = true;
     if (prog === "find" && /^-(delete|exec|execdir|ok|okdir)$/.test(t)) changes = true;
-    if (foreign(dir, t)) names = true;
+    if (t === "-t" && next !== undefined && !OPERATOR.test(next)) { target = resolve(dir, expand(next)); i++; continue; }
+    if (t.startsWith("--target-directory=")) { target = resolve(dir, expand(t)); continue; }
+    if (t.startsWith("-") && !t.includes("=")) continue; // a flag
+    operands.push(resolve(dir, expand(t)));
   }
+  settle();
   return changes && names;
+}
+
+const GLOB = /[*?[{]/;
+
+/** One path component of a shell glob as a regex, case-insensitive as APFS is; braces expand. */
+function globPart(part) {
+  let re = "";
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i];
+    const close = c === "[" ? part.indexOf("]", i + 2) : c === "{" ? part.indexOf("}", i + 1) : -1;
+    if (c === "*") re += ".*";
+    else if (c === "?") re += ".";
+    else if (c === "[" && close > 0) { re += `[${part.slice(i + 1, close).replace(/^!/, "^").replace(/[\\\]]/g, "\\$&")}]`; i = close; }
+    else if (c === "{" && close > 0) { re += `(?:${part.slice(i + 1, close).split(",").map((s) => globPart(s).source.slice(1, -1)).join("|")})`; i = close; }
+    else re += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`, "i");
+}
+
+/** A path component that is name, or a glob that could expand to it (`*`, `?` and `[…]` skip a leading dot, as shells do). */
+function couldName(part, name) {
+  if (!GLOB.test(part)) return part.toLowerCase() === name;
+  if (name.startsWith(".") && !/^[.{[]/.test(part)) return false;
+  try { return globPart(part).test(name); } catch { return true; }
+}
+
+/** A path with a glob in its `.jarvis` or next component that could expand into `.jarvis/research-fixtures`. */
+function globsIntoFixtures(path) {
+  const parts = path.split("/");
+  return parts.some((part, k) => k + 1 < parts.length && (GLOB.test(part) || GLOB.test(parts[k + 1]))
+    && couldName(part, ".jarvis") && couldName(parts[k + 1], "research-fixtures"));
+}
+
+/** Bash naming the fixtures without spelling them: any word, followed through plain `cd`, at `.jarvis/research…` or globbing into the fixtures. */
+function bashNamesFixtures(command, cwd, env) {
+  const home = env.HOME && isAbsolute(env.HOME) ? resolve(env.HOME) : undefined;
+  const expand = (w) => w.replace(/^(?:--?[\w-]+|[A-Za-z_]\w*)=/, "").replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, home ?? "~");
+  const tokens = command.match(/[;&|()<>\n]+|[^\s;&|()<>`]+/g) ?? [];
+  let dir = typeof cwd === "string" && isAbsolute(cwd) ? cwd : "/";
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (OPERATOR.test(t)) continue;
+    const full = resolve(dir, expand(t));
+    if (/\.jarvis\/research/i.test(full) || globsIntoFixtures(full)) return true;
+    if (t === "cd") {
+      const next = tokens[i + 1];
+      if (next === undefined || OPERATOR.test(next)) dir = home ?? dir;
+      else { dir = resolve(dir, expand(next)); }
+    }
+  }
+  return false;
 }
 
 // The files sessions may own under the repo's `.jarvis/`: a task session's notes (architecture §5) and
@@ -154,7 +228,7 @@ function sessionOwned(path) {
 }
 
 // A Glob pattern or Grep glob may search the areas those files live in, and nothing else under `.jarvis`.
-const OWNED_AREAS = /^\/(notes|scratch|intake|mockups|checks|onboard|sweep|release)(\/|$)|^\/plan\.json$/i;
+const OWNED_AREAS = new RegExp(`^\\/(${AREAS})(\\/|$)|^\\/plan\\.json$`, "i");
 
 function ownedSearch(pattern) {
   if (pattern.split("/").includes("..")) return false;
@@ -281,6 +355,7 @@ export function check(input, env = process.env) {
     return pathOk && searchOk ? undefined : OFF_LIMITS;
   }
   if (FIXTURES_NAMED.test(words)) return FIXTURES_READ_ONLY;
+  if (bashNamesFixtures(words, input?.cwd, env)) return FIXTURES_READ_ONLY;
   if (bashChangesJarvis(words, input?.cwd, env)) return "only the session's own .jarvis files may change";
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;

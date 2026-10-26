@@ -210,7 +210,8 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     for (const c of [
       'printf fabricated > .jarvis/research-""fixtures/001.md', "chmod -R u+w .jarvis", "mv .jarvis .jarvis-old", // round 2's reproductions
       "printf x > .jarvis/research-'f'ixtures/1.md", 'cat .jarvis/re"search-fix"tures/1.md', "rm .jarvis/research\\-fixtures/1.md",
-      "printf x > .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research\\-fixtures/1.md", 'mv .jar""vis .x', 'ch""mod -R u+w .jarvis', "CHMOD -R u+w .JARVIS", "/bin/chmod -R u+w ./.jarvis",
+      "printf x > .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research-$'fix'tures/1.md", "cat .jarvis/research\\-fixtures/1.md", 'mv .jar""vis .x',
+      'find . -name research-""fixtures', "find . -name research-$'fix'tures", "find . -iname RESEARCH-FIXTURES", // the name alone, no .jarvis path 'ch""mod -R u+w .jarvis', "CHMOD -R u+w .JARVIS", "/bin/chmod -R u+w ./.jarvis",
       "rm -rf .jarvis", "cp fake.json .jarvis/plan.md", "ln -s /tmp/x .jarvis/ledger.jsonl", "touch .jarvis/REPORT.md",
       "printf x > .jarvis/plan.md", "printf x >> .JARVIS/ledger.jsonl", "echo x >.jarvis/inbox.md", "echo x | tee .jarvis/progress.md",
       "dd if=/dev/zero of=.jarvis/ledger.jsonl", "sed -i s/a/b/ .jarvis/plan.md", "perl -pi -e s/a/b/ .jarvis/plan.md",
@@ -226,7 +227,31 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       "printf x > .jarvis/notes/T1.md", "cp run.sh .jarvis/scratch/run.sh", "chmod +x .jarvis/scratch/run.sh", "rm .jarvis/scratch/run.sh",
       "mv .jarvis/scratch/a.sh .jarvis/scratch/b.sh", "sh .jarvis/scratch/run.sh", "cat .jarvis/plan.json", "ls .jarvis",
       "cat .jarvis/REPORT.md > report-copy.md", "grep -r rm .jarvis/notes", "ls .jarvis && rm -rf dist", "cd .jarvis/scratch && rm a.sh",
-      "node .jarvis/scratch/gen.mjs 2>/dev/null", "sort < .jarvis/plan.json > sorted.json",
+      "node .jarvis/scratch/gen.mjs 2>/dev/null", "sort < .jarvis/plan.json > sorted.json", "printf {} > .jarvis/plan.json",
+      // Codex round 3: creating the session's own folders, and working inside them.
+      "mkdir -p .jarvis/notes .jarvis/scratch", "mkdir -p .jarvis/intake", "mkdir -p .jarvis/mockups/direction-a", "mkdir -p .jarvis/checks/fixtures",
+      "touch .jarvis/notes/T2.md", "cp a.json .jarvis/checks/fixtures/", "mv draft.html .jarvis/mockups/direction-a/home.html",
+      "cp -r .jarvis/mockups/direction-a .jarvis/mockups/direction-b", "rm -rf .jarvis/mockups/direction-a", "mv x.sh .jarvis/scratch/",
+    ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeUndefined();
+  });
+
+  it("keeps destructive Bash off .jarvis itself, the session's area folders and runner-owned paths", () => {
+    for (const c of [
+      "rm -rf .jarvis/notes", "rmdir .jarvis/mockups", "chmod -R u+w .jarvis/notes", "mv .jarvis/notes .jarvis/scratch/n",
+      "mv .jarvis/checks /tmp/c", "mkdir .jarvis/evidence", "mkdir -p .jarvis", "touch .jarvis/ledger.jsonl", "cp x .jarvis/",
+      "mv .jarvis/scratch/a.sh .jarvis/inbox.md", "ln -s /tmp .jarvis/notes/link",
+    ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeTruthy();
+  });
+
+  // Codex round 3: a glob can name the fixtures without spelling them.
+  it("refuses Bash words that could expand into the fixtures, and every .jarvis/research word", () => {
+    for (const c of [
+      "cat .jarvis/research-*/*", "cat .jarvis/r*/001.md", "ls .jarvis/*", "cat .jarvis/*/001.md", "cat .jar*/res*/x",
+      "cat .jarvis/[r]esearch-fixtures/1.md", "cat .jarvis/{research-fixtures,notes}/1.md", "cat .JARVIS/RESEARCH*/1.md",
+      "cat .jarvis/research", "cd .jarvis && cat r*/*", "cat .??rvis/*/1.md", "cat {.jarvis,src}/*/1.md", "cat .jarvis/re??arch-fixtures/1.md",
+    ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeTruthy();
+    for (const c of [
+      "cat .jarvis/notes/*.md", "ls .jarvis/mockups/*/", "cat src/*/index.ts", "ls *.json", "ls -d */*", "cat .jarvis/intake/round-?.json",
     ]) expect(at(fx.repo, "Bash", { command: c }), c).toBeUndefined();
   });
 

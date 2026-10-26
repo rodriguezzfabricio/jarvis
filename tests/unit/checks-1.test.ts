@@ -1,4 +1,4 @@
-// Protected check and gate tests, part 1 of 2 (protected checks, the first gate cases). The tests are split over two files so they run in parallel;
+// Protected check and gate tests, part 1 of 3 (protected checks, the first gate cases). The tests are split over three files so they run in parallel;
 // the shared fixture is tests/unit/helpers/checks-fixture.ts.
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";

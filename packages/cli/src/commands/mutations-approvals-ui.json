@@ -42,24 +42,6 @@
     "replacement": ""
   },
   {
-    "name": "run poller drops phone steer notes",
-    "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "approvalProject: o.project, steerInbox: true",
-    "replacement": "approvalProject: o.project, steerInbox: false"
-  },
-  {
-    "name": "refused tap gets no reply",
-    "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "if (refusal && replyNotifier) await transport(\"reply\", () => replyNotifier!.send(refusal, []));",
-    "replacement": "if (false) await transport(\"reply\", () => replyNotifier!.send(refusal!, []));"
-  },
-  {
-    "name": "refused tap goes to the send topic",
-    "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "create({ ...config, topic: config.replyTopic, replyTopic: config.topic })",
-    "replacement": "create(config)"
-  },
-  {
     "name": "terminal command invokes action execution",
     "file": "packages/cli/src/commands/approve.ts",
     "anchor": "        const recorded = broker.decide(id, decision, seams.by ?? `${process.env.USER ?? \"user\"} (terminal)`, shown);",

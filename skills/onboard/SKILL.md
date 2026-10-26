@@ -70,7 +70,7 @@ Reconstruct the decisions the project already made, so later work doesn't silent
 - **Label each one "inferred", with its evidence:** a `path:line` or a commit.
 - **Pick the 10 most important:** the ones a future request is most likely to collide with. Money rules, who gets contacted and how, data handling, scope rules ("no follow-up campaign"), the stack.
 - **Show them to the user once, in the answer, with the default "keep".** Never ask about them again in this session.
-- **Record only what the user confirms,** one `jarvis decide` call each, citing the evidence file. For example: `jarvis decide --by user --class mechanical --why "Inferred during onboarding from the backlog, then confirmed by the user" --source docs/backlog.md "No follow-up messages after the first outreach"`.
+- **Record only what the user confirms,** one `jarvis decide` call each, citing the evidence file. Keeping one accepts the shown default, "keep": `jarvis decide --by default-accepted --class mechanical --why "Inferred during onboarding from the backlog, then kept by the user" --source docs/backlog.md "No follow-up messages after the first outreach"`. A change the user asks for is a new request for intake: `--by user` needs a recorded intake answer (decision 119).
 - **An inferred decision nobody confirmed is never written to the register.** `jarvis decide` has no inferred maker, and the register holds only what someone made or confirmed. It stays in the onboarding file, labeled inferred, and the research skill reads it as a fixed constraint until someone confirms or changes it.
 - **Never edit `docs/decisions.md` directly** (decision 83).
 

@@ -10,9 +10,7 @@ import { shortTmp } from "../helpers.ts";
 import { initRepo } from "./helpers/git-repo.ts";
 
 const root = shortTmp("jts-backlog-");
-// Removing ~160 repositories and snapshots can take longer than the default 10 s hook limit under a loaded
-// full run (a file-level "Hook timed out" error, which makes a mutation check's control run unclean);
-// snapshot.test.ts has the same limit for the same reason.
+// Removing ~200 repositories can outlast a short hook limit under a loaded full run (Oct 25: 14 s).
 afterAll(() => rmSync(root, { recursive: true, force: true }), 120_000);
 const key = (() => {
   for (;;) {

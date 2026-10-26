@@ -21,6 +21,11 @@ describe("review: lane coverage cannot be bypassed with file names", () => {
   it("keeps both Impeccable scans in the UI gate", () => {
     expect(ui(["src/Card.tsx"])?.checks).toEqual(expect.arrayContaining(["impeccable-source", "impeccable-url"]));
   });
+  it("gives the design reviewer its browser evidence wherever a browser scan runs (decision 124)", () => {
+    expect(ui(["src/Card.tsx"])?.checks).toEqual(expect.arrayContaining(["impeccable-url", "design-browser"]));
+    expect(ui(["DESIGN.md"])?.checks).toEqual(["design-md-lint"]);
+    expect(ui(["ios/Today.swift"])?.checks).not.toContain("design-browser");
+  });
   it.each(["docker-compose.yml", "ops/production.compose.yaml", "compose.override.yml", "Dockerfile"])("selects Security for %s alone", path => {
     expect(select([path]).map(l => l.lane)).toContain("Security");
   });

@@ -7,7 +7,7 @@ import { register } from "../../packages/cli/src/intake/commands.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import type { NtfyOptions } from "../../packages/cli/src/notify/ntfy.ts";
 import type { Clock } from "../../packages/cli/src/notify/intake.ts";
-import { answerRound, receiveRoundReply } from "../../packages/cli/src/intake/round.ts";
+import { answerRound, receiveRoundReply, sendRound } from "../../packages/cli/src/intake/round.ts";
 import { recordAnswer, ReplyInbox } from "../../packages/cli/src/notify/replies.ts";
 
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
@@ -49,7 +49,10 @@ function waitingSetup() {
   value.questions.push({ ...value.questions[0], id: "Q2" });
   writeFileSync(path, JSON.stringify(value));
   const ledger = Ledger.open(join(s.root, ".jarvis/projects/example"));
-  return { ...s, started, clock, ledger, context: { ledger, repoDir: s.repo, clock }, advance: (ms: number) => { now += ms; } };
+  const context = { ledger, repoDir: s.repo, clock };
+  const run = (...args: string[]) => args[0] === "intake" && args[1] === "send"
+    ? sendRound(join(s.repo, s.file), { ...context, notifier: s.notifier }) : s.run(...args);
+  return { ...s, run, started, clock, ledger, context, advance: (ms: number) => { now += ms; } };
 }
 
 it("decision 86 permits two ledger-only waits of 540 seconds and ignores phone free text until the deadline", async () => {

@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** The README's command tables match the real `jarvis --help` (stage 7: a friend installs from the README alone). */
+/** The command reference (docs/getting-started.md, linked from the README) matches the real `jarvis --help` (stage 7: a friend installs from the README alone). */
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const readme = readFileSync(`${root}README.md`, "utf8");
+const readme = readFileSync(`${root}docs/getting-started.md`, "utf8");
 
 function helpCommands(): string[] {
   const r = spawnSync(process.execPath, [`${root}packages/cli/src/cli.ts`, "--help"], { encoding: "utf8" });

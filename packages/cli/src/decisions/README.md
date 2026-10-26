@@ -23,3 +23,11 @@ The storage layer takes an exclusive `docs/.decisions.lock` before reading and a
 `decide "<choice>" --by user|default-accepted|default-unconfirmed|jarvis --class mechanical|taste|challenge --source evidence.md#anchor --why "<rationale>" [--repo <dir>]` is the only CLI writer. It uses today's UTC date and prints only the canonical new ID (`D1`, etc.). The CLI maps makers and classes exactly as decisions 83 and 85 specify; `inferred` is a format value rather than a CLI maker. `--reversibility` defaults to `reversible`; `--alternatives` and `--depends-on` accept JSON arrays of nonblank strings or `-` for none (the default). `--supersedes D1 --reason "<reason>"` links a replacement; a missing or orphan `--reason` is refused. Invalid writes print an error and exit nonzero without replacing the register.
 
 `mutations.json` contains integrator-ready mutation definitions, exercised against this lane's tests. The integrator can append them to the shared mutation runner; only the six lane test files were used for local validation.
+
+### Explicit user answers
+
+`--by user` requires `--answer <answerSeq>:<questionId>`. The sequence identifies the intake answer intent in this repository's derived project ledger. The CLI verifies the ledger, the explicit session answer and its recorded user provenance, then requires the decision text to match that answer exactly. The reference is retained in Why. Phone defaults, timeout defaults, free-text phone notes and unrelated statements cannot supply this authority. Superseding a decision additionally requires its D ID in the recorded question or answer.
+
+There is no TTY or environment-variable exemption. A terminal caller can use the same recorded-answer path; a session can create a pseudo-terminal, so TTY presence cannot establish who authored a decision. Unrecorded corrections stay in the intake record until an answer can be recorded.
+
+`checkSpecRegister(repo, source)` checks decision citations and declared header ranges against the current register. `checkSpecRepository(repo)` wraps the existing history checker and applies those current-register checks to the latest spec only. Semantic contradictions, answered open questions and evidence for state labels remain the fresh reader's responsibility.

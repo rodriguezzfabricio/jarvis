@@ -158,14 +158,14 @@
   {
     "name": "jarvis command skips the hand-off",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "Then run `jarvis run --detach` and tell",
-    "replacement": "Then tell"
+    "anchor": "Give this as a future user instruction only: \"When the build runner is available, start it from the project folder with `jarvis run --detach`.\"",
+    "replacement": ""
   },
   {
     "name": "jarvis command hides the upgrade",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "the `upgrade.announcement` sentence word for word when there is one, then the `headline`. Never upgrade silently.",
-    "replacement": "the `headline`."
+    "anchor": "When there is an `upgrade.announcement`, display that sentence word for word immediately before the headline. Never upgrade silently.",
+    "replacement": ""
   },
   {
     "name": "jarvis command starts chained skills again",

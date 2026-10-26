@@ -509,13 +509,15 @@ const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-o
 const MEMORY_TYPES = ["feedback", "project", "reference"];
 
 describe("register and memory calls", () => {
-  it("onboard records only confirmed inferred decisions, as the user's, with a repo-relative source", () => {
+  // Decision 119: a kept inferred decision is the shown default ("keep") accepted; `--by user` needs a
+  // recorded intake answer, which onboarding doesn't have.
+  it("onboard records only confirmed inferred decisions, as accepted defaults, with a repo-relative source", () => {
     const decides = calls(readSkill("onboard"), "decide");
     expect(decides.length).toBeGreaterThan(0);
     for (const call of decides) {
       const { flags, positional, problems } = parseFlags(call, /^jarvis decide/, DECIDE_FLAGS);
       expect(problems, call).toEqual([]);
-      expect(flags.get("by"), call).toBe("user");
+      expect(flags.get("by"), call).toBe("default-accepted");
       expect(["mechanical", "taste", "challenge"], call).toContain(flags.get("class"));
       expect(flags.get("why")?.trim(), call).toBeTruthy();
       expect(flags.get("source") ?? "", call).toMatch(/^[^/\s]/);

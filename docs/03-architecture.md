@@ -239,11 +239,11 @@ Every flag is explicit, so neither your global config nor a friend's changes beh
 ~/.local/share/claude/versions/2.1.309 -p "<task prompt from the runner>" \
   --output-format stream-json \
   --settings ~/.jarvis/projects/<id>/claude-settings.json \   # sandbox, network allowlist, permission deny rules, hooks
-  --plugin-dir ~/.jarvis/plugin \                             # the Jarvis plugin (skills, agents, hooks)
+  --plugin-dir ~/.jarvis/plugin \                             # the Jarvis plugin (hooks; its skills can't load without a Skill tool, decision 114)
   --mcp-config ~/.jarvis/projects/<id>/mcp.json --strict-mcp-config \
   --restricted --tools Bash,Read,Edit,Write,Glob,Grep \       # no user/project/local settings or hooks; explicit tools (decision 68)
   --no-session-persistence \                                  # no transcript in the interactive history (decision 60)
-  --append-system-prompt-file <run header> \                  # task, spec version, constraints
+  --append-system-prompt-file <run header> \                  # task, spec version, constraints, the build and debug skills' text (decision 114)
   --permission-mode dontAsk --permission-prompts none \      # fails closed if the settings file is dropped (decision 59)
   --model <from routing table> \
   --max-turns <cap>

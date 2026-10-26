@@ -2,6 +2,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
 import type { DesktopProcess } from "./desktop-process.ts";
+import { NativeSandboxUnavailable } from "./desktop-sandbox.ts";
 import { validDuration, type DesktopNativeObservation, type NativeProbePolicy } from "./desktop-types.ts";
 import { assertNoBundleLinks, insideTree } from "./materialize.ts";
 export { observeDesktopBuild, type DesktopBuildDeps } from "./desktop-build.ts";
@@ -49,7 +50,10 @@ export async function probeDesktop(bundlePath: string, policy: NativeProbePolicy
     raw.shutdown = await app.waitForExit(policy.shutdownMs);
     if (raw.shutdown.code !== 0 || raw.shutdown.signal !== null) throw new Error("desktop did not shut down cleanly");
     raw.status = "observed";
-  } catch (error) { raw.reason = String(error instanceof Error ? error.message : error); }
+  } catch (error) {
+    if (error instanceof NativeSandboxUnavailable) throw error;
+    raw.reason = String(error instanceof Error ? error.message : error);
+  }
   finally { if (app) await app.stop(); }
   return raw;
 }

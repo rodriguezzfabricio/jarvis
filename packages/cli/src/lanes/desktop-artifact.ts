@@ -9,5 +9,6 @@ export function captureDesktopBundle(checkout: string, bundle: string, outputRoo
   const source = join(realpathSync(checkout), bundle);
   if (!insideTree(realpathSync(checkout), realpathSync(source))) throw new Error("built bundle escapes checkout");
   const destination = join(realpathSync(outputRoot), basename(bundle));
-  return { bundlePath: destination, files: materializeTree(source, destination) };
+  // The approved root makes materializeTree re-check containment itself, closing the race after the check above.
+  return { bundlePath: destination, files: materializeTree(source, destination, { sourceRoot: realpathSync(checkout) }) };
 }

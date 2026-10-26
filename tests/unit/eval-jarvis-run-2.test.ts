@@ -1,7 +1,7 @@
-// Jarvis eval run tests, part 2 of 2 (fault cases and the planning path). The tests are split over two files so they run in parallel;
+// Jarvis eval run tests, part 2 of 4 (fault cases and the planning path). The tests are split over four files so they run in parallel;
 // the shared fixture is tests/unit/helpers/eval-jarvis-run-fixture.ts.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadTask } from "../../packages/cli/src/eval/baseline.ts";
@@ -9,9 +9,8 @@ import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { runJarvis, type RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
 import { runSchedule } from "../../packages/cli/src/eval/schedule.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
-import type { Harness, TaskInput, TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
-import { addHidden, addTask, FEATURE_PROMPT, fakeLoop, HIDDEN_MARKER, markerGate, SPEC, type EvalFixture } from "./eval-jarvis-fixture.ts";
-import { counter, finished, fixture, json, options, removeFixtures } from "./helpers/eval-jarvis-run-fixture.ts";
+import { fakeLoop, HIDDEN_MARKER, markerGate, SPEC } from "./eval-jarvis-fixture.ts";
+import { counter, featureTask, fixture, json, options, planFile, planner, removeFixtures, T } from "./helpers/eval-jarvis-run-fixture.ts";
 
 afterEach(removeFixtures);
 
@@ -69,23 +68,6 @@ describe("eval jarvis: fault cases", () => {
 });
 
 describe("eval jarvis: task 2 takes the written spec, then the planning path", () => {
-  const planFile = (tasks: unknown[]) => JSON.stringify({ tasks });
-  const T = (id: string, acs: string[], checks: string[], deps: string[] = []) => ({ id, title: id, goal: `do ${id}`, exitCondition: `${id} checks pass`, acceptanceCriteria: acs, storyIds: ["S1"], dependencies: deps, priority: 1, requiredChecks: checks, requiredReviews: ["code"] });
-  function planner(write: string | null, outcome: TaskOutcome = finished()): { harness: Harness; inputs: TaskInput[] } {
-    const inputs: TaskInput[] = [];
-    return { inputs, harness: { runTask: async (input) => {
-      inputs.push(input);
-      if (write !== null) { const dir = join(input.workspace, ".jarvis"); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.json"), write); }
-      return outcome;
-    } } };
-  }
-  function featureTask(fx: EvalFixture, spec: string | null = SPEC, gate: Record<string, string[]> = { unit: [], greet: ["AC1", "AC2"] }) {
-    addTask(fx, "02-greet", FEATURE_PROMPT, { revert: [fx.fixRev], ...(spec ? { spec } : {}) });
-    addHidden(fx, "02-greet", "checks", { greet: ["AC1", "AC2"] });
-    addHidden(fx, "02-greet", "gate", gate);
-    return loadTask(fx.evalsRepo, "02-greet");
-  }
-
   it("commits the approved spec, runs one planner session, reads the plan against the runner's spec and checks, then runs the loop", async () => {
     const fx = fixture();
     const p = planner(planFile([T("T1", ["AC1"], ["unit", "greet"]), T("T2", ["AC2"], ["greet"], ["T1"])]));

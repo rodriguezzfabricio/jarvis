@@ -39,7 +39,7 @@ describe("intake round contract", () => {
     { ...round(), questions: [] }, { ...round(), questions: Array.from({ length: 8 }, (_, n) => question(`Q${n}`)) },
     { ...round(), questions: [question(), question()] }, { ...round(), questions: [{ ...question(), topic: "money" }] },
     { ...round(), questions: [{ ...question(), extra: true }] }, { ...round(), questions: [{ ...question(), default: { answer: "yes", reason: "why", extra: true } }] },
-    { ...round(), questions: [{ ...question(), alternatives: ["one"] }] }, { ...round(), questions: [{ ...question(), why: "a\nb" }] },
+    { ...round(), questions: [{ ...question(), alternatives: [] }] }, { ...round(), questions: [{ ...question(), why: "a\nb" }] },
     { ...round(), spec: "../outside.md" }, { ...round(), mockups: ["/private/file.png"] }, { ...round(), mockups: [".jarvis/mockups/../../file.png"] },
   ])("rejects malformed or additional handoff fields: %j", (value) => { expect(roundSchema.safeParse(value).success).toBe(false); });
 });
@@ -76,7 +76,8 @@ describe("sending intake", () => {
     await expect(sendRound(s.file, s.deps)).resolves.toMatchObject({ delivered: false, deliveryFailed: true });
     const before = await getRoundAnswers(1, s.deps); s.advance(500); await sendRound(s.file, s.deps);
     expect(s.notifier.send.mock.calls[0]![1]).toEqual(s.notifier.send.mock.calls[1]![1]);
-    expect((await getRoundAnswers(1, s.deps)).deadline).toBe(before.deadline);
+    expect(before.deadline).toBeNull();
+    expect((await getRoundAnswers(1, s.deps)).deadline).toBe(s.clock.now() + 900_000);
     writeFileSync(s.file, JSON.stringify({ ...round(), summary: "Changed" })); await expect(sendRound(s.file, s.deps)).rejects.toThrow(/already|reuse/i);
   });
   it("refuses symlinked handoffs without recording or sending them", async () => {

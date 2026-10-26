@@ -119,7 +119,7 @@ export function lintTokens(sources: readonly SourceFile[], tokens: DesignTokens,
       const kind = /radius|rounded/i.test(property) ? "radius" : /font|text/i.test(property) ? "type" : "spacing";
       checkSize(Number(match[1]), kind, match.index, tokens, add);
     }
-    for (const match of text.matchAll(/\b(padding\w*|margin\w*|gap|rowGap|columnGap|borderRadius|fontSize|(?:min)?[Ww]idth|(?:min|max)?[Hh]eight|top|bottom|left|right)\s*:\s*(-?\d+(?:\.\d+)?)(?![\w.])/g)) {
+    for (const match of text.matchAll(/(?<![\w-])(padding\w*|margin\w*|gap|rowGap|columnGap|borderRadius|fontSize|(?:min)?[Ww]idth|(?:min|max)?[Hh]eight|top|bottom|left|right)\s*:\s*(-?\d+(?:\.\d+)?)(?![\w.])/g)) {
       checkSize(Number(match[2]), /Radius/.test(match[1]!) ? "radius" : match[1] === "fontSize" ? "type" : "spacing", match.index, tokens, add);
     }
     for (const match of text.matchAll(/\.(padding|cornerRadius)\(\s*(?:\.[A-Za-z]+\s*,\s*)?(-?\d+(?:\.\d+)?)\s*\)|\bsize:\s*(\d+(?:\.\d+)?)/g)) {

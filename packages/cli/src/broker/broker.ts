@@ -117,6 +117,7 @@ export class Broker {
       const req = es.find((e) => e.kind === "approval_request" && (e.data as D).approvalId === approvalId);
       if (!req) throw new Error(`no approval request ${approvalId}`);
       const d = req.data as D;
+      if (d.project !== undefined && d.project !== this.o.project) throw new Error("approval request belongs to another project");
       const firstAnswer = es.find((e) => {
         if (e.kind !== "approval") return false;
         const answer = e.data as D;
@@ -230,7 +231,7 @@ export class Broker {
           if (open) return answer({ status: "pending", payloadHash: hash, approvalId: openData!.approvalId as string, message: "waiting for approval" });
           const id = randomUUID();
           const summary = summarize(op, payload);
-          add({ kind: "approval_request", actor: "broker", data: { approvalId: id, op, payloadHash: hash, summary, payload } });
+          add({ kind: "approval_request", actor: "broker", data: { approvalId: id, project: this.o.project, op, payloadHash: hash, summary, payload } });
           return answer({ status: "pending", payloadHash: hash, approvalId: id, message: "approval requested" }, { approvalId: id, op, summary });
         }
         approvalId = openData!.approvalId as string;

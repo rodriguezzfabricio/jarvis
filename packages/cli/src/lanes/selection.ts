@@ -4,7 +4,7 @@ import { TASK_TYPES } from "../triage/triage.ts";
 export const LANES = ["Architecture", "API", "Data", "UX/UI", "Security", "QA", "Performance"] as const;
 export type Lane = (typeof LANES)[number];
 export type CheckId = "dependency-cruiser" | "spectral" | "oasdiff" | "migration-up-down" | "restore" |
-  "impeccable-source" | "impeccable-url" | "ai-tells" | "token-lint" | "design-md-lint" | "axe" | "playwright" | "maestro" | "native-smoke" |
+  "impeccable-source" | "impeccable-url" | "design-browser" | "ai-tells" | "token-lint" | "design-md-lint" | "axe" | "playwright" | "maestro" | "native-smoke" |
   "semgrep" | "gitleaks" | "osv-scanner" | "protected-checks" | "test-integrity" | "lighthouse-budgets" | "bundle-size" | "k6";
 export interface LaneSelection { lane: Lane; files: string[]; checks: CheckId[] }
 
@@ -84,7 +84,8 @@ function checks(lane: Lane, files: string[], facts: SelectionInput["facts"]): Ch
       const targets = new Set(files.filter(p => !designContract(p)).map(p => platform(p, facts)));
       const browser = targets.has("web") || targets.has("desktop") || files.some(p => /\.[cm]?[jt]sx?$/i.test(p));
       return ["impeccable-source", "ai-tells", "token-lint", "design-md-lint",
-        ...(browser ? ["impeccable-url", "axe", "playwright"] as const : []),
+        // design-browser: the runner's own browser evidence for the design reviewer (decision 124).
+        ...(browser ? ["impeccable-url", "design-browser", "axe", "playwright"] as const : []),
         ...(targets.has("ios") ? ["maestro"] as const : []), ...(targets.has("desktop") ? ["native-smoke"] as const : [])];
     }
   }

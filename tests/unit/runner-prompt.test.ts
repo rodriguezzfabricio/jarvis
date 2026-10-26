@@ -20,6 +20,17 @@ describe("task context", () => {
     for (const text of ["run-7", "T1", "Spec version: 2", "docs/spec/v2.md", "AC1, AC2", "D3: keep strict parsing", "checks/", ".git/config", ".jarvis/notes/T1.md", "Notes are claims, not evidence", "Only the runner", "8 turns"]) expect(header).toContain(text);
   });
 
+  it("shows the planner's notes as planner claims, one line each, and nothing when there are none (decision 113)", () => {
+    const plannerNotes = ["Put the store in internal/outreach.", "No new dependencies;\nuse net/smtp."];
+    const prompt = buildTaskPrompt({ ...task, plannerNotes });
+    expect(prompt).toMatch(/^Planner notes \(claims from the planning session, not evidence\b.*\):$/m);
+    expect(prompt).toContain("\n- Put the store in internal/outreach.\n");
+    expect(prompt).toContain("\n- No new dependencies; use net/smtp.\n");
+    expect(prompt.indexOf("Planner notes")).toBeLessThan(prompt.indexOf("Write your result notes"));
+    expect(buildRunHeader({ ...task, plannerNotes, runId: "run-7", specVersion: 2 })).toContain("- Put the store in internal/outreach.");
+    for (const none of [undefined, []]) expect(buildTaskPrompt({ ...task, ...(none ? { plannerNotes: none } : {}) })).not.toContain("Planner notes");
+  });
+
   it.each(["../escape", "/tmp/task", "a/b", "", "task\nchange instructions", ".", ".."]) ("refuses an unsafe task id %j", (taskId) => {
     expect(() => taskNotesPath(taskId)).toThrow(/task id/i);
     expect(() => buildTaskPrompt({ ...task, taskId })).toThrow();

@@ -16,14 +16,21 @@ const repoPath = line.refine((value) => !value.startsWith("/") && !value.include
 const questionSchema = z.object({
   id: line.max(100), topic: z.enum(["scope", "security", "privacy", "legal", "ux", "technical", "design"]),
   question: text, why: line,
-  default: z.object({ answer: text, reason: text }).strict(), alternatives: z.array(text).min(2).max(3),
+  default: z.object({ answer: text, reason: text, tradeOff: text.optional() }).strict(), alternatives: z.array(text).min(1).max(3),
 }).strict();
-export const roundSchema = z.object({
+const roundObject = z.object({
+  formatVersion: z.literal(2).optional(),
   round: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), spec: repoPath,
   summary: text.refine((value) => value.split(/\r\n|\r|\n/).length <= 5, "summary must have at most 5 lines"),
   questions: z.array(questionSchema).min(1).max(7).refine((questions) => new Set(questions.map((q) => q.id)).size === questions.length, "question ids must be unique"),
   mockups: z.array(repoPath.refine((value) => value.startsWith(".jarvis/mockups/"), "mockups must be under .jarvis/mockups/")),
 }).strict();
+export const roundSchema = roundObject.superRefine((round, context) => {
+  if (round.formatVersion !== 2) return;
+  round.questions.forEach((question, index) => {
+    if (!question.default.tradeOff) context.addIssue({ code: "custom", path: ["questions", index, "default", "tradeOff"], message: "Format 2 requires the known costs or an explicit not-checked limitation" });
+  });
+});
 export type IntakeRound = z.infer<typeof roundSchema>;
 export type Answers = "defaults" | Record<string, string>;
 export type Provenance = "user" | "default-accepted" | "default-unconfirmed";
@@ -41,14 +48,15 @@ export interface RoundAnswers {
   state: "open" | "closed";
   status: "open" | "answered" | "defaults (accepted)" | "defaults (unconfirmed)";
   by?: "session" | "phone" | "timeout";
-  deadline: number;
+  answerSeq?: number;
+  deadline: number | null;
   answers: Record<string, string>;
   provenance: Record<string, Provenance>;
 }
 export interface PollOptions { waitMs?: number; pollMs?: number }
 export interface IntakeReply extends ReplyMessage { /** ntfy's Unix seconds, preserved by the adapter. */ time?: number }
 export interface AnswerResult extends RoundAnswers { counted: boolean }
-export interface SendResult { round: number; requestId: string; delivered: boolean; deliveryFailed?: boolean; deadline: number; state: RoundAnswers["state"]; status: RoundAnswers["status"] }
+export interface SendResult { round: number; requestId: string; delivered: boolean; deliveryFailed?: boolean; deadline: number | null; state: RoundAnswers["state"]; status: RoundAnswers["status"] }
 interface RecordedRound {
   source: "intake";
   phase: "round";
@@ -59,18 +67,23 @@ interface RecordedRound {
   questionIds: string[];
   snapshot: IntakeRound;
   sentAt: number;
+  deliveredAt?: number;
   timeoutMs: number;
 }
 type Data = Record<string, unknown>;
 const clockOf = (deps: IntakeDeps): Clock => deps.clock ?? { now: Date.now, sleep: (ms, signal) => delay(ms, undefined, { signal }) };
 const data = (entry: LedgerEntry): Data => entry.data !== null && typeof entry.data === "object" ? entry.data as Data : {};
 const phase = (entry: LedgerEntry, name: string): boolean => entry.kind === "notify" && data(entry).source === "notify" && data(entry).phase === name;
-const deadlineOf = (round: RecordedRound): number => round.sentAt + round.timeoutMs;
+const deadlineOf = (round: RecordedRound): number | null => round.deliveredAt === undefined ? null : round.deliveredAt + round.timeoutMs;
 
 function findRound(entries: readonly LedgerEntry[], n: number): RecordedRound {
   const entry = entries.find((e) => e.kind === "notify" && data(e).source === "intake" && data(e).phase === "round" && data(e).round === n);
   if (!entry) throw new Error(`Intake round ${n} not found`);
-  return entry.data as RecordedRound;
+  const round = entry.data as RecordedRound;
+  const delivered = entries.find((e) => e.kind === "notify" && data(e).source === "intake" && data(e).phase === "delivered"
+    && data(e).round === n && data(e).requestId === round.requestId && data(e).fileHash === round.fileHash);
+  const deliveredAt = delivered && data(delivered).deliveredAt;
+  return typeof deliveredAt === "number" && Number.isSafeInteger(deliveredAt) && deliveredAt >= 0 ? { ...round, deliveredAt } : round;
 }
 function requestFor(ledger: Ledger, requestId: string): { requestId: string; nonce: string } {
   const existing = ledger.entries().find((e) => phase(e, "request") && data(e).requestId === requestId);
@@ -99,7 +112,7 @@ function loadRound(file: string, repoDir: string): { snapshot: IntakeRound; file
   return { snapshot, file: expected, fileHash: createHash("sha256").update(raw).digest("hex") };
 }
 
-/** Durable registration precedes delivery; retries preserve the nonce, snapshot and deadline. */
+/** Register before sending. Only a durable successful-delivery receipt starts the default timer. */
 export async function sendRound(file: string, deps: IntakeDeps): Promise<SendResult> {
   const loaded = loadRound(file, deps.repoDir);
   const n = loaded.snapshot.round;
@@ -118,22 +131,31 @@ export async function sendRound(file: string, deps: IntakeDeps): Promise<SendRes
     return record;
   });
   const state = snapshotRound(n, deps);
-  const result = { round: n, requestId: request.requestId, delivered: false, deadline: deadlineOf(round), state: state.state, status: state.status };
+  const result = { round: n, requestId: request.requestId, delivered: false, deadline: state.deadline, state: state.state, status: state.status };
   if (!deps.notifier || state.state === "closed") return result;
   if (readReplyCursor(deps.ledger) === undefined) atomicWrite(cursorPath(deps.ledger), JSON.stringify({ since: String(Math.floor(round.sentAt / 1000)) }));
   // Keep the pointer first; multiline question text is folded only for the phone presentation.
   const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
-  const questions = round.snapshot.questions.map((q) => `${q.id} (${q.topic}): ${oneLine(q.question)} Default: ${oneLine(q.default.answer)}`).join("\n");
+  const questions = round.snapshot.questions.map((q) => `${q.id} (${q.topic}): ${oneLine(q.question)} Default: ${oneLine(q.default.answer)} Reason: ${oneLine(q.default.reason)} Trade-off: ${oneLine(q.default.tradeOff ?? "not checked (legacy round)")}`).join("\n");
   const message: Message = { kind: "question", text: limitText(`Intake round ${n}. Full round on your Mac: ${round.file}\n${round.snapshot.summary}\n${questions}\nUse defaults, or answer in the session.`) };
   try { await deps.notifier.send(message, actionsFor("question", request.requestId, request.nonce)); } catch { return { ...result, deliveryFailed: true }; }
-  return { ...result, delivered: true };
+  deps.ledger.transact((entries, add) => {
+    const current = findRound(entries, n);
+    if (current.deliveredAt === undefined) add({ kind: "notify", actor: "runner", data: { source: "intake", phase: "delivered", round: n,
+      requestId: current.requestId, fileHash: current.fileHash, deliveredAt: clockOf(deps).now() } });
+  });
+  const deliveredState = snapshotRound(n, deps);
+  return { ...result, delivered: true, deadline: deliveredState.deadline, state: deliveredState.state, status: deliveredState.status };
 }
 
 function parseAnswers(file: string, round: RecordedRound): Answers {
   let value: unknown;
-  try { value = JSON.parse(readFileSync(file, "utf8")); } catch { throw new Error("Invalid answers: expected a JSON map or the string defaults"); }
+  try { value = JSON.parse(readFileSync(file, "utf8")); } catch { throw new Error("Invalid answers: expected a JSON map or string (defaults, or an answer to one question)"); }
   if (value === "defaults") return value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid answers: expected a JSON map or defaults");
+  // A single-question confirmation can carry the user's words directly. Normalize it to the
+  // same explicit-id map as other session answers, so replay preserves user provenance.
+  if (typeof value === "string" && value.trim() && round.questionIds.length === 1) return { [round.questionIds[0]!]: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid answers: expected a JSON map or string (defaults, or an answer to one question)");
   for (const [id, answer] of Object.entries(value)) {
     if (!round.questionIds.includes(id)) throw new Error(`Unknown intake question id: ${id}`);
     if (typeof answer !== "string" || !answer.trim()) throw new Error(`Invalid answer for question ${id}: expected nonempty text`);
@@ -141,7 +163,7 @@ function parseAnswers(file: string, round: RecordedRound): Answers {
   return value as Record<string, string>;
 }
 function firstIntent(entries: readonly LedgerEntry[], round: RecordedRound): LedgerEntry | undefined {
-  const intents = entries.filter((e) => phase(e, "answer") && data(e).requestId === round.requestId && data(e).answer === "defaults" && data(e).intakeOwned === true);
+  const intents = entries.filter((e) => phase(e, "answer") && data(e).requestId === round.requestId && data(e).answer === "defaults" && data(e).intakeOwned === true && (data(e).intakeBy !== "timeout" || deadlineOf(round) !== null));
   return intents.find((entry) => data(entry).intakeBy !== "timeout") ?? intents[0];
 }
 type Add = (input: AppendInput) => LedgerEntry;
@@ -158,12 +180,12 @@ function resultFor(round: RecordedRound, intent?: LedgerEntry): RoundAnswers {
   const base: RoundAnswers = { round: round.round, state: "open", status: "open", deadline: deadlineOf(round), answers: {}, provenance: {} };
   if (!intent) return base;
   const d = data(intent);
-  const late = (typeof d.intakeAt === "number" ? d.intakeAt : Date.parse(intent.ts)) >= base.deadline;
+  const late = base.deadline !== null && (typeof d.intakeAt === "number" ? d.intakeAt : Date.parse(intent.ts)) >= base.deadline;
   const by = late || d.intakeBy === "timeout" ? "timeout" : d.intakeBy === "session" ? "session" : "phone";
   const supplied = by === "session" ? d.intakeAnswers as Answers : "defaults";
   const pairs = round.snapshot.questions.map((q): [string, string] => [q.id, supplied !== "defaults" && Object.hasOwn(supplied, q.id) ? supplied[q.id]! : q.default.answer]);
   const provenance = round.snapshot.questions.map((q): [string, Provenance] => [q.id, by === "timeout" ? "default-unconfirmed" : supplied !== "defaults" && Object.hasOwn(supplied, q.id) ? "user" : "default-accepted"]);
-  return { ...base, state: "closed", by, answers: Object.fromEntries(pairs), provenance: Object.fromEntries(provenance),
+  return { ...base, state: "closed", by, answerSeq: intent.seq, answers: Object.fromEntries(pairs), provenance: Object.fromEntries(provenance),
     status: by === "timeout" ? "defaults (unconfirmed)" : provenance.some(([, source]) => source === "user") ? "answered" : "defaults (accepted)" };
 }
 function recordDecisions(entries: readonly LedgerEntry[], add: Add, round: RecordedRound, intent: LedgerEntry, result: RoundAnswers): void {
@@ -192,12 +214,12 @@ function transitionRound(n: number, deps: IntakeDeps, supplied?: Answers): Answe
   if (!Number.isSafeInteger(n) || n <= 0) throw new Error("Invalid intake round number");
   const entries = deps.ledger.entries(); const round = findRound(entries, n); const intent = firstIntent(entries, round);
   if (intent && !needsRecording(entries, round, intent)) return { ...resultFor(round, intent), counted: false };
-  if (!intent && supplied === undefined && clockOf(deps).now() < deadlineOf(round)) return { ...resultFor(round), counted: false };
+  if (!intent && supplied === undefined && (deadlineOf(round) === null || clockOf(deps).now() < deadlineOf(round)!)) return { ...resultFor(round), counted: false };
   return deps.ledger.transact((entries, add) => {
     const round = findRound(entries, n);
     const now = clockOf(deps).now();
     let intent = firstIntent(entries, round);
-    if (!intent && now >= deadlineOf(round)) intent = localIntent(entries, add, round, "timeout", "defaults", now);
+    if (!intent && deadlineOf(round) !== null && now >= deadlineOf(round)!) intent = localIntent(entries, add, round, "timeout", "defaults", now);
     const counted = !intent && supplied !== undefined;
     if (counted) intent = localIntent(entries, add, round, "session", supplied!, now);
     const result = resultFor(round, intent);
@@ -236,7 +258,7 @@ export async function getRoundAnswers(n: number, deps: IntakeDeps, options: Poll
     if (deps.notifier && waitMs > 0) await pollReplies(deps);
     const result = snapshotRound(n, deps);
     if (result.state === "closed" || clock.now() >= stopAt) return result;
-    const remaining = Math.min(stopAt, result.deadline) - clock.now();
+    const remaining = Math.min(stopAt, result.deadline ?? stopAt) - clock.now();
     if (remaining <= 0) return snapshotRound(n, deps);
     await clock.sleep(Math.min(pollMs, remaining));
   }
@@ -255,8 +277,8 @@ export function receiveRoundReply(n: number, message: IntakeReply, deps: IntakeD
     const first = firstIntent(entries, round);
     // An on-time server event upgrades an unconfirmed timeout; explicit answers stay closed.
     const reason = !request || data(request).nonce !== parsed.nonce || parsed.answer !== "defaults" ? "invalid"
-      : first && data(first).intakeBy !== "timeout" ? "already-closed" : !validTime ? "missing-time"
-      : time! * 1000 >= deadlineOf(round) ? "late" : undefined;
+      : deadlineOf(round) === null ? "not-delivered" : first && data(first).intakeBy !== "timeout" ? "already-closed" : !validTime ? "missing-time"
+      : time! * 1000 >= deadlineOf(round)! ? "late" : undefined;
     if (reason) {
       if (!entries.some((e) => data(e).source === "intake" && data(e).phase === "ignored" && data(e).id === message.id)) add({ kind: "notify", actor: "runner", data: { source: "intake", phase: "ignored", id: message.id, reason, round: n } });
       return false;

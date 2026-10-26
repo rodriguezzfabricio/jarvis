@@ -2,8 +2,8 @@
   {
     "name": "intake permits unknown round fields",
     "file": "packages/cli/src/intake/round.ts",
-    "anchor": "}).strict();\nexport type IntakeRound",
-    "replacement": "}).passthrough();\nexport type IntakeRound"
+    "anchor": "}).strict();\nexport const roundSchema",
+    "replacement": "}).passthrough();\nexport const roundSchema"
   },
   {
     "name": "intake permits six summary lines",
@@ -128,8 +128,8 @@
   {
     "name": "intake treats phone steer as a round answer",
     "file": "packages/cli/src/intake/round.ts",
-    "anchor": "const intents = entries.filter((e) => phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true);",
-    "replacement": "const intents = entries.filter((e) => e.kind === \"steer\" || (phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true));"
+    "anchor": "const intents = entries.filter((e) => phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true && (data(e).intakeBy !== \"timeout\" || deadlineOf(round) !== null));",
+    "replacement": "const intents = entries.filter((e) => e.kind === \"steer\" || phase(e, \"answer\") && data(e).requestId === round.requestId && data(e).answer === \"defaults\" && data(e).intakeOwned === true && (data(e).intakeBy !== \"timeout\" || deadlineOf(round) !== null));"
   },
   {
     "name": "intake project id hashes only the folder",
@@ -146,8 +146,8 @@
   {
     "name": "intake poll uses receipt time for lateness",
     "file": "packages/cli/src/intake/round.ts",
-    "anchor": ": time! * 1000 >= deadlineOf(round) ? \"late\"",
-    "replacement": ": clockOf(deps).now() >= deadlineOf(round) ? \"late\""
+    "anchor": ": time! * 1000 >= deadlineOf(round)! ? \"late\"",
+    "replacement": ": clockOf(deps).now() >= deadlineOf(round)! ? \"late\""
   },
   {
     "name": "intake cursor is not persisted",
@@ -182,7 +182,7 @@
   {
     "name": "intake open reads acquire a writer lock",
     "file": "packages/cli/src/intake/round.ts",
-    "anchor": "if (!intent && supplied === undefined && clockOf(deps).now() < deadlineOf(round))",
+    "anchor": "if (!intent && supplied === undefined && (deadlineOf(round) === null || clockOf(deps).now() < deadlineOf(round)!))",
     "replacement": "if (false)"
   },
   {
@@ -244,5 +244,53 @@
     "file": "packages/cli/src/intake/round.ts",
     "anchor": "const pending = inbox.pending().filter((answer) => answer.answer === \"steer\" || !answer.requestId.startsWith(\"intake-\"));",
     "replacement": "const pending = inbox.pending();"
+  },
+  {
+    "name": "intake binary questions require fake alternatives",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "alternatives: z.array(text).min(1).max(3)",
+    "replacement": "alternatives: z.array(text).min(2).max(3)"
+  },
+  {
+    "name": "intake binary questions accept no alternative",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "alternatives: z.array(text).min(1).max(3)",
+    "replacement": "alternatives: z.array(text).min(0).max(3)"
+  },
+  {
+    "name": "intake questions permit blank defaults",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "default: z.object({ answer: text, reason: text, tradeOff: text.optional() }).strict()",
+    "replacement": "default: z.object({ answer: z.string(), reason: text, tradeOff: text.optional() }).strict()"
+  },
+  {
+    "name": "intake explicit confirmation becomes defaults",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "return { [round.questionIds[0]!]: value };",
+    "replacement": "return \"defaults\";"
+  },
+  {
+    "name": "intake text is assigned to ambiguous rounds",
+    "file": "packages/cli/src/intake/round.ts",
+    "anchor": "round.questionIds.length === 1",
+    "replacement": "round.questionIds.length >= 1"
+  },
+  {
+    "name": "intake taste show creates memory",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "tasteDirectory(options.home ?? homedir(), false)",
+    "replacement": "tasteDirectory(options.home ?? homedir(), true)"
+  },
+  {
+    "name": "intake taste reads bypass storage symlinks",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "const directory = tasteDirectory(options.home ?? homedir(), false);",
+    "replacement": "const directory = join(resolve(options.home ?? homedir()), \".jarvis\", \"memory\", \"user\");"
+  },
+  {
+    "name": "intake taste reads skip schema validation",
+    "file": "packages/cli/src/intake/taste.ts",
+    "anchor": "return parseTaste(raw);",
+    "replacement": "return JSON.parse(raw) as TasteProfile;"
   }
 ]

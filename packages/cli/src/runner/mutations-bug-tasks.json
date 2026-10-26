@@ -1,0 +1,86 @@
+[
+  {
+    "name": "bug tasks: exit condition no longer asks for every path",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "export const BUG_EXIT_CONDITION = \"The reported symptom is reproduced and its root cause is fixed on every path that produces it (every caller, input form, configuration or entrypoint the report covers), and the unit check and code review pass.\";",
+    "replacement": "export const BUG_EXIT_CONDITION = \"The reported symptom is reproduced, fixed, and the unit check and code review pass.\";"
+  },
+  {
+    "name": "bug tasks: loop header carries no skills",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "buildRunHeader({ ...input, runId: this.runId, skills: this.skills })",
+    "replacement": "buildRunHeader({ ...input, runId: this.runId })"
+  },
+  {
+    "name": "bug tasks: run header drops the skills block",
+    "file": "packages/cli/src/runner/prompt.ts",
+    "anchor": "    ...(input.skills?.length ? [skillsBlock(input.skills)] : []),\n",
+    "replacement": ""
+  },
+  {
+    "name": "bug tasks: sessions get the build skill only",
+    "file": "packages/cli/src/runner/session-skills.ts",
+    "anchor": "export const SESSION_SKILLS = [\"build\", \"debug\"] as const;",
+    "replacement": "export const SESSION_SKILLS = [\"build\"] as const;"
+  },
+  {
+    "name": "bug tasks: session skills keep their frontmatter",
+    "file": "packages/cli/src/runner/session-skills.ts",
+    "anchor": "const text = raw.replace(FRONTMATTER, \"\").trim();",
+    "replacement": "const text = raw.trim();"
+  },
+  {
+    "name": "bug tasks: a missing session skill is skipped",
+    "file": "packages/cli/src/runner/session-skills.ts",
+    "anchor": "catch { throw new Error(`session skill ${name} is missing from ${dir}`); }",
+    "replacement": "catch { raw = `---\\nname: ${name}\\n---\\n(missing)`; }"
+  },
+  {
+    "name": "bug tasks: a session skill without frontmatter or body is accepted",
+    "file": "packages/cli/src/runner/session-skills.ts",
+    "anchor": "if (!FRONTMATTER.test(raw) || !text) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "bug tasks: sessions pointed at a spec file the checkout lacks",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "return existsSync(join(worktree, path)) ? path : \"none (this checkout has no spec file; the goal above is the whole request)\";",
+    "replacement": "return path;"
+  },
+  {
+    "name": "bug tasks: reviewer gets no bug brief",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "    ...(material.kind === \"bug\" ? [BUG_BRIEF] : []),\n",
+    "replacement": ""
+  },
+  {
+    "name": "bug tasks: every review gets the bug brief",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "material.kind === \"bug\" ? [BUG_BRIEF]",
+    "replacement": "true ? [BUG_BRIEF]"
+  },
+  {
+    "name": "bug tasks: a path that still fails is only advisory",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "is a finding: severity high, because the exit condition is not met,",
+    "replacement": "is a finding: severity medium,"
+  },
+  {
+    "name": "bug tasks: eval material never says bug",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": ", ...(t.type === \"bug\" ? { kind: \"bug\" as const } : {}) }",
+    "replacement": " }"
+  },
+  {
+    "name": "bug tasks: eval material drops the kind",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    ...(input.kind ? { kind: input.kind } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "bug tasks: eval arm runs without the Jarvis plugin",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    home: p.home,\n    pluginDir,\n",
+    "replacement": "    home: p.home,\n    ...(opts.pluginDir ? { pluginDir } : {}),\n"
+  }
+]

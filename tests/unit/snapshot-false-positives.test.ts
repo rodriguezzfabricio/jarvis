@@ -7,6 +7,7 @@ import { createSnapshot, findCredentials, findSnapshotCredentials, isBase64UserP
 import { isCredentialShaped } from "../../packages/cli/src/eval/snapshot-literals.ts";
 import { shortTmp } from "../helpers.ts";
 import { initRepo } from "./helpers/git-repo.ts";
+import { FAKE_NPM_TOKEN } from "./helpers/fake-tokens.ts";
 
 /**
  * Decision 79: the scanner is hygiene and must not refuse ordinary files. Every negative here is a line
@@ -195,7 +196,7 @@ describe("images and fonts", () => {
 // each case here is refused only by the rule named.
 describe("rules the literal checks used to mask", () => {
   it("refuses an npm access token outside any assignment", () => {
-    expect(scan("notes.md", "Publish with npm_q8Zr2vLm0TxSynthetic9qvM2abcdefghijZ from CI.\n")).toEqual(["npm token"]);
+    expect(scan("notes.md", `Publish with ${FAKE_NPM_TOKEN} from CI.\n`)).toEqual(["npm token"]);
   });
 
   it("refuses an unparseable configuration that names a credential field", () => {

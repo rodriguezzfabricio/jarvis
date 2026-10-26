@@ -19,7 +19,13 @@ const Task = z.object({
   mayTouch: z.array(boundary).max(1000).optional(),
 }).strict();
 
-export const PlanSchema = z.object({ tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
+/** Planner notes (decision 113): bounded so every build prompt that carries them stays well under one argument's limit. */
+export const PLAN_NOTES = { count: 32, chars: 2000, total: 16_000 } as const;
+const notes = z.array(z.string().trim().min(1).max(PLAN_NOTES.chars)).max(PLAN_NOTES.count)
+  .refine((items) => items.reduce((n, s) => n + s.length, 0) <= PLAN_NOTES.total, `planner notes may hold at most ${PLAN_NOTES.total} characters in all`);
+
+/** Only `tasks` and the optional `notes`: any other top-level key refuses the plan. */
+export const PlanSchema = z.object({ notes: notes.optional(), tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
   const tasks = new Map(plan.tasks.map((task) => [task.id, task]));
   if (tasks.size !== plan.tasks.length) ctx.addIssue({ code: "custom", message: "duplicate task ids" });
   const visiting = new Set<string>();
@@ -95,9 +101,27 @@ export function readSessionPlan(repo: string, kind: SessionPlanKind, checks: rea
   return plan;
 }
 
-export function planEntries(plan: Plan): AppendInput[] {
-  return PlanSchema.parse(plan).tasks.map(({ id, ...definition }) => ({ kind: "task_created", actor: "runner", task_id: id, data: definition }));
+export type PlannedTask = PlanTask & { planNotes?: string[] };
+
+/**
+ * Each task's definition as the ledger records it. The plan's top-level notes ride on every task as
+ * `planNotes` (decision 113), so each build prompt shows them; they are the planner's claims, never evidence.
+ */
+export function planTasks(plan: Plan): PlannedTask[] {
+  const parsed = PlanSchema.parse(plan);
+  const notes = parsed.notes ?? [];
+  return parsed.tasks.map((task) => ({ ...task, ...(notes.length ? { planNotes: [...notes] } : {}) }));
 }
+
+export function planEntries(plan: Plan): AppendInput[] {
+  return planTasks(plan).map(({ id, ...definition }) => ({ kind: "task_created", actor: "runner", task_id: id, data: definition }));
+}
+
+/**
+ * A bug's exit condition, which the builder reads and the reviewer checks as its criterion (decision 114):
+ * one cause usually has several triggers, and a fix for the first one found leaves the report open.
+ */
+export const BUG_EXIT_CONDITION = "The reported symptom is reproduced and its root cause is fixed on every path that produces it (every caller, input form, configuration or entrypoint the report covers), and the unit check and code review pass.";
 
 /** Risk tier never changes a bug/refactor into a spec or architecture pipeline (decision 89). */
 export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks: readonly { name: string }[]): Plan {
@@ -107,7 +131,7 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
   if (!goal) throw new Error("singleTaskPlan requires a nonempty request");
   return PlanSchema.parse({ tasks: [{
     id: "T1", title: goal.slice(0, 120), goal,
-    exitCondition: triage.type === "bug" ? "The reported symptom is reproduced, fixed, and the unit check and code review pass." : "Pinned behavior remains unchanged and the unit check and code review pass.",
+    exitCondition: triage.type === "bug" ? BUG_EXIT_CONDITION : "Pinned behavior remains unchanged and the unit check and code review pass.",
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"],
     ...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),
   }] });

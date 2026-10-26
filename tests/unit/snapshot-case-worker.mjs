@@ -1,7 +1,8 @@
-// A worker thread for snapshot.test.ts's credential-encodings test: createSnapshot and git run
-// synchronously, so only separate threads let the cases run side by side. It takes one message per case,
-// { name, content }, builds the case's repository, snapshots it and posts the refusal (or "" if the
-// snapshot succeeded). The test keeps every case and every assertion; this file only runs them.
+// A worker thread for the credential-encodings tests (snapshot-2 and snapshot-3, through snapshotErrors in
+// helpers/snapshot-fixture.ts): createSnapshot and git run synchronously, so only separate threads let the cases
+// run side by side. It takes one message per case, { name, content }, builds the case's repository, snapshots it
+// and posts the refusal (or "" if the snapshot succeeded). The tests keep every case and every assertion; this
+// file only runs them.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

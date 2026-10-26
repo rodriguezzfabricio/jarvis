@@ -22,6 +22,8 @@ export interface ClaudeReviewerOptions {
 }
 const under = (path: string, root: string) => path === root || path.startsWith(`${root}/`);
 const READ_TOOLS = ["Read", "Glob", "Grep"] as const;
+/** The reviewer session's network allowlist: none. `jarvis run` checks it against the phone reply host (backlog 99). */
+export const CLAUDE_REVIEW_DOMAINS: readonly string[] = Object.freeze([]);
 
 function locations(input: ReviewerInput, opts: ClaudeReviewerOptions) {
   const workspace = realpathSync(input.workspace), outputDir = realpathSync(input.outputDir);
@@ -58,7 +60,7 @@ export function createClaudeReviewer(opts: ClaudeReviewerOptions): Reviewer {
       sessionTmp = (opts.sessionTmpDir ?? makeSessionTmpDir)();
       const settings = join(loc.outputDir, "settings.json"), mcp = join(loc.outputDir, "mcp.json");
       if (existsSync(settings) || existsSync(mcp)) throw new Error("review settings paths must be fresh");
-      writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });
+      writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });
       writeFileSync(mcp, '{"mcpServers":{}}\n', { flag: "wx", mode: 0o600 });
       const args = assertSafeTaskArgs([...buildTaskArgs({ prompt: input.prompt, settingsPath: settings, mcpConfigPath: mcp, model: input.model, maxTurns: input.maxTurns, tools: READ_TOOLS }), "--effort", input.effort]);
       const tmp = join(cache, "tmp"); mkdirSync(tmp, { mode: 0o700 });

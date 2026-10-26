@@ -35,10 +35,12 @@ export interface WebObservation {
 /** Raw browser observations only; assertions run outside the candidate sandbox (decision 76). */
 export async function observeWeb(target: string, runtime: BrowserRuntime): Promise<WebObservation> {
   const url = localTarget(target);
-  const browser = await runtime.launch();
   const pages: WebObservation["pages"] = [];
-  try {
-    for (const width of [375, 768, 1440]) {
+  for (const width of [375, 768, 1440]) {
+    // One Chromium per viewport: loadBrowserRuntime launches with --single-process, and a single-process
+    // browser dies (SIGTRAP) when asked for a second page, even after the first was closed.
+    const browser = await runtime.launch();
+    try {
       const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
       try {
         await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
@@ -48,9 +50,9 @@ export async function observeWeb(target: string, runtime: BrowserRuntime): Promi
         const finalUrl = page.url();
         pages.push({ width, url: finalUrl, accessibilityTree, axe: axe.frames[0]!.axe, screenshot, ...axe });
       } finally { await page.close(); }
-    }
-    return { kind: "qa-browser", url, pages };
-  } finally { await browser.close(); }
+    } finally { await browser.close(); }
+  }
+  return { kind: "qa-browser", url, pages };
 }
 
 async function main(): Promise<void> {

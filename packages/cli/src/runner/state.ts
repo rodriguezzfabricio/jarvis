@@ -19,6 +19,8 @@ const definition = z.object({
   requiredChecks: z.array(text).min(1).default(["unit"]),
   requiredReviews: z.array(text).min(1).default(["code"]),
   baseRevision: revision.optional(),
+  /** The plan's top-level notes (decision 113): planner claims shown in every build prompt, never evidence. */
+  planNotes: z.array(text).optional(),
 });
 const leaseData = z.object({
   runId: text, holderPid: pid, expiresAt: z.number().finite(),

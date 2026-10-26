@@ -1,0 +1,152 @@
+[
+  {
+    "name": "Impeccable absolute engine pin",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "!isAbsolute(options.pin.bin)",
+    "replacement": "false"
+  },
+  {
+    "name": "Impeccable exact engine version",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "version.stdout.trim() !== `${options.pin.version}+engine`",
+    "replacement": "false"
+  },
+  {
+    "name": "Impeccable candidate configuration disabled",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "\"--json\", \"--no-config\", \"--no-inline-ignores\"",
+    "replacement": "\"--json\", \"--no-inline-ignores\""
+  },
+  {
+    "name": "Impeccable no inline suppression",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "\"--no-config\", \"--no-inline-ignores\"",
+    "replacement": "\"--no-config\""
+  },
+  {
+    "name": "Impeccable source traversal refused",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "      if (!file || file.startsWith(\"-\") || isAbsolute(file) || /[\\\\:\\x00-\\x1f]/.test(file) || file.split(\"/\").some(p => !p || p === \".\" || p === \"..\")) throw new Error(\"invalid changed source path\");",
+    "replacement": "      if (!file || file.startsWith(\"-\") || isAbsolute(file) || /[\\\\:\\x00-\\x1f]/.test(file) || false) throw new Error(\"invalid changed source path\");"
+  },
+  {
+    "name": "Impeccable local URL only",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "localTarget(target.url)",
+    "replacement": "target.url"
+  },
+  {
+    "name": "Impeccable scanner output bounded",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "export const IMPECCABLE_OUTPUT_BYTES = 1024 * 1024;",
+    "replacement": "export const IMPECCABLE_OUTPUT_BYTES = 1024 * 1024 * 16;"
+  },
+  {
+    "name": "Impeccable exit and findings agree",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "if ((raw.code === 2) !== primary)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Impeccable errors never pass",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "({ status: \"error\", findings: [], error })",
+    "replacement": "({ status: \"pass\", findings: [], error })"
+  },
+  {
+    "name": "Impeccable sandbox adapter used",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "const version = await options.spawn",
+    "replacement": "const version = await (await import(\"../proc/session.ts\")).runSession"
+  },
+  {
+    "name": "Impeccable uses verified Chromium pin",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "executablePath: tools.chromiumExecutable",
+    "replacement": "executablePath: \"/candidate/chromium\""
+  },
+  {
+    "name": "Impeccable all three widths",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "for (const width of [375, 768, 1440])",
+    "replacement": "for (const width of [375, 1440])"
+  },
+  {
+    "name": "Impeccable refuses redirects",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "if (page.url() !== url)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Impeccable protected manifest binding",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "verifyQaToolchain(input.manifest, input.manifestHash, input.repo)",
+    "replacement": "verifyQaToolchain(input.manifest, \"0\".repeat(64), input.repo)"
+  },
+  {
+    "name": "Impeccable owns its CDP browser",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "await ownCdpPage(page,input.port,runtime?.targets??cdpTargets);",
+    "replacement": "/* CDP ownership check removed */"
+  },
+  {
+    "name": "Impeccable incomplete URL evidence refused",
+    "file": "packages/cli/src/lanes/impeccable-verify.ts",
+    "anchor": "    if (observation.kind === \"impeccable-url\" && JSON.stringify(observation.pages.map(p => p.width).sort((a,b) => a-b)) !== \"[375,768,1440]\") throw new Error(\"incomplete viewport coverage\");",
+    "replacement": "    if (false) throw new Error(\"incomplete viewport coverage\");"
+  },
+  {
+    "name": "Impeccable engine hash checked before running",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "    if ((options.hashFile ?? fileSha256)(options.pin.bin) !== options.pin.sha256) throw new Error(\"pinned Impeccable engine sha256 differs from its pin\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable pin needs a sha256",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": " || !/^[a-f0-9]{64}$/.test(options.pin.sha256)",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable install checks the engine hash",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "  if (sha256(engine)!==pin.sha256) throw new Error(\"Impeccable engine sha256 differs from its pin\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable runs from the protected fixtures copy",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "pin:{bin:copy,version:pin.version,sha256:pin.sha256}",
+    "replacement": "pin:input.scanner.pin"
+  },
+  {
+    "name": "Impeccable Chromium is single-process",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\"",
+    "replacement": "args: [\"--remote-debugging-address=127.0.0.1\""
+  },
+  {
+    "name": "Impeccable one Chromium per viewport",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "    const browser = await chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\", `--remote-debugging-port=${input.port}`]});\n",
+    "replacement": "    const browser = await ((scanImpeccableBrowser as unknown as {shared?: ReturnType<typeof chromium.launch>}).shared ??= chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\", `--remote-debugging-port=${input.port}`]}));\n"
+  },
+  {
+    "name": "Impeccable doctor checks the engine hash",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "    if (digest !== impeccable.sha256) throw new Error(",
+    "replacement": "    if (false) throw new Error("
+  },
+  {
+    "name": "Impeccable doctor checks the exact version",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "    if (found !== `${impeccable.version}+engine`) throw new Error(",
+    "replacement": "    if (false) throw new Error("
+  },
+  {
+    "name": "Design browser evidence selected with every browser scan",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "[\"impeccable-url\", \"design-browser\", \"axe\", \"playwright\"]",
+    "replacement": "[\"impeccable-url\", \"axe\", \"playwright\"]"
+  }
+]

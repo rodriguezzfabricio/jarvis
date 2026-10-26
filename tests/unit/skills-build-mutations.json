@@ -124,5 +124,41 @@
     "file": "skills/CREDITS.md",
     "anchor": "The above copyright notice and this permission notice shall be included in all\n",
     "replacement": ""
+  },
+  {
+    "name": "debug: callers' real data no longer traced (decision 114)",
+    "file": "skills/debug/SKILL.md",
+    "anchor": "- **The data as it really arrives.** For every caller of the code you'll change, read what it actually passes. Follow the value back to where it is produced or stored: its encoding, markup, case, whitespace and units.",
+    "replacement": "- **The data.** Read the code you'll change."
+  },
+  {
+    "name": "debug: only the first place the symptom shows is fixed (decision 114)",
+    "file": "skills/debug/SKILL.md",
+    "anchor": "- **Every place the symptom can happen:** every configuration, service, entrypoint, platform or deployment file the report's words cover, not only the first one you found.",
+    "replacement": "- **The place the symptom happens:** the first configuration or file you found."
+  },
+  {
+    "name": "debug: paths not written down (decision 114)",
+    "file": "skills/debug/SKILL.md",
+    "anchor": "- **Write them down** in the notes as `Paths:`.",
+    "replacement": "- **Keep them in mind.**"
+  },
+  {
+    "name": "debug: fix may land in any layer (decision 114)",
+    "file": "skills/debug/SKILL.md",
+    "anchor": "- **Fix it in the layer the report points at.**",
+    "replacement": "- **Fix it wherever is easiest.**"
+  },
+  {
+    "name": "debug: fix checked only against its own test (decision 114)",
+    "file": "skills/debug/SKILL.md",
+    "anchor": "3. Check the fix against the report, not only your test.",
+    "replacement": "3. Check the fix against your test."
+  },
+  {
+    "name": "build: one refused command read as the tool being off (decision 114)",
+    "file": "skills/build/SKILL.md",
+    "anchor": "- **A refusal refuses that one command, not the tool.**",
+    "replacement": "- **A refusal means Bash is off for the session.**"
   }
 ]

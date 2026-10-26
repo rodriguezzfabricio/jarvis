@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
+import { doctorExitCode, allowsUnattended } from "../../packages/cli/src/doctor/doctor.ts";
+import { Ledger, verifyLedger } from "../../packages/cli/src/ledger/ledger.ts";
 import { foundationChecks } from "../../packages/cli/src/doctor/foundation.ts";
 import { toolDoctorChecks } from "../../packages/cli/src/doctor/tools.ts";
 import { fakeToolchain } from "../fixtures/qa/toolchain.ts";
@@ -24,6 +25,27 @@ describe("doctor never writes or reclaims a ledger lock", () => {
     const before = readdirSync(project);
     const pending = foundationChecks({ jarvisHome: home, pluginDir: temp(), socketPath: "", ledgerVerify: () => ({ ok: false, entries: [], problems: ["contended read"], repairable: [], contended: true }) });
     await expect(pending).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "ledger.one" })])); const checks = await pending;
-    expect(checks.find(c => c.name === "ledger.one")).toMatchObject({ detail: expect.stringContaining("contended") }); expect(open).not.toHaveBeenCalled(); expect(readdirSync(project)).toEqual(before); expect(readFileSync(join(project, "ledger.lock"), "utf8")).toBe("existing lock bytes");
+    expect(checks.find(c => c.name === "ledger.one")).toMatchObject({ level: "warn", status: "busy", detail: expect.stringContaining("busy, re-run") });
+    expect(doctorExitCode([checks.find(c => c.name === "ledger.one")!])).toBe(2);
+    expect(allowsUnattended([checks.find(c => c.name === "ledger.one")!, { name: "canary_probe", level: "pass", detail: "ok" }])).toBe(false);
+    expect(open).not.toHaveBeenCalled(); expect(readdirSync(project)).toEqual(before); expect(readFileSync(join(project, "ledger.lock"), "utf8")).toBe("existing lock bytes");
+  });
+});
+
+describe("doctor ledger verification classification (backlog 91)", () => {
+  it("reports busy after five actual moving reads, without classifying it as tampering", async () => {
+    const home = temp(); const project = join(home, "projects/one");
+    const ledger = Ledger.open(project); let reads = 0;
+    const checks = await foundationChecks({ jarvisHome: home, pluginDir: temp(), socketPath: "", ledgerVerify: dir => verifyLedger(dir, { afterLedgerRead: () => { reads++; ledger.append({ kind: "task_created", actor: "runner", data: { reads } }); } }) });
+    expect(reads).toBe(5);
+    expect(checks.find(c => c.name === "ledger.one")).toMatchObject({ level: "warn", status: "busy", detail: expect.stringContaining("busy, re-run") });
+    expect(checks.some(c => c.name === "checks.one")).toBe(false);
+  });
+  it("keeps real verification failures as fail, with precedence over busy", async () => {
+    const home = temp(); mkdirSync(join(home, "projects/one"), { recursive: true });
+    const checks = await foundationChecks({ jarvisHome: home, pluginDir: temp(), socketPath: "", ledgerVerify: () => ({ ok: false, entries: [], repairable: [], problems: ["head hash mismatch"] }) });
+    const check = checks.find(c => c.name === "ledger.one")!;
+    expect(check).toEqual({ name: "ledger.one", level: "fail", detail: "head hash mismatch" });
+    expect(doctorExitCode([check, { name: "ledger.busy", level: "warn", status: "busy", detail: "busy, re-run" }])).toBe(1);
   });
 });

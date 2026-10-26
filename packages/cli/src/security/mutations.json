@@ -458,7 +458,7 @@
   {
     "name": "security offline: unpinned database fetch binary accepted",
     "file": "packages/cli/src/security/osv-db-fetch.ts",
-    "anchor": "JSON.stringify(reportedScannerVersion(\"osv-scanner\", version.stdout)) !== '[\"2.7.0\"]'",
+    "anchor": "JSON.stringify(reportedScannerVersion(\"osv-scanner\", version.stdout)) !== JSON.stringify([pin.version])",
     "replacement": "false"
   },
   {
@@ -478,5 +478,257 @@
     "file": "packages/cli/src/security/offline.ts",
     "anchor": "\"--x-plugins=vulnmatch/osvlocal\", \"--config=/dev/null\", ",
     "replacement": "\"--x-plugins=vulnmatch/osvlocal\", "
+  },
+  {
+    "name": "security backlog: Semgrep unlimited size required",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "\"--json\", \"--max-target-bytes=0\"]",
+    "replacement": "\"--json\"]"
+  },
+  {
+    "name": "security backlog: Semgrep skipped paths accepted",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (paths.skipped !== undefined && (!Array.isArray(paths.skipped) || paths.skipped.length !== 0)) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: Semgrep skipped targets accepted",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (output.skipped_targets !== undefined && (!Array.isArray(output.skipped_targets) || output.skipped_targets.length !== 0)) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: scanner errors accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.errors !== undefined && array(r.errors).length !== 0) invalid();",
+    "replacement": ""
+  },
+  {
+    "name": "security backlog: gitleaks required flags ignored",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!gitleaksFlags.every((flag) => args.includes(flag))",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks unreviewed options accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "!args.every((arg, index) => (configIndex >= 0 && index === configIndex + 1) || gitleaksAllowed.has(arg))",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks duplicate report paths accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "args.filter((arg) => arg.startsWith(\"--report-path=\")).length !== 1",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: gitleaks candidate configuration accepted",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "configIndex < 0 || !protectedRules(args[configIndex + 1], pin, cwd, runtime)",
+    "replacement": "false"
+  },
+  {
+    "name": "security backlog: version timeout tied to scan timeout",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "deps.versionTimeoutMs ?? 10_000",
+    "replacement": "deps.timeoutMs ?? 10_000"
+  },
+  {
+    "name": "security backlog: OSV fetch binary hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "bin: pin.bin, args: [\"--version\"]",
+    "replacement": "bin: \"/opt/homebrew/bin/osv-scanner\", args: [\"--version\"]"
+  },
+  {
+    "name": "security backlog: OSV fetch version hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "!== JSON.stringify([pin.version])",
+    "replacement": "!== '[\"2.7.0\"]'"
+  },
+  {
+    "name": "security backlog: OSV manifest version hardcoded",
+    "file": "packages/cli/src/security/osv-db-fetch.ts",
+    "anchor": "scannerVersion: pin.version,",
+    "replacement": "scannerVersion: \"2.7.0\","
+  },
+  {
+    "name": "security backlog: production Semgrep pin drops the size flag",
+    "file": "packages/cli/src/config/pins.ts",
+    "anchor": "\"--jobs=1\", \"--max-target-bytes=0\", \".\"]",
+    "replacement": "\"--jobs=1\", \".\"]"
+  },
+  {
+    "name": "security backlog: OSV snapshot check hardcodes the scanner version",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "manifest.scannerVersion !== scannerVersion",
+    "replacement": "manifest.scannerVersion !== \"2.7.0\""
+  },
+  {
+    "name": "security coverage: coverage comparison skipped",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (coverage) return error(coverage);",
+    "replacement": ""
+  },
+  {
+    "name": "security coverage: extensionless shebang detection disabled",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "extension === \"\" && coveredShebang(absolute)",
+    "replacement": "false"
+  },
+  {
+    "name": "security coverage: coverage inventory follows symlinks",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (stat.isSymbolicLink()) throw Error(\"Coverage cannot follow symlinks\");",
+    "replacement": "if (stat.isSymbolicLink()) continue;"
+  },
+  {
+    "name": "security coverage: first-line read bound removed",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "Buffer.alloc(4096)",
+    "replacement": "Buffer.alloc(1024 * 1024)"
+  },
+  {
+    "name": "security coverage: protected gitleaks config not passed",
+    "file": "packages/cli/src/security/offline.ts",
+    "anchor": "return gitleaksArgs(withGitleaksConfig(pin), cwd, runtime);",
+    "replacement": "return gitleaksArgs(withGitleaksConfig(pin), cwd, runtime).filter((arg, index, args) => arg !== \"--config\" && args[index - 1] !== \"--config\");"
+  },
+  {
+    "name": "security coverage: gitleaks global path allowlist restored",
+    "file": "packages/cli/src/security/gitleaks.toml",
+    "anchor": "description = \"global allow lists\"",
+    "replacement": "description = \"global allow lists\"\npaths = ['''(?:^|/)node_modules/''', '''package-lock\\.json$''']"
+  },
+  {
+    "name": "security coverage: gitleaks default omitted at installation",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "const pin = tool === \"gitleaks\" ? withGitleaksConfig(configured) : configured;",
+    "replacement": "const pin = configured;"
+  },
+  {
+    "name": "security coverage: missing scanned evidence accepted",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return invalid();",
+    "replacement": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return [];"
+  },
+  {
+    "name": "security coverage: tsx, bun, deno and npx shebangs not detected",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "|tsx|bun|deno|npx|",
+    "replacement": "|"
+  },
+  {
+    "name": "security coverage: env options and wrappers hide the interpreter",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "return words.some((word) => interpreters.test(basename(word)));",
+    "replacement": "return interpreters.test(basename(words[words[0] === \"-S\" ? 1 : 0] ?? \"\"));"
+  },
+  {
+    "name": "security coverage: vendored gitleaks licence notice dropped",
+    "file": "packages/cli/src/security/gitleaks-LICENSE",
+    "anchor": "The above copyright notice and this permission notice shall be included in all\n",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: second pass skipped",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "const mapped = await mappedSemgrep(pin, cwd, scanned, args, runtime);",
+    "replacement": "const mapped = { findings: [], scanned: [], complete: true };"
+  },
+  {
+    "name": "security mapped: finding paths not restored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "return { ...value, file, fingerprint: hash(`${value.rule}:${file}:${value.line}`) };",
+    "replacement": "return value;"
+  },
+  {
+    "name": "security mapped: missing mapped coverage accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (!mapped.complete) return error(\"semgrep mapped coverage missing\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: link copied after source replacement",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK",
+    "replacement": "constants.O_RDONLY | constants.O_NONBLOCK"
+  },
+  {
+    "name": "security mapped: special source silently skipped",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (!stat.isFile()) throw Error(\"Mapped source must be regular\");",
+    "replacement": "if (!stat.isFile()) return 0;"
+  },
+  {
+    "name": "security mapped: mapped file count unbounded",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (files.length > MAX_MAPPED_FILES) throw Error(\"Mapped file limit\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped bytes unbounded",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (stat.size > remaining) throw Error(\"Mapped byte limit\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped aggregate byte accounting disabled",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "MAX_MAPPED_BYTES - bytes",
+    "replacement": "MAX_MAPPED_BYTES"
+  },
+  {
+    "name": "security mapped: mapped tree retained",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "finally { rmSync(cwd, { recursive: true, force: true }); }",
+    "replacement": "finally {}"
+  },
+  {
+    "name": "security mapped: mapped scanner faults ignored",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.timedOut || r.overflowed || (r.code !== 0 && r.code !== 1)) throw Error(\"Mapped scanner failed\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped empty exit one accepted",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (r.code !== 0 && findings.length === 0) throw Error(\"Mapped scanner failed\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: mapped driver omitted from fixtures",
+    "file": "packages/cli/src/security/protected.ts",
+    "anchor": "\"coverage.ts\", \"mapped.ts\",",
+    "replacement": "\"coverage.ts\","
+  },
+  {
+    "name": "security mapped: snapshot age check disabled",
+    "file": "packages/cli/src/security/scanners.ts",
+    "anchor": "if (ageError) return error(ageError);",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: snapshot age compared backwards",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "age > OSV_MAX_SNAPSHOT_AGE_MS",
+    "replacement": "age < OSV_MAX_SNAPSHOT_AGE_MS"
+  },
+  {
+    "name": "security mapped: future snapshot accepted",
+    "file": "packages/cli/src/security/osv-database.ts",
+    "anchor": "if (age < 0) return `osv snapshot date is in the future (${fetchedAt}); ${refresh}`;",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: parent link swap copied",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (stat.dev !== source.dev || stat.ino !== source.ino) throw Error(\"Mapped source changed before copy\");",
+    "replacement": ""
+  },
+  {
+    "name": "security mapped: path-filtered protected rule",
+    "file": "packages/cli/src/security/rules/javascript.yml",
+    "anchor": "    pattern: $DB.query($SQL + $INPUT, ...)\n",
+    "replacement": "    pattern: $DB.query($SQL + $INPUT, ...)\n    paths:\n      include: [\"src/\"]\n"
   }
 ]

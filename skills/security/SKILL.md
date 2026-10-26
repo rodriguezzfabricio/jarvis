@@ -25,8 +25,9 @@ unavailable scanner; a finding, error or incomplete hostile trial cannot be exem
 A pinned tool that becomes unavailable is an error; it cannot receive a routing exemption.
 Never install a tool, fetch rules or update a vulnerability database during the review. The runner
 must pin offline scanner binaries, rules and databases before approving the check definitions.
-Gitleaks dir does not scan Git history, and its default configuration allowlists node_modules/.
-Those coverage gaps require separately approved history/dependency-directory checks when relevant.
+Gitleaks dir does not scan Git history. The upstream default configuration allowlists node_modules/,
+but Jarvis supplies protected default rules without path allowlists.
+History coverage requires separately approved checks when relevant.
 
 Secret findings contain fingerprints only. Never quote a secret, source snippet, raw diagnostic or
 private payload in a finding, ledger claim, report or notifier. Name its file/line and fingerprint;

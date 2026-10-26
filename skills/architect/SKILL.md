@@ -29,8 +29,11 @@ Each task contains id (T1, T2, ...), title, goal, exitCondition, acceptanceCrite
 
 An optional mayTouch array is an explicit repo-relative file boundary, copied from triage when supplied. Preserve an empty boundary. Omit it when unrestricted; never use absolute paths, parent traversal, .git or .jarvis as a product-code boundary. Plans are claims, never completion evidence.
 
+The runner accepts only `tasks` and an optional `notes` array at the top, and only the task keys above. It refuses a plan with any other key, at the top or in a task, so a feature name, a summary or a comment has no place in the file. Put constraints every build session should know in notes, such as where new code goes or which dependencies not to add: at most 32 strings of at most 2000 characters, 16000 in all. Each build session sees them as planner notes, which are claims, not evidence (decision 113).
+
 ```json
 {
+  "notes": ["Reuse the existing file store; add no dependencies."],
   "tasks": [{
     "id": "T1",
     "title": "Save a habit",

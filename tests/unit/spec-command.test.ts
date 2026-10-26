@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { register } from "../../packages/cli/src/spec/command.ts";
+import { DecisionRegister } from "../../packages/cli/src/decisions/store.ts";
 
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 const source = readFileSync(new URL("../fixtures/spec/v1.md", import.meta.url), "utf8");
@@ -63,6 +64,20 @@ describe("jarvis spec check", () => {
     const repo = fresh(source);
     writeFileSync(join(repo, "docs", "spec", "v3.md"), source.replace("spec: 1", "spec: 3").replace("Spec v1", "Spec v3").replace("supersedes: none", "supersedes: 2"));
     expect(run(["spec", "check", "--repo", repo]).stderr).toContain("Missing v2.md");
+  });
+
+  it("checks the latest spec's decision citations against the current register (stage 2 run 1, task 01)", () => {
+    const repo = fresh();
+    writeFileSync(join(repo, "evidence.md"), "# Evidence\n");
+    const entry = { date: "2026-10-25", decision: "Old rule", madeBy: "jarvis", source: "evidence.md", class: "Mechanical", reversibility: "easy", why: "Deliberate", alternatives: [], dependsOn: [] } as const;
+    DecisionRegister.open(repo).add({ ...entry, alternatives: [], dependsOn: [] });
+    DecisionRegister.open(repo).supersede(1, { ...entry, alternatives: [], dependsOn: [], decision: "New rule" }, entry.date, "Replaced");
+    writeFileSync(join(repo, "docs", "spec", "v1.md"), source.replace("## Open questions", "Follows D1.\n\n## Open questions"));
+    const stale = run(["spec", "check", "--repo", repo]);
+    expect(stale.exitCode).toBe(1);
+    expect(stale.stderr).toMatch(/D1 is superseded by D2/);
+    writeFileSync(join(repo, "docs", "spec", "v1.md"), source.replace("## Open questions", "Follows D2.\n\n## Open questions"));
+    expect(run(["spec", "check", "--repo", repo]).exitCode).toBe(0);
   });
 
   it.each([[true, 0], [false, 1]] as const)("returns a real process exit code for valid=%s", (valid, expected) => {

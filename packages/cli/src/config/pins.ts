@@ -1,4 +1,5 @@
 import type { ScannerPins } from "../security/scanners.ts";
+import type { ImpeccablePin } from "../lanes/impeccable.ts";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +38,21 @@ export function pinnedMaestroBin(home: string = homedir()): string {
   return join(home, ".maestro", "bin", "maestro");
 }
 
+/**
+ * Impeccable's native engine (decisions 54, 124), never its npm launcher, which can download an engine.
+ * This runner-owned copy is the source: installing the design checks copies it into the protected
+ * fixtures after checking this hash, because a gate case can't read the home folder.
+ */
+export const IMPECCABLE_ENGINE_VERSION = "0.1.16";
+export const IMPECCABLE_ENGINE_SHA256 = "5c00c3130b961f3aa1066f04ed0e1f58e87808ad153efa00f1c44184800084f2";
+export function pinnedImpeccable(home: string = homedir()): ImpeccablePin {
+  return {
+    bin: join(home, ".jarvis-work", "cache", "impeccable", IMPECCABLE_ENGINE_VERSION, "impeccable"),
+    version: IMPECCABLE_ENGINE_VERSION,
+    sha256: IMPECCABLE_ENGINE_SHA256,
+  };
+}
+
 /** Reviewed offline scanner policy; database downloads happen explicitly outside the gate. */
 export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
   return {
@@ -47,7 +63,7 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
     semgrep: {
       bin: "/opt/homebrew/bin/semgrep", version: "1.182.0",
       rulesFile: fileURLToPath(new URL("../security/rules/", import.meta.url)),
-      args: ["scan", "--config", "@rules", "--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--oss-only", "--no-secrets-validation", "--no-git-ignore", "--x-ignore-semgrepignore-files", "--jobs=1", "."],
+      args: ["scan", "--config", "@rules", "--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--oss-only", "--no-secrets-validation", "--no-git-ignore", "--x-ignore-semgrepignore-files", "--jobs=1", "--max-target-bytes=0", "."],
       env: { SSL_CERT_FILE: "/etc/ssl/cert.pem" },
     },
     "osv-scanner": {

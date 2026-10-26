@@ -21,6 +21,8 @@ export interface DoctorCheck {
   name: string;
   level: Level;
   detail: string;
+  /** A lock-free read could not settle; retry before unattended work. */
+  status?: "busy";
   /** On canary_probe: the probe hit a usage limit; retry after this Unix time. */
   waitUntil?: number;
 }
@@ -31,7 +33,7 @@ export interface DoctorDeps {
   platform?: NodeJS.Platform;
   repoPath?: string;
   /** Returns stdout, or throws. */
-  exec?: (bin: string, args: string[]) => string;
+  exec?: (bin: string, args: string[], env?: Record<string, string>) => string;
   exists?: (p: string) => boolean;
   freeBytes?: (p: string) => number;
   live?: boolean;
@@ -42,8 +44,8 @@ export interface DoctorDeps {
 }
 
 /** Binaries doctor runs get the allowlisted child environment, never this shell's (decision 58). */
-const execWithEnv = (env: Record<string, string>) => (bin: string, args: string[]) =>
-  execFileSync(bin, args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], env });
+const execWithEnv = (env: Record<string, string>) => (bin: string, args: string[], scannerEnv?: Record<string, string>) =>
+  execFileSync(bin, args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], env: scannerEnv ?? env });
 const defaultFree = (p: string) => {
   const s = statfsSync(p);
   return Number(s.bavail) * Number(s.bsize);
@@ -137,7 +139,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
 }
 
 export function doctorExitCode(checks: readonly DoctorCheck[]): number {
-  return checks.some((c) => c.level === "fail") ? 1 : 0;
+  if (checks.some((c) => c.level === "fail")) return 1;
+  return checks.some((c) => c.status === "busy") ? 2 : 0;
 }
 
 /** Unattended runs need a clean doctor including a passing live probe. */

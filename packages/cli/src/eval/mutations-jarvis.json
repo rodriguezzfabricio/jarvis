@@ -80,7 +80,7 @@
   {
     "name": "eval jarvis usage-limited planner counted as a failure",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "    if (outcome.status === \"usage-limited\") return { kind: \"usage-limited\", until: outcome.resetAt ?? outcome.usageWaitUntil, started };\n",
+    "anchor": "      if (outcome.status === \"usage-limited\") return { kind: \"usage-limited\", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };\n",
     "replacement": ""
   },
   {
@@ -267,6 +267,84 @@
     "name": "eval jarvis metrics skip session-failure markers",
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "if (data?.reviewer === \"session\") return n;",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis refused plan gets no corrective planner session",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const PLANNER_TRIES = 2;",
+    "replacement": "const PLANNER_TRIES = 1;"
+  },
+  {
+    "name": "eval jarvis planner retried more than once",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const PLANNER_TRIES = 2;",
+    "replacement": "const PLANNER_TRIES = 3;"
+  },
+  {
+    "name": "eval jarvis unfinished planner session retried",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "      if (outcome.status !== \"finished\") return { kind: \"failed\",",
+    "replacement": "      if (outcome.status !== \"finished\" && n === PLANNER_TRIES) return { kind: \"failed\","
+  },
+  {
+    "name": "eval jarvis corrective planner gets the first prompt",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const prompt = refusals.length ? plannerRetryPrompt(promptInput, refusals.at(-1)!) : plannerPrompt(promptInput);",
+    "replacement": "const prompt = plannerPrompt(promptInput);"
+  },
+  {
+    "name": "eval jarvis corrective prompt omits the refusal",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    quoted,\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis corrective prompt quotes an unbounded refusal",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const quoted = refusal.length > REFUSAL_CHARS ?",
+    "replacement": "const quoted = false ?"
+  },
+  {
+    "name": "eval jarvis plan-failed keeps only the last refusal",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    return { kind: \"failed\", reason: refusals.join(\"; \"), sessions };",
+    "replacement": "    return { kind: \"failed\", reason: refusals.at(-1)!, sessions };"
+  },
+  {
+    "name": "eval jarvis unfinished corrective session drops the first refusal",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "reason: [...refusals, `${label}planner session",
+    "replacement": "reason: [`${label}planner session"
+  },
+  {
+    "name": "eval jarvis planner sessions counted as one",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "      plannerSessions = r.sessions;",
+    "replacement": "      plannerSessions = r.sessions ? 1 : 0;"
+  },
+  {
+    "name": "eval jarvis corrective planner usage recorded as the first",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "taskId: PLAN_TASK, attemptId, role: \"architect\"",
+    "replacement": "taskId: PLAN_TASK, attemptId: \"a1\", role: \"architect\""
+  },
+  {
+    "name": "eval jarvis corrective planner overwrites the first log",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "logPath: join(sessionsDir, `plan-${attemptId}.jsonl`)",
+    "replacement": "logPath: join(sessionsDir, \"plan-a1.jsonl\")"
+  },
+  {
+    "name": "eval jarvis planner prompt hides the plan shape",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    `Write .jarvis/plan.json as one JSON object in exactly this shape (the values are placeholders):\\n\\`\\`\\`json\\n${PLAN_SKELETON}\\n\\`\\`\\``,\n",
+    "replacement": "    \"Write .jarvis/plan.json: an object with a tasks array.\",\n"
+  },
+  {
+    "name": "eval jarvis planner prompt does not say other keys are refused",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "The runner refuses a plan with any other key, at the top or in a task (a feature name, a summary, comments). ",
     "replacement": ""
   }
 ]

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
-import { runSandboxed } from "../sandbox/srt.ts";
+import { runSandboxed, type SandboxedRun } from "../sandbox/srt.ts";
 import { tempRoots } from "../sandbox/temp.ts";
 import type { ChecksStore } from "./store.ts";
 
@@ -58,6 +58,8 @@ export interface GateInput {
   extraEnv?: Record<string, string>;
   /** Test seam: removes the run's scratch folder after the result is recorded. */
   cleanup?: (dir: string) => void;
+  /** Test seam: runs one sandboxed phase (default runSandboxed), so a test can see each phase's policy. */
+  sandbox?: typeof runSandboxed;
 }
 
 export type GateStatus = "pass" | "fail" | "tampered" | "error";
@@ -125,6 +127,7 @@ interface RunInput {
   check: GateCheck;
   extraEnv?: Record<string, string>;
   cleanup?: (dir: string) => void;
+  sandbox?: (r: SandboxedRun) => ReturnType<typeof runSandboxed>;
 }
 interface Outcome { status: GateStatus; data: Record<string, unknown> }
 
@@ -164,7 +167,7 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
     for (const k of g.check.cases) {
       const caseEvidence = join(evidenceDir, "cases", k.id);
       mkdirSync(caseEvidence, { recursive: true, mode: 0o700 });
-      const r = await runSandboxed({
+      const r = await (g.sandbox ?? runSandboxed)({
         policy: {
           // Decision 95: no system temp folder either; the run folder (with its private TMPDIR) is reopened.
           denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir), ...systemTemp],
@@ -205,7 +208,7 @@ async function execute<R>(g: RunInput, evidenceDir: string, label: string, lockH
       const completionFile = join(verifyDir, "completion");
       writeFileSync(completionFile, nonce, { mode: 0o600 });
       const verifyStdout = join(evidenceDir, "verify-stdout.log");
-      ver = await runSandboxed({
+      ver = await (g.sandbox ?? runSandboxed)({
         policy: {
           denyRead: [real(g.jarvisHome), real(homedir()), real(runDir), ...systemTemp],
           allowRead: [real(verifyDir), real(g.store.checksDir)],

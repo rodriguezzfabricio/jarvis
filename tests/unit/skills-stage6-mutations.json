@@ -38,7 +38,7 @@
   {
     "name": "skills stage6 onboard records inferred decisions as Jarvis's",
     "file": "skills/onboard/SKILL.md",
-    "anchor": "`jarvis decide --by user --class mechanical --why \"Inferred during onboarding",
+    "anchor": "`jarvis decide --by default-accepted --class mechanical --why \"Inferred during onboarding",
     "replacement": "`jarvis decide --by jarvis --class mechanical --why \"Inferred during onboarding"
   },
   {

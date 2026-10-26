@@ -20,6 +20,7 @@ const MAP = [
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^packages\/cli\/src\/eval\/mutations-jarvis\.json$/, "3"],
   [/^packages\/cli\/src\/eval\/mutations-network\.json$/, "0-1"],
+  [/^packages\/cli\/src\/eval\/mutations-hidden\.json$/, "4"], // how hidden checks are installed; found building task 06, the stage 4 proof
   [/^packages\/cli\/src\/checks\/mutations-gate-cleanup\.json$/, "0-1"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
@@ -27,7 +28,9 @@ const MAP = [
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
+  [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
   // Folder rules.
+  [/^packages\/cli\/src\/doctor\/mutations[^/]*\.json$/, "0-1"],
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],
   [/^packages\/cli\/src\/runner\/mutations[^/]*\.json$/, "3"],
   [/^packages\/cli\/src\/(review|security|lanes)\/mutations[^/]*\.json$/, "4"],

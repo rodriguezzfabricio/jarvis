@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 
 const dirs: string[] = [];
@@ -10,7 +11,7 @@ function fake(body: string) {
   dirs.push(dir);
   const bin = join(dir, "scanner");
   writeFileSync(bin, `#!${process.execPath}\nif (process.argv.includes('--version') || process.argv.includes('version')) console.log('8.28.0'); else { ${body} }`, { mode: 0o700 });
-  return { dir, pin: { bin, version: "8.28.0", args: ["scan", "--redact=100", "."] } };
+  return { dir, pin: { bin, version: "8.28.0", args: pinnedSecurityScanners().gitleaks!.args } };
 }
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
@@ -47,7 +48,7 @@ describe("scanner adapters", () => {
 
   it("parses semgrep and osv JSON without source snippets", async () => {
     const { parseFindings } = await import("../../packages/cli/src/security/scanners.ts");
-    expect(parseFindings("semgrep", JSON.stringify({ results: [{ check_id: "injection", path: "app.ts", start: { line: 4 }, extra: { severity: "ERROR", message: "unsafe", lines: "private" } }], errors: [] }))[0]).toMatchObject({ rule: "injection", file: "app.ts", line: 4, severity: "high" });
+    expect(parseFindings("semgrep", JSON.stringify({ results: [{ check_id: "injection", path: "app.ts", start: { line: 4 }, extra: { severity: "ERROR", message: "unsafe", lines: "private" } }], errors: [], paths: { scanned: ["app.ts"] } }))[0]).toMatchObject({ rule: "injection", file: "app.ts", line: 4, severity: "high" });
     const osv = { results: [{ source: { path: "package-lock.json", type: "lockfile" }, packages: [{ package: { name: "dummy", version: "1" }, vulnerabilities: [{ id: "OSV-DUMMY", summary: "private", database_specific: { severity: "HIGH" } }] }] }] };
     expect(parseFindings("osv-scanner", JSON.stringify(osv))[0]).toMatchObject({ rule: "OSV-DUMMY", file: "package-lock.json", severity: "high" });
     expect(JSON.stringify(parseFindings("osv-scanner", JSON.stringify(osv)))).not.toContain("private");
@@ -109,9 +110,6 @@ describe("scanner adapters", () => {
   ])("fails closed on scanner fault %s", async (body, detail) => {
     const { runScanner } = await import("../../packages/cli/src/security/scanners.ts");
     const { dir, pin } = fake(body);
-    // Only the timeout case needs a short timeout; the others exit at once, and under load a 250 ms limit also cut off Node's start-up
-    // (and the version probe, which shares the limit), turning "invalid output" and "exit code" into "timeout".
-    const timeoutMs = detail === "timeout" ? 1_000 : 30_000;
-    expect(await runScanner("gitleaks", pin, dir, { timeoutMs })).toMatchObject({ status: "error", detail });
+    expect(await runScanner("gitleaks", pin, dir, { timeoutMs: detail === "timeout" ? 250 : 10_000, versionTimeoutMs: 10_000 })).toMatchObject({ status: "error", detail });
   });
 });

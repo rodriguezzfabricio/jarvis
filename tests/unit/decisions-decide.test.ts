@@ -1,31 +1,58 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { shortTmp } from "../helpers.ts";
 import { register } from "../../packages/cli/src/decisions/decide.ts";
 import { DecisionRegister } from "../../packages/cli/src/decisions/store.ts";
 import type { DecisionInput } from "../../packages/cli/src/decisions/format.ts";
+import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
+import { projectId } from "../../packages/cli/src/config/project.ts";
 
 const root = shortTmp("jdc-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 let n = 0;
-function repo() { const dir = join(root, `repo ${++n}`); mkdirSync(dir); writeFileSync(join(dir, "evidence.md"), "# Evidence\n"); return dir; }
+function repo() { const dir = join(root, `repo ${++n}`); mkdirSync(dir); mkdirSync(join(dir, ".git")); writeFileSync(join(dir, "evidence.md"), "# Evidence\n"); return dir; }
+// A --by user write needs a recorded explicit intake answer (decisions/answer.ts), so each user write
+// here first records a one-question round, the session's answer and its decision in a fixture ledger.
+function run(dir: string, args: string[]) {
+  const by = args.lastIndexOf("--by");
+  const repoFlag = args.lastIndexOf("--repo");
+  const target = repoFlag < 0 ? dir : resolve(dir, args[repoFlag + 1]!);
+  const hasChoice = args.length % 2 === 1 && args.at(-1) !== "--help";
+  if (hasChoice && (by < 0 || args[by + 1] === "user")) {
+    const choice = args.at(-1)!;
+    const ledger = Ledger.open(join(root, ".jarvis", "projects", projectId(target)));
+    const round = ledger.entries().length + 1;
+    const requestId = `fixture-${round}`;
+    const supersedes = args.lastIndexOf("--supersedes");
+    const question = supersedes < 0 ? "Which choice?" : `Replace D${args[supersedes + 1]!.replace(/^d/i, "")}?`;
+    ledger.append({ kind: "notify", actor: "runner", data: { source: "intake", phase: "round", round, requestId,
+      snapshot: { round, spec: "docs/spec/v1.md", summary: "Fixture", questions: [{ id: "Q1", topic: "scope", question, why: "Fixture",
+        default: { answer: "Keep", reason: "Fixture" }, alternatives: ["Change"] }], mockups: [] } } });
+    const intent = ledger.append({ kind: "notify", actor: "runner", data: { source: "notify", phase: "answer", requestId,
+      intakeOwned: true, intakeBy: "session", intakeAnswers: { Q1: choice } } });
+    ledger.append({ kind: "decision", actor: "runner", data: { source: "intake", round, requestId,
+      answerSeq: intent.seq, questionId: "Q1", answer: choice, by: "user", confirmed: true } });
+    args = [...args, "--answer", `${intent.seq}:Q1`];
+  }
+  return decide(dir, args);
+}
 /**
  * `jarvis decide ...args` run from `dir`: the command's own registration on a fresh Commander program, in this
  * process (it was a fresh Node process per call, about 0.27 s of CPU each). Commander's exitOverride turns the exit
  * the command asks for into a thrown error that carries its exit code; stdout and stderr are what it would write.
  * The command reads the working folder when it registers (the default of --repo), so the folder is changed first.
  */
-function run(dir: string, args: string[]) {
+function decide(dir: string, args: string[]) {
   let stdout = "", stderr = "", status = 0;
   const before = process.cwd();
   process.chdir(dir);
   try {
     const program = new Command();
     program.name("jarvis"); program.exitOverride(); program.configureOutput({ writeOut: (text) => { stdout += text; }, writeErr: (text) => { stderr += text; } });
-    register(program);
+    register(program, { home: root });
     program.parse(["decide", ...args], { from: "user" });
   } catch (error) {
     const exit = (error as { exitCode?: unknown }).exitCode;
@@ -41,7 +68,7 @@ describe("jarvis decide (decisions 83, 85)", () => {
   it("registers the command and documents every flag", () => {
     const result = run(repo(), ["--help"]);
     expect(result.status).toBe(0);
-    for (const flag of ["--by", "--class", "--source", "--why", "--repo", "--reversibility", "--alternatives", "--depends-on", "--supersedes", "--reason"]) expect(result.stdout).toContain(flag);
+    for (const flag of ["--by", "--class", "--source", "--why", "--repo", "--reversibility", "--alternatives", "--depends-on", "--supersedes", "--reason", "--answer"]) expect(result.stdout).toContain(flag);
   });
 
   it("defaults to cwd, writes all settled defaults and prints only the new ID", () => {
@@ -50,7 +77,7 @@ describe("jarvis decide (decisions 83, 85)", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("D1\n");
     expect(result.stderr).toBe("");
-    expect(read(dir)[0]).toMatchObject({ id: 1, decision: "Use SQLite", madeBy: "fabricio", class: "Mechanical", source: "evidence.md", why: "Keep it simple", reversibility: "reversible", alternatives: [], dependsOn: [] });
+    expect(read(dir)[0]).toMatchObject({ id: 1, decision: "Use SQLite", madeBy: "fabricio", class: "Mechanical", source: "evidence.md", why: expect.stringMatching(/^Keep it simple\nRecorded user answer: [1-9]\d*:Q1$/), reversibility: "reversible", alternatives: [], dependsOn: [] });
     expect(read(dir)[0]?.date).toBe(new Date().toISOString().slice(0, 10));
     expect(run(dir, [...flags, "Another choice"]).stdout).toBe("D2\n");
   });

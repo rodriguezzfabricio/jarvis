@@ -36,10 +36,10 @@ async function prepare(p: E2EProject, ctx: object = {}, extra: Partial<ComposeOp
   prepared.push(run);
   return run;
 }
-function writePlan(p: E2EProject, criteria = true) {
+function writePlan(p: E2EProject, criteria = true, notes?: string[]) {
   mkdirSync(join(p.repoPath, ".jarvis"), { recursive: true });
   const tasks = p.tasks.map((t) => ({ id: t.id, title: t.title, goal: t.goal, exitCondition: t.exitCondition, acceptanceCriteria: criteria ? t.criteria : [], storyIds: [t.story], dependencies: t.dependencies, priority: t.priority, requiredChecks: t.requiredChecks, requiredReviews: t.requiredReviews }));
-  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ tasks }));
+  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), tasks }));
 }
 const runDir = (p: E2EProject) => join(p.jarvisHome, "run");
 const socketsIn = (p: E2EProject) => existsSync(runDir(p)) ? readdirSync(runDir(p)).filter((n) => n.endsWith(".sock")) : [];
@@ -53,6 +53,17 @@ describe("jarvis run production composition", () => {
     expect(opts.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
     expect(opts.worktreeRoot).toBe(join(p.home, ".jarvis-work", "worktrees"));
     expect(typeof opts.createHarness).toBe("function"); expect(typeof opts.recoverIntake).toBe("function");
+    expect(opts.plan?.tasks.some((t) => "planNotes" in t)).toBe(false);
+  });
+
+  it("gives every planned task the architect's top-level notes (decision 113), and refuses any other top-level key", async () => {
+    const p = project(); writePlan(p, true, ["Keep the store behind an interface."]);
+    const { loop: opts } = await prepare(p);
+    expect(opts.plan?.tasks.map((t) => [t.id, t.planNotes])).toEqual([["T1", ["Keep the store behind an interface."]], ["T2", ["Keep the store behind an interface."]]]);
+    const q = project(); writePlan(q);
+    const path = join(q.repoPath, ".jarvis", "plan.json");
+    writeFileSync(path, JSON.stringify({ feature: "habits", ...JSON.parse(readFileSync(path, "utf8")) }));
+    await expect(prepare(q)).rejects.toThrow(/Unrecognized key/);
   });
 
   it("refuses to start without approved protected checks", async () => {

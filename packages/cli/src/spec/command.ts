@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { checkRepository } from "./versions.ts";
+import { checkSpecRepository as checkRepository } from "../decisions/spec-check.ts";
 
 export function register(program: Command): Command {
   const spec = program.command("spec").description("Check versioned project specifications (decision 9)");

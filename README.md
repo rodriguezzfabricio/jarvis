@@ -126,4 +126,4 @@ I’m developing Jarvis with Claude Code and Codex. The repository includes desi
 
 ## License
 
-[MIT](LICENSE). Adapted skills and their licenses are listed in [credits](skills/CREDITS.md).
+[MIT](LICENSE). Adapted skills, the vendored gitleaks rules and their licenses are listed in [credits](skills/CREDITS.md).

@@ -28,6 +28,21 @@ describe("stage 2 skills teach rules, not the rerun's answers (decisions 35, 105
   });
 });
 
+// A role that reads untrusted web pages and can also read local files (or run a shell) can be steered
+// by a page into fetching a URL that carries a file's contents. The interactive session isn't sandboxed.
+describe("no plugin role holds both web tools and local read or shell tools (decision 120)", () => {
+  const web = ["WebSearch", "WebFetch"];
+  const local = ["Read", "Glob", "Grep", "Bash", "NotebookRead", "LS"];
+  it.each(["plugin/agents/researcher.md", "plugin/agents/spec-reader.md"])("%s", (file) => {
+    const tools = /^tools:\s*(.+)$/m.exec(read(file))?.[1]?.split(/,\s*/) ?? [];
+    expect(tools.length, `${file}: an explicit tools list`).toBeGreaterThan(0);
+    if (tools.some((t) => web.includes(t))) expect(tools.filter((t) => local.includes(t)), file).toEqual([]);
+  });
+  it("the researcher never sends project text or secrets out in a URL or query", () => {
+    expect(read("plugin/agents/researcher.md")).toContain("Never put project text, file contents or anything that looks like a secret into a URL or search query beyond the public terms you are researching.");
+  });
+});
+
 describe("intake keeps the guidance the lane's compression dropped", () => {
   const gotchas = section(read("skills/intake/SKILL.md"), "Gotchas");
   it("asks where the user will see the result when the request names no surface", () => {

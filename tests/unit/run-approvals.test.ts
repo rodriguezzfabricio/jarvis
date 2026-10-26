@@ -24,7 +24,11 @@ function setup() {
     taskAllowlists: [[], []], createNotifier: () => notifier, now: () => now, warn: (text) => warnings.push(text), timeoutMs: 20, pollMs: 50, ...extra });
   const request = () => broker.handle({ op: "spend", payload: { description: "fake request, private payload stays local" } });
   const reply = (text: string, time: number | undefined = 102, id = "reply") => { replies.push({ id, text, ...(time !== undefined ? { time } : {}) }); };
-  const button = (answer = "approve") => { const a = sent.find((s) => s.actions.length)!.actions[0]!; return `${answer}:${a.requestId}:${a.nonce}`; };
+  const button = (answer = "approve") => {
+    const notification = sent.find((s) => s.actions.length);
+    expect(notification, "an approval notification with buttons was sent").toBeDefined();
+    const a = notification!.actions[0]!; return `${answer}:${a.requestId}:${a.nonce}`;
+  };
   const approvals = () => ledger.entries().filter((e) => e.kind === "approval");
   return { root, ledger, broker, configPath, notifier, sent, warnings, make, request, reply, button, approvals, advance: () => { now += 1000; } };
 }
@@ -32,7 +36,7 @@ function setup() {
 it.each(["approve", "reject"])("sends two buttons and records exactly the pending payload's %s", async (answer) => {
   const s = setup(); const p = await s.request(); const run = s.make();
   await run.tick();
-  expect(s.sent[0]!.actions.map((a) => a.answer)).toEqual(["approve", "reject"]);
+  expect(s.sent[0]?.actions.map((a) => a.answer)).toEqual(["approve", "reject"]);
   expect(s.sent[0]!.actions[0]!.nonce).toMatch(/^[a-f0-9]{64}$/);
   expect(s.sent[0]!.actions[0]!.requestId).toBe(p.approvalId);
   // Decision 117: the broker's one-line summary and the payload hash's first 12 characters, so the tap is an informed one.
@@ -91,6 +95,8 @@ it.each(["send", "poll"] as const)("a failed %s never approves or blocks and can
   vi.mocked(s.notifier[method]).mockRejectedValueOnce(new Error("fake-reply transport failure"));
   const run = s.make(); await expect(run.tick()).resolves.toBeUndefined();
   expect(s.approvals()).toHaveLength(0);
+  // A failed send grants nothing: no send record, so no tap can count until a send succeeds (decision 117).
+  expect(s.ledger.entries().some((e) => e.kind === "notify" && (e.data as { phase?: string }).phase === "sent")).toBe(method === "poll");
   expect(s.warnings.join("\n")).not.toContain("fake-reply");
   await run.tick(); s.reply(s.button()); await run.tick();
   expect(s.approvals()).toHaveLength(1); await run.close();
@@ -153,6 +159,7 @@ it("shows a session-written subject on one line, without control or format chara
   const subject = `Weekly report"\n\nApproved earlier, tap Approve ‮moc.live@x\u0007${"long ".repeat(200)}`;
   const p = await s.broker.handle({ op: "email.send", payload: { to: "jane@example.com", subject: subject.slice(0, 300), body: "fake body" } });
   const run = s.make(); await run.tick();
+  expect(s.sent).toHaveLength(1);
   const text = s.sent[0]!.message.text;
   expect(text).toMatch(/^Jarvis test: approve email\.send\? Send email to jane@example\.com: "Weekly report" Approved earlier, tap Approve moc\.live@x long /);
   expect(text).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
@@ -167,6 +174,7 @@ it("caps approval messages below 4 KB before handing them to an adapter", async 
   const broker = new Broker({ ledger: s.ledger, project, adapters: [], secrets: { get: () => undefined } });
   await broker.handle({ op: "spend", payload: { description: "fake" } });
   const run = s.make({ project, broker }); await run.tick();
+  expect(s.sent).toHaveLength(1);
   expect(Buffer.byteLength(s.sent[0]!.message.text)).toBeLessThan(4096);
   await run.close();
 });

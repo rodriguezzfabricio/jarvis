@@ -96,7 +96,8 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 | `jarvis taste save <file>` | Saves the taste profile (decision 90) |
 | `jarvis act <operation> …` | Client for the broker. The only path to outside actions (decision 12) |
 | `jarvis gate <name>` | Runs a protected check (`quick`, `test`, `lint`, `security`, `qa`, `design`, `done`). Only runs the runner launches after a session ends are recorded as evidence; runs from inside a session are feedback only (decision 49). `jarvis gate` itself is always feedback: it runs the installed check of that name (`test` falls back to `unit`; `done` runs every installed check) on a copy of the working tree, records nothing, keeps nothing, and prints the cases' own output, never the assertions'. Exit 0 pass, 1 fail, 2 tampered or error |
-| `jarvis approve <id>` / `reject <id>` | Answers a pending approval from the terminal (same as answering through ntfy) |
+| `jarvis approvals` | Lists pending approvals from the verified ledger, read-only (decision 130) |
+| `jarvis approve <id>` / `reject <id>` | Prints the exact pending action, then answers it from the terminal (same as answering through ntfy); `[y/N]`, or `--yes` without a TTY (decision 130) |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off (decision 32), kept in the runner-owned `~/.jarvis/projects/<id>/mode.json`; no argument prints it. In explain mode the run header asks for a short "Why" line per choice in the notes |
 | `jarvis eval <task>` | Runs a golden task on a sanitized snapshot, with Jarvis and with the plain-Claude-Code baseline (decisions 35, 47) |
 

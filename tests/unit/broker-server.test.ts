@@ -69,13 +69,15 @@ describe("broker socket ownership", () => {
 });
 
 const cli = fileURLToPath(new URL("../../packages/cli/src/cli.ts", import.meta.url));
+// Each start of cli.ts compiles the whole CLI (about 0.7 s of CPU); with Node's compile cache, in this file's own folder, the later starts reuse the first's.
+const compileCache = join(root, "node-compile-cache");
 it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)("foreground broker cleans up on %s and explicit socket can restart", async signal => {
   const home = join(root, `home-${signal}`);
   mkdirSync(home);
   const path = join(root, `${signal}.sock`);
   for (let attempt = 0; attempt < 2; attempt++) {
     const child = spawn(process.execPath, [cli, "broker", "--project", "p", "--socket", path], {
-      env: { HOME: home, PATH: process.env.PATH! }, stdio: ["ignore", "pipe", "pipe"],
+      env: { HOME: home, PATH: process.env.PATH!, NODE_COMPILE_CACHE: compileCache }, stdio: ["ignore", "pipe", "pipe"],
     });
     const ended = new Promise(resolve => child.once("close", resolve));
     let output = "";
@@ -94,7 +96,7 @@ it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)("foreground broker cleans up o
 }, 90_000);
 it("act requires an explicit run socket instead of falling back to a global broker", () => {
   const result = spawnSync(process.execPath, [cli, "act", "deploy.preview", "--json", '{"ref":"main"}'], {
-    env: { HOME: root, PATH: process.env.PATH! }, encoding: "utf8", timeout: 5000,
+    env: { HOME: root, PATH: process.env.PATH!, NODE_COMPILE_CACHE: compileCache }, encoding: "utf8", timeout: 5000,
   });
   expect(result.status).not.toBe(0);
   expect(result.stderr).toMatch(/select.*socket|specify.*socket/i);
@@ -107,7 +109,7 @@ it.each([
   const home = join(root, "home-empty");
   mkdirSync(home, { recursive: true });
   const result = spawnSync(process.execPath, [cli, "broker", "--project", "p", ...extra], {
-    env: { HOME: home, PATH: process.env.PATH!, ...env }, encoding: "utf8", timeout: 5000,
+    env: { HOME: home, PATH: process.env.PATH!, NODE_COMPILE_CACHE: compileCache, ...env }, encoding: "utf8", timeout: 5000,
   });
   expect(result.status).not.toBe(0);
   expect(result.stdout).not.toContain("Broker listening");

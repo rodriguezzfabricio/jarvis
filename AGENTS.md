@@ -44,7 +44,7 @@ packages/cli/src/
   eval/                    sanitized snapshots, baselines, runner-safe git
   cli.ts                   entry point (Node 24 runs the TypeScript directly)
 tests/unit/                fast tests (fake claude); Vitest runs files in parallel, so a file that grows past ~25 s is split into NAME-1..N.test.ts with its shared setup in tests/unit/helpers/
-tests/setup/               Vitest global/setup files: tests run the real git, not macOS's /usr/bin/git shim (about 14 ms of CPU saved per spawn)
+tests/setup/               Vitest compatibility context for snapshot workers; native Node process APIs
 tests/live/                real pinned Claude Code, only with JARVIS_LIVE=1 (probe + negative control)
 scripts/mutation-check.mjs breaks each safeguard and checks the suite catches it
 docs/                      brief, decisions, golden tasks, architecture, findings, reviews

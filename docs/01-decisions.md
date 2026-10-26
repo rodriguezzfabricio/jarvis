@@ -1356,7 +1356,7 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **The spec reader loop is bounded.** It ends on a clean pass, or stops after three passes with no new blocking gap; unresolved blockers keep the spec draft.
 - **The verifier fails closed (Codex review rounds 3 and 4).** A stage 2 run counts only if the post-run verifier passes on its transcript: every Read of a recording returns exactly the original lines, in order and within the requested range; any other route that could return recorded content (a Bash command with a reading tool near `.jarvis`, a recursive search that includes hidden folders, a Grep or Glob into `.jarvis` or with a hidden-folder pattern, a script that names the recordings, a duplicate or missing tool result) voids the run instead of being trusted. Residual risk: a session that reaches the recordings through a route the verifier doesn't recognise. The stand-in denies any command that touches `.jarvis` beyond the session's own files, and the judges see the transcript.
 
-### 133. Tests run the real git binary, not the xcrun shim (new; Oct 26; the suite-speed worker; serves 129's "cut the suite's CPU"; Fabricio can veto)
+### 133. Tests run the real git binary, not the xcrun shim (new; Oct 26; superseded by 137; retained below as historical rationale)
 - **Why:** on macOS `/usr/bin/git` is a shim that looks up the developer directory and then runs the git inside it. A spawn through it costs about 22 ms of CPU, against about 8 ms for the same `git rev-parse` run directly. The unit suite started about 7,000 of them per run (about a quarter of its 415 CPU-seconds), and the mutation check runs that suite once per mutation.
 - **What:** `tests/setup/real-git-global.ts` finds the binary the shim would run (`DEVELOPER_DIR`, else `xcode-select -p`) once per run. `tests/setup/use-real-git.ts` makes each test process start it in place of a bare `git` (no shell) whose PATH search would find `/usr/bin/git`, with the same arguments, working folder and environment, plus the four variables the shim adds (`CPATH`, `LIBRARY_PATH`, `MANPATH`, `SDKROOT`), which only processes git itself starts can see. The global setup reads those by asking both binaries for their environment, and turns the redirect off if the two differ in any other way, if there is no developer directory, or off macOS.
 - **What it leaves alone:** an absolute `/usr/bin/git` (`scripts/review-run.mjs` and its test), a different `git` first on PATH, a spawn with a shell, child Node processes, and every line of production code: `safeGit`, the probe and the snapshot still ask for `git`; only the test process's `child_process` is wrapped. No test is about which git binary runs. The one visible difference is the text of a failed git's error, which names the binary's path.
@@ -1841,3 +1841,33 @@ Fabricio explicitly requested a public GitHub repository and a README for recrui
 The public README describes the implemented components, incomplete proofs, installation requirements and evaluation limits. Do not claim a general benchmark win or equal-compute comparison. Preserve the existing development history after reviewing its secret-scan findings. The personal evaluation repository, local account credentials and notification settings remain private.
 
 The initial public repository is `rodriguezzfabricio/jarvis`, with the existing MIT license and adapted-skill credits.
+
+
+### 136. Integration helpers need a lifetime independent of a terminal turn (Oct 26, 2026; takeover integrator; extends 84)
+The first takeover turn ended while four Codex helpers were working. Their processes ended too; none produced a completed verifier verdict. A saved PID or partial audit is not proof that a worker is running or finished.
+- Launch long-lived integration helpers through the local service manager, with persistent logs and explicit exit records; do not rely on a child of a turn surviving that turn.
+- Verify the job identity and parent process, then verify survival from a later turn before relying on cross-turn persistence. Until verified, keep the integrator turn open while work is active.
+- A builder clone has its own frozen-lockfile dependency installation, including workspace package links. Linking node_modules to a read-only checkout blocks Vitest's cache and API-token writes; startup refusal is not a failing test of product behavior.
+- Preserve interrupted work and completed command evidence. Restart verifiers as fresh ephemeral sessions with memory disabled, supplied only requirements, revisions and raw evidence; partial prior opinions are not verdicts.
+This changes integration operations only. Task-session confinement, stage proofs and review gates are unchanged.
+
+Operational check for decision 136: legacy `launchctl submit` enables keepalive. Use an explicit job plist with `RunAtLoad: true` and `KeepAlive: false`; verify loaded properties so completion cannot silently start another builder. Changing a running submit job’s next invocation with `launchctl debug` requires root and was refused. Do not escalate. For those existing jobs only, a one-shot completion monitor retires each owned job when its explicit exit record or terminal turn event appears; future jobs use the explicit one-shot plist.
+
+
+### 138. A proof chain stops on an explicit guarded-stop result even when the CLI exits zero (Oct 26, 2026; takeover integrator)
+A proof-chain log recorded a usage-guard STOPPED result with exit zero, after which its shell script attempted the next arm. Shell exit status alone therefore does not establish completion of an eval command.
+- Host proof scripts stop the chain on a nonzero process exit or an explicit STOPPED result. They preserve both the original output and the stop reason; a guarded stop never triggers a later arm or a retry that bypasses the guard.
+- Check the authorized start time, the evidence slot and the existing disk floor immediately before dispatch. Keep the proof's frozen product revision unchanged.
+- Verify orchestration with local fake commands and fresh-copy negative controls before using the script for real runs. No test invokes a real model or changes a usage limit.
+This changes host orchestration only, not eval grading, the usage guard or the frozen proof checkout.
+
+
+### 137. Test processes keep native Node execution semantics (Oct 26; suite-speed repair; supersedes 133)
+
+Independent host observations against 6ac5c097 contradict decision 133's equivalence and coverage claims: relative PATH entries used the parent cwd, cached lookups missed a newly created earlier executable, and the shim modified caller CPATH/LIBRARY_PATH/MANPATH differently. Version-string tests missed disabled API redirects; failed discovery skipped coverage. The in-process decision-command harness also hid an uncaught parse error that the base subprocess test rejected. These observations are not final independent approval.
+
+- Remove global child_process interception and binary discovery. Keep inert compatibility context/exports for existing snapshot workers until their callers are removed together; all commands use Node's native argv, env, cwd and PATH behavior. No test coverage depends on discovering a developer directory. This supersedes every operational and equivalence claim in 133, including its four-breakage coverage claim.
+- Keep repository-template copies and fixture-local compile caching, with native execution and file/mode/content equivalence checks. Production safeGit still runs through its original path and must reject planted hooks, fsmonitor and global configuration. No comparable speed improvement is claimed by this repair.
+- Restore subprocess decision-command tests so expected Commander diagnostics and uncaught product errors remain distinguishable. Preserve base assertions and prove error controls fail when the expected handling is removed.
+- Restore the base broker readiness/test limits (5/15 seconds) and desktop readiness/lifetime limits (3 seconds). A loaded-machine explanation alone does not justify increasing them.
+- The AGENTS.md setup description and snapshot worker's redirect comment are superseded by this decision; their owners should update those descriptions. This lane cannot edit them. Full-suite, mutation and real Seatbelt evidence remain the integrator's responsibility.

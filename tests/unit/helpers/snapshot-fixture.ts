@@ -151,7 +151,7 @@ export function encodedCases(edKey: KeyPairKeyObjectResult): [string, string][] 
  * (snapshot-case-worker.mjs): createSnapshot and git block the thread, so only threads overlap them. A thread
  * takes its next case when it has finished the last, so its start-up (about 100 ms of CPU) is paid four times,
  * not once per case. Each case's repository starts as a copy of one template (helpers/git-repo.ts); a worker
- * thread has its own child_process, so it is also told which git to run (tests/setup/use-real-git.ts).
+ * thread uses native child_process APIs (the old redirect context is inert, decision 137).
  * Resolves with each case's refusal message ("" if the snapshot was accepted), in order.
  */
 export async function snapshotErrors(entries: [string, string][]): Promise<string[]> {

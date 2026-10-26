@@ -12,7 +12,7 @@ import { useRealGit } from "../setup/use-real-git.ts";
 import { copyRepoTemplate } from "./helpers/git-template.ts";
 
 const { root, template, realGit, shimEnv } = workerData;
-useRealGit(realGit, shimEnv); // a worker thread has its own child_process: skip the /usr/bin/git shim here too
+useRealGit(realGit, shimEnv); // compatibility only; no interception (decision 137)
 const git = (cwd, ...a) => execFileSync("git", a, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
 
 parentPort.on("message", async ({ name, content }) => {

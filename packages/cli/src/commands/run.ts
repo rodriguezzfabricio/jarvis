@@ -151,6 +151,6 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       if (options.detach) return detach(context, seams);
       (seams.keepAwake ?? ((pid) => caffeinate(pid)))(process.pid);
       const result = seams.run ? await seams.run(context) : await hosted(await seams.prepareRun!(context), seams.runLoop ?? runLoop);
-      (seams.output ?? console.log)(`Run ${result.status}: ${result.done.length} done, ${result.blocked.length} blocked`);
+      (seams.output ?? console.log)(`Run ${result.status}: ${result.done.length} done, ${result.blocked.length} blocked${result.leftAlone?.length ? `; left alone: ${result.leftAlone.join(", ")}` : ""}`);
     });
 }

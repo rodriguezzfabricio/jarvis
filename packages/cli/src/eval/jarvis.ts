@@ -69,8 +69,10 @@ export interface RunLoopOptions {
   reprobe?: () => Promise<boolean>;
   notify?: (n: UsageWaitNotice) => Promise<void>;
   gitHome?: string;
+  /** The only task ids the run may touch (runner/loop.ts; decision 126: a review run touches only its own tasks). */
+  only?: readonly string[];
 }
-export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[] }
+export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[]; leftAlone?: string[] }
 export type RunLoop = (opts: RunLoopOptions) => Promise<RunLoopResult>;
 /**
  * The loop's review function (runner/loop.ts's ReviewVerdict): a plain verdict, which the loop records,
@@ -508,14 +510,14 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
         if (committed) baseRevision = committed;
         reviewed = { report: output.report, reportRevision: committed ?? null, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
         const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })), [], optIn?.limits ?? []);
-        if (!fix) { outcome = "complete"; log(`${task.id} ${runId}: the review found nothing to fix; the report is the deliverable`); }
-        else {
-          for (const id of Object.values(fix.taskOf)) fixTasks.add(id);
-          log(`${task.id} ${runId}: ${fix.plan.tasks.length} finding(s) to fix; starting the build loop`);
+        {
+          for (const id of fix.taskIds) fixTasks.add(id);
+          log(`${task.id} ${runId}: ${fix.taskIds.length} finding(s) to fix${fix.plan ? "; starting the build loop" : "; only the report update runs"}`);
           const result = await runReviewFixes({
             output, fix,
-            runFixes: async () => { for (const e of planEntries(fix.plan)) ledger.append(e); return opts.runLoop(loopOptions()); },
-            runUpdate: async (update) => { for (const e of planEntries({ tasks: [update] })) ledger.append(e); return opts.runLoop(loopOptions()); },
+            // Each loop run may touch only this review's own task ids (decision 126).
+            runFixes: async () => { for (const e of planEntries(fix.plan!)) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds] }); },
+            runUpdate: async (update) => { for (const e of planEntries({ tasks: [update] })) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds, update.id] }); },
             state: () => { try { return rebuildState(ledger.entries(), { now: Date.now() }); } catch { return { tasks: {} } as unknown as RunState; } },
             changedFiles: (revision) => safeGit(p.workspace, ["diff", "--name-only", "-z", `${revision}^1`, revision], { home: p.home }).toString().split("\0").filter(Boolean),
           });

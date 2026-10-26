@@ -212,7 +212,10 @@ export function reviewStepHeader(i: { runId: string; label: string; skills: read
 // ---- The fixes ---------------------------------------------------------------------------------------
 
 export interface ReviewFixPlan {
-  plan: Plan;
+  /** One bug task per finding; null when the review found nothing to fix (then only the report update runs). */
+  plan: Plan | null;
+  /** The fix tasks' ids: the only tasks the fix loop may touch (decision 126). */
+  taskIds: string[];
   /** Finding id → its fix task. */
   taskOf: Record<string, string>;
   /** The id the report-update task gets, after every fix task. */
@@ -225,9 +228,8 @@ export interface ReviewFixPlan {
  * task's own gate, review and promotion. One false or stuck finding blocks only itself. Findings in one
  * file may overlap; the loop merges a candidate onto a moved head and checks it again, or redoes it.
  */
-export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = [], limits: readonly string[] = []): ReviewFixPlan | null {
+export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = [], limits: readonly string[] = []): ReviewFixPlan {
   if (!checks.some((c) => c.name === "unit")) throw new Error("a review's fix tasks need an installed unit check (decision 114's bug exit condition)");
-  if (!output.findings.length) return null;
   // Ids follow the ledger's tasks, because the loop never re-creates an id it already has. A task with this exact
   // definition keeps its id, so planning the same findings again adds nothing.
   const used = new Set(existing.map((t) => t.id));
@@ -239,7 +241,8 @@ export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: str
     return { ...body, id: same?.id ?? fresh() };
   });
   return {
-    plan: PlanSchema.parse({ tasks }),
+    plan: tasks.length ? PlanSchema.parse({ tasks }) : null,
+    taskIds: tasks.map((t) => t.id),
     taskOf: Object.fromEntries(output.findings.map((f, i) => [f.id, tasks[i]!.id])),
     updateTaskId: fresh(),
   };
@@ -339,7 +342,8 @@ export interface ReviewFixRun {
 
 /** The fixes, then the report update with what the fixes' own records say. A fix loop that throws runs no update. */
 export async function runReviewFixes(r: ReviewFixRun): Promise<{ fixes: LoopResultLike; update: LoopResultLike; outcomes: FindingOutcome[]; updated: boolean }> {
-  const fixes = await r.runFixes();
+  // No findings: no fix loop at all, only the report update (decision 126).
+  const fixes = r.fix.plan ? await r.runFixes() : { status: "complete" as const, done: [], blocked: [] };
   const outcomes = findingOutcomes(r.output, r.fix, { done: fixes.done, state: r.state(), changedFiles: r.changedFiles });
   const update = await r.runUpdate(reportUpdateTask(r.output, outcomes, r.fix.updateTaskId));
   return { fixes, update, outcomes, updated: update.done.includes(r.fix.updateTaskId) };

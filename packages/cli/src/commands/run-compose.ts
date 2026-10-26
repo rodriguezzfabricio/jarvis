@@ -102,7 +102,7 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
  * before anything is hosted). The runner commits the report alone on the run branch, since every fix starts
  * from it and promotion needs a clean checkout, and plans one bug task per finding after the ledger's own tasks.
  */
-export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string, optIn: { fix: RunContext["reviewFix"]; limits: readonly string[] }): { output: ReviewOutput; fix: ReviewFixPlan | null } {
+export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string, optIn: { fix: RunContext["reviewFix"]; limits: readonly string[] }): { output: ReviewOutput; fix: ReviewFixPlan } {
   // The explicit opt-in comes first (round 3): the flag, or the user's recorded yes to the review-fix question.
   if (!optIn.fix) throw new Error("a review's fixes start only on an explicit opt-in: --fix, or --fix-answer <answerSeq>:review-fix (decision 126)");
   if (optIn.fix.by === "answer" && !recordedFixYes(ledger.entries(), optIn.fix.ref)) throw new Error(`--fix-answer ${optIn.fix.ref} names no recorded user answer of yes to the review-fix question`);
@@ -172,10 +172,10 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const spec = approvedSpec(git, runBranch);
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
-  const plan = reviewRun ? reviewRun.fix?.plan : planFor(context.repoPath, context.planKind, spec, checks);
+  const plan = reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
-  const reviewFix = reviewRun?.fix ? { request: reviewRun.output.request, tasks: new Map(reviewRun.fix.plan.tasks.map((t) => [t.id, t])), bugTasks: new Set(Object.values(reviewRun.fix.taskOf)) } : undefined;
+  const reviewFix = reviewRun ? { request: reviewRun.output.request, tasks: new Map((reviewRun.fix.plan?.tasks ?? []).map((t) => [t.id, t])), bugTasks: new Set(reviewRun.fix.taskIds) } : undefined;
   const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
   const notifications = runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
@@ -211,9 +211,11 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     footprint: createFootprintLog({ worktrees: worktreeRoot, caches: [cacheRoot], evidence: join(context.projectDir, "evidence") }),
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
+    // A review run may touch only the tasks it created (decision 126): never the project's other unfinished work.
+    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : {}),
   };
   approvals.start();
-  const fix = reviewRun?.fix ?? null;
+  const fix = reviewRun?.fix;
   return {
     loop,
     // A review's fixes, then the report update with what the runner's records say happened (decision 126).
@@ -221,7 +223,8 @@ export async function prepareProductionRun(context: RunContext, options: Compose
       drive: async (run: (options: RunLoopOptions) => Promise<RunLoopResult>) => (await runReviewFixes({
         output: reviewRun.output, fix,
         runFixes: () => run(loop),
-        runUpdate: (task) => run({ ...loop, plan: { tasks: [task] } }),
+        // The whole review's ids: its fix tasks are done or blocked by now, so only the update can run, and the result covers the review.
+        runUpdate: (task) => run({ ...loop, plan: { tasks: [task] }, only: [...fix.taskIds, task.id] }),
         state: () => rebuildState(ledger.entries(), { now: Date.now() }),
         changedFiles: (revision) => git(["diff", "--name-only", "-z", `${revision}^1`, revision]).split("\0").filter(Boolean),
       })).update,

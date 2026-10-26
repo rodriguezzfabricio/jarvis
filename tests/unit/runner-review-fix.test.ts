@@ -244,21 +244,21 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
   const fix = reviewFixPlan(out, [{ name: "unit" }, { name: "lint" }])!;
 
   it("makes one valid task per finding, the unit check and a code review each, highest severity first", () => {
-    expect(() => PlanSchema.parse(fix.plan)).not.toThrow();
-    expect(fix.plan.tasks.map((t) => t.id)).toEqual(["T1", "T2", "T3"]);
+    expect(() => PlanSchema.parse(fix.plan!)).not.toThrow();
+    expect(fix.plan!.tasks.map((t) => t.id)).toEqual(["T1", "T2", "T3"]);
     expect(fix.taskOf).toEqual({ F1: "T1", F2: "T2", F3: "T3" });
     expect(fix.updateTaskId).toBe("T4");
-    for (const t of fix.plan.tasks) {
+    for (const t of fix.plan!.tasks) {
       expect(t).toMatchObject({ requiredChecks: ["unit"], requiredReviews: ["code"], dependencies: [], acceptanceCriteria: [], storyIds: [] });
       expect(t.mayTouch).toBeUndefined();
     }
-    const priority = Object.fromEntries(fix.plan.tasks.map((t) => [t.id, t.priority]));
+    const priority = Object.fromEntries(fix.plan!.tasks.map((t) => [t.id, t.priority]));
     expect(priority.T2).toBeGreaterThan(priority.T1!);
     expect(priority.T1).toBeGreaterThan(-Infinity);
   });
 
   it("gives each task decision 114's bug exit condition for its one finding", () => {
-    for (const [i, t] of fix.plan.tasks.entries()) {
+    for (const [i, t] of fix.plan!.tasks.entries()) {
       const id = `F${i + 1}`;
       expect(t.exitCondition).toContain(BUG_EXIT_CONDITION);
       expect(t.exitCondition).toContain(id);
@@ -268,7 +268,7 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
   });
 
   it("hands the builder the finding as a claim to confirm first, with its evidence and proposed fix", () => {
-    const t1 = fix.plan.tasks[0]!;
+    const t1 = fix.plan!.tasks[0]!;
     expect(t1.goal).toContain(REQUEST);
     expect(t1.goal).toContain("src/mail.mjs:12");
     expect(t1.goal).toContain(out.findings[0]!.evidence);
@@ -279,28 +279,28 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
   });
 
   it("never lets the fix step change code for a low-confidence finding it hasn't confirmed", () => {
-    const low = fix.plan.tasks[2]!;
+    const low = fix.plan!.tasks[2]!;
     expect(low.goal).toMatch(/low confidence/i);
     expect(low.goal).toMatch(/[Ii]f you can't confirm it, change nothing/);
     expect(low.exitCondition).toMatch(/low-confidence finding that can't be confirmed is left unchanged/);
-    expect(fix.plan.tasks[0]!.goal).not.toMatch(/low confidence/i);
+    expect(fix.plan!.tasks[0]!.goal).not.toMatch(/low confidence/i);
   });
 
   it("carries the request's limits into every fix task's goal and exit condition (the reviewer checks it)", () => {
     const limited = reviewFixPlan(out, [{ name: "unit" }], [], ["make no changes to the public API"])!;
-    for (const t of limited.plan.tasks) {
+    for (const t of limited.plan!.tasks) {
       expect(t.goal).toContain("The request limits the fixes: \"make no changes to the public API\"");
       expect(t.exitCondition).toContain("keeps the request's limits: \"make no changes to the public API\"");
     }
-    expect(fix.plan.tasks[0]!.goal).not.toMatch(/limits the fixes/);
+    expect(fix.plan!.tasks[0]!.goal).not.toMatch(/limits the fixes/);
   });
 
   it("numbers its tasks after the ledger's own, and keeps the id of a task it already planned", () => {
     const again = reviewFixPlan(out, [{ name: "unit" }], [
       { id: "T1", goal: "an earlier feature", exitCondition: "done" }, { id: "T4" },
-      { id: "T9", goal: fix.plan.tasks[1]!.goal, exitCondition: fix.plan.tasks[1]!.exitCondition },
+      { id: "T9", goal: fix.plan!.tasks[1]!.goal, exitCondition: fix.plan!.tasks[1]!.exitCondition },
     ])!;
-    expect(again.plan.tasks.map((t) => t.id)).toEqual(["T10", "T9", "T11"]);
+    expect(again.plan!.tasks.map((t) => t.id)).toEqual(["T10", "T9", "T11"]);
     expect(again.taskOf).toEqual({ F1: "T10", F2: "T9", F3: "T11" });
     expect(again.updateTaskId).toBe("T12");
   });
@@ -308,11 +308,11 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
   it("needs an installed unit check, and makes no plan when nothing is left to fix", () => {
     expect(() => reviewFixPlan(out, [{ name: "lint" }])).toThrow(/unit/);
     const none = readReviewOutput(reviewed([finding("F1")]), "REVIEW.md", { inCheckout: () => false });
-    expect(reviewFixPlan(none, [{ name: "unit" }])).toBeNull();
+    expect(reviewFixPlan(none, [{ name: "unit" }]).plan).toBeNull();
     const cleared = checkout();
     put(cleared, "REVIEW.md", "# Review\n\nNothing to fix.\n\n## Not a problem\n- src/template.mjs:4\n");
     put(cleared, REVIEW_FINDINGS_FILE, findingsJson([]));
-    expect(reviewFixPlan(readReviewOutput(cleared, "REVIEW.md"), [{ name: "unit" }])).toBeNull();
+    expect(reviewFixPlan(readReviewOutput(cleared, "REVIEW.md"), [{ name: "unit" }]).plan).toBeNull();
   });
 });
 

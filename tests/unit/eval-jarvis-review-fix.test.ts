@@ -71,7 +71,8 @@ function reviewFixLoop(calls: RunLoopOptions[], o: { block?: string[] } = {}): R
     const g = (args: string[]) => git(opts.repoPath, opts.gitHome!, args);
     const runId = `loop-${calls.length}`;
     const settled = new Set(ledger.entries().filter((e) => e.kind === "state_reached" || e.kind === "blocked").map((e) => e.task_id));
-    const pending = ledger.entries().filter((e) => e.kind === "task_created" && !settled.has(e.task_id));
+    // Like the real loop with RunLoopOptions.only: a review run touches only its own task ids.
+    const pending = ledger.entries().filter((e) => e.kind === "task_created" && !settled.has(e.task_id) && (opts.only === undefined || opts.only.includes(e.task_id!)));
     ledger.append({ kind: "run_started", actor: "runner", data: { runId, pid: process.pid } });
     for (const e of pending) {
       const id = e.task_id!;
@@ -162,6 +163,8 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
 
     // Two loop runs: the fix task (decision 114's exit condition), then the report update, which may touch only the report.
     expect(calls).toHaveLength(2);
+    // Each loop run may touch only this review's own tasks (decision 126): the fix, then the update.
+    expect(calls.map((c) => c.only)).toEqual([["T1"], ["T1", "T2"]]);
     const tasks = created(calls[0]!.projectDir);
     expect(tasks.map((t) => [t.id, t.requiredChecks])).toEqual([["T1", ["unit"]], ["T2", ["unit"]]]);
     expect(tasks[0]!.exitCondition).toContain(BUG_EXIT_CONDITION);
@@ -235,8 +238,10 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
     const harness = reviewer((ws) => { put(ws, "REVIEW.md", "# Review\n\nNo problems.\n\n## Not a problem\n- src/citizen.mjs:2\n"); put(ws, REVIEW_FINDINGS_FILE, clean); put(ws, "src/citizen.mjs", "// edited by the review\n"); }).harness;
     const r = await runJarvis(reviewTask(fx), options(fx, { harness, runLoop: reviewFixLoop(calls) }));
     expect(r).toMatchObject({ outcome: "complete", claimedDone: true });
-    expect(calls).toHaveLength(0);
-    expect(r.finalCommit).toBe(r.review!.reportRevision);
+    // No findings: no fix loop at all, only the report update, which may touch only its own task.
+    expect(calls.map((c) => c.only)).toEqual([["T1"]]);
+    expect(created(calls[0]!.projectDir).map((t) => [t.id, t.mayTouch])).toEqual([["T1", ["REVIEW.md"]]]);
+    expect(r.finalCommit).toBe(r.lastGreen);
     expect(show(r.workspace, fx.home, r.finalCommit, "REVIEW.md")).toContain("No problems.");
     expect(show(r.workspace, fx.home, r.finalCommit, "src/citizen.mjs")).not.toContain("edited by the review");
     expect(r.metrics.problems.join("\n")).toMatch(/review session also changed src\/citizen\.mjs; discarded/);

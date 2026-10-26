@@ -233,6 +233,31 @@ describe("jarvis run --plan review", () => {
     expect(calls[1]!.plan!.tasks[0]!.goal).toContain("review code needs investigation");
     expect(calls[1]).toMatchObject({ runBranch: run.loop.runBranch, repoPath: run.loop.repoPath, checks: run.loop.checks });
     expect(result).toEqual({ status: "blocked", done: ["T2"], blocked: ["T1"] });
+    // Each loop run may touch only this review's own tasks (decision 126; Codex round 4).
+    expect(calls.map((c) => c.only)).toEqual([["T1"], ["T1", "T2"]]);
+  });
+
+  // Codex round 4: a review run never dispatches the project's other unfinished work.
+  it("scopes the loop to this review's tasks, never the project's other unfinished work", async () => {
+    const p = project();
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T8", data: { title: "change the public API", goal: "change the public API", exitCondition: "done", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 9, requiredChecks: ["unit"], requiredReviews: ["code"] } });
+    const run = await prepare(p, {}, undefined, { by: "flag" }, ["make no changes to the public API"]);
+    expect(run.loop.plan?.tasks.map((t) => t.id)).toEqual(["T9"]);
+    expect(run.loop.only).toEqual(["T9"]);
+  });
+
+  it("runs no fix loop at all when the review found nothing, only the report update", async () => {
+    const p = project(false);
+    put(p.repoPath, "REVIEW.md", "# Review\n\nNothing to fix.\n");
+    put(p.repoPath, REVIEW_FINDINGS_FILE, JSON.stringify({ request: REQUEST, report: "REVIEW.md", findings: [], cleared: [] }));
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T1", data: { title: "unrelated", goal: "unrelated", exitCondition: "done", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"] } });
+    const run = await prepare(p);
+    expect(run.loop.plan).toBeUndefined();
+    expect(run.loop.only).toEqual([]);
+    const calls: RunLoopOptions[] = [];
+    await run.drive!(async (o) => { calls.push(o); return { status: "complete", done: [], blocked: [] }; });
+    expect(calls.map((c) => [c.plan?.tasks.map((t) => t.id), c.only])).toEqual([[["T2"], ["T2"]]]);
+    expect(calls[0]!.plan!.tasks[0]!.mayTouch).toEqual(["REVIEW.md"]);
   });
 });
 

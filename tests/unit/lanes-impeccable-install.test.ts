@@ -1,0 +1,41 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
+import { installDesignChecks } from "../../packages/cli/src/lanes/impeccable-install.ts";
+import { runSession } from "../../packages/cli/src/proc/session.ts";
+const roots:string[]=[];
+afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
+describe("protected design installation",()=>{
+  it("installs driver dependencies and separate verifiers, without approving or overwriting",()=>{
+    const root=mkdtempSync(join(tmpdir(),"design-install-"));roots.push(root);const store=new ChecksStore(root);
+    const input={nodeBin:"/node",scanner:{pin:{bin:"/tools/impeccable",version:"0.1.16"},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"};
+    const defs=installDesignChecks(store,input);
+    expect(Object.keys(defs)).toEqual(["impeccable-source","impeccable-url","design-browser"]);
+    expect(existsSync(store.lockPath)).toBe(false);
+    const files=store.hashAll();
+    for(const file of ["fixtures/design-runtime/lanes/impeccable-driver.ts","design-runtime/lanes/impeccable-verify.ts","fixtures/design-runtime/review/design-browser.ts","design-runtime/review/design-check.ts","fixtures/design-runtime/node_modules/zod/package.json","design-runtime/node_modules/zod/package.json"])expect(files).toHaveProperty(file);
+    expect(defs["design-browser"].cases[0]!.command).toContain("$JARVIS_FIXTURES");
+    expect(defs["design-browser"].verify).toContain("$JARVIS_CHECKS");
+    expect(JSON.parse(readFileSync(join(store.checksDir,"design-plan.json"),"utf8"))).toMatchObject(input.plan);
+    expect(JSON.parse(readFileSync(join(store.checksDir,"design-checks.json"),"utf8"))).toEqual(defs);
+    expect(()=>installDesignChecks(store,input)).toThrow(/already/);
+  });
+  it("runs installed source driver and isolated verifier with a fake engine",async()=>{
+    const root=mkdtempSync(join(tmpdir(),"design-runtime-"));roots.push(root);const store=new ChecksStore(join(root,"project"));
+    const bin=join(root,"fake-impeccable");writeFileSync(bin,'#!/bin/sh\nif [ "$1" = "--version" ]; then printf "0.1.16+engine\\n"; else printf "[]\\n"; fi\n',{mode:0o700});
+    installDesignChecks(store,{nodeBin:process.execPath,scanner:{pin:{bin,version:"0.1.16"},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"});
+    const common={bin:process.execPath,cwd:root,env:{PATH:"/usr/bin:/bin"},timeoutMs:5000,maxOutputBytes:1024*1024};
+    const driver=await runSession({...common,args:[join(store.checksDir,"fixtures/design-runtime/lanes/impeccable-driver.ts"),"source",join(store.checksDir,"fixtures/impeccable.json")]});
+    expect(driver.code,driver.stderr).toBe(0);expect(JSON.parse(driver.stdout)).toMatchObject({kind:"impeccable-source",result:{status:"pass"}});
+    const observations=join(root,"observations");mkdirSync(join(observations,"scan"),{recursive:true});
+    writeFileSync(join(observations,"scan/stdout"),driver.stdout);writeFileSync(join(observations,"scan/code"),"0");
+    const nonce=join(root,"nonce");writeFileSync(nonce,"fake-nonce");
+    const verified=await runSession({...common,env:{...common.env,JARVIS_OUT:observations,JARVIS_COMPLETION_FILE:nonce},args:[join(store.checksDir,"design-runtime/lanes/impeccable-verify.ts"),"source"]});
+    expect(verified.code,verified.stderr).toBe(0);expect(verified.stdout.trim()).toBe("JARVIS-CHECK-COMPLETE fake-nonce");
+    writeFileSync(join(observations,"scan/code"),"1");
+    const failed=await runSession({...common,env:{...common.env,JARVIS_OUT:observations,JARVIS_COMPLETION_FILE:nonce},args:[join(store.checksDir,"design-runtime/lanes/impeccable-verify.ts"),"source"]});
+    expect(failed.code).not.toBe(0);expect(failed.stdout).not.toContain("JARVIS-CHECK-COMPLETE");
+  });
+});

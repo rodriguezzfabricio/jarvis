@@ -1,0 +1,140 @@
+[
+  {
+    "name": "Design weighted rubric",
+    "file": "packages/cli/src/review/design-verdict.ts",
+    "anchor": "quality: .35, originality: .35, craft: .15, functionality: .15",
+    "replacement": "quality: .15, originality: .15, craft: .35, functionality: .35"
+  },
+  {
+    "name": "Design minimum axis cannot be averaged away",
+    "file": "packages/cli/src/review/design-verdict.ts",
+    "anchor": "axes.some(axis => value.scores[axis] < DESIGN_RUBRIC.minimumAxis)",
+    "replacement": "false"
+  },
+  {
+    "name": "Design high findings block",
+    "file": "packages/cli/src/review/design-verdict.ts",
+    "anchor": "value.findings.some(f => f.severity === \"high\")",
+    "replacement": "false"
+  },
+  {
+    "name": "Design verdict bytes bounded",
+    "file": "packages/cli/src/review/design-verdict.ts",
+    "anchor": "Buffer.byteLength(raw) > 64 * 1024",
+    "replacement": "Buffer.byteLength(raw) > 1024 * 1024"
+  },
+  {
+    "name": "Design one candidate only",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "}).strict();\nexport type DesignCapture",
+    "replacement": "}).passthrough();\nexport type DesignCapture"
+  },
+  {
+    "name": "Design candidate delimiters escaped",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "const quoted = (value: unknown) => JSON.stringify(value).replaceAll(\"<\", \"\\\\u003c\").replaceAll(\">\", \"\\\\u003e\");",
+    "replacement": "const quoted = (value: unknown) => JSON.stringify(value);"
+  },
+  {
+    "name": "Design every screen covers all widths",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "[...coverage.values()].some(widths => widths.size !== 3)",
+    "replacement": "false"
+  },
+  {
+    "name": "Design image evidence validated",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "validateDesignImage(bytes);",
+    "replacement": "/* image validation removed */"
+  },
+  {
+    "name": "Design uses Seatbelt even for version",
+    "file": "packages/cli/src/review/design-codex.ts",
+    "anchor": "...jail.wrap(bin, [\"--version\"])",
+    "replacement": "bin, args: [\"--version\"]"
+  },
+  {
+    "name": "Design reviewer receives screenshots",
+    "file": "packages/cli/src/review/design-codex.ts",
+    "anchor": "...input.images.flatMap(path => [\"-i\", path])",
+    "replacement": "...[]"
+  },
+  {
+    "name": "Design review must complete",
+    "file": "packages/cli/src/review/design-codex.ts",
+    "anchor": "if (!events.some(e => e.type === \"turn.completed\") || events.some(e => e.type === \"turn.failed\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design checkout remains read only",
+    "file": "packages/cli/src/review/design-codex.ts",
+    "anchor": "if (checkoutHash(input.workspace) !== before)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design rejects malformed image attachments",
+    "file": "packages/cli/src/review/design-codex.ts",
+    "anchor": "validateDesignImage(readFileSync(path));",
+    "replacement": "/* image validation removed */"
+  },
+  {
+    "name": "Design flow expectation required",
+    "file": "packages/cli/src/review/design-browser.ts",
+    "anchor": "if(!visibleText.includes(flow.expectText))",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "Design actions are fixed data",
+    "file": "packages/cli/src/review/design-browser.ts",
+    "anchor": "const plan=DesignBrowserPlanSchema.parse(raw);",
+    "replacement": "const plan=raw;"
+  },
+  {
+    "name": "Design browser accessibility verification",
+    "file": "packages/cli/src/review/design-browser.ts",
+    "anchor": "if(problems.length)",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "Design calibration required",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "if (!calibration && !calibrated(options))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design good calibration requires code pass",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "if (fixture === \"good\") return data.verdict === \"pass\";",
+    "replacement": "if (fixture === \"good\") return true;"
+  },
+  {
+    "name": "Design calibration covers friction",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "[\"launch-tour\", \"multiple-primary\", \"apologetic-error\"].every",
+    "replacement": "[].every"
+  },
+  {
+    "name": "Design evidence bound to revision",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "data.revision === request.revision",
+    "replacement": "true"
+  },
+  {
+    "name": "Design evidence hashes checked",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "      const raw = readFileSync(path);\n      if (sha(raw) !== hash) throw new Error(\"design evidence changed after capture\");\n      files[name] = {raw, sha256:hash};\n    }\n    if (!verifyEvidence(entry).ok) throw new Error(\"design evidence hash verification failed\");\n",
+    "replacement": "      const raw = readFileSync(path);\n      files[name] = {raw, sha256:hash};\n    }\n"
+  },
+  {
+    "name": "Design model cannot overrule code failure",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "if (evaluation.verdict !== \"error\" && gates.some(g => g.data.status === \"fail\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design shared escaped evidence budget",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": "while (result.length && excerptBytes(result) > cap)",
+    "replacement": "while (false)"
+  }
+]

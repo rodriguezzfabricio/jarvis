@@ -32,7 +32,8 @@ describe("pinned sandbox scanner", () => {
     const result = await runImpeccable(options, { kind: "source", files: ["a.tsx"] });
     expect(result).toMatchObject({ status: "error", error: expect.stringContaining("sha256") });
     expect(options.spawn).not.toHaveBeenCalled();
-    const unpinned = setup();
+    // A pin without a hash is refused even when the file's hash "matches" it.
+    const unpinned = { ...setup(), hashFile: () => "" };
     expect((await runImpeccable({ ...unpinned, pin: { ...pin, sha256: "" } }, { kind: "source", files: ["a.tsx"] })).status).toBe("error");
     expect(unpinned.spawn).not.toHaveBeenCalled();
   });

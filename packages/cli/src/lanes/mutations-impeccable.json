@@ -94,5 +94,59 @@
     "file": "packages/cli/src/lanes/impeccable-verify.ts",
     "anchor": "    if (observation.kind === \"impeccable-url\" && JSON.stringify(observation.pages.map(p => p.width).sort((a,b) => a-b)) !== \"[375,768,1440]\") throw new Error(\"incomplete viewport coverage\");",
     "replacement": "    if (false) throw new Error(\"incomplete viewport coverage\");"
+  },
+  {
+    "name": "Impeccable engine hash checked before running",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": "    if ((options.hashFile ?? fileSha256)(options.pin.bin) !== options.pin.sha256) throw new Error(\"pinned Impeccable engine sha256 differs from its pin\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable pin needs a sha256",
+    "file": "packages/cli/src/lanes/impeccable.ts",
+    "anchor": " || !/^[a-f0-9]{64}$/.test(options.pin.sha256)",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable install checks the engine hash",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "  if (sha256(engine)!==pin.sha256) throw new Error(\"Impeccable engine sha256 differs from its pin\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable runs from the protected fixtures copy",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "pin:{bin:copy,version:pin.version,sha256:pin.sha256}",
+    "replacement": "pin:input.scanner.pin"
+  },
+  {
+    "name": "Impeccable Chromium is single-process",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\"",
+    "replacement": "args: [\"--remote-debugging-address=127.0.0.1\""
+  },
+  {
+    "name": "Impeccable one Chromium per viewport",
+    "file": "packages/cli/src/lanes/impeccable-browser.ts",
+    "anchor": "    const browser = await chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\", `--remote-debugging-port=${input.port}`]});\n",
+    "replacement": "    const browser = await ((scanImpeccableBrowser as unknown as {shared?: ReturnType<typeof chromium.launch>}).shared ??= chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: [\"--single-process\", \"--remote-debugging-address=127.0.0.1\", `--remote-debugging-port=${input.port}`]}));\n"
+  },
+  {
+    "name": "Impeccable doctor checks the engine hash",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "    if (digest !== impeccable.sha256) throw new Error(",
+    "replacement": "    if (false) throw new Error("
+  },
+  {
+    "name": "Impeccable doctor checks the exact version",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "    if (found !== `${impeccable.version}+engine`) throw new Error(",
+    "replacement": "    if (false) throw new Error("
+  },
+  {
+    "name": "Design browser evidence selected with every browser scan",
+    "file": "packages/cli/src/lanes/selection.ts",
+    "anchor": "[\"impeccable-url\", \"design-browser\", \"axe\", \"playwright\"]",
+    "replacement": "[\"impeccable-url\", \"axe\", \"playwright\"]"
   }
 ]

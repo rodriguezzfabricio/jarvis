@@ -32,8 +32,8 @@
   {
     "name": "Design candidate delimiters escaped",
     "file": "packages/cli/src/review/design-evidence.ts",
-    "anchor": "const quoted = (value: unknown) => JSON.stringify(value).replaceAll(\"<\", \"\\\\u003c\").replaceAll(\">\", \"\\\\u003e\");",
-    "replacement": "const quoted = (value: unknown) => JSON.stringify(value);"
+    "anchor": ".replaceAll(\"<\", \"\\\\u003c\").replaceAll(\">\", \"\\\\u003e\")",
+    "replacement": ""
   },
   {
     "name": "Design every screen covers all widths",
@@ -108,10 +108,10 @@
     "replacement": "if (fixture === \"good\") return true;"
   },
   {
-    "name": "Design calibration covers friction",
+    "name": "Design calibration needs the runner's friction record",
     "file": "packages/cli/src/review/design-service.ts",
-    "anchor": "[\"launch-tour\", \"multiple-primary\", \"apologetic-error\"].every",
-    "replacement": "[].every"
+    "anchor": "FRICTION_RULES.every(rule => friction.includes(rule))",
+    "replacement": "true"
   },
   {
     "name": "Design evidence bound to revision",
@@ -136,5 +136,41 @@
     "file": "packages/cli/src/review/design-evidence.ts",
     "anchor": "while (result.length && excerptBytes(result) > cap)",
     "replacement": "while (false)"
+  },
+  {
+    "name": "Design findings redacted before the ledger",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "    evaluation = {...evaluation, findings: evaluation.findings.map(redactFinding)};\n",
+    "replacement": ""
+  },
+  {
+    "name": "Design friction read before redaction",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "    const friction = FRICTION_RULES.filter(rule => evaluation.findings.some(f => f.principle.includes(rule)));\n    evaluation = {...evaluation, findings: evaluation.findings.map(redactFinding)};\n",
+    "replacement": "    evaluation = {...evaluation, findings: evaluation.findings.map(redactFinding)};\n    const friction = FRICTION_RULES.filter(rule => evaluation.findings.some(f => f.principle.includes(rule)));\n"
+  },
+  {
+    "name": "Design policy hash covers the instructions",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": ", instructions: DESIGN_INSTRUCTIONS}",
+    "replacement": "}"
+  },
+  {
+    "name": "Design data block escapes line separators",
+    "file": "packages/cli/src/review/design-evidence.ts",
+    "anchor": ".replaceAll(\"\\u2028\", \"\\\\u2028\").replaceAll(\"\\u2029\", \"\\\\u2029\")",
+    "replacement": ""
+  },
+  {
+    "name": "Design one Chromium per page",
+    "file": "packages/cli/src/review/design-browser.ts",
+    "anchor": "      const browser=await runtime.launch();\n",
+    "replacement": "      const browser=await ((observeDesign as unknown as {shared?: ReturnType<BrowserRuntime[\"launch\"]>}).shared ??= runtime.launch());\n"
+  },
+  {
+    "name": "Design reviews dispatched to the design service",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    if (input.reviewer === \"design\" && design) return { status: (await design.reviewDetailed(request)).verdict, recorded: true };\n",
+    "replacement": ""
   }
 ]

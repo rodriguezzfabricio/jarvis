@@ -32,7 +32,7 @@ async function setup() {
   const file = join(repo, ".jarvis/intake/round-1.json"); writeFileSync(file, JSON.stringify({ round: 1, spec: "docs/spec/v1.md", summary: "Small tool", questions: [{ id: "Q1", topic: "scope", question: "Scope?", why: "Focus", default: { answer: "small", reason: "safe" }, alternatives: ["medium", "large"] }], mockups: [] }));
   const ledger = Ledger.open(join(root, "project")); let now = Date.now();
   const deps = { ledger, repoDir: repo, clock: { now: () => now, sleep: async (ms: number) => { now += ms; } }, timeoutMs: 10_000 };
-  await sendRound(file, deps); return { root, repo, ledger, deps, advance: (ms: number) => { now += ms; }, guarded: await notifierWithProposedGuards(root) };
+  await sendRound(file, { ...deps, notifier: { send: async () => {}, poll: async () => [] } }); return { root, repo, ledger, deps, advance: (ms: number) => { now += ms; }, guarded: await notifierWithProposedGuards(root) };
 }
 it("excludes and refuses local session intents on crash replay before intake recovery", async () => {
   const s = await setup(); const file = join(s.repo, "answers.json"); writeFileSync(file, '{"Q1":"custom"}');

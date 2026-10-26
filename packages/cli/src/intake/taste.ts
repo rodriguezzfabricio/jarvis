@@ -16,25 +16,42 @@ export interface TasteOptions { home?: string; rename?: typeof renameSync }
 function refuseSymlink(path: string): void {
   if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error("Taste storage refuses symlinks");
 }
-function tasteDirectory(home: string): string {
+function tasteDirectory(home: string, create = true): string {
   let directory = resolve(home);
   refuseSymlink(directory);
   for (const name of [".jarvis", "memory", "user"]) {
     directory = join(directory, name);
     refuseSymlink(directory);
-    if (!lstatSync(directory, { throwIfNoEntry: false })) mkdirSync(directory, { mode: 0o700 });
-    if (!lstatSync(directory).isDirectory()) throw new Error("Taste storage requires directories");
+    if (create && !lstatSync(directory, { throwIfNoEntry: false })) mkdirSync(directory, { mode: 0o700 });
+    const entry = lstatSync(directory, { throwIfNoEntry: false });
+    if (entry && !entry.isDirectory()) throw new Error("Taste storage requires directories");
   }
   return directory;
 }
 
-/** Called from interactive intake, outside sandboxed build sessions; the CLI owns the memory write. */
-export function saveTaste(file: string, options: TasteOptions = {}): string {
-  let profile: TasteProfile;
-  try { profile = tasteSchema.parse(JSON.parse(readFileSync(file, "utf8"))); } catch (error) {
+function parseTaste(raw: string): TasteProfile {
+  try { return tasteSchema.parse(JSON.parse(raw)); } catch (error) {
     const detail = error instanceof z.ZodError ? error.issues.map((issue) => `${issue.path.join(".") || "profile"}: ${issue.message}`).join("; ") : "expected JSON";
     throw new Error(`Invalid taste profile: ${detail}`);
   }
+}
+
+/** Read through the CLI, without creating memory or following storage symlinks. */
+export function loadTaste(options: Pick<TasteOptions, "home"> = {}): TasteProfile | undefined {
+  const directory = tasteDirectory(options.home ?? homedir(), false);
+  const target = join(directory, "taste.json");
+  refuseSymlink(target);
+  let raw: string;
+  try { raw = readFileSync(target, "utf8"); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  return parseTaste(raw);
+}
+
+/** Called from interactive intake, outside sandboxed build sessions; the CLI owns the memory write. */
+export function saveTaste(file: string, options: TasteOptions = {}): string {
+  const profile = parseTaste(readFileSync(file, "utf8"));
   const directory = tasteDirectory(options.home ?? homedir());
   const target = join(directory, "taste.json");
   refuseSymlink(target);

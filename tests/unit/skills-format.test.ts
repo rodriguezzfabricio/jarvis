@@ -148,7 +148,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Send the round", phrase: "decision 86" },
       { section: "Take the answers", phrase: "`jarvis intake answers <n> --wait 540`" },
       { section: "Take the answers", phrase: "at most twice" },
-      { section: "Take the answers", phrase: "continue with whatever it returns" },
+      { section: "Take the answers", phrase: "run_in_background: true" },
       { section: "Take the answers", phrase: "listed ids are overrides" },
       { section: "Take the answers", phrase: "every unlisted question takes its default as accepted" },
       { section: "Take the answers", phrase: "\"Not counted\"" },
@@ -357,7 +357,7 @@ describe("skills folder", () => {
 });
 
 // Decision 85: the flags `jarvis decide` accepts, and the values each one takes.
-const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason"];
+const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer"];
 const DECIDE_BY = ["user", "default-accepted", "default-unconfirmed", "jarvis"];
 const DECIDE_CLASS = ["mechanical", "taste", "challenge"];
 
@@ -420,10 +420,10 @@ describe("intake round file (decision 83)", () => {
     const fence = /^\s*```json\n([\s\S]*?)^\s*```/m.exec(text.slice(start));
     expect(fence, "a json example in Send the round").not.toBeNull();
     const round = JSON.parse(fence![1]!) as Record<string, unknown>;
-    expect(Object.keys(round).sort()).toEqual(["mockups", "questions", "round", "spec", "summary"]);
+    expect(Object.keys(round).sort()).toEqual(["formatVersion", "mockups", "questions", "round", "spec", "summary"]);
     const q = (round.questions as Record<string, unknown>[])[0]!;
     expect(Object.keys(q).sort()).toEqual(["alternatives", "default", "id", "question", "topic", "why"]);
-    expect(Object.keys(q.default as object).sort()).toEqual(["answer", "reason"]);
+    expect(Object.keys(q.default as object).sort()).toEqual(["answer", "reason", "tradeOff"]);
     for (const m of round.mockups as unknown[]) expect(String(m)).toMatch(/^\.jarvis\/mockups\//);
     expect(sectionBody(text, "Send the round")).toContain(
       "`topic` is one of scope, security, privacy, legal, ux, technical or design",
@@ -439,7 +439,7 @@ describe("spec confirmation round (decisions 9, 10, 83)", () => {
     const fence = /^\s*```json\n([\s\S]*?)^\s*```/m.exec(text.slice(start));
     expect(fence, "a json example in Confirm").not.toBeNull();
     const round = JSON.parse(fence![1]!) as Record<string, unknown>;
-    expect(Object.keys(round).sort()).toEqual(["mockups", "questions", "round", "spec", "summary"]);
+    expect(Object.keys(round).sort()).toEqual(["formatVersion", "mockups", "questions", "round", "spec", "summary"]);
     expect(round.spec).toMatch(/^docs\/spec\/v\d+\.md$/);
     const questions = round.questions as Record<string, unknown>[];
     expect(questions).toHaveLength(1);

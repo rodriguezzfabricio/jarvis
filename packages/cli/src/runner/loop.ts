@@ -155,6 +155,12 @@ class Loop {
       : opts.footprint ?? createFootprintLog({ worktrees: this.opts.worktreeRoot, caches: [], evidence: join(opts.projectDir, "evidence") }, { now: this.now });
   }
 
+  /** The workspace path an attempt started in, from the runner's attempt_started record. */
+  private attemptWorkspace(taskId: string, attemptId: string): string | undefined {
+    const e = this.ledger.entries().find((x) => x.actor === "runner" && x.kind === "attempt_started" && x.task_id === taskId && x.attempt_id === attemptId);
+    const p = e ? dataOf(e).workspace : undefined;
+    return typeof p === "string" ? p : undefined;
+  }
   /** True when this run may touch the task (RunLoopOptions.only). */
   private mine(taskId: string): boolean {
     return this.only === undefined || this.only.has(taskId);
@@ -200,6 +206,8 @@ class Loop {
     const state = this.state();
     const resumable = new Set(Object.values(state.tasks).filter((t) => t.attempts.at(-1)?.outcome === "usage_wait")
       .map((t) => this.workspaceRecord(t)?.path).filter((p) => p !== undefined));
+    // A scoped run (RunLoopOptions.only) keeps the workspaces of tasks it leaves alone: their recovery is another run's.
+    for (const t of Object.values(state.tasks)) if (!this.mine(t.id)) for (const a of t.attempts) { const p = this.attemptWorkspace(t.id, a.id); if (p) resumable.add(p); }
     const cleanupState = { ...state, runs: state.runs.map((r) => ({ ...r, workspaces: r.workspaces.filter((p) => !resumable.has(p)) })) };
     this.record("cleanup_intent");
     const cleaned = cleanupLeftovers({ state: cleanupState, pidFile: this.pidFile, worktreeRoot: this.opts.worktreeRoot, now: this.now, pidAlive: this.pidAlive,
@@ -663,7 +671,7 @@ class Loop {
     const leftAlone = this.only ? Object.values(state.tasks).filter((t) => !this.mine(t.id) && !isDone(t, this.verify)).map((t) => t.id) : [];
     const status = blocked.length ? "blocked" : "complete";
     this.record("candidate_cleanup_intent");
-    deleteCandidateBranches(this.opts.repoPath, { ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
+    deleteCandidateBranches(this.opts.repoPath, { ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}), ...(this.only ? { onlyTasks: this.only } : {}) });
     if (this.footprint) {
       try { this.ledger.append(buildFootprintEntry(this.runId, this.footprint.finish())); } catch { /* A footprint failure never fails the run. */ }
     }

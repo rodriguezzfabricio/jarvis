@@ -562,5 +562,23 @@
     "file": "packages/cli/src/runner/review-fix.ts",
     "anchor": "  const fixes = r.fix.plan ? await r.runFixes() :",
     "replacement": "  const fixes = true ? await r.runFixes() :"
+  },
+  {
+    "name": "review fix: candidate cleanup deletes a left-alone task's candidate",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "    if (options.onlyTasks && !options.onlyTasks.has(ref.slice(prefix.length).split(\"/\")[0]!)) continue;\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a scoped run's cleanup ignores its allowlist",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": ", ...(this.only ? { onlyTasks: this.only } : {}) });",
+    "replacement": " });"
+  },
+  {
+    "name": "review fix: a scoped run removes a left-alone task's workspace at start",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (!this.mine(t.id)) for (const a of t.attempts) { const p = this.attemptWorkspace(t.id, a.id); if (p) resumable.add(p); }",
+    "replacement": "if (false) for (const a of t.attempts) { const p = this.attemptWorkspace(t.id, a.id); if (p) resumable.add(p); }"
   }
 ]

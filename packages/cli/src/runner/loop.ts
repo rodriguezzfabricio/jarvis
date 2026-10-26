@@ -77,6 +77,11 @@ export interface RunLoopOptions {
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   pidAlive?: (pid: number) => boolean;
   plan?: LoopPlan;
+  /**
+   * The only task ids this run may dispatch, retry, recover or block (decision 126: a review run touches only the
+   * tasks it created). Every other unfinished ledger task is left alone, and the run says so. Unset: every task.
+   */
+  only?: readonly string[];
   recoverIntake?: (ledger: Ledger) => void | Promise<void>;
   /** Handlers must be idempotent by action seq; cursor acknowledgment follows durable effects. */
   applyInbox?: (action: InboxAction, ledger: Ledger) => void | Promise<void>;
@@ -85,7 +90,7 @@ export interface RunLoopOptions {
   /** Disk and concurrency log for the report (runner/footprint.ts); false turns it off. */
   footprint?: FootprintLog | false;
 }
-export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[] }
+export interface RunLoopResult { status: "complete" | "blocked"; done: string[]; blocked: string[]; leftAlone?: string[] }
 
 type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry): Data => entry.data as Data;
@@ -123,6 +128,8 @@ class Loop {
   readonly readStart: ProcessStartTimeReader;
   /** Decision 114: task sessions can't load skills, so their text goes in every run header. */
   readonly skills: readonly SessionSkill[];
+  /** RunLoopOptions.only, as a set; undefined when the run may touch every task. */
+  readonly only: ReadonlySet<string> | undefined;
   private promotion: Promise<void> = Promise.resolve();
   private fatal: unknown;
   private failed = false;
@@ -143,10 +150,15 @@ class Loop {
     this.pidFile = join(opts.projectDir, "runner.pid");
     this.readStart = opts.readProcessStartTime ?? readProcessStartTime;
     this.skills = loadSessionSkills();
+    this.only = opts.only ? new Set(opts.only) : undefined;
     this.footprint = opts.footprint === false ? undefined
       : opts.footprint ?? createFootprintLog({ worktrees: this.opts.worktreeRoot, caches: [], evidence: join(opts.projectDir, "evidence") }, { now: this.now });
   }
 
+  /** True when this run may touch the task (RunLoopOptions.only). */
+  private mine(taskId: string): boolean {
+    return this.only === undefined || this.only.has(taskId);
+  }
   private git(args: readonly string[]): string {
     return (this.opts.git ?? safeGit)(this.opts.repoPath, args, { home: this.opts.gitHome ?? homedir() }).toString().trim();
   }
@@ -269,7 +281,7 @@ class Loop {
       await this.pauseUsage();
       if (this.failed) break;
       const state = this.state();
-      const ready = Object.values(state.tasks).filter((task) => !this.running.has(task.id) && !isDone(task, this.verify) && task.status !== "blocked"
+      const ready = Object.values(state.tasks).filter((task) => this.mine(task.id) && !this.running.has(task.id) && !isDone(task, this.verify) && task.status !== "blocked"
         && !state.activeLeases.some((lease) => lease.taskId === task.id)
         && task.definition.dependencies.every((id) => state.tasks[id] !== undefined && isDone(state.tasks[id]!, this.verify)))
         .sort((a, b) => b.definition.priority - a.definition.priority);
@@ -280,7 +292,7 @@ class Loop {
       }
       if (this.running.size) { await Promise.race(this.running.values()); continue; }
       for (const task of Object.values(this.state().tasks)) {
-        if (!isDone(task, this.verify) && task.status !== "blocked") await this.block(task, "dependencies unavailable or completion evidence changed");
+        if (this.mine(task.id) && !isDone(task, this.verify) && task.status !== "blocked") await this.block(task, "dependencies unavailable or completion evidence changed");
       }
       break;
     }
@@ -608,6 +620,7 @@ class Loop {
 
   private async recoverCandidates(): Promise<void> {
     for (let task of Object.values(this.state().tasks)) {
+      if (!this.mine(task.id)) continue; // never recover a task outside this run's allowlist
       if (!task.attemptId || task.status === "blocked" || isDone(task, this.verify)) continue;
       const attempt = task.attempts.find((a) => a.id === task.attemptId);
       // An attempt the runner ended (refused, stale, failed) or parked for usage is not a candidate to recover.
@@ -643,19 +656,22 @@ class Loop {
   }
   private finish(): RunLoopResult {
     const state = this.state();
-    const done = Object.values(state.tasks).filter((t) => isDone(t, this.verify)).map((t) => t.id);
-    const blocked = Object.values(state.tasks).filter((t) => !isDone(t, this.verify)).map((t) => t.id);
+    const mine = Object.values(state.tasks).filter((t) => this.mine(t.id));
+    const done = mine.filter((t) => isDone(t, this.verify)).map((t) => t.id);
+    const blocked = mine.filter((t) => !isDone(t, this.verify)).map((t) => t.id);
+    // Unfinished tasks outside the allowlist: this run never dispatched, retried, recovered or blocked them.
+    const leftAlone = this.only ? Object.values(state.tasks).filter((t) => !this.mine(t.id) && !isDone(t, this.verify)).map((t) => t.id) : [];
     const status = blocked.length ? "blocked" : "complete";
     this.record("candidate_cleanup_intent");
     deleteCandidateBranches(this.opts.repoPath, { ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
     if (this.footprint) {
       try { this.ledger.append(buildFootprintEntry(this.runId, this.footprint.finish())); } catch { /* A footprint failure never fails the run. */ }
     }
-    this.ledger.append({ kind: "run_ended", actor: "runner", data: { runId: this.runId, status, done, blocked } });
+    this.ledger.append({ kind: "run_ended", actor: "runner", data: { runId: this.runId, status, done, blocked, ...(leftAlone.length ? { leftAlone } : {}) } });
     const claims: ReportClaim[] = this.records("agent_claim").map((e) => ({ taskId: e.task_id!, text: String(dataOf(e).text), source: String(dataOf(e).source) }));
-    writeReport(join(this.opts.repoPath, ".jarvis"), this.state(), this.ledger.entries(), claims, { now: this.now, verifyEvidence: this.verify });
+    writeReport(join(this.opts.repoPath, ".jarvis"), this.state(), this.ledger.entries(), claims, { now: this.now, verifyEvidence: this.verify, ...(leftAlone.length ? { leftAlone } : {}) });
     if (existsSync(this.pidFile) && readFileSync(this.pidFile, "utf8").trim() === String(process.pid)) rmSync(this.pidFile);
-    return { status, done, blocked };
+    return { status, done, blocked, ...(leftAlone.length ? { leftAlone } : {}) };
   }
 }
 

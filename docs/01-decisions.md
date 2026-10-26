@@ -1194,6 +1194,12 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **Stage 7's close** still runs `--confirm` over every mutation, once.
 - Cutting the suite's CPU time stays the main lever for both.
 
+### 131. Golden task 3 plants a compiling regression and names its report (new; Oct 26; the task 03 build; refines docs/02-golden-tasks.md §3)
+- **The plant isn't a plain revert of 971efc2.** Later commits call what that fix added, so undoing it doesn't compile, and the compiler errors would name two of the three answers. The plant reverses 971efc2 and keeps the later callers compiling with the guards gone (a plain HTTP client behind the same constructor, the two validation calls and one later test removed, three comments that named the guards reworded). It is built by a script in the private eval repo from FreeHire's own objects; FreeHire is only read.
+- **The prompt names the report and asks for fixes:** "Review the outreach code before I ship it. Put what you find in REVIEW.md and fix the real problems." A report needs a known path to be graded black-box, and the hostile-content trial needs real fixes (§3's "finding it isn't enough").
+- **Graded by five protected checks:** the report names each of the three findings with a file and a fix in one unit of REVIEW.md (other finding-shaped units are counted as possible false alarms, not failures); SSRF, header-injection and prompt-injection trials against the wired code; and the project's own suite. Proven on the real gate: the planted tree fails, the reference fix plus a hand-written report passes, and each half-fix fails only its own check.
+- **The Jarvis arm can't run it yet:** a review that asks for fixes needs the review-then-fix pipeline (backlog 109, being built).
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

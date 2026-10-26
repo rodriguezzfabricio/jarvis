@@ -16,6 +16,12 @@ const forbidden = [
   /\blinked[-\s]?in\b/i, /\bATS\b/i, /\bhabits?\b/i, /\bstreaks?\b/i, /\breminders?\b/i,
   /\bcheck[-\s]?offs?\b/i, /\bjob[-\s]+(?:search|trackers?|applications?)\b/i,
   /\b(?:FreeHire|Gmail|Greenhouse)\b/i,
+  // The answers' neighbours: verification over mail, suppression mechanics, the job domain, and the
+  // products both tasks' recorded research covers.
+  /\bSMTP\b/i, /\bport\s+25\b/i, /\bmail\s+servers?\b/i, /\be[-\s]?mail[-\s]+(?:finders?|verif\w*)\b/i,
+  /\benrichment\b/i, /\bsuppression\s+lists?\b/i, /\bopt[-\s]?outs?\b/i, /\bdo[-\s]not[-\s](?:contact|e[-\s]?mail|message)\b/i,
+  /\bscraping\s+bans?\b/i, /\bmessaging\s+automation\b/i, /\bapproves?\s+a\s+draft\b/i, /salar(?:y|ies)/i, /\bjobs\/match/i,
+  /\b(?:Hunter\.io|Apollo\.io|Snov\.io|Lusha|RocketReach|ContactOut|Proxycurl|Habitica|Habitify|HabitKit|uhabits)\b/i,
 ];
 
 function bannedTerms(text: string): string[] {
@@ -66,7 +72,11 @@ describe("the installed plugin exposes instructions, not evaluation answers", ()
   });
 
   it("the ban-list guard catches case, plurals, template comments and agent prose", () => {
-    for (const text of ["RECRUITERS", "hiring managers", "outreach", "contacts", "Email providers", "follow-ups", "LinkedIn", "ATS", "<!-- habits -->", "streaks", "reminders", "check-offs", "job search", "FreeHire"]) {
+    for (const text of [
+      "RECRUITERS", "hiring managers", "outreach", "contacts", "Email providers", "follow-ups", "LinkedIn", "ATS", "<!-- habits -->", "streaks", "reminders", "check-offs", "job search", "FreeHire",
+      "no SMTP checks", "outbound port 25", "real mail servers", "an email-verification step", "contact enrichment", "a suppression list", "honor opt-outs",
+      "a do-not-contact list", "scraping bans", "messaging automation", "approves a draft", "formatSalary", "internal/jobs/match_test.go", "Hunter.io", "Habitica",
+    ]) {
       expect(bannedTerms(text), text).not.toEqual([]);
     }
     expect(bannedTerms("A library catalogue uses matching categories and a batch export.")).toEqual([]);

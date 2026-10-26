@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research before asking. Reads the project's own rules and code, studies 3–5 real products that do the same job, and runs build-vs-buy spikes for outside data, common problems (auth, email, payments, search, scraping) or anything that acts on other people. Use after triage and before intake on new products and features; skip it for tier-0 bugs.
+description: Research before asking. Reads the project's own rules and code, studies 3–5 real products that do the same job, and runs build-vs-buy spikes for outside data, common problems (auth, payments, search, file storage, data import) or anything that acts on other people. Use after triage and before intake on new products and features; skip it for tier-0 bugs.
 ---
 
 # Research
@@ -64,12 +64,12 @@ Inside an existing product, the "real products" are often the project itself plu
 
 Run a spike whenever a capability:
 - needs outside data the system doesn't have,
-- touches a common problem: auth, email, payments, search, scraping, enrichment,
+- touches a common problem: auth, payments, search, file storage, data import,
 - or acts on other people (a real person receives something).
 
 One spike per capability, in this order:
 
-1. **Write the job and its constraints.** One sentence for the capability, then: expected volume, budget (the project's money rule; on a $0 budget, free tiers only), legal and terms-of-service limits, hosting limits (for example whether outbound port 25 is open, read from the host's docs, never probed), latency. A free tier still needs an account, and accounts are created only by the user through `jarvis setup` (decision 43): count that as setup friction, and as a product question if the user must act.
+1. **Write the job and its constraints.** One sentence for the capability, then: expected volume, budget (the project's money rule; on a $0 budget, free tiers only), legal and terms-of-service limits, hosting limits (for example whether the host allows long-running background jobs, read from the host's docs, never probed), latency. A free tier still needs an account, and accounts are created only by the user through `jarvis setup` (decision 43): count that as setup friction, and as a product question if the user must act.
 2. **Search, in parallel:**
    - the existing repo and its dependencies (is it already half-built?),
    - package registries,
@@ -84,13 +84,13 @@ One spike per capability, in this order:
    |---|---|
    | Fit | Does it do the job as written, on this user's data? |
    | Cost | At the expected volume, including the free tier and what happens past it |
-   | Terms of service and legal | Does using it this way break the provider's terms or a law (scraping bans, messaging automation, privacy rules)? |
+   | Terms of service and legal | Does using it this way break the provider's terms or a law (automated access, usage limits, privacy rules)? |
    | Maintenance | OpenSSF's tests: a commit and a release within 12 months, more than one maintainer, a clear OSI license |
    | Security | What it needs access to; known advisories |
    | Lock-in | How hard it is to swap out later |
    | Setup friction | Accounts, keys, approvals, infrastructure |
 
-5. **Quick-test the finalists offline only**, when a test can answer a hard question. By default test at most two finalists on a small golden set (5–10 examples), measuring hit rate, accuracy and cost per success. A quick test is a throwaway script in a scratch folder that runs **with no outbound network calls**: against recorded responses, local stubs, or the project's own data. It never uses credentials, never spends money, never signs up for anything, never messages or looks up a real person, never scrapes a site, never probes a third-party server (no SMTP checks against real mail servers), and never installs a package that isn't already in the project's lockfile. Anything that would need a live call or a new package is marked **"untested"**, with the test it needs written out; that test becomes a spike task in the build, behind the same rules as any outside action.
+5. **Quick-test the finalists offline only**, when a test can answer a hard question. By default test at most two finalists on a small golden set (5–10 examples), measuring hit rate, accuracy and cost per success. A quick test is a throwaway script in a scratch folder that runs **with no outbound network calls**: against recorded responses, local stubs, or the project's own data. It never uses credentials, never spends money, never signs up for anything, never messages or looks up a real person, never scrapes a site, never probes a third-party server, and never installs a package that isn't already in the project's lockfile. Anything that would need a live call or a new package is marked **"untested"**, with the test it needs written out; that test becomes a spike task in the build, behind the same rules as any outside action.
 6. **Classify** the choice with the product-or-engineering rule (decision 7). If it changes what the user sees, does, pays or risks, or causes something irreversible outside the machine (money, messages to real people, posts, account bans), it needs product scrutiny: disclose the effect and write a **Recommendation** and hand it to intake as the default. Ask only for unknown user requirements; release, production and spending permissions wait for ship. Otherwise it's an engineering decision, and you make it.
 7. **Record it** as Adopt, Extend (wrap and add), Compose (combine several), or Build, in the form **Decision / Rationale / Alternatives** (or Recommendation / Rationale / Alternatives for a product question), with the price-check date and a re-evaluation trigger ("re-check if volume passes 300/month", "re-check if the free tier changes").
 8. **Plan to wrap it** behind the project's own interface, so the provider can be swapped. Note that for the spec.

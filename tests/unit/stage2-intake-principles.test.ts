@@ -6,7 +6,8 @@ const intake = () => read("skills/intake/SKILL.md");
 
 describe("general intake principles", () => {
   it("decides engineering without turning implementation policy into user questions", () => {
-    expect(intake()).toContain("fallback ordering, retention, idempotency of side effects, and suppression/opt-out for anyone the product messages");
+    expect(intake()).toContain("the mechanism for an outcome that the request, the project's rules, the law or the code already settle");
+    expect(intake()).toContain("never ask the user to design the mechanism");
     expect(intake()).toContain("Decide these yourself and record Decision / Rationale / Alternatives");
     expect(intake()).toContain("Ask only what only the user can answer");
   });

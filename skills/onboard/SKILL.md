@@ -44,7 +44,7 @@ Keep the map to one line per part, with its path. Link to files; don't copy them
 ## Conventions
 
 - **What a new teammate needs:** language and framework versions, the formatter and linter config, naming, folder patterns, the test framework and where tests sit, commit-message style from the history, the branch flow.
-- **Write each one with the file that shows it:** "tests sit beside the code as `*_test.go` (`internal/jobs/match_test.go`)".
+- **Write each one with the file that shows it:** "tests sit beside the code as `*_test.go` (`internal/catalog/search_test.go`)".
 - **They bind the cleanup tasks.** In an existing repo the repo's own stack and patterns win over the house stack (decision 33); a task never "modernizes" past them.
 
 ## Risks

@@ -71,7 +71,7 @@ Before any question, list assumptions with a confidence level (high, medium, low
 
 Every open decision is one or the other (decision 7):
 - **Product:** an unresolved outcome, workflow or constraint that only the user can supply. Ask only what only the user can answer. Effects on privacy, cost or outside actions must be visible in assumptions and trade-offs; they do not make every implementation choice a product question or grant permission to act.
-- **Engineering:** fallback ordering, retention, idempotency of side effects, and suppression/opt-out for anyone the product messages; also retries, schema, caching and test strategy. Decide these yourself and record Decision / Rationale / Alternatives with the class (Mechanical or Taste, decision 11), dependencies for Taste and reversibility. Follow project constraints, preserve existing data and honor opt-outs by default. Ask about an unknown personal or business requirement only when it changes the outcome; never ask the user to design the mechanism.
+- **Engineering:** the mechanism for an outcome that the request, the project's rules, the law or the code already settle: ordering and fallbacks, data lifetime, safe repeats of side effects, the safeguards a rule requires, retries, schema, caching and test strategy. Decide these yourself and record Decision / Rationale / Alternatives with the class (Mechanical or Taste, decision 11), dependencies for Taste and reversibility. Follow project constraints and preserve existing data by default. Ask about an unknown personal or business requirement only when it changes the outcome; never ask the user to design the mechanism.
 
 Never ask what the code, the register, the backlog or research already answers. Never ask the user to pick a library.
 
@@ -170,7 +170,7 @@ Use the bundled `references/intake-record.md` and fill every section. Read `refe
 
 - **Read the project's rules in full.** A grep can miss an ownership or scope rule; re-asking what the project settled is the classic failure.
 - **Seven is a cap, not a target.** Put consequential past-data effects in the veto list when the question cap is reached.
-- **"Where will you see it?" is usually a real question.** Agents skip the surface: which screen, notification or digest. If the request names no surface, ask.
+- **"Where will you see it?" is usually a real question.** Agents skip the surface: which screen, page or export. If the request names no surface, ask.
 - **Don't ask engineering questions to look careful.** Retry policies, schemas and libraries are yours to decide and log.
 - **Unconfirmed isn't confirmed.** Keep the label all the way to the report; the user may veto any of them in the morning.
-- **Never send anything outside the session and the runner.** Drafting is not sending.
+- **Never send anything outside the session and the runner.** Preparing an action is not permission to take it.

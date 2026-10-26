@@ -36,7 +36,7 @@ The runner accepts only `tasks` and an optional `notes` array at the top, and on
   "notes": ["Reuse the existing file store; add no dependencies."],
   "tasks": [{
     "id": "T1",
-    "title": "Save a item",
+    "title": "Save an item",
     "goal": "Persist one new item through the public CLI",
     "exitCondition": "AC1 passes for valid and invalid item names",
     "acceptanceCriteria": ["AC1"],

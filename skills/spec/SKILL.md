@@ -51,7 +51,7 @@ What goes in:
 - **Criteria** cover more than the happy path:
   - for a product with a UI, **the first-value budget** from the intake record (decision 55), as its own criterion: "WHEN a new user opens the app THE SYSTEM SHALL let them save their first catalogue item in 3 taps or fewer";
   - the empty, loading, error and offline states of each screen the stories touch (decision 53);
-  - every outside action through the broker, stated as behavior: "WHEN the user approves a draft THE SYSTEM SHALL send exactly that message, and nothing without approval";
+  - every outside action through the broker, stated as behavior: "WHEN the user approves a payment THE SYSTEM SHALL charge exactly the approved amount, and nothing without approval";
   - nothing vague: "fast", "intuitive", "secure" and "user-friendly" become numbers or observable behavior, or they come out.
 - **Assumptions:** every fixed constraint from research and every answer, then every default and every Jarvis choice a story depends on. Tasks cite them by ID, and a morning veto of one replans what depends on it.
 - **Open questions:** only what doesn't block the build, each with the default the build uses meanwhile. A blocking product question belongs in intake; if one turns up now, see the reader check.

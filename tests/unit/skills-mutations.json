@@ -404,7 +404,7 @@
   {
     "name": "skills intake drops the surface question",
     "file": "skills/intake/SKILL.md",
-    "anchor": "- **\"Where will you see it?\" is usually a real question.** Agents skip the surface: which screen, notification or digest. If the request names no surface, ask.\n",
+    "anchor": "- **\"Where will you see it?\" is usually a real question.** Agents skip the surface: which screen, page or export. If the request names no surface, ask.\n",
     "replacement": ""
   },
   {

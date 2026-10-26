@@ -41,7 +41,7 @@ No production code without a failing test first. For each acceptance criterion, 
 5. **Run it again and watch it pass,** with the tests around it, so you know nothing else broke.
 6. **Refactor only when green,** and stay green.
 
-Prefer real code over mocks. Mock only what is slow or outside the machine (a mail server, a paid API, the network), and then assert on what your code sends to the stub, not on the stub's behavior. Wrote code before its test? Delete it and start from the test: keeping it "as a reference" is testing after.
+Prefer real code over mocks. Mock only what is slow or outside the machine (a payment gateway, a paid API, the network), and then assert on what your code sends to the stub, not on the stub's behavior. Wrote code before its test? Delete it and start from the test: keeping it "as a reference" is testing after.
 
 Record each red and green in the notes: the test, the command and one line of the failure you saw. It's a claim; the runner sets it against its own evidence, and the false-done rate (decision 35) counts every claim the evidence contradicts.
 

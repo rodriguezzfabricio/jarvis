@@ -27,7 +27,11 @@ import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
 import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
-import { commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, reviewFixPlan, runReviewFixes, type ReviewFixPlan, type ReviewOutput } from "../runner/review-fix.ts";
+import {
+  commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordReport, reportsWritten, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
+  type ReviewFixPlan, type ReviewOutput,
+} from "../runner/review-fix.ts";
+import { fixAuthorization } from "../triage/authorize.ts";
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
@@ -101,10 +105,16 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
  */
 export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string): { output: ReviewOutput; fix: ReviewFixPlan | null } {
   // A tree path, not a pathspec: `HEAD:<file>` is never read as a pattern.
-  const output = readReviewOutput(repoPath, report, { inCheckout: (file) => { try { git(["cat-file", "-e", `HEAD:${file}`]); return true; } catch { return false; } } });
-  commitReportOnly(git, report, `review report ${report} (written by the review session)`);
+  const inHead = (file: string) => { try { git(["cat-file", "-e", `HEAD:${file}`]); return true; } catch { return false; } };
+  const output = readReviewOutput(repoPath, report, { inCheckout: inHead });
+  // The ungated report commit never replaces a file the run branch has, unless this pipeline wrote it (round 2).
+  const target = reportTargetProblem(report, inHead(report), reportsWritten(ledger.entries()));
+  if (target) throw new ReviewOutputError("report-refused", target);
+  const committed = commitReportOnly(git, report, `review report ${report} (written by the review session)`);
+  if (committed) recordReport(ledger, report, committed);
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
-  return { output, fix: reviewFixPlan(output, checks, existing) };
+  // The request's limits ride on the fix tasks; the run itself (`jarvis run --plan review`) is the user's go-ahead to fix.
+  return { output, fix: reviewFixPlan(output, checks, existing, fixAuthorization(output.request).limits) };
 }
 
 /** The build sessions' network allowlist: none. The same value goes to the harness and the phone approvals' isolation check. */

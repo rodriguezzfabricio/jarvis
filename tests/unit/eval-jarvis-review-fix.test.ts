@@ -213,6 +213,41 @@ describe("eval jarvis: a review that asks for fixes (golden task 3's shape)", ()
     expect(r.metrics.problems.join("\n")).toMatch(/review session also changed src\/citizen\.mjs; discarded/);
   });
 
+  it("hands a limit the request scoped to a named part to every fix task", async () => {
+    const fx = fixture();
+    const calls: RunLoopOptions[] = [];
+    const scoped = `${REQUEST.replace(/\.$/, "")}; make no changes to the public API.`;
+    const r = await runJarvis(reviewTask(fx, scoped, "03-scoped"), options(fx, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop(calls) }));
+    expect(r.outcome).toBe("complete");
+    const fixTask = created(calls[0]!.projectDir)[0]!;
+    expect(fixTask.goal).toContain("The request limits the fixes: \"make no changes to the public API\"");
+    expect(fixTask.exitCondition).toContain("keeps the request's limits: \"make no changes to the public API\"");
+  });
+
+  // Round 2 (high 4): the report commit is ungated, so it may never replace a file the snapshot already has.
+  it("refuses a report path the snapshot already has, before any session, and records the report it commits", async () => {
+    const fx = fixture();
+    put(fx.sourceRepo, "REVIEW.md", "# The project's own review notes\n");
+    git(fx.sourceRepo, fx.home, ["add", "--", "REVIEW.md"]);
+    git(fx.sourceRepo, fx.home, ["commit", "-q", "--no-verify", "-m", "notes"]);
+    addTask(fx, "03-existing", REQUEST, { revert: [fx.fixRev], rev: git(fx.sourceRepo, fx.home, ["rev-parse", "HEAD"]) });
+    addHidden(fx, "03-existing", "checks", { unit: [] });
+    addHidden(fx, "03-existing", "gate", { unit: [] });
+    const s = reviewer(writesReport);
+    const calls: RunLoopOptions[] = [];
+    const r = await runJarvis(loadTask(fx.evalsRepo, "03-existing"), options(fx, { harness: s.harness, runLoop: reviewFixLoop(calls) }));
+    expect(r.outcome).toBe("review-failed");
+    expect(r.error).toMatch(/REVIEW\.md would replace a file the base revision already has/);
+    expect(s.inputs).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+    expect(show(r.workspace, fx.home, r.finalCommit, "REVIEW.md")).toBe("# The project's own review notes");
+
+    const fresh = fixture();
+    const ok = await runJarvis(reviewTask(fresh), options(fresh, { harness: reviewer(writesReport).harness, runLoop: reviewFixLoop([]) }));
+    const records = Ledger.open(join(ok.resultsDir, "project")).entries().filter((e) => e.kind === "reconciled" && (e.data as { type?: string }).type === "review_report");
+    expect(records.map((e) => e.data)).toEqual([expect.objectContaining({ type: "review_report", path: "REVIEW.md", revision: ok.review!.reportRevision })]);
+  });
+
   it("a plain review still has no Jarvis build-loop arm: it stops before the preflight", async () => {
     const fx = fixture();
     let preflights = 0;

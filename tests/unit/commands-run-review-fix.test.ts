@@ -113,13 +113,35 @@ describe("jarvis run --plan review", () => {
     expect(again.loop.plan?.tasks.map((t) => t.id)).toEqual(["T2"]);
   });
 
-  it("leaves a report already committed as it stands", async () => {
+  it("records the report it commits, and leaves that report as it stands on the next run", async () => {
     const p = project();
-    git(p, ["add", "--", "REVIEW.md"]);
-    git(p, ["commit", "-q", "--no-verify", "-m", "review"]);
+    const first = await prepare(p);
     const head = git(p, ["rev-parse", "HEAD"]);
+    const records = Ledger.open(p.projectDir).entries().filter((e) => e.kind === "reconciled" && (e.data as { type?: string }).type === "review_report");
+    expect(records.map((e) => e.data)).toEqual([expect.objectContaining({ type: "review_report", path: "REVIEW.md", revision: head })]);
+    await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
     await prepare(p);
     expect(git(p, ["rev-parse", "HEAD"])).toBe(head);
+  });
+
+  // Round 2 (high 4): an ungated commit never replaces a file the base revision has, unless this pipeline wrote it.
+  it("refuses to replace a file the run branch already has that this pipeline didn't write", async () => {
+    const p = project();
+    git(p, ["add", "--", "REVIEW.md"]);
+    git(p, ["commit", "-q", "--no-verify", "-m", "the project's own review notes"]);
+    put(p.repoPath, "REVIEW.md", `${REPORT}\nMore.\n`);
+    const head = git(p, ["rev-parse", "HEAD"]);
+    expect(await refusal(prepare(p))).toMatch(/REVIEW\.md would replace a file the base revision already has/);
+    expect(git(p, ["rev-parse", "HEAD"])).toBe(head);
+    expect(socketsIn(p)).toEqual([]);
+  });
+
+  it("hands the request's scoped limits to the fix tasks", async () => {
+    const p = project(false);
+    put(p.repoPath, "REVIEW.md", REPORT);
+    put(p.repoPath, REVIEW_FINDINGS_FILE, FINDINGS.replace(REQUEST, "Review the adder and fix the real problems; make no changes to the public API."));
+    const run = await prepare(p);
+    expect(run.loop.plan?.tasks[0]!.goal).toContain("The request limits the fixes: \"make no changes to the public API\"");
   });
 
   it("refuses to start when the review session wrote no report, or a symlinked one, and hosts nothing", async () => {
@@ -191,9 +213,9 @@ describe("jarvis run --report", () => {
   }
 
   it("passes a checked report path to the run, only with --plan review, before the probe", async () => {
-    const ok = await cli(["--plan", "review", "--report", "docs/security-review.md"]);
+    const ok = await cli(["--plan", "review", "--report", "docs/review-security.md"]);
     expect(ok.error).toBeUndefined();
-    expect(ok.contexts).toEqual([expect.objectContaining({ planKind: "review", reviewReport: "docs/security-review.md" })]);
+    expect(ok.contexts).toEqual([expect.objectContaining({ planKind: "review", reviewReport: "docs/review-security.md" })]);
     for (const args of [["--plan", "review", "--report", "CMakeLists.txt"], ["--plan", "review", "--report", "../REVIEW.md"], ["--plan", "review", "--report", "[C]MakeLists.md"], ["--report", "REVIEW.md"], ["--plan", "sweep", "--report", "REVIEW.md"]]) {
       const r = await cli(args);
       expect(r.error?.message ?? "no error", args.join(" ")).toMatch(/--report/);

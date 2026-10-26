@@ -45,7 +45,7 @@ function reviewed(findings = [finding("F1"), finding("F2", { file: "src/server.m
 describe("review report path (decision 126)", () => {
   it("accepts plain repo-relative text files, REVIEW.md by default", () => {
     expect(DEFAULT_REVIEW_REPORT).toBe("REVIEW.md");
-    for (const ok of ["REVIEW.md", "docs/review.md", "SECURITY-REVIEW.markdown", "notes/review.txt"]) expect(reportPathProblem(ok), ok).toBeUndefined();
+    for (const ok of ["REVIEW.md", "docs/review.md", "REVIEW-2.markdown", "notes/review.txt"]) expect(reportPathProblem(ok), ok).toBeUndefined();
   });
   it("refuses a path outside the checkout, inside runner or git metadata, or not a text report", () => {
     for (const bad of ["../REVIEW.md", "/tmp/REVIEW.md", "docs/../../x.md", "./REVIEW.md", ".git/REVIEW.md", ".jarvis/REVIEW.md", ".JARVIS/x.md", "a//b.md", "REVIEW", "review.sh", "src\\x.md", "x:y.md", "", `${"a/".repeat(120)}x.md`]) {
@@ -64,7 +64,16 @@ describe("review report path (decision 126)", () => {
     ]) {
       expect(reportPathProblem(bad), bad).toBeDefined();
     }
-    for (const ok of ["REVIEW.md", "docs/security-review.md", "review.txt", "notes/audit-findings.txt", "reports/2026-10-26.md"]) expect(reportPathProblem(ok), ok).toBeUndefined();
+    for (const ok of ["REVIEW.md", "docs/review-security.md", "review.txt", "notes/audit-findings.txt", "reports/2026-10-26.md", "outreach-review.markdown"]) expect(reportPathProblem(ok), ok).toBeUndefined();
+  });
+
+  // Round 2 (high 4): a reserved stem with any suffix, in any case, is still the file an agent or tool reads.
+  it("refuses every name that starts with a reserved stem, with any suffix and in any case", () => {
+    for (const bad of [
+      "CLAUDE.local.md", "AGENTS.override.md", "claude.MD", "Agents-notes.md", "agent.md", "GEMINI.local.md", "copilot.md", "Codex.md", "cursor-notes.md", "windsurf.md", "cline.md",
+      "SKILL-x.md", "skills.md", "MEMORY.md", "README-old.md", "readme.txt", "CHANGELOG.1.md", "LICENSE-review.md", "SECURITY-REVIEW.markdown", "docs/security-review.md", "DESIGN.v2.md", "product-review.md",
+      "team-instructions.md", "my-rules.md", "RULES.md", "review-rules.md", "system-prompt.md", "prompts.md",
+    ]) expect(reportPathProblem(bad), bad).toBeDefined();
   });
 });
 
@@ -275,6 +284,15 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
     expect(low.goal).toMatch(/[Ii]f you can't confirm it, change nothing/);
     expect(low.exitCondition).toMatch(/low-confidence finding that can't be confirmed is left unchanged/);
     expect(fix.plan.tasks[0]!.goal).not.toMatch(/low confidence/i);
+  });
+
+  it("carries the request's limits into every fix task's goal and exit condition (the reviewer checks it)", () => {
+    const limited = reviewFixPlan(out, [{ name: "unit" }], [], ["make no changes to the public API"])!;
+    for (const t of limited.plan.tasks) {
+      expect(t.goal).toContain("The request limits the fixes: \"make no changes to the public API\"");
+      expect(t.exitCondition).toContain("keeps the request's limits: \"make no changes to the public API\"");
+    }
+    expect(fix.plan.tasks[0]!.goal).not.toMatch(/limits the fixes/);
   });
 
   it("numbers its tasks after the ledger's own, and keeps the id of a task it already planned", () => {

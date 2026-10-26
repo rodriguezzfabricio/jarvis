@@ -1,6 +1,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, writeSync, type Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { scanTrifecta, type TrifectaSignal } from "../security/trifecta.ts";
 import { readPlanningFile } from "./checks-author.ts";
 import { BUG_EXIT_CONDITION, PlanSchema, type Plan, type PlanTask } from "./plan.ts";
@@ -224,7 +225,7 @@ export interface ReviewFixPlan {
  * task's own gate, review and promotion. One false or stuck finding blocks only itself. Findings in one
  * file may overlap; the loop merges a candidate onto a moved head and checks it again, or redoes it.
  */
-export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = []): ReviewFixPlan | null {
+export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = [], limits: readonly string[] = []): ReviewFixPlan | null {
   if (!checks.some((c) => c.name === "unit")) throw new Error("a review's fix tasks need an installed unit check (decision 114's bug exit condition)");
   if (!output.findings.length) return null;
   // Ids follow the ledger's tasks, because the loop never re-creates an id it already has. A task with this exact
@@ -233,7 +234,7 @@ export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: str
   let next = Math.max(0, ...existing.map((t) => (/^T([1-9]\d*)$/.exec(t.id) ? Number(t.id.slice(1)) : 0)));
   const fresh = () => { do next++; while (used.has(`T${next}`)); used.add(`T${next}`); return `T${next}`; };
   const tasks = output.findings.map((f) => {
-    const body = fixTask(output, f, "T1");
+    const body = fixTask(output, f, "T1", limits);
     const same = existing.find((t) => t.goal === body.goal && t.exitCondition === body.exitCondition);
     return { ...body, id: same?.id ?? fresh() };
   });
@@ -251,7 +252,11 @@ export function fixExitCondition(f: Pick<ReviewFinding, "id" | "file" | "line">)
   return `${f.id} (${f.file}:${f.line}) is confirmed in the code before anything changes; a low-confidence finding that can't be confirmed is left unchanged, with the reason in the notes. If ${f.id} is real: ${BUG_EXIT_CONDITION} The report is ${f.id} above. If it isn't real (no reachable path produces it, or the code already handles it), no file changes, and the unit check and code review pass.`;
 }
 
-function fixTask(o: ReviewOutput, f: ReviewFinding, id: string): PlanTask {
+/** The request's scoped limits ("make no changes to the public API"), quoted; empty when it set none. */
+const quoteLimits = (limits: readonly string[]) => limits.map((l) => `"${l.replace(/\s*[\r\n]+\s*/g, " ").slice(0, 300)}"`).join("; ");
+
+function fixTask(o: ReviewOutput, f: ReviewFinding, id: string, limits: readonly string[]): PlanTask {
+  const limited = limits.length ? quoteLimits(limits) : undefined;
   const goal = [
     `Fix finding ${f.id} from the review in ${o.report}, if it is real.`,
     `The request, as typed: ${o.request.slice(0, 6000)}`,
@@ -261,10 +266,14 @@ function fixTask(o: ReviewOutput, f: ReviewFinding, id: string): PlanTask {
     `Proposed fix (the review's claim): ${f.fix}`,
     "The finding is the review session's claim, not evidence. Confirm it before you change anything: trace the code path it names from a real input, and reproduce the problem with a failing test where the project can run one. Then fix its root cause on every path that produces it, not only the line it names.",
     ...(f.confidence === "low" ? ["This finding has low confidence: the review couldn't confirm it. Change code for it only once you have confirmed it. If you can't confirm it, change nothing and say why in your notes."] : []),
+    // The request's own limits on the fixes (triage/authorize.ts): a part of the product no file boundary can express.
+    ...(limited ? [`The request limits the fixes: ${limited}. Keep every change within them; a finding that can only be fixed by breaking a limit is left unchanged, with the reason in your notes.`] : []),
     `Don't edit ${o.report}: the runner records what happened to each finding there after the fixes.`,
   ].join("\n");
   return {
-    id, title: `${f.id}: ${f.title}`.slice(0, 120), goal, exitCondition: fixExitCondition(f),
+    id, title: `${f.id}: ${f.title}`.slice(0, 120), goal,
+    // The exit condition is the reviewer's criterion, so the reviewer checks the limits too.
+    exitCondition: `${fixExitCondition(f)}${limited ? ` Every change keeps the request's limits: ${limited}.` : ""}`,
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: SEVERITY_RANK[f.severity], requiredChecks: ["unit"], requiredReviews: ["code"],
   };
 }
@@ -337,6 +346,34 @@ export async function runReviewFixes(r: ReviewFixRun): Promise<{ fixes: LoopResu
 }
 
 // ---- The report in the main checkout -----------------------------------------------------------------
+
+/** The ledger record of a report this pipeline committed (decision 126): only such a file may be replaced later. */
+export const REVIEW_REPORT_RECORD = "review_report";
+
+/** The report paths this pipeline committed on this project, from the runner's own records. */
+export function reportsWritten(entries: readonly LedgerEntry[]): Set<string> {
+  const paths = new Set<string>();
+  for (const e of entries) {
+    const d = e.data as { type?: unknown; path?: unknown } | null;
+    if (e.actor === "runner" && e.kind === "reconciled" && d?.type === REVIEW_REPORT_RECORD && typeof d.path === "string") paths.add(d.path);
+  }
+  return paths;
+}
+
+/**
+ * Why the report may not go to `report`, or undefined (Codex security review, round 2). The report commit is never
+ * gated, so it may never replace a file the base revision already has (an agent's instructions, a build input,
+ * the project's own notes), unless this pipeline wrote that file before. A new file, REVIEW.md included, is fine.
+ */
+export function reportTargetProblem(report: string, existsAtBase: boolean, written: ReadonlySet<string>): string | undefined {
+  if (existsAtBase && !written.has(report)) return `the report ${report} would replace a file the base revision already has, which this pipeline didn't write: name a new report file`;
+  return undefined;
+}
+
+/** Records a committed report, so a later run of this pipeline may update it. */
+export function recordReport(ledger: Pick<Ledger, "append">, report: string, revision: string): void {
+  ledger.append({ kind: "reconciled", actor: "runner", data: { type: REVIEW_REPORT_RECORD, path: report, revision } });
+}
 
 /**
  * Commits the report and nothing else, on the checkout's current branch; undefined when it is already committed

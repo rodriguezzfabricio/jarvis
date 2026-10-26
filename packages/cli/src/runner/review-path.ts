@@ -21,10 +21,15 @@ export function repoPathProblem(path: string, max = 1000): string | undefined {
 }
 
 /**
- * Markdown names that something other than a person reads: package builds (README, CHANGELOG, LICENSE), agent
- * harnesses (AGENTS, CLAUDE, GEMINI and the like), Jarvis's own skills and product files, and repository policy.
+ * Name stems that something other than a person reads, matched as a prefix with any suffix and in any case
+ * (Codex security review, round 2: `CLAUDE.local.md`, `AGENTS.override.md`): agent and tool instructions (CLAUDE,
+ * AGENTS, GEMINI, COPILOT, CODEX, CURSOR, WINDSURF, CLINE, AIDER, WARP, MEMORY), Jarvis's skills and product
+ * files (SKILL, DESIGN, PRODUCT), package builds (README, CHANGELOG, HISTORY, LICENSE, COPYING, NOTICE), and
+ * repository policy (SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CODEOWNERS, CONVENTIONS).
  */
-const READ_BY_TOOLS = /^(?:readme|changelog|history|license|licence|copying|notice|agents|claude|gemini|copilot-instructions|conventions|design|product|skill|security|contributing|code_of_conduct|codeowners)(?:\.[a-z]+)?$/i;
+const RESERVED_STEM = /^(?:claude|agent|gemini|copilot|codex|cursor|windsurf|cline|aider|warp|memory|skill|design|product|readme|changelog|history|license|licence|copying|notice|security|contributing|code[_-]of[_-]conduct|codeowners|conventions)/i;
+/** Words in a name that mark instructions for a tool, wherever they appear. */
+const RESERVED_WORD = /(?:instruction|rules|prompt)/i;
 /** A .txt report must say what it is, so it can never be a build or config input such as requirements.txt or CMakeLists.txt. */
 const TXT_REPORT = /(?:review|finding|report|audit)/i;
 
@@ -33,7 +38,8 @@ const TXT_REPORT = /(?:review|finding|report|audit)/i;
  * without a gate, so it may only be a plain .md, .markdown or .txt file that nothing but a person reads:
  * - no git pattern characters ([ ] { } ! * ?), so a pathspec can't widen it to other files;
  * - no hidden folder or file (tool configuration lives there), and not Jarvis's approved specs (docs/spec/);
- * - no Markdown name that builds, agents or Jarvis read (README, CLAUDE.md, DESIGN.md …);
+ * - no name that starts with a stem builds, agents, tools or Jarvis read (README*, CLAUDE*, AGENTS*, DESIGN* …),
+ *   or holds "instruction", "rules" or "prompt";
  * - a .txt report's name says review, finding, report or audit.
  */
 export function reportPathProblem(path: string): string | undefined {
@@ -45,7 +51,7 @@ export function reportPathProblem(path: string): string | undefined {
   if (parts.some((p) => p.startsWith("."))) return "the report can't be in a hidden folder or be a hidden file (tool configuration lives there)";
   if (/^docs\/spec\//i.test(path)) return "the report can't be in docs/spec/, where Jarvis's approved specs live";
   const name = parts.at(-1)!;
-  if (READ_BY_TOOLS.test(name)) return `the report can't be ${name}: builds, agents or Jarvis read files with that name`;
+  if (RESERVED_STEM.test(name) || RESERVED_WORD.test(name)) return `the report can't be ${name}: builds, agents, tools or Jarvis read files named like that`;
   if (/\.txt$/i.test(name) && !TXT_REPORT.test(name)) return "a .txt report's name must say review, finding, report or audit, so it can't be a build or config input";
   return undefined;
 }

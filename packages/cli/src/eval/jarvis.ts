@@ -10,7 +10,7 @@ import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type 
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { PLAN_NOTES, planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import {
-  commitReportOnly, readReviewOutput, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
+  commitReportOnly, readReviewOutput, recordReport, reportsWritten, reportTargetProblem, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
   type FindingOutcome, type ReviewOutput,
 } from "../runner/review-fix.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
@@ -475,7 +475,10 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     if (pipeline === "single-task") plan = singleTaskPlan(t, request, Object.keys(gate.checks).map((name) => ({ name })));
     else if (pipeline === "review-fix") {
       // Decision 126: the review session writes the report in its checkout; the runner commits it, then fixes each finding.
-      const step = await runReviewStep({ harness, ledger, routing, tier, runId, task, request, report: reportPath!, security: t.review?.security ?? false, p, baseRevision });
+      // The ungated report commit may never replace a file the snapshot already has: checked before any session (round 2).
+      const target = reportTargetProblem(reportPath!, inRevision(p.workspace, baseRevision, reportPath!, p.home), reportsWritten(ledger.entries()));
+      const step: ReviewStepResult = target ? { kind: "failed", reason: `${target}; no review session was started`, sessions: 0 }
+        : await runReviewStep({ harness, ledger, routing, tier, runId, task, request, report: reportPath!, security: t.review?.security ?? false, p, baseRevision });
       plannerSessions = step.sessions;
       if (step.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = step.until ?? Math.floor(Date.now() / 1000) + 3600; }
       else if (step.kind === "failed") { outcome = "review-failed"; error = step.reason; log(`${task.id} ${runId}: ${step.reason}`); }
@@ -483,9 +486,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
         problems.push(...step.problems);
         const output = { ...step.output, request }; // the runner's copy of the request, not the session's
         const committed = commitReport(p.workspace, output.report, output.reportText, p.home);
-        if (committed) baseRevision = committed;
+        if (committed) { baseRevision = committed; recordReport(ledger, output.report, committed); }
         reviewed = { report: output.report, reportRevision: committed ?? null, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
-        const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })));
+        const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })), [], t.review?.limits ?? []);
         if (!fix) { outcome = "complete"; log(`${task.id} ${runId}: the review found nothing to fix; the report is the deliverable`); }
         else {
           for (const id of Object.values(fix.taskOf)) fixTasks.add(id);

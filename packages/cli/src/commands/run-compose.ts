@@ -22,11 +22,12 @@ import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
-import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from "../review/index.ts";
+import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
-import type { LoopPlan, RunLoopOptions } from "../runner/loop.ts";
-import { planTasks, readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
+import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
+import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
+import { readReviewOutput, reviewFixPlan, reviewReportOf, runReviewFixes, type ReviewFixPlan, type ReviewOutput } from "../runner/review-fix.ts";
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
@@ -65,6 +66,47 @@ export interface ReviewDeps {
   spec: ApprovedSpec | undefined;
   git: (args: readonly string[]) => string;
   preflight: () => Promise<boolean>;
+  /** `jarvis run --plan review` (decision 126): the request and the fix tasks, reviewed against their finding with the bug brief. */
+  reviewFix?: { request: string; tasks: ReadonlyMap<string, PlanTask>; bugTasks: ReadonlySet<string> };
+}
+
+/**
+ * What a reviewer gets for one task (decision 88). A review's fixes and its report update have no spec
+ * criteria: their spec is the request, the goal and the exit condition, and a fix task is a bug fix,
+ * reviewed against its finding (decisions 114, 126).
+ */
+export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: string): ReviewMaterial {
+  const task = rebuildState(deps.ledger.entries(), { now: Date.now() }).tasks[taskId];
+  // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
+  const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
+  if (deps.reviewFix) {
+    const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);
+    return {
+      repoPath: deps.context.repoPath, baseRevision, tier: 1,
+      spec: `Request, as typed: ${deps.reviewFix.request}\nGoal: ${def?.goal ?? "-"}\nExit condition: ${def?.exitCondition ?? "-"}`,
+      acceptanceCriteria: def?.exitCondition ? [def.exitCondition] : [],
+      ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: "bug" as const } : {}),
+    };
+  }
+  return { repoPath: deps.context.repoPath, baseRevision, tier: 1, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
+}
+
+/**
+ * `jarvis run --plan review` (decision 126): the interactive review session wrote its report and
+ * .jarvis/review/findings.json in the checkout. Both are read with the bounded no-follow reader (no report,
+ * a symlink or a path outside the checkout refuses the run before anything is hosted). The runner commits
+ * the report on the run branch, since every fix starts from it and promotion needs a clean checkout, and
+ * plans one bug task per finding after the ledger's own tasks.
+ */
+export function reviewRunFor(repoPath: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string): { output: ReviewOutput; fix: ReviewFixPlan | null } {
+  const report = reviewReportOf(repoPath);
+  const output = readReviewOutput(repoPath, report, { inCheckout: (file) => { try { git(["cat-file", "-e", `HEAD:${file}`]); return true; } catch { return false; } } });
+  if (git(["status", "--porcelain", "--untracked-files=all", "--", report]) !== "") {
+    git(["add", "--", report]);
+    git(["commit", "-q", "--no-verify", "-m", `review report ${report} (written by the review session)`, "--", report]);
+  }
+  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
+  return { output, fix: reviewFixPlan(output, checks, existing) };
 }
 
 /** The build sessions' network allowlist: none. The same value goes to the harness and the phone approvals' isolation check. */
@@ -97,6 +139,7 @@ export function runBranchOf(git: (args: readonly string[]) => string): string {
 
 /** Plan input: an explicitly named session plan, else the architect's .jarvis/plan.json, else the ledger's tasks. */
 export function planFor(repoPath: string, kind: SessionPlanKind | undefined, spec: ApprovedSpec | undefined, checks: readonly AuthoredCheck[]): Plan | undefined {
+  if (kind === "review") throw new Error("a review's fixes are planned by reviewRunFor, not read as a plan");
   if (kind) return readSessionPlan(repoPath, kind, checks);
   if (!existsSync(join(repoPath, ".jarvis", "plan.json"))) return undefined;
   if (!spec) throw new Error(".jarvis/plan.json needs an approved spec (docs/spec/vN.md) on the run branch");
@@ -116,10 +159,13 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   if (!checks.length) throw new Error("no approved protected checks: approve the checks before running");
   const runBranch = runBranchOf(git);
   const spec = approvedSpec(git, runBranch);
-  const plan = planFor(context.repoPath, context.planKind, spec, checks);
+  // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
+  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, ledger, checks, git) : undefined;
+  const plan = reviewRun ? reviewRun.fix?.plan : planFor(context.repoPath, context.planKind, spec, checks);
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
-  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, git, preflight });
+  const reviewFix = reviewRun?.fix ? { request: reviewRun.output.request, tasks: new Map(reviewRun.fix.plan.tasks.map((t) => [t.id, t])), bugTasks: new Set(Object.values(reviewRun.fix.taskOf)) } : undefined;
+  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
   const notifications = runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
@@ -156,8 +202,19 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
   };
   approvals.start();
+  const fix = reviewRun?.fix ?? null;
   return {
     loop,
+    // A review's fixes, then the report update with what the runner's records say happened (decision 126).
+    ...(reviewRun && fix ? {
+      drive: async (run: (options: RunLoopOptions) => Promise<RunLoopResult>) => (await runReviewFixes({
+        output: reviewRun.output, fix,
+        runFixes: () => run(loop),
+        runUpdate: (task) => run({ ...loop, plan: { tasks: [task] } }),
+        state: () => rebuildState(ledger.entries(), { now: Date.now() }),
+        changedFiles: (revision) => git(["diff", "--name-only", "-z", `${revision}^1`, revision]).split("\0").filter(Boolean),
+      })).update,
+    } : {}),
     // The broker stops taking requests first; then the poller flushes the last ones to the phone and stops.
     close: async () => {
       try { await hosted.close(); }
@@ -186,12 +243,7 @@ function defaultReview(deps: ReviewDeps): RunLoopOptions["review"] {
     ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot, routing: DEFAULT_REVIEW_ROUTING,
     claude: createClaudeReviewer({ jarvisHome: deps.context.jarvisHome, workRoot: deps.workRoot, cacheRoot: deps.cacheRoot, preflight: async () => ({ ok: await deps.preflight() }) }),
     codex: createCodexReviewer(),
-    resolveMaterial: async (request) => {
-      const task = rebuildState(deps.ledger.entries(), { now: Date.now() }).tasks[request.taskId];
-      // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
-      const baseRevision = deps.git(["rev-parse", "--verify", `${request.revision}^1`]);
-      return { repoPath: deps.context.repoPath, baseRevision, tier: 1, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
-    },
+    resolveMaterial: async (request) => reviewMaterialFor(deps, request.taskId, request.revision),
   });
   return async (input) => {
     // The service reviews as "code" only: another named reviewer gets no recorded verdict, so the loop blocks the task.

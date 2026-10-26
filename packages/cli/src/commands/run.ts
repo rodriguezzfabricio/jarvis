@@ -24,6 +24,11 @@ export interface PreparedRun {
   close(): Promise<void>;
   /** The finished notification: the loop's result, or undefined when it threw. Never throws. */
   finished(result: RunLoopResult | undefined): Promise<void>;
+  /**
+   * A run in phases (a review's fixes, then its report update; decision 126): drives the loop itself and
+   * returns the last phase's result. Absent: the loop runs once on `loop`.
+   */
+  drive?(loop: (options: RunLoopOptions) => Promise<RunLoopResult>): Promise<RunLoopResult>;
 }
 export interface DetachedChild {
   pid?: number | undefined;
@@ -78,7 +83,7 @@ async function hosted(run: PreparedRun, loop: (options: RunLoopOptions) => Promi
   let result: RunLoopResult | undefined;
   let failed = false;
   try {
-    result = await loop(run.loop);
+    result = run.drive ? await run.drive(loop) : await loop(run.loop);
     return result;
   } catch (error) {
     failed = true;

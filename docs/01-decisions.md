@@ -1001,6 +1001,14 @@ QA follow-up 1 (Codex) builds the Tauri app as a protected gate case, then had t
 So golden task 12 reports a built, verified bundle with native smoke **not run**, as decision 18 already requires when a native test isn't possible.
 *From:* the Opus review of QA follow-up 1 (lane `qa-2`), Oct 25.
 
+### 128. A candidate's bundle is copied from verified descriptors, at most 2 GiB and 200,000 entries (new; Oct 26; the qa-backlog lane and its Opus review, backlog 89; tightens 76 and 102; Fabricio can veto)
+- **Each file is copied from the descriptor that was checked.** `materializeTree` opens a source with `O_NOFOLLOW` and requires the descriptor to be the regular file it stat'ed (device and inode). On macOS a second open with `O_NOFOLLOW_ANY` (the two flags can't be combined) must reach the same file, so a parent directory swapped for a link, even one that swaps back, is refused; on Linux `/proc/self/fd` must resolve inside the tree. Other platforms are refused. Bytes and the hash come from that descriptor, and a size, mtime or ctime change during the copy is an error.
+- **A copy has caps.** 2 GiB and 200,000 entries by default (directories and expanded internal links count; the destination root doesn't), and exceeding either is an error that removes the partial copy. The Chrome for Testing bundle (356 MB, 641 entries) copies to 852 files and 1.1 GB once its framework links are expanded (measured Oct 26 with this copier, 48 s under load).
+- **The desktop capture passes its approved checkout** (`sourceRoot`), so the copier re-checks containment itself rather than trusting the capture's earlier check.
+- **The copier stays in `lanes/materialize.ts`.** The design checks copy that file and `chromium-install.ts` into their protected fixtures by name, so a new module behind it would break the installed copy.
+
+*From:* the Codex qa-backlog lane (gpt-6.1-sol) and the Opus review, which kept the copier in place, added the capture test, and ran the worker test under the real sandbox runtime.
+
 ### 103. The security pass's scanners run pinned and offline, with an explicitly fetched, hashed OSV snapshot (new; Oct 25; the integrator after the Opus review of the security-pins lane; Fabricio can veto; tightens 17)
 - **Pins.** Semgrep 1.182.0, OSV-Scanner 2.7.0 and gitleaks 8.28.0, by absolute path (`pinnedSecurityScanners` in `config/pins.ts`), each version-checked before every scan. OSV prints its own version and OSV-Scalibr's; only the labelled scanner line counts.
 - **Semgrep gets exactly `SSL_CERT_FILE=/etc/ssl/cert.pem`.** In a clean environment 1.182.0 won't start without it (`ca-certs: empty trust anchors`). Only that fixed path is accepted; inherited certificate or proxy variables never are.

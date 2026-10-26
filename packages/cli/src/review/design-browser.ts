@@ -28,12 +28,15 @@ function planOf(raw: DesignBrowserPlan): DesignBrowserPlan {
 
 /** Run only as a protected gate case, inside its sandbox. Actions are runner-approved data, never page instructions. */
 export async function observeDesign(raw: DesignBrowserPlan, runtime: BrowserRuntime): Promise<DesignBrowserObservation> {
-  const plan=planOf(raw), browser=await runtime.launch();
+  const plan=planOf(raw);
   const capture:DesignCapture={designId:plan.designId,pages:[],flows:[]}, web:WebObservation[]=[];
-  try {
-    for(const flow of plan.flows) {
-      const observation:WebObservation={kind:"qa-browser",url:localTarget(flow.finalUrl??flow.url),pages:[]};
-      for(const width of [375,768,1440] as const) {
+  for(const flow of plan.flows) {
+    const observation:WebObservation={kind:"qa-browser",url:localTarget(flow.finalUrl??flow.url),pages:[]};
+    for(const width of [375,768,1440] as const) {
+      // One Chromium per page: the gate's Chromium runs --single-process (srt has no Mach rendezvous), and a
+      // single-process browser dies when asked for a second page (decision 125).
+      const browser=await runtime.launch();
+      try {
         const page=await browser.newPage({viewport:{width,height:900},reducedMotion:"reduce"}) as DesignPage;
         try {
           await page.goto(localTarget(flow.url),{waitUntil:"networkidle",timeout:30_000});
@@ -54,11 +57,11 @@ export async function observeDesign(raw: DesignBrowserPlan, runtime: BrowserRunt
           capture.pages.push({screen:flow.screen,flow:flow.id,width,url:page.url(),visibleText,accessibilityTree,screenshot});
           observation.pages.push({width,url:page.url(),accessibilityTree,screenshot,axe:frames.frames[0]!.axe,...frames});
         } finally { await page.close(); }
-      }
-      capture.flows.push({id:flow.id,status:"pass"}); web.push(observation);
+      } finally { await browser.close(); }
     }
-    return {kind:"design-browser",capture,web};
-  } finally { await browser.close(); }
+    capture.flows.push({id:flow.id,status:"pass"}); web.push(observation);
+  }
+  return {kind:"design-browser",capture,web};
 }
 
 /** Runner/isolated-verifier side: bind the observation to the protected plan and reuse the QA assertions. */

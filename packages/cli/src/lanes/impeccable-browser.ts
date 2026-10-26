@@ -35,10 +35,12 @@ export async function scanImpeccableBrowser(input: ImpeccableBrowserInput, scan:
   if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) throw new Error("invalid runner CDP port");
   const tools = verifyQaToolchain(input.manifest, input.manifestHash, input.repo);
   const chromium = runtime ?? (createRequire(input.manifest)(tools.playwrightModule) as {chromium: ImpeccableBrowserRuntime}).chromium;
-  const browser = await chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: ["--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${input.port}`]});
   const pages: ImpeccableUrlObservation["pages"] = [];
-  try {
-    for (const width of [375, 768, 1440]) {
+  for (const width of [375, 768, 1440]) {
+    // One Chromium per viewport, single-process: srt has no Mach rendezvous for a multi-process Chromium, and a
+    // single-process browser dies when asked for a second page (decision 125, as loadBrowserRuntime does).
+    const browser = await chromium.launch({headless: true, executablePath: tools.chromiumExecutable, args: ["--single-process", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${input.port}`]});
+    try {
       const page = await browser.newPage({viewport: {width, height: 900}, reducedMotion: "reduce"});
       try {
         await page.goto(url, {waitUntil: "networkidle", timeout: 30_000});
@@ -46,7 +48,7 @@ export async function scanImpeccableBrowser(input: ImpeccableBrowserInput, scan:
         await ownCdpPage(page,input.port,runtime?.targets??cdpTargets);
         pages.push({width, result: await scan({kind: "url", port: input.port, url})});
       } finally { await page.close(); }
-    }
-    return {kind: "impeccable-url", pages};
-  } finally { await browser.close(); }
+    } finally { await browser.close(); }
+  }
+  return {kind: "impeccable-url", pages};
 }

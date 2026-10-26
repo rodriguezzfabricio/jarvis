@@ -9,10 +9,13 @@ function fixture() {
   const page = {goto: async (target: string) => {url=target;}, url: () => url, close: pageClose,
     locator: () => ({click,fill,press,ariaSnapshot:async()=>"button Add habit",innerText:async()=>"Saved habit",isVisible:async()=>true}),
     screenshot: async () => Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64"), frames: () => [], context: () => ({newCDPSession: vi.fn()})};
-  const close = vi.fn(async () => {}), newPage = vi.fn(async () => page);
-  const runtime = {launch: async () => ({newPage,close}), axeSource:"fake axe"};
+  const close = vi.fn(async () => {}), newPage = vi.fn(async (_options?: unknown) => page);
+  // Pages opened in each launched browser: the gate's Chromium runs --single-process, which dies on a second page.
+  const pagesPerBrowser: number[] = [];
+  const launch = vi.fn(async () => { const index = pagesPerBrowser.push(0) - 1; return {newPage: async (options: unknown) => { pagesPerBrowser[index]!++; return newPage(options); }, close}; });
+  const runtime = {launch, axeSource:"fake axe"};
   const plan = {designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[{action:"fill" as const,selector:"input",value:"Read"},{action:"click" as const,selector:"button"}],expectText:"Saved habit"}]};
-  return {plan,runtime,click,fill,press,pageClose,close,newPage,page};
+  return {plan,runtime,click,fill,press,pageClose,close,newPage,page,launch,pagesPerBrowser};
 }
 describe("runner design flows", () => {
   it("drives each named flow at 375/768/1440, captures real page data and verifies accessibility", async () => {
@@ -20,8 +23,16 @@ describe("runner design flows", () => {
     expect(f.fill).toHaveBeenCalledTimes(3); expect(f.click).toHaveBeenCalledTimes(3);
     expect(raw.capture.pages.map(p=>p.width)).toEqual([375,768,1440]);
     expect(raw.capture.pages[0]!.visibleText).toBe("Saved habit");
-    expect(f.close).toHaveBeenCalledOnce(); expect(f.pageClose).toHaveBeenCalledTimes(3);
+    expect(f.close).toHaveBeenCalledTimes(3); expect(f.pageClose).toHaveBeenCalledTimes(3);
     expect(verifyDesignObservation(raw,f.plan,"4.14.0").designId).toBe("one");
+  });
+  it("launches one Chromium per page, because the gate's Chromium is single-process (decision 125)", async () => {
+    const f=fixture(); f.plan.flows.push({...f.plan.flows[0]!,id:"second",screen:"history"});
+    const raw=await observeDesign(f.plan,f.runtime);
+    expect(raw.capture.pages).toHaveLength(6);
+    expect(f.launch).toHaveBeenCalledTimes(6);
+    expect(f.pagesPerBrowser).toEqual([1,1,1,1,1,1]);
+    expect(f.close).toHaveBeenCalledTimes(6); expect(f.pageClose).toHaveBeenCalledTimes(6);
   });
   it("fails failed flow expectations and closes resources", async () => {
     const f=fixture(); f.plan.flows[0]!.expectText="Not here";

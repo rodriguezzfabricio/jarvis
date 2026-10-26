@@ -8,22 +8,26 @@ function setup() {
   const close = vi.fn(async () => {}), pageClose = vi.fn(async () => {});
   let url = "";
   const context=()=>({newCDPSession:async()=>({send:async()=>({targetInfo:{targetId:"runner-target"}}),detach:async()=>{}})});
-  const newPage = vi.fn(async () => ({goto: vi.fn(async (target: string) => {url = target;}), url: () => url, close: pageClose,context}));
-  const launch = vi.fn(async () => ({newPage, close}));
+  const newPage = vi.fn(async (_options?: unknown) => ({goto: vi.fn(async (target: string) => {url = target;}), url: () => url, close: pageClose,context}));
+  // Pages opened in each launched browser: srt needs --single-process, and that Chromium dies on a second page.
+  const pagesPerBrowser: number[] = [];
+  const launch = vi.fn(async (_options: {headless: boolean; executablePath: string; args: string[]}) => { const index = pagesPerBrowser.push(0) - 1; return {newPage: async (options: unknown) => { pagesPerBrowser[index]!++; return newPage(options); }, close}; });
   const scan = vi.fn(async () => ({status: "pass" as const, findings: []}));
   const input = {repo: "/checkout", manifest: "/protected/manifest.json", manifestHash: "a".repeat(64), url: "http://127.0.0.1:3000/", port: 9222};
   const targets=vi.fn(async()=>[{id:"runner-target",type:"page",url:input.url}]);
-  return {input, launch, scan, close, pageClose, newPage,context,targets};
+  return {input, launch, scan, close, pageClose, newPage,context,targets,pagesPerBrowser};
 }
 describe("runner browser and Impeccable", () => {
   it("uses verified Chromium, CDP loopback binding, three viewports and closes every resource", async () => {
     const f = setup(); const result = await scanImpeccableBrowser(f.input, f.scan, {launch: f.launch,targets:f.targets});
     expect(verifyQaToolchain).toHaveBeenCalledWith(f.input.manifest, f.input.manifestHash, f.input.repo);
-    expect(f.launch).toHaveBeenCalledWith({headless: true, executablePath: "/protected/chromium", args: ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9222"]});
+    expect(f.launch).toHaveBeenCalledWith({headless: true, executablePath: "/protected/chromium", args: ["--single-process", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9222"]});
+    // One Chromium per viewport (decision 125): each launched browser opens exactly one page.
+    expect(f.launch).toHaveBeenCalledTimes(3); expect(f.pagesPerBrowser).toEqual([1, 1, 1]);
     expect(f.newPage.mock.calls.map(args => (args as unknown as [{viewport: {width: number}}])[0].viewport.width)).toEqual([375, 768, 1440]);
     expect(f.scan.mock.calls).toHaveLength(3);
     expect(result.pages.map(p => p.width)).toEqual([375, 768, 1440]);
-    expect(f.pageClose).toHaveBeenCalledTimes(3); expect(f.close).toHaveBeenCalledOnce();
+    expect(f.pageClose).toHaveBeenCalledTimes(3); expect(f.close).toHaveBeenCalledTimes(3);
     expect(verifyImpeccableObservation(result, "url")).toEqual({status: "pass", findings: []});
   });
   it("closes the browser on scanner crash and refuses redirects before scanning", async () => {

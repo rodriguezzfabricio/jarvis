@@ -77,9 +77,13 @@ describe("e2e: jarvis run on the production composition", { timeout: 600_000 }, 
     expect(existsSync(join(p.projectDir, "outbox")) ? readdirSync(join(p.projectDir, "outbox")) : []).toEqual([]); // nothing executed without approval
 
     // Fabricio hears about the blocked task and the finished run; nothing failed to deliver.
-    expect(sent.map((m) => m.kind)).toEqual(["blocked", "finished"]);
+    // The pending send also reaches the phone as an approval request (decision 117), naming the request and the action.
+    expect(sent.map((m) => m.kind)).toEqual(["blocked", "approval", "finished"]);
     expect(sent[0]!.text).toMatch(/T3.*blocked.*required check unavailable: lint/);
-    expect(sent[1]!.text).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
+    const req = requests[0]!.data as { approvalId: string; payloadHash: string };
+    expect(sent[1]!.text).toContain(`request ${req.approvalId}, payload ${req.payloadHash.slice(0, 12)}`);
+    expect(sent[1]!.text).toMatch(/approve email\.send\?.*jane@example\.com/);
+    expect(sent[2]!.text).toMatch(/run blocked.*2\/3 done.*1 blocked/s);
     expect(warnings).toEqual([]);
 
     // The broker was the run's: no socket name is left behind.

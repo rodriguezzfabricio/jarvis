@@ -55,8 +55,7 @@ it("ships every referenced bundled template, matching the canonical format", () 
     for (const match of text.matchAll(/`(templates\/[A-Za-z0-9._/-]+)`/g)) {
       const relative = match[1]!; const path = join("plugin/skills", entry.name, relative);
       expect(existsSync(path), path).toBe(true);
-      const withoutComments = (text: string) => text.replace(/<!--[\s\S]*?-->/g, "");
-      expect(withoutComments(readFileSync(path, "utf8")), path).toBe(withoutComments(readFileSync(relative, "utf8"))); count++;
+      expect(readFileSync(path, "utf8"), path).toBe(readFileSync(relative, "utf8")); count++;
     }
   }
   expect(count).toBeGreaterThanOrEqual(3);

@@ -78,8 +78,7 @@ describe("bundled skill templates are the canonical templates", () => {
     ["skills/spec/templates/spec.md", "templates/spec.md"],
     ["skills/design/templates/DESIGN.md", "templates/DESIGN.md"],
   ])("%s matches %s", (bundled, canonical) => {
-    // Instructional examples may differ; the filled document contract must stay identical.
-    const withoutComments = (text: string) => text.replace(/<!--[\s\S]*?-->/g, "");
-    expect(withoutComments(read(bundled))).toBe(withoutComments(read(canonical)));
+    // Byte for byte, comments included (decision 120): a comment's example is what the session reads.
+    expect(read(bundled)).toBe(read(canonical));
   });
 });

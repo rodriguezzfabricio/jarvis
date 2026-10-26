@@ -294,7 +294,8 @@ jarvis/
 │       ├── triage/           # classification signals, pipelines
 │       └── eval/             # snapshots, baseline runs, results
 ├── plugin/                   # Claude Code plugin: commands/, agents/, hooks/, output-styles/, skills → ../skills
-├── skills/                   # the 14 skills, standard format, each with evals/ and a gotchas section
+├── skills/                   # the 14 skills, standard format, each with a gotchas section
+├── evals/skills/             # each skill's evals, outside the plugin so no session can read them (decision 132)
 ├── templates/                # AGENTS.md block, spec, PRODUCT.md, DESIGN.md, decisions.md, report
 ├── stacks/                   # house-stack starters and their known-traps lists
 └── tests/                    # unit + integration (fake `claude` binary), safety tests, fault injection

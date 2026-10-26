@@ -220,5 +220,11 @@
     "file": "skills/intake/SKILL.md",
     "anchor": "the mechanism for an outcome that the request, the project's rules, the law or the code already settle",
     "replacement": "anything the user has not decided"
+  },
+  {
+    "name": "stage2 r3 repo template comment drifts from the bundled copy",
+    "file": "templates/spec.md",
+    "anchor": "No automatic deletion: docs/storage.md:12 requires an explicit removal action",
+    "replacement": "No archive export: docs/storage.md:12 keeps exports manual"
   }
 ]

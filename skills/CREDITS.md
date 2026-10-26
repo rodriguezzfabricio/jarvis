@@ -44,6 +44,37 @@ SOFTWARE.
   - `sweep`: the pattern of a scheduled sweep that reports and proposes instead of editing.
 - **What changed:** ideas only, rewritten for Jarvis; no text or code was copied, so no license notice is reproduced. Learnings go to Jarvis's memory files through the CLI instead of a `docs/solutions/` folder, need a runner-written source (decision 49), and a lesson seen twice becomes a rule the user approves (decision 28).
 
+## gitleaks default rules
+
+- **Source:** https://github.com/gitleaks/gitleaks/blob/v8.28.0/config/gitleaks.toml, by Zachary Rice and the gitleaks contributors.
+- **License:** MIT (notice below; also in `packages/cli/src/security/gitleaks-LICENSE`).
+- **Used in:** the security pass behind the `security` skill. `packages/cli/src/security/gitleaks.toml` is the default config embedded in the pinned gitleaks 8.28.0 binary (all 217 rules).
+- **What changed:** the global `paths` allowlist and three path-scoped rule allowlists were removed, so dependency folders, lockfiles and images are scanned too (backlog 105). Rules and value-based allowlists are unchanged. The runner passes it with `--config`; it is never read from the candidate tree.
+
+```
+MIT License
+
+Copyright (c) 2019 Zachary Rice
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Ideas only (no text copied)
 
 - **OpenAI, "harness engineering" post:** an `AGENTS.md` of about 100 lines used as a table of contents into `docs/`, which is the system of record, and recurring cleanup agents. Used in `onboard` (the `AGENTS.md` cleanup task) and `sweep`.

@@ -1115,6 +1115,14 @@ Vitest 5.0.5 rewrites the stack of every error raised in a `.rejects`/`.resolves
 - **So the launcher refuses without input isolation.** `NativeSandboxDeps.isolateInput` is required with no default; without it native smoke stays "not run". The verified remedy (a helper that spawns with a disclaimed TCC responsibility, `responsibility_spawnattrs_setdisclaim`, a private API, plus a per-run input canary) is backlog 111 and needs Fabricio's go before it ships.
 *From:* the Opus review of the Codex native-launch lane (backlog 87); backlog 110 (gate hook), 111 (input isolation), 112 (bundle defects).
 
+### 119. Axe fails on what a change adds; the QA browser is single-process, one per viewport; hidden checks install as clones (new; Oct 26; the stage 4 fixes lane and its review, found building golden task 06; changes 54's "zero serious issues"; the integrator may renumber; Fabricio can veto)
+- **Axe is compared with the starting revision.** An existing app can have serious issues of its own (FreeHire's `/jobs` has 7 contrast nodes), and "zero serious issues" failed every UI change to it. The runner records the serious and critical violations of the base revision from its own run in the sandbox (rule, impact and selector, per viewport and frame position), and the check fails on a violation that record lacks, or on a rule with more nodes than before. Severity going up counts as new.
+- **No baseline means today's strict rule,** and a baseline that doesn't match the URL and the pinned axe version fails the check. A baseline is a process-local handle made only by `recordWebBaseline` from the runner's base observation; nothing in a candidate's output or files can make one. Incomplete results and findings with no impact still fail, and a base run that has them records no baseline. Across verify processes the base observation lives in the approved checks (`checks/expected/axe-base.json`, outside `fixtures/`). Wiring that capture into the runner is backlog 130.
+- **The QA Chromium launches with `--single-process`** (`lanes/toolchain.ts`), because srt has no Mach registration allowance and a normal Chromium dies at its `MachPortRendezvousServer` bootstrap inside the gate. A single-process browser takes one page, so `observeWeb` launches and closes one browser per viewport. The installer's smoke launch runs outside the sandbox and can't catch either; `JARVIS_BROWSER_LIVE=1` runs the real observation inside `runSandboxed`.
+- **Hidden checks install as APFS clones.** Node 24.21 cannot clone on macOS (`cpSync`'s `COPYFILE_FICLONE` mode is ignored, and `copyFileSync` with it does a full copy), so `installHiddenChecks` runs `/bin/cp -cR` and falls back to Node's copy if cp fails. A Go task's ~1 GB module cache and task 06's 2.8 GB of fixtures no longer land in every grade folder. The hashes of the installed copy are still checked against the source.
+*Why:* each was found by the real machine and none was visible in the lane's fakes: the lane's clone option copied everything, and its single-process browser could not take a second viewport.
+*From:* the Codex stage 4 fixes lane (gpt-6.1-sol) and its Sonnet review; backlog 130 (baseline wiring), 131 (baseline edges), 132 (single-process).
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice
@@ -1332,7 +1340,7 @@ These run as part of the QA lane (decision 45) on every UI change:
 | AI-tells scan | `npx impeccable detect --json` (62 rules, no AI model involved; exit code 2 means findings; Apache-2.0) | Most of the table in decision 53, on web pages and local files |
 | Off-palette values | Tailwind `@theme` reset, plus Biome's `noTailwindArbitraryValue` or eslint-plugin-tailwindcss `no-arbitrary-value`; for React Native, `no-color-literals` and `no-inline-styles` | Raw colors and one-off sizes that bypass the tokens |
 | Token sanity | `npx @google/design.md lint` | Broken token references and failing contrast ratios |
-| Accessibility | axe-core: zero serious issues; keyboard and focus checks | WCAG 2.2 AA problems |
+| Accessibility | axe-core: zero serious issues (on an app that already has some, none the change adds, decision 119); keyboard and focus checks | WCAG 2.2 AA problems |
 | Behavior | Playwright (web) and Maestro (mobile) interaction tests | Flows that look right but don't work |
 | Regressions | Playwright screenshot baselines on the same machine | Unintended visual changes |
 | Copy | A small Jarvis script | Banned phrases, buttons that say "Submit" instead of the action, validation errors that apologize, more than one primary button on a screen |

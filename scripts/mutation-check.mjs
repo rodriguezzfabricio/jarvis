@@ -167,6 +167,7 @@ const mutations = [
   ["partial mutation runs pass as the gate", "scripts/mutation-classify.mjs", "  const exitCode = partial ? 4 : 0;", "  const exitCode = 0;"],
   // Vitest shows every error in a .rejects/.resolves chain as "Error: <message>"; only the reporter's name record tells an assertion from a runtime error.
   ["promise-chain errors count without their recorded name", "scripts/mutation-classify.mjs", '  return promiseErrors?.[promiseErrorKey(message)] === "AssertionError";', "  return true;"],
+  ["promise-chain wording outranks the recorded name", "scripts/mutation-classify.mjs", "  if (!VITEST_PROMISE_FRAME.test(message)) return false;\n", "  if (!VITEST_PROMISE_FRAME.test(message)) return false;\n  if (/instead of (rejecting|resolving)$/.test(first)) return true;\n"],
   ["reporter records no promise-chain error names", "scripts/unhandled-reporter.mjs", "promiseErrors: promiseErrorNames(modules) }", "promiseErrors: {} }"],
   ["reporter trusts one of two names for a shared message", "scripts/unhandled-reporter.mjs", 'names[key] = key in names && names[key] !== name ? "conflicting names" : name;', "names[key] = name;"],
   // Review 16 lane D, Codex (docs/reviews/review16-d-mutations.json).

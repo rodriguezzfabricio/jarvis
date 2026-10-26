@@ -18,9 +18,11 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(classify(fail, r, control, ended()).kind).toBe("caught");
   });
 
-  it("counts a failed .rejects expectation as caught", () => {
-    const r = report([t("a", "failed", ['Error: promise resolved "{ x: 1 }" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)']), t("b", "passed")]);
-    expect(classify(fail, r, control, ended()).kind).toBe("caught");
+  it("counts a failed .rejects expectation as caught when the reporter recorded an AssertionError", () => {
+    const m = 'Error: promise resolved "{ x: 1 }" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)';
+    const r = report([t("a", "failed", [m]), t("b", "passed")]);
+    expect(classify(fail, r, control, { ...ended(), promiseErrors: { [promiseErrorKey(m)]: "AssertionError" } }).kind).toBe("caught");
+    expect(classify(fail, r, control, ended()).kind).toBe("error");
   });
 
   it("treats timeouts as errors, not catches", () => {
@@ -74,9 +76,24 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     expect(classify(ok, report([t("a", "failed", ["AssertionError: x"]), t("b", "passed")]), control, ended()).kind).toBe("error");
   });
 
-  it("requires the .rejects message and Vitest's assertion frame together", () => {
-    expect(isAssertionFailure('Error: promise resolved "x" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)')).toBe(true);
-    expect(isAssertionFailure('Error: promise resolved "x" instead of rejecting\n    at somewhere (file:///x)')).toBe(false);
+  it("requires Vitest's assertion frame and the recorded AssertionError together for a .rejects failure", () => {
+    const framed = 'Error: promise resolved "x" instead of rejecting\n    at _Assertion.__VITEST_REJECTS__ (file:///x)';
+    const unframed = 'Error: promise resolved "x" instead of rejecting\n    at somewhere (file:///x)';
+    expect(isAssertionFailure(framed, { [promiseErrorKey(framed)]: "AssertionError" })).toBe(true);
+    expect(isAssertionFailure(framed)).toBe(false);
+    expect(isAssertionFailure(unframed, { [promiseErrorKey(unframed)]: "AssertionError" })).toBe(false);
+  });
+
+  // Codex review of the promise-chain classifier, high: a runtime error whose message merely ends like
+  // Vitest's own ("… instead of resolving") counted as an assertion although its record said TypeError.
+  it("never lets the 'instead of rejecting/resolving' wording outrank the recorded name", () => {
+    for (const m of ["Error: failed instead of resolving\n    at _Assertion.__VITEST_REJECTS__ (file:///x)", "Error: failed instead of rejecting\n    at _Assertion.__VITEST_RESOLVES__ (file:///x)"]) {
+      const asTypeError = { [promiseErrorKey(m)]: "TypeError" };
+      expect(isAssertionFailure(m, asTypeError)).toBe(false);
+      const r = report([t("a", "failed", [m]), t("b", "passed")]);
+      expect(classify(fail, r, control, { ...ended(), promiseErrors: asTypeError }).kind).toBe("error");
+      expect(classify(fail, r, control, ended()).kind).toBe("error");
+    }
   });
 
   // Vitest rewrites the stack of any error raised in a .rejects/.resolves chain to "Error: <message>" under
@@ -121,13 +138,18 @@ describe("mutation classification (Codex reviews 2, 3)", () => {
     const wrongRejection = messages("rejects with the wrong error");
     const multiLine = messages("rejects with a multi-line error where it should resolve");
     const runtime = messages("throws a runtime error inside a .rejects matcher");
+    const resolvedInstead = messages("resolves where it should reject");
+    const runtimeSuffix = messages("throws a runtime error that ends like Vitest's own message");
+    const all = [...wrongRejection, ...multiLine, ...runtime, ...resolvedInstead, ...runtimeSuffix];
     // Vitest hides every one of them behind "Error: ".
-    for (const m of [...wrongRejection, ...multiLine, ...runtime]) expect(m).toMatch(/^Error: /);
+    for (const m of all) expect(m).toMatch(/^Error: /);
     expect(wrongRejection.length > 0 && wrongRejection.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
     expect(multiLine.length > 0 && multiLine.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
+    expect(resolvedInstead.length > 0 && resolvedInstead.every((m) => isAssertionFailure(m, end.promiseErrors))).toBe(true);
     expect(runtime.length > 0 && runtime.some((m) => isAssertionFailure(m, end.promiseErrors))).toBe(false);
+    expect(runtimeSuffix.length > 0 && runtimeSuffix.some((m) => isAssertionFailure(m, end.promiseErrors))).toBe(false);
     // Without the reporter's record none of them counts, and the run as a whole is an error (a runtime error).
-    expect([...wrongRejection, ...multiLine, ...runtime].some((m) => isAssertionFailure(m))).toBe(false);
+    expect(all.some((m) => isAssertionFailure(m))).toBe(false);
     expect(classify({ status: 1, signal: null }, rep, testIds(rep), end).kind).toBe("error");
   }, 60_000);
 

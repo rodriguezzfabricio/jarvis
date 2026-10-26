@@ -15,18 +15,19 @@ export function promiseErrorKey(message) {
 }
 
 /**
- * True only for a completed assertion: Chai/Vitest's AssertionError, or Vitest's own .rejects/.resolves
- * assertion (its message AND its _Assertion stack frame). No matcher-name substrings: a
+ * True only for a completed assertion: Chai/Vitest's AssertionError, or a failure inside a .rejects/
+ * .resolves chain that the reporter recorded as one. No matcher-name substrings: a
  * "TypeError: expect(...).toBe is not a function" is a runtime error (Codex review 4).
- * Inside a .rejects/.resolves chain Vitest shows every error as "Error: <message>", a failed matcher and a
- * runtime error alike, so there only the reporter's record of the error's real name (`promiseErrors`,
- * from the run-end record) can make it an assertion.
+ * Inside a .rejects/.resolves chain Vitest shows every error as "Error: <message>" under its own frame, a
+ * failed matcher and a runtime error alike, so there only the reporter's record of the error's real name
+ * (`promiseErrors`, from the run-end record) can make it an assertion. Not even Vitest's own wording
+ * ("… instead of rejecting/resolving") counts without that record: a runtime error can end the same way
+ * (decision 115; Codex review of the promise-chain classifier).
  */
 export function isAssertionFailure(message, promiseErrors) {
   const first = message.split("\n")[0] ?? "";
   if (/^AssertionError\b/.test(first)) return true;
   if (!VITEST_PROMISE_FRAME.test(message)) return false;
-  if (/instead of (rejecting|resolving)$/.test(first)) return true;
   return promiseErrors?.[promiseErrorKey(message)] === "AssertionError";
 }
 

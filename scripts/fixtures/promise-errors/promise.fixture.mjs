@@ -13,3 +13,13 @@ it("throws a runtime error inside a .rejects matcher", async () => {
     throw new TypeError("a runtime error, not an assertion");
   });
 });
+
+it("resolves where it should reject", async () => {
+  await expect(Promise.resolve(1)).rejects.toThrow();
+});
+
+it("throws a runtime error that ends like Vitest's own message", async () => {
+  await expect(Promise.reject(new Error("refused"))).rejects.toSatisfy(() => {
+    throw new TypeError("failed instead of resolving");
+  });
+});

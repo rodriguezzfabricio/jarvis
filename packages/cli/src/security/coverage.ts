@@ -3,7 +3,8 @@ import { basename, extname, join, resolve } from "node:path";
 
 // Matches the protected JS/TS, Python and Go rules, including Node's module extensions.
 const extensions = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".py", ".pyi", ".go"]);
-const interpreters = /^(?:node|nodejs|js|ts-node|python(?:[23](?:\.\d+)?)?)$/;
+// Node-ecosystem runners (tsx, bun, deno, npx) execute JS/TS too; pinned Semgrep skips every extensionless file.
+const interpreters = /^(?:node|nodejs|js|ts-node(?:-esm)?|tsx|bun|deno|npx|python(?:[23](?:\.\d+)?)?|pypy3?)$/;
 const invalid = (): never => { throw Error("Invalid scanner output"); };
 
 /** Skip metadata is checked with the required positive coverage evidence, never instead of it. */
@@ -30,9 +31,9 @@ function coveredShebang(path: string): boolean {
     const words = text.split("\n", 1)[0]!.slice(2).trim().split(/\s+/);
     const command = basename(words.shift() ?? "");
     if (command !== "env") return interpreters.test(command);
-    // env -S splits the interpreter and its flags; executable bits do not affect coverage.
-    if (words[0] === "-S" || words[0] === "--split-string") words.shift();
-    return interpreters.test(basename(words[0] ?? ""));
+    // env takes options (-S, -i, -u NAME), NAME=value pairs and wrappers (pnpm exec) before the interpreter,
+    // so any later word naming a covered runner counts; executable bits do not affect coverage.
+    return words.some((word) => interpreters.test(basename(word)));
   } finally { closeSync(fd); }
 }
 

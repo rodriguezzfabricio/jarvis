@@ -610,5 +610,17 @@
     "file": "packages/cli/src/security/coverage.ts",
     "anchor": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return invalid();",
     "replacement": "if (!output.paths || typeof output.paths !== \"object\" || Array.isArray(output.paths)) return [];"
+  },
+  {
+    "name": "security coverage: tsx, bun, deno and npx shebangs not detected",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "|tsx|bun|deno|npx|",
+    "replacement": "|"
+  },
+  {
+    "name": "security coverage: env options and wrappers hide the interpreter",
+    "file": "packages/cli/src/security/coverage.ts",
+    "anchor": "return words.some((word) => interpreters.test(basename(word)));",
+    "replacement": "return interpreters.test(basename(words[words[0] === \"-S\" ? 1 : 0] ?? \"\"));"
   }
 ]

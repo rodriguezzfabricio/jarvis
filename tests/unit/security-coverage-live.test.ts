@@ -10,7 +10,7 @@ const enabled = process.env.JARVIS_SECURITY_LIVE === "1";
 it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/semgrep"))("live Semgrep cannot silently pass eval in mts and extensionless Node scripts", async () => {
   const root = mkdtempSync(join(tmpdir(), "security-coverage-live-"));
   try {
-    for (const [name, prefix] of [["app.mts", ""], ["script", "#!/usr/bin/env -S node --no-warnings\n"]]) {
+    for (const [name, prefix] of [["app.mts", ""], ["script", "#!/usr/bin/env -S node --no-warnings\n"], ["seed", "#!/usr/bin/env tsx\n"]]) {
       const checkout = join(root, name! + "-checkout"); mkdirSync(checkout);
       writeFileSync(join(checkout, name!), `${prefix}eval(input);\n`, { mode: 0o600 });
       const result = await runScanner("semgrep", pinnedSecurityScanners().semgrep, checkout, { timeoutMs: 45_000 });

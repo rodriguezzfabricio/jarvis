@@ -27,6 +27,18 @@ it.each(["#!/usr/bin/env node", "#!/usr/bin/node", "#!/usr/bin/env -S node --no-
     expect(await scan(root)).toMatchObject({ status: "error", detail: 'semgrep coverage missing: ["script"]' });
   }
 });
+// Opus review: pinned Semgrep skips these too (verified live), and TypeScript scripts usually run through tsx.
+it.each([
+  "#!/usr/bin/env tsx", "#!/usr/local/bin/tsx", "#!/usr/bin/env bun", "#!/usr/bin/env deno run", "#!/usr/bin/env -S npx tsx",
+  "#!/usr/bin/env -S pnpm exec tsx", "#!/usr/bin/env -S NODE_OPTIONS=--no-warnings node", "#!/usr/bin/env -i node", "#!/usr/bin/env ts-node-esm",
+  "#!/usr/bin/env python3.12", "#!/usr/bin/env pypy3",
+])("detects the Node and Python runner in shebang %s", async (shebang) => {
+  const root = setup({ script: `${shebang}\neval(input);\n` });
+  expect(await scan(root)).toMatchObject({ status: "error", detail: 'semgrep coverage missing: ["script"]' });
+});
+it.each(["#!/bin/sh", "#!/usr/bin/env bash", "#!/usr/bin/env -S bash -e", "#!/usr/bin/env ruby", "#!/usr/bin/env node-other"])("does not count shebang %s as covered", async (shebang) => {
+  expect(await scan(setup({ script: `${shebang}\necho\n` }))).toMatchObject({ status: "pass" });
+});
 it("accepts complete coverage with relative, dot-relative and absolute reported paths", async () => {
   const root = setup({ "a.mts": "", "nested/b.cts": "", script: "#!/usr/bin/env -S node --no-warnings\n" });
   expect(await scan(root, { scanned: ["./a.mts", "nested/b.cts", join(root, "script")] })).toMatchObject({ status: "pass" });

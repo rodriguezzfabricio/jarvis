@@ -28,7 +28,7 @@ function redactPayload(value: unknown, key = ""): unknown {
 }
 
 /** JSON with every invisible, direction-changing or unusual space character written as its \u escape:
- * dropping them would print `paypal` for `pay​pal`. Still valid JSON for the same values. */
+ * dropping them would print `paypal` for `pay\u200bpal`. Still valid JSON for the same values. */
 function visibleJson(value: unknown): string {
   return JSON.stringify(value, null, 2).replace(/(?! )[\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Co}\p{Cn}]/gu,
     (c) => [...Array(c.length).keys()].map((i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join(""));

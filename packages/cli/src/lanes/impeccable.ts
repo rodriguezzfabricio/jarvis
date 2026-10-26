@@ -1,4 +1,5 @@
-import { statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { GateCheck } from "../checks/gate.ts";
@@ -16,7 +17,10 @@ export interface ImpeccableOptions {
   /** Required: the runner's sandboxed process adapter. No unrestricted default. */
   spawn: (spec: SessionSpec) => Promise<SessionOutcome>;
   isFile?: (path: string) => boolean;
+  /** Test seam; production hashes the engine file before every run. */
+  hashFile?: (path: string) => string;
 }
+const fileSha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const Finding = z.object({ antipattern: z.string().min(1).max(256), severity: z.string().min(1).max(32).optional(), message: z.string().max(8192).optional() }).passthrough();
 export type ImpeccableFinding = z.infer<typeof Finding>;
 export interface ImpeccableResult { status: "pass" | "fail" | "error"; findings: ImpeccableFinding[]; error?: string }
@@ -48,10 +52,12 @@ export function impeccableArguments(repo: string, target: ImpeccableTarget): str
 
 export async function runImpeccable(options: ImpeccableOptions, target: ImpeccableTarget): Promise<ImpeccableResult> {
   try {
-    if (!isAbsolute(options.repo) || !isAbsolute(options.pin.bin) || !/^\d+\.\d+\.\d+$/.test(options.pin.version)) throw new Error("Impeccable requires an absolute engine pin and exact version");
+    if (!isAbsolute(options.repo) || !isAbsolute(options.pin.bin) || !/^\d+\.\d+\.\d+$/.test(options.pin.version) || !/^[a-f0-9]{64}$/.test(options.pin.sha256)) throw new Error("Impeccable requires an absolute engine pin, exact version and sha256");
     if (typeof options.spawn !== "function") throw new Error("sandboxed scanner adapter is required");
     const args = impeccableArguments(options.repo, target);
     if (!(options.isFile ?? (path => statSync(path).isFile()))(options.pin.bin)) throw new Error("pinned Impeccable is missing");
+    // The exact engine file, not only a binary that prints the right version (decision 124).
+    if ((options.hashFile ?? fileSha256)(options.pin.bin) !== options.pin.sha256) throw new Error("pinned Impeccable engine sha256 differs from its pin");
     const common = { bin: options.pin.bin, cwd: options.repo, env: { PATH: "/usr/bin:/bin", DO_NOT_TRACK: "1", IMPECCABLE_NO_TELEMETRY: "1" }, timeoutMs: 120_000, maxOutputBytes: IMPECCABLE_OUTPUT_BYTES };
     const version = await options.spawn({ ...common, args: ["--version"] });
     if (version.code !== 0 || version.timedOut || version.overflowed || version.stdout.trim() !== `${options.pin.version}+engine`) throw new Error("pinned Impeccable version check failed");

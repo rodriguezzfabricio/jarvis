@@ -25,8 +25,33 @@ describe("Impeccable protocol", () => {
 describe("pinned sandbox scanner", () => {
   function setup(version = "0.1.16+engine\n") {
     const spawn = vi.fn(async (s: SessionSpec) => s.args[0] === "--version" ? outcome(version) : outcome());
-    return { repo: "/checkout", pin, spawn, isFile: () => true };
+    return { repo: "/checkout", pin, spawn, isFile: () => true, hashFile: (_path: string) => pin.sha256 };
   }
+  it("refuses an engine file whose hash differs from the pin before running anything (decision 124)", async () => {
+    const options = { ...setup(), hashFile: () => "f".repeat(64) };
+    const result = await runImpeccable(options, { kind: "source", files: ["a.tsx"] });
+    expect(result).toMatchObject({ status: "error", error: expect.stringContaining("sha256") });
+    expect(options.spawn).not.toHaveBeenCalled();
+    const unpinned = setup();
+    expect((await runImpeccable({ ...unpinned, pin: { ...pin, sha256: "" } }, { kind: "source", files: ["a.tsx"] })).status).toBe("error");
+    expect(unpinned.spawn).not.toHaveBeenCalled();
+  });
+  it("hashes the pinned engine file itself by default", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { createHash } = await import("node:crypto");
+    const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "impeccable-pin-"));
+    try {
+      const bin = join(dir, "impeccable"); writeFileSync(bin, "engine bytes");
+      const sha256 = createHash("sha256").update("engine bytes").digest("hex");
+      const { hashFile: _seam, ...options } = setup();
+      expect((await runImpeccable({ ...options, isFile: undefined as never, pin: { ...pin, bin, sha256 } }, { kind: "source", files: ["a.tsx"] })).status).toBe("pass");
+      writeFileSync(bin, "swapped engine");
+      const swapped = setup(); const { hashFile: _unused, ...rest } = swapped;
+      expect((await runImpeccable({ ...rest, isFile: undefined as never, pin: { ...pin, bin, sha256 } }, { kind: "source", files: ["a.tsx"] })).status).toBe("error");
+      expect(swapped.spawn).not.toHaveBeenCalled();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it("checks the absolute engine pin before scanning only named changed files without inline ignores", async () => {
     const options = setup();
     expect((await runImpeccable(options, { kind: "source", files: ["src/App.tsx", "src/style.css"] })).status).toBe("pass");

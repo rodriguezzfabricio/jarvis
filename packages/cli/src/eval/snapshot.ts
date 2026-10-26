@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { isUtf8 } from "node:buffer";
 import { createHash, createPrivateKey } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import { parse as parseToml } from "smol-toml";
@@ -971,6 +972,22 @@ function walk(dir: string, root: string, out: string[] = []): string[] {
   return out.sort();
 }
 
+/**
+ * Unpacks a tar archive (git archive's output) into `dest`. From a private file, not a pipe: tar stops
+ * reading at the end-of-archive marker, before git archive's padding, so writing the rest into a pipe
+ * could fail with EPIPE on a loaded machine.
+ */
+export function extractArchive(tar: Buffer, dest: string): void {
+  const dir = mkdtempSync(join(tmpdir(), "jarvis-archive-"));
+  try {
+    const file = join(dir, "source.tar");
+    writeFileSync(file, tar, { mode: 0o600 });
+    execFileSync("tar", ["-x", "-f", file, "-C", dest], { maxBuffer: 1024 ** 3 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export async function createSnapshot(input: SnapshotInput): Promise<SnapshotManifest> {
   const { dest } = input;
   if (existsSync(dest) && readdirSync(dest).length > 0) throw new Error(`snapshot destination must be empty: ${dest}`);
@@ -983,8 +1000,7 @@ export async function createSnapshot(input: SnapshotInput): Promise<SnapshotMani
     if (!input.rev) throw new Error("rev is required with sourceRepo");
     sourceRev = safeGit(input.sourceRepo, ["rev-parse", `${input.rev}^{commit}`], { home }).toString().trim();
     // Only tracked files at that revision: untracked .env files never leave the source repo.
-    const tar = safeGit(input.sourceRepo, ["archive", "--format=tar", sourceRev], { home });
-    execFileSync("tar", ["-x", "-f", "-", "-C", dest], { input: tar, maxBuffer: 1024 ** 3 });
+    extractArchive(safeGit(input.sourceRepo, ["archive", "--format=tar", sourceRev], { home }), dest);
     for (const c of input.revert ?? []) {
       const full = safeGit(input.sourceRepo, ["rev-parse", `${c}^{commit}`], { home }).toString().trim();
       const patch = safeGit(input.sourceRepo, ["diff", "--binary", `${full}^`, full], { home });

@@ -14,7 +14,7 @@ function setup(files: Record<string, string> = {}) {
 }
 async function scan(root: string, paths: unknown = { scanned: [] }, extra = {}) {
   const pin = pinnedSecurityScanners().semgrep!;
-  return runScanner("semgrep", pin, root, { spawn: async (spec) => ({ code: 0, timedOut: false, overflowed: false, durationMs: 0, stderr: "", stdout: spec.args.includes("--version") ? pin.version : JSON.stringify({ results: [], errors: [], paths, ...extra }) }) });
+  return runScanner("semgrep", pin, root, { spawn: async (spec) => ({ code: 0, timedOut: false, overflowed: false, durationMs: 0, stderr: "", stdout: spec.args.includes("--version") ? pin.version : JSON.stringify(spec.cwd === root ? { results: [], errors: [], paths, ...extra } : { results: [], errors: [], paths: { scanned: [] } }) }) });
 }
 
 it.each(["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "py", "pyi", "go"])("rejects an unreported covered .%s file", async (ext) => {

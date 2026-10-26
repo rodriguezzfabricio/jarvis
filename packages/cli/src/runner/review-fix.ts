@@ -188,7 +188,7 @@ export function reviewStepPrompt(i: ReviewStepPromptInput): string {
  * The runner's evidence for a security review step, from a checkout no session has touched yet: the
  * static lethal-trifecta detector (security/trifecta.ts; a trigger, not proof). The protected scanners
  * (gitleaks, semgrep, osv-scanner) run only as gate checks recorded against a task, so the review step
- * says they didn't run rather than imply a clean scan (backlog 133).
+ * says they didn't run rather than imply a clean scan (backlog 160).
  */
 export function reviewStepEvidence(root: string, security: boolean): string[] {
   if (!security) return [];

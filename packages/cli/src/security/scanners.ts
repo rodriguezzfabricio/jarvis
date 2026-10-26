@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { runSession, type SessionSpec, type SessionOutcome } from "../proc/session.ts";
 import { semgrepCoverage, semgrepScannedPaths } from "./coverage.ts";
-import { offlineArgs, osvCacheReady, reportedScannerVersion } from "./offline.ts";
+import { offlineArgs, osvCacheReady, osvCacheAgeError, reportedScannerVersion } from "./offline.ts";
+import { withMappedSemgrep } from "./mapped.ts";
 import { scannerEnvironment, withScannerRuntime, type ScannerRuntime } from "./runtime.ts";
 
 export const SCANNERS = ["gitleaks", "semgrep", "osv-scanner"] as const;
@@ -36,6 +37,7 @@ export interface ScanResult {
   detail?: string;
 }
 export interface ScannerDeps {
+  now?: () => Date;
   spawn?: (spec: SessionSpec) => Promise<SessionOutcome>;
   timeoutMs?: number;
   /** Version checks have their own deadline, independent of the scan's timeout (default 10 s). */
@@ -150,6 +152,10 @@ export async function runScanner(tool: Scanner, pin: ScannerPin | undefined, cwd
     try { approvedArgs = offlineArgs(tool, pin, cwd, runtime); }
     catch { return error(`invalid offline ${tool === "osv-scanner" ? "osv" : tool} configuration`); }
     if (tool === "osv-scanner" && !osvCacheReady(pin, cwd, runtime)) return { tool, status: "not_run", detail: "not run: osv database missing", findings: [] };
+    if (tool === "osv-scanner") {
+      const ageError = osvCacheAgeError(pin, runtime, (runtime.now ?? (() => new Date()))());
+      if (ageError) return error(ageError);
+    }
     if (!(await scannerVersion(tool, pin, cwd, runtime)).ok) return scannerNotRun(tool);
     const reportDir = tool === "gitleaks" ? mkdtempSync(join(runtime.tmpDir, "gitleaks-report-")) : undefined;
     const reportPath = reportDir ? join(reportDir, "report.json") : undefined;
@@ -163,15 +169,44 @@ export async function runScanner(tool: Scanner, pin: ScannerPin | undefined, cwd
       if (reportPath && existsSync(reportPath) && lstatSync(reportPath).size > 4 * 1024 * 1024) return error("output limit");
       const output = reportPath && existsSync(reportPath) ? readFileSync(reportPath, "utf8") : r.stdout;
       try { findings = parseFindings(tool, output); } catch { return error("invalid output"); }
-      if (tool === "semgrep") {
-        const coverage = semgrepCoverage(cwd, semgrepScannedPaths(JSON.parse(output)));
-        if (coverage) return error(coverage);
-      }
       if (r.code !== 0 && findings.length === 0) return error("exit code");
+      if (tool === "semgrep") {
+        const scanned = semgrepScannedPaths(JSON.parse(output));
+        const initialCoverage = semgrepCoverage(cwd, scanned);
+        if (initialCoverage === "semgrep coverage unavailable") return error(initialCoverage);
+        const mapped = await mappedSemgrep(pin, cwd, scanned, args, runtime);
+        findings.push(...mapped.findings);
+        const coverage = semgrepCoverage(cwd, [...scanned, ...mapped.scanned]);
+        if (coverage) return error(coverage);
+        if (!mapped.complete) return error("semgrep mapped coverage missing");
+      }
       return { tool, status: findings.length > 0 ? "fail" : "pass", findings };
     } catch { return error("scanner failed"); }
     finally { if (reportDir) rmSync(reportDir, { recursive: true, force: true }); }
   });
+}
+
+async function mappedSemgrep(pin: ScannerPin, cwd: string, scanned: readonly string[], args: readonly string[], runtime: ScannerDeps & ScannerRuntime): Promise<{ findings: Finding[]; scanned: string[]; complete: boolean }> {
+  return await withMappedSemgrep(cwd, scanned, runtime.tmpDir, async (tree) => {
+    const r = await (runtime.spawn ?? runSession)(session(pin, tree.cwd, args, runtime.timeoutMs ?? 120_000, runtime));
+    if (r.timedOut || r.overflowed || (r.code !== 0 && r.code !== 1)) throw Error("Mapped scanner failed");
+    const findings = parseFindings("semgrep", r.stdout);
+    if (r.code !== 0 && findings.length === 0) throw Error("Mapped scanner failed");
+    const paths = semgrepScannedPaths(JSON.parse(r.stdout));
+    const mappedScanned = paths.flatMap((path) => {
+      const original = tree.originals.get(resolve(tree.cwd, path));
+      return original === undefined ? [] : [original];
+    });
+    return {
+      scanned: mappedScanned,
+      complete: tree.originals.size === new Set(mappedScanned).size,
+      findings: findings.map((value) => {
+        const file = tree.originals.get(resolve(tree.cwd, value.file));
+        if (file === undefined) throw Error("Unknown mapped finding path");
+        return { ...value, file, fingerprint: hash(`${value.rule}:${file}:${value.line}`) };
+      }),
+    };
+  }) ?? { findings: [], scanned: [], complete: true };
 }
 
 function suppressionPresent(tool: Scanner, cwd: string): boolean {

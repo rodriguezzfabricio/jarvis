@@ -3,7 +3,9 @@ import { isAbsolute, join, relative } from "node:path";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
 import { validateDesktopPlan, type DesktopBuildObservation, type DesktopPlan } from "./desktop-types.ts";
 export interface DesktopBuildDeps { spawn?: (spec: SessionSpec) => Promise<SessionOutcome>; exists?: (path: string) => boolean }
-const ENV = new Set(["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "CI", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GOMODCACHE", "GOCACHE", "npm_config_cache", "CARGO_HOME", "RUSTUP_HOME", "DEVELOPER_DIR"]);
+/** The runner allowlist for the build environment; the installed worker forwards only these keys (backlog 88). */
+export const DESKTOP_BUILD_ENV = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "CI", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GOMODCACHE", "GOCACHE", "npm_config_cache", "CARGO_HOME", "RUSTUP_HOME", "DEVELOPER_DIR"] as const;
+const ENV = new Set<string>(DESKTOP_BUILD_ENV);
 
 /** The plan's bundle is a real directory in the checkout (no link at any level) with an Info.plist and Contents/MacOS. */
 function builtBundle(repo: string, bundle: string): boolean {

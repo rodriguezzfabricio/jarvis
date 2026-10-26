@@ -22,7 +22,7 @@ import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
-import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial } from "../review/index.ts";
+import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
@@ -245,10 +245,21 @@ function defaultReview(deps: ReviewDeps): RunLoopOptions["review"] {
     codex: createCodexReviewer(),
     resolveMaterial: async (request) => reviewMaterialFor(deps, request.taskId, request.revision),
   });
+  // No design service yet: `jarvis run` has no runner-owned design material or calibration record (backlog 133).
+  return reviewDispatch(service);
+}
+
+/**
+ * The loop's review function by reviewer name. Each service records its own verdict, errors included (decision 111):
+ * "code" goes to the code review service, "design" to the design review service when the run has one (decision 124),
+ * whose verdicts are errors until its negative control passed (decision 56). Another name gets no recorded verdict,
+ * so the loop blocks the task.
+ */
+export function reviewDispatch(code: Pick<ReviewService, "reviewDetailed">, design?: Pick<DesignReviewService, "reviewDetailed">): RunLoopOptions["review"] {
   return async (input) => {
-    // The service reviews as "code" only: another named reviewer gets no recorded verdict, so the loop blocks the task.
-    if (input.reviewer !== "code") return { status: "error", recorded: true };
-    const result = await service.reviewDetailed({ taskId: input.taskId, attemptId: input.attemptId, revision: input.revision });
-    return { status: result.verdict, recorded: true };
+    const request = { taskId: input.taskId, attemptId: input.attemptId, revision: input.revision };
+    if (input.reviewer === "code") return { status: (await code.reviewDetailed(request)).verdict, recorded: true };
+    if (input.reviewer === "design" && design) return { status: (await design.reviewDetailed(request)).verdict, recorded: true };
+    return { status: "error", recorded: true };
   };
 }

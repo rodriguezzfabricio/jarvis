@@ -48,7 +48,7 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: { "osv-scanner": { ...pin, args: pinnedSecurityScanners()["osv-scanner"]!.args, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/osv-db" } } } });
   mkdirSync(db); writeFileSync(join(db, "dummy.json"), "{}");
   // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", fetchedAt: new Date().toISOString(), ecosystems: [], files: hashOsvDatabase(db) }));
   const r = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "osv-scanner"], cwd: checkout, env: { HOME: home, TMPDIR: home, JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(r.code).toBe(0);
   expect(JSON.parse(r.stdout)).toMatchObject({ status: "pass" });

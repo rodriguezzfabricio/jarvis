@@ -2,12 +2,13 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
-import { fileHash, insideTree, materializeTree } from "./materialize.ts";
+import { fileHash, insideTree, materializeTree, type MaterializeOptions } from "./materialize.ts";
 import { verifyQaToolchain, type QaToolchainManifest, type VerifiedQaToolchain } from "./toolchain.ts";
 export interface ChromiumInstallInput { sourceBundle: string; destination: string; executable: string; manifestPath: string }
+export interface ChromiumInstallDeps { spawn?: (spec: SessionSpec) => Promise<SessionOutcome>; materialize?: MaterializeOptions }
 
 /** Install locally, smoke launch, then update the manifest. Checks approval remains a separate reviewed action. */
-export async function installChromiumBundle(input: ChromiumInstallInput, deps: { spawn?: (spec: SessionSpec) => Promise<SessionOutcome> } = {}): Promise<VerifiedQaToolchain> {
+export async function installChromiumBundle(input: ChromiumInstallInput, deps: ChromiumInstallDeps = {}): Promise<VerifiedQaToolchain> {
   if (![input.sourceBundle, input.destination, input.manifestPath].every(isAbsolute)) throw new Error("Chromium installation paths must be absolute");
   const root = realpathSync(dirname(input.manifestPath));
   const destination = join(realpathSync(dirname(input.destination)), basename(input.destination));
@@ -16,7 +17,7 @@ export async function installChromiumBundle(input: ChromiumInstallInput, deps: {
   const original = readFileSync(input.manifestPath); const manifest = JSON.parse(original.toString()) as QaToolchainManifest;
   const home = mkdtempSync(join(tmpdir(), "jarvis-chromium-install-"));
   try {
-    const files = materializeTree(input.sourceBundle, destination);
+    const files = materializeTree(input.sourceBundle, destination, deps.materialize);
     const executable = join(destination, input.executable);
     const launch = await (deps.spawn ?? runSession)({ bin: executable, args: ["--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--dump-dom", "about:blank"], cwd: destination, env: { PATH: "/usr/bin:/bin", HOME: home, TMPDIR: home }, timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
     if (launch.code !== 0 || launch.timedOut || launch.overflowed) throw new Error("materialized Chromium launch failed");

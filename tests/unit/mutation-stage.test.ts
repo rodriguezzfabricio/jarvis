@@ -50,6 +50,11 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/broker/mutations.json")).toBeUndefined();
     expect(stageOf("packages/cli/src/broker/mutations-secrets.json")).toBe("0-1"); // the secrets reader (backlog 103)
     expect(stageOf("packages/cli/src/notify/mutations-approvals.json")).toBe("2");
+    // The approvals UI lane (backlog 114-116): the terminal answer and the broker's pending list are the
+    // stage 1 broker surface; its phone parts stay with notify (2) and the run poller (3).
+    expect(stageOf("packages/cli/src/commands/mutations-approvals-ui.json")).toBe("0-1");
+    expect(stageOf("packages/cli/src/broker/mutations-approvals-ui.json")).toBe("0-1");
+    expect(stageOf("packages/cli/src/notify/mutations-approvals-ui.json")).toBe("2");
   });
 
   it("leaves anything else unmapped, never guessing from a similar path", () => {

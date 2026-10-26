@@ -1,4 +1,4 @@
-// Runner loop tests, part 7 of 7 (attempt bookkeeping). The loop tests are spread over seven files so they run in parallel;
+// Runner loop tests, part 7 of 9 (attempt bookkeeping). The loop tests are spread over nine files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { readFileSync, writeFileSync } from "node:fs";

@@ -1,4 +1,4 @@
-// Runner loop tests, part 1 of 7 (gating, promotion, repairs, tampering, usage-limited resume). The loop tests are spread over seven files so they run in parallel;
+// Runner loop tests, part 1 of 9 (gating, promotion, repairs, tampering, usage-limited resume). The loop tests are spread over nine files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

@@ -9,6 +9,7 @@ import { Ledger } from "../../../packages/cli/src/ledger/ledger.ts";
 import { safeGit } from "../../../packages/cli/src/eval/git.ts";
 import { DEFAULT_ROUTING, type RoutingTable } from "../../../packages/cli/src/runner/routing.ts";
 import type { ReviewerInput, ReviewerOutput } from "../../../packages/cli/src/review/types.ts";
+import { initRepo } from "./git-repo.ts";
 
 const roots: string[] = [];
 export const removeFixtureRoots = () => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); };
@@ -18,7 +19,8 @@ export function setup(tier: 0 | 1 | 2 = 2) {
   const repoPath = join(root, "repo"), workRoot = join(root, "work"), projectDir = join(root, "runner");
   for (const d of [repoPath, workRoot, projectDir]) mkdirSync(d);
   const git = (args: string[]) => safeGit(repoPath, args, { home: root }).toString().trim();
-  git(["init", "--quiet"]); writeFileSync(join(repoPath, "app.txt"), "before\n"); git(["add", "."]); git(["commit", "--quiet", "-m", "base"]);
+  initRepo(repoPath, { branch: "master" }); // what `git init --quiet` leaves, by copy (helpers/git-repo.ts)
+  writeFileSync(join(repoPath, "app.txt"), "before\n"); git(["add", "."]); git(["commit", "--quiet", "-m", "base"]);
   const baseRevision = git(["rev-parse", "HEAD"]);
   writeFileSync(join(repoPath, "app.txt"), "candidate\n");
   mkdirSync(join(repoPath, ".jarvis/notes"), { recursive: true }); writeFileSync(join(repoPath, ".jarvis/notes/T1.md"), "BUILDER-NARRATIVE-SECRET");

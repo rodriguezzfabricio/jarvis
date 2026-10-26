@@ -38,14 +38,16 @@ function project(write = true): E2EProject {
   if (write) { put(p.repoPath, "REVIEW.md", REPORT); put(p.repoPath, REVIEW_FINDINGS_FILE, FINDINGS); }
   return p;
 }
-async function prepare(p: E2EProject, extra: Partial<ComposeOptions> = {}): Promise<PreparedRun> {
-  const run = await prepareProductionRun({ projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, planKind: "review" }, {
+async function prepare(p: E2EProject, extra: Partial<ComposeOptions> = {}, reviewReport?: string): Promise<PreparedRun> {
+  const run = await prepareProductionRun({ projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, planKind: "review", ...(reviewReport ? { reviewReport } : {}) }, {
     home: p.home, preflight: async () => true, reprobe: async () => true, signals: new FakeHost(), warn: () => {},
     createReview: (deps) => { captured = deps; return async () => "pass" as const; }, ...extra,
   });
   prepared.push(run);
   return run;
 }
+/** The refusal's message, or a line that fails the match: an assertion, never a thrown error, decides (decision 115). */
+const refusal = (run: Promise<unknown>) => run.then(() => "no error: the run was prepared", (e: unknown) => (e instanceof Error ? e.message : String(e)));
 const socketsIn = (p: E2EProject) => existsSync(join(p.jarvisHome, "run")) ? readdirSync(join(p.jarvisHome, "run")).filter((n) => n.endsWith(".sock")) : [];
 
 describe("jarvis run --plan review", () => {
@@ -70,6 +72,32 @@ describe("jarvis run --plan review", () => {
     expect(run.loop.plan?.tasks[0]!.exitCondition).toContain(BUG_EXIT_CONDITION);
     expect(run.loop.plan?.tasks[0]!.goal).toContain(REQUEST);
     expect(typeof run.drive).toBe("function");
+  });
+
+  // Codex security review, round 1 (high 1): the session's findings file never picks the file the runner commits.
+  it("takes the report path from the run (--report, else REVIEW.md), never from the session's findings", async () => {
+    const p = project(false);
+    put(p.repoPath, "OTHER.md", "# Review\n\n## F1: src/add.mjs:1 (high)\nAdds strings.\n");
+    put(p.repoPath, REVIEW_FINDINGS_FILE, FINDINGS.replace("\"report\":\"REVIEW.md\"", "\"report\":\"OTHER.md\""));
+    const head = git(p, ["rev-parse", "HEAD"]);
+    expect(await refusal(prepare(p))).toMatch(/wrote no report at REVIEW\.md/);
+    put(p.repoPath, "REVIEW.md", REPORT);
+    expect(await refusal(prepare(p))).toMatch(/names the report OTHER\.md, not REVIEW\.md/);
+    expect(git(p, ["rev-parse", "HEAD"])).toBe(head);
+    expect(socketsIn(p)).toEqual([]);
+    const run = await prepare(p, {}, "OTHER.md");
+    expect(git(p, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])).toBe("OTHER.md");
+    expect(run.loop.plan?.tasks.map((t) => t.id)).toEqual(["T1"]);
+  });
+
+  it("refuses a build file named as the report, before anything is committed or hosted", async () => {
+    const p = project(false);
+    put(p.repoPath, "requirements.txt", "evil-package==6.6.6\n");
+    put(p.repoPath, REVIEW_FINDINGS_FILE, JSON.stringify({ request: REQUEST, report: "requirements.txt", findings: [], cleared: [] }));
+    const head = git(p, ["rev-parse", "HEAD"]);
+    expect(await refusal(prepare(p, {}, "requirements.txt"))).toMatch(/refused/);
+    expect(git(p, ["rev-parse", "HEAD"])).toBe(head);
+    expect(socketsIn(p)).toEqual([]);
   });
 
   it("numbers the fix tasks after the project's own, which the loop would never re-create", async () => {
@@ -97,14 +125,14 @@ describe("jarvis run --plan review", () => {
   it("refuses to start when the review session wrote no report, or a symlinked one, and hosts nothing", async () => {
     const none = project(false);
     put(none.repoPath, REVIEW_FINDINGS_FILE, FINDINGS);
-    await expect(prepare(none)).rejects.toThrow(/wrote no report at REVIEW\.md/);
+    expect(await refusal(prepare(none))).toMatch(/wrote no report at REVIEW\.md/);
     expect(socketsIn(none)).toEqual([]);
     const linked = project(false);
     put(linked.repoPath, "real.md", REPORT);
     symlinkSync("real.md", join(linked.repoPath, "REVIEW.md"));
     put(linked.repoPath, REVIEW_FINDINGS_FILE, FINDINGS);
     const head = git(linked, ["rev-parse", "HEAD"]);
-    await expect(prepare(linked)).rejects.toThrow(/REVIEW\.md is refused/);
+    expect(await refusal(prepare(linked))).toMatch(/REVIEW\.md is refused/);
     expect(git(linked, ["rev-parse", "HEAD"])).toBe(head);
     expect(socketsIn(linked)).toEqual([]);
   });
@@ -142,6 +170,44 @@ describe("jarvis run --plan review", () => {
     expect(calls[1]!.plan!.tasks[0]!.goal).toContain("review code needs investigation");
     expect(calls[1]).toMatchObject({ runBranch: run.loop.runBranch, repoPath: run.loop.repoPath, checks: run.loop.checks });
     expect(result).toEqual({ status: "blocked", done: ["T2"], blocked: ["T1"] });
+  });
+});
+
+describe("jarvis run --report", () => {
+  const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
+  async function cli(args: string[], seams: Partial<Parameters<typeof register>[1]> = {}) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "cmd-run-report-")));
+    mkdirSync(join(root, ".git"));
+    const contexts: unknown[] = [];
+    let probes = 0;
+    const program = new Command().exitOverride();
+    register(program, { jarvisHome: root, cwd: root, env: { JARVIS_PROJECT: "p" }, keepAwake: () => {}, output: () => {},
+      probe: async () => { probes++; return { ok: true }; },
+      run: async (context) => { contexts.push(context); return { status: "complete", done: [], blocked: [] }; }, ...seams });
+    try {
+      const error = await program.parseAsync(["run", ...args], { from: "user" }).then(() => undefined, (e: unknown) => e as Error);
+      return { error, contexts, probes };
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+
+  it("passes a checked report path to the run, only with --plan review, before the probe", async () => {
+    const ok = await cli(["--plan", "review", "--report", "docs/security-review.md"]);
+    expect(ok.error).toBeUndefined();
+    expect(ok.contexts).toEqual([expect.objectContaining({ planKind: "review", reviewReport: "docs/security-review.md" })]);
+    for (const args of [["--plan", "review", "--report", "CMakeLists.txt"], ["--plan", "review", "--report", "../REVIEW.md"], ["--plan", "review", "--report", "[C]MakeLists.md"], ["--report", "REVIEW.md"], ["--plan", "sweep", "--report", "REVIEW.md"]]) {
+      const r = await cli(args);
+      expect(r.error?.message ?? "no error", args.join(" ")).toMatch(/--report/);
+      expect(r.probes, args.join(" ")).toBe(0);
+      expect(r.contexts, args.join(" ")).toEqual([]);
+    }
+  });
+
+  it("hands --report to a detached runner", async () => {
+    const spawned: string[][] = [];
+    const spawn = (_bin: string, args: string[]) => { spawned.push(args); return { pid: 1, unref: () => {}, once: (event: string, cb: () => void) => { if (event === "spawn") queueMicrotask(cb); } }; };
+    const r = await cli(["--plan", "review", "--report", "docs/r.md", "--detach"], { spawn, entrypoint: "/runner/cli.ts" });
+    expect(r.error).toBeUndefined();
+    expect(spawned[0]).toEqual(expect.arrayContaining(["--plan", "review", "--report", "docs/r.md"]));
   });
 });
 

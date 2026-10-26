@@ -8,6 +8,7 @@ import { allowsUnattended, runDoctor } from "../doctor/doctor.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
 import { runLoop, type RunLoopOptions, type RunLoopResult } from "../runner/loop.ts";
 import { SESSION_PLAN_KINDS, type SessionPlanKind } from "../runner/plan.ts";
+import { DEFAULT_REVIEW_REPORT, reportPathProblem } from "../runner/review-path.ts";
 
 export interface RunContext {
   projectId: string;
@@ -16,6 +17,8 @@ export interface RunContext {
   repoPath: string;
   /** `--plan onboard|sweep`: read that session-owned plan instead of .jarvis/plan.json. */
   planKind?: SessionPlanKind;
+  /** `--plan review --report <path>`: the report the review wrote (default REVIEW.md); the run's, never the findings' (decision 126). */
+  reviewReport?: string;
 }
 /** A run ready to start, and what it hosts for its own duration (architecture §3.4). */
 export interface PreparedRun {
@@ -67,7 +70,7 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
   try {
     const entrypoint = seams.entrypoint ?? process.argv[1];
     if (!entrypoint) throw new Error("cannot resolve the CLI entry point");
-    const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : [])];
+    const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : [])];
     const child = (seams.spawn ?? spawnChild)(process.execPath, args, { cwd: context.repoPath, detached: true, stdio: ["ignore", fd, fd] });
     await new Promise<void>((accept, reject) => {
       child.once("error", reject);
@@ -100,15 +103,23 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
   program.command("run").description("Run ready tasks through protected checks and independent review")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .option("--plan <kind>", `read a session-owned plan: ${SESSION_PLAN_KINDS.join(" or ")} (.jarvis/<kind>/plan.json)`)
+    .option("--report <path>", `with --plan review: the report the review wrote (default ${DEFAULT_REVIEW_REPORT}); a plain .md or .txt file nothing but a person reads`)
     .option("--detach", "continue in a detached runner")
-    .action(async (options: { project?: string; plan?: string; detach?: boolean }) => {
+    .action(async (options: { project?: string; plan?: string; report?: string; detach?: boolean }) => {
       const cwd = resolve(seams.cwd ?? process.cwd());
       const projectId = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd });
       if (options.plan !== undefined && !(SESSION_PLAN_KINDS as readonly string[]).includes(options.plan)) throw new Error(`--plan must be one of: ${SESSION_PLAN_KINDS.join(", ")}`);
+      // The report path is the run's own, checked before anything else runs (decision 126; Codex security review, round 1).
+      if (options.report !== undefined) {
+        if (options.plan !== "review") throw new Error("--report goes with --plan review");
+        const problem = reportPathProblem(options.report);
+        if (problem) throw new Error(`--report ${options.report} is refused: ${problem}`);
+      }
       const jarvisHome = seams.jarvisHome ?? join(homedir(), ".jarvis");
       const context: RunContext = {
         projectId, projectDir: runnerProjectDir(projectId, jarvisHome), jarvisHome, repoPath: projectRoot(cwd),
         ...(options.plan ? { planKind: options.plan as SessionPlanKind } : {}),
+        ...(options.report !== undefined ? { reviewReport: options.report } : {}),
       };
       // Both checks come before a detached runner is spawned (Opus review L6).
       if (!seams.run && !seams.prepareRun) throw new Error("run composition is required: provide a harness, protected checks and a fresh read-only reviewer");

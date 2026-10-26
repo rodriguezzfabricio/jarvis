@@ -10,7 +10,7 @@ import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type 
 import type { Harness, TaskOutcome, TaskTier } from "../runner/harness.ts";
 import { PLAN_NOTES, planEntries, readPlan, singleTaskPlan, type Plan } from "../runner/plan.ts";
 import {
-  readReviewOutput, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
+  commitReportOnly, readReviewOutput, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
   type FindingOutcome, type ReviewOutput,
 } from "../runner/review-fix.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
@@ -656,9 +656,6 @@ function strayEdits(workspace: string, report: string, home: string): string[] {
  */
 function commitReport(repo: string, report: string, text: string, home: string): string | undefined {
   writeReportFile(repo, report, text);
-  if (!safeGit(repo, ["status", "--porcelain", "--untracked-files=all", "--", report], { home }).toString().trim()) return undefined;
-  safeGit(repo, ["add", "--", report], { home });
-  safeGit(repo, ["commit", "-q", "--no-verify", "-m", `review report ${report} (written by the review session)`, "--", report], { home });
-  return safeGit(repo, ["rev-parse", "HEAD"], { home }).toString().trim();
+  return commitReportOnly((args) => safeGit(repo, args, { home }).toString().trim(), report, `review report ${report} (written by the review session)`);
 }
 

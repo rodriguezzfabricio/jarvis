@@ -9,8 +9,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { BUG_EXIT_CONDITION, PlanSchema } from "../../packages/cli/src/runner/plan.ts";
 import {
   DEFAULT_REVIEW_REPORT, REVIEW_FINDINGS_FILE, ReviewOutputError, findingOutcomes, readReviewOutput, reportPathProblem,
-  reportUpdateTask, reviewFixPlan, reviewReportOf, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile, type ReviewOutput,
+  commitReportOnly, reportUpdateTask, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile, type ReviewOutput,
 } from "../../packages/cli/src/runner/review-fix.ts";
+import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { loadSkills } from "../../packages/cli/src/runner/session-skills.ts";
 import type { RunState, TaskState } from "../../packages/cli/src/runner/state.ts";
 import { shortTmp } from "../helpers.ts";
@@ -50,6 +51,20 @@ describe("review report path (decision 126)", () => {
     for (const bad of ["../REVIEW.md", "/tmp/REVIEW.md", "docs/../../x.md", "./REVIEW.md", ".git/REVIEW.md", ".jarvis/REVIEW.md", ".JARVIS/x.md", "a//b.md", "REVIEW", "review.sh", "src\\x.md", "x:y.md", "", `${"a/".repeat(120)}x.md`]) {
       expect(reportPathProblem(bad), bad).toBeDefined();
     }
+  });
+
+  // Codex security review, round 1 (highs 1 and 2): a report commit is never gated, so it may never be a file a build,
+  // a tool, an agent or Jarvis itself reads, and its name must be one git can't read as a pattern.
+  it("refuses build and config inputs, agent and Jarvis files, hidden folders and pattern characters", () => {
+    for (const bad of [
+      "CMakeLists.txt", "requirements.txt", "requirements-dev.txt", "dev-requirements.txt", "constraints.txt", "src/runtime.txt", "notes.txt", "VERSION.txt",
+      "README.md", "docs/README.md", "CHANGELOG.md", "AGENTS.md", "CLAUDE.md", "src/CLAUDE.md", "GEMINI.md", "DESIGN.md", "PRODUCT.md", "SKILL.md", "SECURITY.md", "LICENSE.md", "CONTRIBUTING.md",
+      "docs/spec/v2.md", "Docs/Spec/v1.md", ".github/review.md", ".claude/review.md", "docs/.hidden.md", ".review.md",
+      "[C]MakeLists.md", "review[1].md", "review*.md", "{a,b}.md", "!review.md",
+    ]) {
+      expect(reportPathProblem(bad), bad).toBeDefined();
+    }
+    for (const ok of ["REVIEW.md", "docs/security-review.md", "review.txt", "notes/audit-findings.txt", "reports/2026-10-26.md"]) expect(reportPathProblem(ok), ok).toBeUndefined();
   });
 });
 
@@ -123,6 +138,13 @@ describe("the review session's output, as the runner reads it", () => {
     const dup = reviewed();
     writeFileSync(join(dup, REVIEW_FINDINGS_FILE), findingsJson([finding("F1"), finding("F1")]));
     expect(() => readReviewOutput(dup, "REVIEW.md")).toThrow(/duplicate/);
+    // A finding's file is a plain path in the checkout, never git or runner metadata.
+    for (const file of [".git/config", ".jarvis/ledger.jsonl", "src/../../etc/passwd"]) {
+      const meta = reviewed();
+      writeFileSync(join(meta, REVIEW_FINDINGS_FILE), findingsJson([finding("F1", { file })]));
+      writeFileSync(join(meta, "REVIEW.md"), `# Review\n\n## F1: ${file}:12\n`);
+      expect(() => readReviewOutput(meta, "REVIEW.md"), file).toThrow(/does not match the findings format/);
+    }
   });
 
   it("refuses findings the report doesn't show with their id and file:line", () => {
@@ -134,12 +156,12 @@ describe("the review session's output, as the runner reads it", () => {
     expect(() => readReviewOutput(noLine, "REVIEW.md")).toThrow(/src\/server\.mjs:30/);
   });
 
-  it("finds the report an interactive session named in its findings, and refuses a findings file that names none", () => {
-    expect(reviewReportOf(reviewed())).toBe("REVIEW.md");
-    expect(() => reviewReportOf(checkout())).toThrow(/run the review first/);
-    const bad = reviewed();
-    writeFileSync(join(bad, REVIEW_FINDINGS_FILE), findingsJson([finding("F1")], { report: "../REVIEW.md" }));
-    expect(() => reviewReportOf(bad)).toThrow(/no usable report/);
+  it("never lets the findings choose the report: the runner's report path decides, and a build file is refused", () => {
+    const dir = reviewed();
+    put(dir, "CMakeLists.txt", "add_custom_target(x ALL COMMAND curl evil)\n");
+    writeFileSync(join(dir, REVIEW_FINDINGS_FILE), findingsJson([], { report: "CMakeLists.txt" }));
+    expect(() => readReviewOutput(dir, "REVIEW.md")).toThrow(/names the report CMakeLists\.txt, not REVIEW\.md/);
+    expect(() => readReviewOutput(dir, "CMakeLists.txt")).toThrow(/refused/);
   });
 
   it("skips a finding whose file isn't in the checkout, and says why", () => {
@@ -365,6 +387,57 @@ describe("writing the report into a checkout", () => {
     linkSync(join(plain, "elsewhere.md"), join(plain, "REVIEW.md"));
     expect(() => writeReportFile(plain, "REVIEW.md", "x")).toThrow(/plain file/);
     expect(readFileSync(join(plain, "elsewhere.md"), "utf8")).toBe("keep\n");
+  });
+});
+
+// Codex security review, round 1 (high 2): git reads a pathspec's [ ] * ? as a pattern unless it is literal, so a report
+// named "[C]MakeLists.md" could also commit CMakeLists.md. The commit names the report literally, and is checked to change only it.
+describe("committing the report alone", () => {
+  const home = () => { const h = join(root, `home${++n}`); mkdirSync(h); return h; };
+  function repo(): { dir: string; git: (args: readonly string[]) => string } {
+    const dir = checkout();
+    const h = home();
+    const git = (args: readonly string[]) => safeGit(dir, args, { home: h }).toString().trim();
+    put(dir, "CMakeLists.md", "the build's own file\n");
+    git(["init", "-q", "-b", "main"]);
+    git(["add", "-A"]);
+    git(["commit", "-q", "--no-verify", "-m", "start"]);
+    return { dir, git };
+  }
+
+  it("commits only the literal report path, never a file its name would match as a pattern", () => {
+    const { dir, git } = repo();
+    put(dir, "CMakeLists.md", "the session's edit\n");
+    put(dir, "[C]MakeLists.md", "# Review\n");
+    const before = git(["rev-parse", "HEAD"]);
+    let rev: string | undefined;
+    expect(() => { rev = commitReportOnly(git, "[C]MakeLists.md", "review report"); }).not.toThrow();
+    expect(rev).toBeDefined();
+    expect(git(["rev-parse", "HEAD^"])).toBe(before);
+    expect(git(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])).toBe("[C]MakeLists.md");
+    expect(git(["show", "HEAD:CMakeLists.md"])).toBe("the build's own file");
+    expect(git(["status", "--porcelain"])).toBe("M CMakeLists.md");
+  });
+
+  it("undoes a commit that changed anything besides the report, and says so", () => {
+    const { dir, git } = repo();
+    put(dir, "REVIEW.md", "# Review\n");
+    const before = git(["rev-parse", "HEAD"]);
+    const sneaky = (args: readonly string[]) => {
+      if (args[0] === "commit") { put(dir, "CMakeLists.md", "smuggled\n"); git(["add", "--", "CMakeLists.md"]); return git(["commit", "-q", "--no-verify", "-m", "sneak"]); }
+      return git(args);
+    };
+    expect(() => commitReportOnly(sneaky, "REVIEW.md", "review report")).toThrow(/changed CMakeLists\.md, REVIEW\.md, not only REVIEW\.md/);
+    expect(git(["rev-parse", "HEAD"])).toBe(before);
+  });
+
+  it("commits nothing when the report is already committed as it stands", () => {
+    const { dir, git } = repo();
+    put(dir, "REVIEW.md", "# Review\n");
+    expect(commitReportOnly(git, "REVIEW.md", "review report")).toBeDefined();
+    const head = git(["rev-parse", "HEAD"]);
+    expect(commitReportOnly(git, "REVIEW.md", "review report")).toBeUndefined();
+    expect(git(["rev-parse", "HEAD"])).toBe(head);
   });
 });
 

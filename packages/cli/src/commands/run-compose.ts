@@ -27,7 +27,7 @@ import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
 import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
-import { readReviewOutput, reviewFixPlan, reviewReportOf, runReviewFixes, type ReviewFixPlan, type ReviewOutput } from "../runner/review-fix.ts";
+import { commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, reviewFixPlan, runReviewFixes, type ReviewFixPlan, type ReviewOutput } from "../runner/review-fix.ts";
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
@@ -93,18 +93,16 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
 
 /**
  * `jarvis run --plan review` (decision 126): the interactive review session wrote its report and
- * .jarvis/review/findings.json in the checkout. Both are read with the bounded no-follow reader (no report,
- * a symlink or a path outside the checkout refuses the run before anything is hosted). The runner commits
- * the report on the run branch, since every fix starts from it and promotion needs a clean checkout, and
- * plans one bug task per finding after the ledger's own tasks.
+ * .jarvis/review/findings.json in the checkout. The report path is the run's own (`--report`, else REVIEW.md),
+ * never the findings' (Codex security review, round 1). Both are read with the bounded no-follow reader (no
+ * report, a symlink, a path outside the checkout, or a file that builds, agents or Jarvis read refuses the run
+ * before anything is hosted). The runner commits the report alone on the run branch, since every fix starts
+ * from it and promotion needs a clean checkout, and plans one bug task per finding after the ledger's own tasks.
  */
-export function reviewRunFor(repoPath: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string): { output: ReviewOutput; fix: ReviewFixPlan | null } {
-  const report = reviewReportOf(repoPath);
+export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string): { output: ReviewOutput; fix: ReviewFixPlan | null } {
+  // A tree path, not a pathspec: `HEAD:<file>` is never read as a pattern.
   const output = readReviewOutput(repoPath, report, { inCheckout: (file) => { try { git(["cat-file", "-e", `HEAD:${file}`]); return true; } catch { return false; } } });
-  if (git(["status", "--porcelain", "--untracked-files=all", "--", report]) !== "") {
-    git(["add", "--", report]);
-    git(["commit", "-q", "--no-verify", "-m", `review report ${report} (written by the review session)`, "--", report]);
-  }
+  commitReportOnly(git, report, `review report ${report} (written by the review session)`);
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
   return { output, fix: reviewFixPlan(output, checks, existing) };
 }
@@ -160,7 +158,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const runBranch = runBranchOf(git);
   const spec = approvedSpec(git, runBranch);
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
-  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, ledger, checks, git) : undefined;
+  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git) : undefined;
   const plan = reviewRun ? reviewRun.fix?.plan : planFor(context.repoPath, context.planKind, spec, checks);
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));

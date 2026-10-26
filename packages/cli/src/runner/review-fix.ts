@@ -50,7 +50,8 @@ const Finding = z.object({
 const Cleared = z.object({ file: repoFile, line: line.optional(), what: z.string().trim().min(1).max(500), why: z.string().trim().min(1).max(2000) }).strict();
 export const ReviewFindingsSchema = z.object({
   request: z.string().trim().min(1).max(16_000),
-  report: z.string().refine((p) => reportPathProblem(p) === undefined, "a plain repo-relative .md or .txt path"),
+  /** Only compared with the runner's own report path, never used as one. */
+  report: z.string().min(1).max(1000),
   findings: z.array(Finding).max(MAX_FINDINGS),
   cleared: z.array(Cleared).max(200).default([]),
 }).strict().superRefine((v, ctx) => {
@@ -114,7 +115,8 @@ export function readReviewOutput(root: string, report: string, opts: { inCheckou
   const parsed = ReviewFindingsSchema.safeParse(raw);
   if (!parsed.success) throw new ReviewOutputError("findings-refused", `${REVIEW_FINDINGS_FILE} does not match the findings format: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ").slice(0, 2000)}`);
   const data = parsed.data;
-  if (data.report !== report) throw new ReviewOutputError("findings-refused", `${REVIEW_FINDINGS_FILE} names the report ${data.report}, not ${report}`);
+  // The report path is the runner's (the request, or `jarvis run --plan review --report`), never the session's.
+  if (data.report !== report) throw new ReviewOutputError("findings-refused", `${REVIEW_FINDINGS_FILE} names the report ${data.report}, not ${report}: the runner takes the report path from the request (or \`jarvis run --plan review --report <path>\`), never from the findings`);
   for (const f of data.findings) {
     if (!new RegExp(`\\b${escapeRe(f.id)}\\b`).test(reportText)) throw new ReviewOutputError("findings-refused", `finding ${f.id} is not in ${report}`);
     if (!reportText.includes(`${f.file}:${f.line}`)) throw new ReviewOutputError("findings-refused", `${report} doesn't show finding ${f.id} at ${f.file}:${f.line}`);
@@ -126,19 +128,6 @@ export function readReviewOutput(root: string, report: string, opts: { inCheckou
     return false;
   });
   return { request: data.request, report, reportText, findings, cleared: data.cleared, skipped };
-}
-
-/**
- * The report an interactive review session says it wrote (`jarvis run --plan review`): the `report` field
- * of its findings file, checked like any report path. readReviewOutput then reads both.
- */
-export function reviewReportOf(root: string): string {
-  if (!present(join(root, REVIEW_FINDINGS_FILE))) throw new ReviewOutputError("no-findings", `no ${REVIEW_FINDINGS_FILE}: run the review first (/jarvis with a review that asks for fixes)`);
-  let raw: unknown;
-  try { raw = JSON.parse(readPlanningFile(root, REVIEW_FINDINGS_FILE)); } catch (e) { throw new ReviewOutputError("findings-refused", `${REVIEW_FINDINGS_FILE} is refused: ${message(e)}`); }
-  const report = (raw as { report?: unknown } | null)?.report;
-  if (typeof report !== "string" || reportPathProblem(report) !== undefined) throw new ReviewOutputError("findings-refused", `${REVIEW_FINDINGS_FILE} names no usable report: ${typeof report === "string" ? reportPathProblem(report) : "report is missing"}`);
-  return report;
 }
 
 // ---- The review step's session ------------------------------------------------------------------------
@@ -348,6 +337,28 @@ export async function runReviewFixes(r: ReviewFixRun): Promise<{ fixes: LoopResu
 }
 
 // ---- The report in the main checkout -----------------------------------------------------------------
+
+/**
+ * Commits the report and nothing else, on the checkout's current branch; undefined when it is already committed
+ * as it stands. Every path goes to git as a literal pathspec, so a name git would read as a pattern can't widen
+ * the commit to other files; and the commit is checked to change exactly the report against its parent, or it is
+ * undone (the branch moved back, the work tree kept) and refused. `git` runs in the checkout (safeGit: no hooks).
+ */
+export function commitReportOnly(git: (args: readonly string[]) => string, report: string, message: string): string | undefined {
+  const spec = `:(literal)${report}`;
+  if (git(["status", "--porcelain", "--untracked-files=all", "--", spec]) === "") return undefined;
+  const before = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+  git(["add", "--", spec]);
+  git(["commit", "-q", "--no-verify", "-m", message, "--", spec]);
+  const after = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+  const changed = after === before ? [] : git(["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", before, after]).split("\0").filter(Boolean);
+  const parent = after === before ? undefined : git(["rev-parse", "--verify", `${after}^1`]);
+  if (parent !== before || changed.length !== 1 || changed[0] !== report) {
+    if (after !== before) git(["reset", "-q", "--soft", before]);
+    throw new Error(`the report commit changed ${changed.join(", ") || "nothing"}, not only ${report}; undone`);
+  }
+  return after;
+}
 
 /**
  * Writes the review session's report text into a checkout the runner owns (the eval snapshot), without

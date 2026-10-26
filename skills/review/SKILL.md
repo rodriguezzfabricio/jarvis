@@ -45,7 +45,8 @@ When a review request asks for fixes or names a report file (triage's `review.re
 - Low confidence means you couldn't trace or confirm it. The fix step confirms such a finding before it changes code.
 - Say "Not a problem" explicitly for suspicious-looking code you checked and cleared: list it under that heading with its file:line and why it is safe, and in the JSON's cleared list.
 - The JSON object has request, report, findings (id, title, severity, confidence, file, line, evidence, fix) and cleared (file, line, what, why), and nothing else. The runner refuses a finding the report doesn't show with its id and file:line, and a report that is a symlink or outside the checkout.
-- Then tell the user the fixes start with `jarvis run --plan review --detach`; a last task records in the report what was fixed and what wasn't.
+- The report is a plain .md or .txt file that only people read: never a file a build, an agent or Jarvis reads (README, CLAUDE.md, DESIGN.md, requirements.txt, anything hidden or under docs/spec/). A request that says "fix nothing", "report only" or "don't edit" gets a read-only review, with no fixes.
+- Then tell the user the fixes start with `jarvis run --plan review --detach`, plus `--report <path>` when the report isn't REVIEW.md: the runner takes the path from the run, never from the findings. A last task records in the report what was fixed and what wasn't.
 
 ## Gotchas
 

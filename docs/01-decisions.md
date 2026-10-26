@@ -1871,3 +1871,8 @@ Independent host observations against 6ac5c097 contradict decision 133's equival
 - Restore subprocess decision-command tests so expected Commander diagnostics and uncaught product errors remain distinguishable. Preserve base assertions and prove error controls fail when the expected handling is removed.
 - Restore the base broker readiness/test limits (5/15 seconds) and desktop readiness/lifetime limits (3 seconds). A loaded-machine explanation alone does not justify increasing them.
 - The AGENTS.md setup description and snapshot worker's redirect comment are superseded by this decision; their owners should update those descriptions. This lane cannot edit them. Full-suite, mutation and real Seatbelt evidence remain the integrator's responsibility.
+
+
+### 140. A quiet slot drains already-started lane checks before host evidence (Oct 26; takeover integrator; extends 81 and 104)
+
+A lane checking the slot before a test command does not stop a command that began just before the host acquired it. The host must acquire its own slot atomically and let already-running owned lane checks finish before starting evidence. Read only owned helper PID/parent/executable metadata for that drain; never process arguments or environments. No unrelated process is stopped. If the drain cannot establish quiet, preparation fails instead of accepting contended timeout evidence. Lanes retain their before-each-command slot checks, and stage-review evidence retains its exclusive evidence slot for the whole phase.

@@ -5,12 +5,22 @@ import { afterAll, describe, expect, inject, it } from "vitest";
 import type { TestProject } from "vitest/node";
 import setup from "../setup/real-git-global.ts";
 import { shortTmp } from "../helpers.ts";
+import { nativeGitApis, runNativeGitProbe } from "./helpers/native-git-test.ts";
 
 // Decision 137 replaces the redirect with native execution. These assertions run even without Xcode.
 const dirs: string[] = [];
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
 const temp = () => { const dir = shortTmp("jgr-"); dirs.push(dir); return dir; };
 const clean = (home: string) => ({ PATH: "/usr/bin:/bin", HOME: home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" });
+it.each(nativeGitApis)("detects %s interception, stale PATH and caller-environment changes", api => {
+  const result = runNativeGitProbe(api, temp(), "faults");
+  expect(result.controls).toBeDefined();
+  expect(Object.keys(result.controls)).toEqual(["unchanged", "redirect", "argv", "cwd", "CPATH", "LIBRARY_PATH", "MANPATH", "SDKROOT", "relative PATH", "cached PATH", "failed git"]);
+  for (const [name, value] of Object.entries(result.controls)) {
+    if (name === "unchanged") expect(value.configured).toEqual(value.native);
+    else expect(value.configured, name).not.toEqual(value.native);
+  }
+});
 async function spawned(file: string, args: string[], options: Parameters<typeof spawn>[2] = {}) {
   const child = spawn(file, args, { stdio: "ignore", ...options });
   const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });

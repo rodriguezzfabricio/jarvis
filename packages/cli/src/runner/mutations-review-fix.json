@@ -1,17 +1,5 @@
 [
   {
-    "name": "review fix: a fix request in the request's words is ignored",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "const fixes = !noFix && j.then !== \"none\" && auth.authorized;",
-    "replacement": "const fixes = !noFix && j.then !== \"none\" && false;"
-  },
-  {
-    "name": "review fix: a plain review gets a fix pipeline",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "if (fixes) then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");",
-    "replacement": "then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");"
-  },
-  {
     "name": "review fix: a report path typed in the request is taken unchecked",
     "file": "packages/cli/src/triage/triage.ts",
     "anchor": "if (problem) add(\"report-refused\", `\"${typed}\": ${problem}`);",
@@ -22,12 +10,6 @@
     "file": "packages/cli/src/triage/triage.ts",
     "anchor": "    if (report !== null) first = { ...first, ...stepsFor(\"review\", { design: false, onboarding: false, report: true }) };\n",
     "replacement": ""
-  },
-  {
-    "name": "review fix: a tier-2 area no longer makes it a security review",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "review = { report, security: security !== undefined || areas.length > 0, limits:",
-    "replacement": "review = { report, security: security !== undefined, limits:"
   },
   {
     "name": "review fix: a report path may leave the checkout",
@@ -174,12 +156,6 @@
     "replacement": "if (false) throw new Error(\"a review's findings are not a plan"
   },
   {
-    "name": "review fix: eval gives a plain review a build-loop arm",
-    "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "if (type === \"review\" && then === \"bug\") return \"review-fix\";",
-    "replacement": "if (type === \"review\") return \"review-fix\";"
-  },
-  {
     "name": "review fix: eval checks the unit gate only after the preflight",
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "if (pipeline === \"review-fix\" && !loopChecks.checks.unit) throw",
@@ -210,18 +186,6 @@
     "replacement": "  return [];\n"
   },
   {
-    "name": "review fix: run leaves the session's report uncommitted",
-    "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "  const committed = commitReportOnly(git, report, `review report ${report} (written by the review session)`);\n",
-    "replacement": "  const committed = undefined as string | undefined;\n"
-  },
-  {
-    "name": "review fix: run numbers fix tasks over the ledger's own",
-    "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "reviewFixPlan(output, checks, existing, fixAuthorization",
-    "replacement": "reviewFixPlan(output, checks, existing.slice(0, 0), fixAuthorization"
-  },
-  {
     "name": "review fix: run reviews fix tasks without the bug brief",
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "      ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: \"bug\" as const } : {}),\n",
@@ -232,24 +196,6 @@
     "file": "packages/cli/src/commands/run.ts",
     "anchor": "result = run.drive ? await run.drive(loop) : await loop(run.loop);",
     "replacement": "result = await loop(run.loop);"
-  },
-  {
-    "name": "review fix: a no-fix constraint is ignored",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "const noFix = auth.forbidden?.words;",
-    "replacement": "const noFix = noEdit;"
-  },
-  {
-    "name": "review fix: a no-edit constraint is ignored",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "const noEdit = auth.forbidden?.kind === \"edit\" ? auth.forbidden.words : undefined;",
-    "replacement": "const noEdit = undefined as string | undefined;"
-  },
-  {
-    "name": "review fix: a question's edits ignore a no-edit constraint",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "  if (type === \"question\" && noFix && then) then = null;\n",
-    "replacement": ""
   },
   {
     "name": "review fix: a no-edit constraint keeps the model's report",
@@ -324,102 +270,6 @@
     "replacement": "if (false) throw new Error(\"--report goes with --plan review\");"
   },
   {
-    "name": "review fix: a detached runner loses --report",
-    "file": "packages/cli/src/commands/run.ts",
-    "anchor": ", ...(context.reviewReport ? [\"--report\", context.reviewReport] : [])]",
-    "replacement": "]"
-  },
-  {
-    "name": "review fix: a fix imperative in a clause with a negation authorizes",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (m && !NEGATION.test(clause))",
-    "replacement": "if (m)"
-  },
-  {
-    "name": "review fix: any word after the verb authorizes, descriptive uses too",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "(${VERB}\\s+${OBJECT})",
-    "replacement": "(${VERB}\\s+\\S+)"
-  },
-  {
-    "name": "review fix: a fix verb anywhere is an imperative",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "new RegExp(String.raw`${LEAD}(${VERB}",
-    "replacement": "new RegExp(String.raw`(${VERB}"
-  },
-  {
-    "name": "review fix: an unscoped negation of editing is ignored",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "      if (!hit) continue;\n",
-    "replacement": "      if (!hit || true) continue;\n"
-  },
-  {
-    "name": "review fix: a scoped negation stops the fixes",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (edit && SCOPABLE.test(edit[1]!) && SCOPE.test(after)) {",
-    "replacement": "if (false) {"
-  },
-  {
-    "name": "review fix: any verb can be scoped, writes and commits too",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "const SCOPABLE = /^(?:edit|",
-    "replacement": "const SCOPABLE = /(?:|edit|"
-  },
-  {
-    "name": "review fix: the whole repository counts as a named part",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "(?!(?:the\\s+|this\\s+|that\\s+|your\\s+|our\\s+|my\\s+)?(?:repo|repository|code|codebase|project|files?|anything|everything|it|them|this|that|source|tree|workspace|checkout|branch)\\b)",
-    "replacement": ""
-  },
-  {
-    "name": "review fix: \"change nothing\" is ignored",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (nothing) forbidden ??=",
-    "replacement": "if (false) forbidden ??="
-  },
-  {
-    "name": "review fix: \"read-only\" is ignored",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (readOnly) forbidden ??=",
-    "replacement": "if (false) forbidden ??="
-  },
-  {
-    "name": "review fix: \"report only\" is ignored",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (reportOnly) forbidden ??=",
-    "replacement": "if (false) forbidden ??="
-  },
-  {
-    "name": "review fix: a later no-edit doesn't outrank an earlier no-fix",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": "if (forbidden?.kind === \"fix\") {",
-    "replacement": "if (false) {"
-  },
-  {
-    "name": "review fix: curly apostrophes hide a negation",
-    "file": "packages/cli/src/triage/authorize.ts",
-    "anchor": ".replace(/[\\u2018\\u2019\\u02bc]/g, \"'\")",
-    "replacement": ""
-  },
-  {
-    "name": "review fix: the model's judgment authorizes fixes",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "const fixes = !noFix && j.then !== \"none\" && auth.authorized;",
-    "replacement": "const fixes = !noFix && j.then !== \"none\" && (auth.authorized || j.then !== undefined);"
-  },
-  {
-    "name": "review fix: a scoped limit doesn't reach the review",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "limits: fixes ? [...auth.limits] : [] };",
-    "replacement": "limits: [] };"
-  },
-  {
-    "name": "review fix: triage stays quiet when no fixes were requested",
-    "file": "packages/cli/src/triage/triage.ts",
-    "anchor": "    fixesDeclined ? \"Fixes weren't requested: the review changes no code.\" : undefined,\n",
-    "replacement": ""
-  },
-  {
     "name": "review fix: a reserved stem matches only the whole name",
     "file": "packages/cli/src/runner/review-path.ts",
     "anchor": "codeowners|conventions)/i;",
@@ -432,28 +282,10 @@
     "replacement": "const RESERVED_WORD = /(?!)/;"
   },
   {
-    "name": "review fix: a report may replace a file the base revision has",
-    "file": "packages/cli/src/runner/review-fix.ts",
-    "anchor": "if (existsAtBase && !written.has(report)) return",
-    "replacement": "if (false) return"
-  },
-  {
     "name": "review fix: eval checks the report's target only after the review session",
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "const step: ReviewStepResult = target ? {",
     "replacement": "const step: ReviewStepResult = false ? {"
-  },
-  {
-    "name": "review fix: eval doesn't record the report it commits",
-    "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "if (committed) { baseRevision = committed; recordReport(ledger, output.report, committed); }",
-    "replacement": "if (committed) { baseRevision = committed; }"
-  },
-  {
-    "name": "review fix: run doesn't record the report it commits",
-    "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "  if (committed) recordReport(ledger, report, committed);\n",
-    "replacement": ""
   },
   {
     "name": "review fix: a fix task's goal drops the request's limits",
@@ -468,15 +300,189 @@
     "replacement": ""
   },
   {
-    "name": "review fix: eval drops the request's limits",
+    "name": "review fix: triage starts a review's fixes from its wording",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    if (report !== null) first = { ...first, ...stepsFor(\"review\", { design: false, onboarding: false, report: true }) };\n",
+    "replacement": "    if (report !== null) first = { ...first, ...stepsFor(\"review\", { design: false, onboarding: false, report: true }) };\n    if (fixesMentioned) then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");\n"
+  },
+  {
+    "name": "review fix: triage starts a review's fixes from the model's judgment",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    review = { report, security: security !== undefined || areas.length > 0, fixesMentioned };\n",
+    "replacement": "    review = { report, security: security !== undefined || areas.length > 0, fixesMentioned };\n    if (j.then !== undefined && j.then !== \"none\") then = pipeline(\"bug\", \"Bug fixes for the confirmed findings\");\n"
+  },
+  {
+    "name": "review fix: a tier-2 area no longer makes it a security review",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "review = { report, security: security !== undefined || areas.length > 0, fixesMentioned };",
+    "replacement": "review = { report, security: security !== undefined, fixesMentioned };"
+  },
+  {
+    "name": "review fix: the fixes-mentioned signal is dropped",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    if (fixesMentioned) add(\"fixes-mentioned\",",
+    "replacement": "    if (false) add(\"fixes-mentioned\","
+  },
+  {
+    "name": "review fix: the headline hides that fixes need an opt-in",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "    review?.fixesMentioned ? \"The request mentions fixes: they start only on an explicit opt-in.\" : undefined,\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a prohibition on editing doesn't veto a question's edits",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  if (type === \"question\" && noEdit && then) then = null;\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a prohibition on editing keeps a typed report",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];",
+    "replacement": "const typed = REPORT_FILE.exec(text)?.[1];"
+  },
+  {
+    "name": "review fix: fix words aren't noticed",
+    "file": "packages/cli/src/triage/fix-words.ts",
+    "anchor": "  return FIX_WORDS.test(text);",
+    "replacement": "  return false;"
+  },
+  {
+    "name": "review fix: a negated edit verb isn't a prohibition",
+    "file": "packages/cli/src/triage/fix-words.ts",
+    "anchor": "      if (verb) return clause;",
+    "replacement": "      if (false) return clause;"
+  },
+  {
+    "name": "review fix: \"fix nothing\", \"read-only\" and \"report only\" aren't prohibitions",
+    "file": "packages/cli/src/triage/fix-words.ts",
+    "anchor": "    if (restriction) return clause;",
+    "replacement": "    if (false) return clause;"
+  },
+  {
+    "name": "review fix: curly apostrophes hide a negation",
+    "file": "packages/cli/src/triage/fix-words.ts",
+    "anchor": ".replace(/[\\u2018\\u2019\\u02bc]/g, \"'\")",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: eval gives a review a build-loop arm without the opt-in",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "[], t.review?.limits ?? [])",
+    "anchor": "if (type === \"review\" && reviewFix === true) return \"review-fix\";",
+    "replacement": "if (type === \"review\") return \"review-fix\";"
+  },
+  {
+    "name": "review fix: eval takes any reviewFix value as an opt-in",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  const parsed = ReviewFixOptIn.safeParse(raw);\n  if (!parsed.success) throw",
+    "replacement": "  const parsed = { success: true as const, data: true as const };\n  if (!parsed.success) throw"
+  },
+  {
+    "name": "review fix: eval drops the opt-in's limits",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "[], optIn?.limits ?? [])",
     "replacement": "[], [])"
   },
   {
-    "name": "review fix: run drops the request's limits",
+    "name": "review fix: run --plan review starts without an opt-in",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "        if (!options.fix && options.fixAnswer === undefined) throw",
+    "replacement": "        if (false) throw"
+  },
+  {
+    "name": "review fix: run --fix-answer takes any reference",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "if (options.fixAnswer !== undefined && !/^[1-9]\\d*:review-fix$/.test(options.fixAnswer)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: run takes the opt-in flags without --plan review",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "      } else if (options.fix || options.fixAnswer !== undefined || limits.length) throw",
+    "replacement": "      } else if (false) throw"
+  },
+  {
+    "name": "review fix: a detached runner loses the opt-in and its limits",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "      ...(context.reviewFix?.by === \"flag\" ? [\"--fix\"] : context.reviewFix?.by === \"answer\" ? [\"--fix-answer\", context.reviewFix.ref] : []),\n      ...(context.reviewLimits ?? []).flatMap((limit) => [\"--limit\", limit])];",
+    "replacement": "];"
+  },
+  {
+    "name": "review fix: a detached runner loses --report",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "...(context.reviewReport ? [\"--report\", context.reviewReport] : []),",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: run plans fixes without an opt-in",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "fixAuthorization(output.request).limits) };",
-    "replacement": "[]) };"
+    "anchor": "  if (!optIn.fix) throw new Error(",
+    "replacement": "  if (false) throw new Error("
+  },
+  {
+    "name": "review fix: run takes a fix answer without checking the ledger",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "if (optIn.fix.by === \"answer\" && !recordedFixYes(ledger.entries(), optIn.fix.ref)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "review fix: run drops the opt-in's limits",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits)",
+    "replacement": "reviewFixPlan(output, checks, existing, [])"
+  },
+  {
+    "name": "review fix: run numbers fix tasks over the ledger's own",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits)",
+    "replacement": "reviewFixPlan(output, checks, [], optIn.limits)"
+  },
+  {
+    "name": "review fix: run lets a report replace a file the branch has",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  if (target) throw new ReviewOutputError(\"report-refused\", target);",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: run leaves the session's report uncommitted",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  commitReportOnly(git, report, `review report ${report} (written by the review session)`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "review fix: a recorded answer of anything counts as yes",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "d.answer.trim().toLowerCase() === \"yes\"",
+    "replacement": "d.answer.trim().length > 0"
+  },
+  {
+    "name": "review fix: a default counts as the user's answer",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "recorded !== undefined && d.by === \"user\" && d.confirmed === true",
+    "replacement": "recorded !== undefined && d.confirmed === true"
+  },
+  {
+    "name": "review fix: an unconfirmed answer counts",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "d.by === \"user\" && d.confirmed === true &&",
+    "replacement": "d.by === \"user\" &&"
+  },
+  {
+    "name": "review fix: a phone or timeout answer counts",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "i.phase === \"answer\" && i.intakeBy === \"session\" && i.intakeOwned === true",
+    "replacement": "i.phase === \"answer\""
+  },
+  {
+    "name": "review fix: any question's answer counts",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "const m = /^([1-9]\\d*):review-fix$/.exec(ref);",
+    "replacement": "const m = /^([1-9]\\d*):/.exec(ref);"
+  },
+  {
+    "name": "review fix: a report may replace a file the base revision has",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "  if (existsAtBase) return `the report",
+    "replacement": "  if (false) return `the report"
   }
 ]

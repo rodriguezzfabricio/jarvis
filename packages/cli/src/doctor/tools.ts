@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { ChecksStore } from "../checks/store.ts";
-import { pinnedMaestroBin, pinnedSecurityScanners } from "../config/pins.ts";
+import { pinnedImpeccable, pinnedMaestroBin, pinnedSecurityScanners } from "../config/pins.ts";
+import type { ImpeccablePin } from "../lanes/impeccable.ts";
 import { fileHash } from "../lanes/materialize.ts";
 import { verifyChecksReadOnly } from "./read-only.ts";
 import { SCANNERS, scannerDoctorChecks, type ScannerDeps, type ScannerPins } from "../security/scanners.ts";
@@ -18,6 +19,9 @@ export interface ToolDoctorDeps {
   scannerPins?: ScannerPins;
   scannerDeps?: ScannerDeps;
   tauriBin?: string;
+  /** Test seams for the Impeccable probe: the pin (default pins.ts) and the file hash. */
+  impeccablePin?: ImpeccablePin;
+  hashFile?: (path: string) => string;
   toolchain?: QaToolchainInput | undefined;
   /** Discover existing manifests only inside runner-owned project check fixtures. */
   projectsRoot?: string;
@@ -66,6 +70,16 @@ export async function toolDoctorChecks(deps: ToolDoctorDeps): Promise<DoctorChec
     add("xcode_clt", true, `${path}: ${exact}`);
   } catch (error) { add("xcode_clt", false, `not run: Xcode command-line tools (${String(error)})`); }
   probe("tauri", deps.tauriBin ?? [join(home, ".cargo", "bin", "cargo-tauri"), locate("tauri")].find((p): p is string => p !== undefined && exists(p)));
+  // Impeccable's engine (decision 124): the pinned file by its hash and exact version, never a PATH lookup or an install.
+  const impeccable = deps.impeccablePin ?? pinnedImpeccable(home);
+  try {
+    if (!isAbsolute(impeccable.bin) || !exists(impeccable.bin)) throw new Error("binary unavailable");
+    const digest = (deps.hashFile ?? fileHash)(impeccable.bin);
+    if (digest !== impeccable.sha256) throw new Error(`sha256 ${digest} differs from the pinned ${impeccable.sha256}`);
+    const found = deps.exec(impeccable.bin, ["--version"], { PATH: "/usr/bin:/bin", DO_NOT_TRACK: "1", IMPECCABLE_NO_TELEMETRY: "1" }).trim();
+    if (found !== `${impeccable.version}+engine`) throw new Error(`expected ${impeccable.version}+engine, found ${found.slice(0, 80)}`);
+    add("impeccable", true, `${impeccable.bin}: ${found}; sha256 ${digest}`);
+  } catch (error) { add("impeccable", false, `not run: impeccable (${String(error)})`); }
   let inputs: { root: string; store: ChecksStore }[];
   try { inputs = deps.toolchain ? [deps.toolchain] : discoverToolchains(deps.projectsRoot); }
   catch (error) { add("qa_toolchain", false, `QA manifest discovery unavailable: ${String(error)}`); return checks; }

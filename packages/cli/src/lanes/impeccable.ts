@@ -6,7 +6,8 @@ import type { SessionOutcome, SessionSpec } from "../proc/session.ts";
 import { localTarget } from "./browser.ts";
 
 export const IMPECCABLE_OUTPUT_BYTES = 1024 * 1024;
-export interface ImpeccablePin { bin: string; version: string }
+/** `sha256` is the engine file's hash: the runner refuses any other file at `bin` (decision 124). */
+export interface ImpeccablePin { bin: string; version: string; sha256: string }
 export type ImpeccableTarget = { kind: "source"; files: readonly string[] } | { kind: "url"; port: number; url: string };
 export interface ImpeccableOptions {
   repo: string;

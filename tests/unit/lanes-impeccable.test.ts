@@ -4,7 +4,7 @@ import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/se
 
 const outcome = (stdout = "[]", code = 0): SessionOutcome => ({ stdout, code, stderr: "", timedOut: false, overflowed: false, durationMs: 1 });
 const finding = { antipattern: "overused-font", severity: "warning", message: "Choose deliberate type", file: "App.tsx", line: 1 };
-const pin = { bin: "/tools/impeccable", version: "0.1.16" };
+const pin = { bin: "/tools/impeccable", version: "0.1.16", sha256: "e".repeat(64) };
 
 describe("Impeccable protocol", () => {
   it("passes clean and advisory-only scans, fails primary findings", () => {

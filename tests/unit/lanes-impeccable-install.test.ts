@@ -10,7 +10,7 @@ afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,for
 describe("protected design installation",()=>{
   it("installs driver dependencies and separate verifiers, without approving or overwriting",()=>{
     const root=mkdtempSync(join(tmpdir(),"design-install-"));roots.push(root);const store=new ChecksStore(root);
-    const input={nodeBin:"/node",scanner:{pin:{bin:"/tools/impeccable",version:"0.1.16"},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"};
+    const input={nodeBin:"/node",scanner:{pin:{bin:"/tools/impeccable",version:"0.1.16",sha256:"e".repeat(64)},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"};
     const defs=installDesignChecks(store,input);
     expect(Object.keys(defs)).toEqual(["impeccable-source","impeccable-url","design-browser"]);
     expect(existsSync(store.lockPath)).toBe(false);
@@ -25,7 +25,7 @@ describe("protected design installation",()=>{
   it("runs installed source driver and isolated verifier with a fake engine",async()=>{
     const root=mkdtempSync(join(tmpdir(),"design-runtime-"));roots.push(root);const store=new ChecksStore(join(root,"project"));
     const bin=join(root,"fake-impeccable");writeFileSync(bin,'#!/bin/sh\nif [ "$1" = "--version" ]; then printf "0.1.16+engine\\n"; else printf "[]\\n"; fi\n',{mode:0o700});
-    installDesignChecks(store,{nodeBin:process.execPath,scanner:{pin:{bin,version:"0.1.16"},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"});
+    installDesignChecks(store,{nodeBin:process.execPath,scanner:{pin:{bin,version:"0.1.16",sha256:"e".repeat(64)},files:["App.tsx"],browser:{manifest:"/tools/manifest.json",manifestHash:"a".repeat(64),url:"http://127.0.0.1:3000/",port:9222}},plan:{designId:"one",flows:[{id:"add",screen:"today",url:"http://127.0.0.1:3000/",steps:[],expectText:"Ready"}]},axeVersion:"4.14.0"});
     const common={bin:process.execPath,cwd:root,env:{PATH:"/usr/bin:/bin"},timeoutMs:5000,maxOutputBytes:1024*1024};
     const driver=await runSession({...common,args:[join(store.checksDir,"fixtures/design-runtime/lanes/impeccable-driver.ts"),"source",join(store.checksDir,"fixtures/impeccable.json")]});
     expect(driver.code,driver.stderr).toBe(0);expect(JSON.parse(driver.stdout)).toMatchObject({kind:"impeccable-source",result:{status:"pass"}});

@@ -482,8 +482,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
       else {
         problems.push(...step.problems);
         const output = { ...step.output, request }; // the runner's copy of the request, not the session's
-        baseRevision = commitReport(p.workspace, output.report, output.reportText, p.home) ?? baseRevision;
-        reviewed = { report: output.report, reportRevision: baseRevision, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
+        const committed = commitReport(p.workspace, output.report, output.reportText, p.home);
+        if (committed) baseRevision = committed;
+        reviewed = { report: output.report, reportRevision: committed ?? null, findings: output.findings.length + output.skipped.length, cleared: output.cleared.length, skipped: output.skipped.length, outcomes: [], updated: false };
         const fix = reviewFixPlan(output, Object.keys(gate.checks).map((name) => ({ name })));
         if (!fix) { outcome = "complete"; log(`${task.id} ${runId}: the review found nothing to fix; the report is the deliverable`); }
         else {

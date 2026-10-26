@@ -200,8 +200,8 @@
   {
     "name": "review fix: eval never commits the review's report",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "baseRevision = commitReport(p.workspace, output.report, output.reportText, p.home) ?? baseRevision;",
-    "replacement": "void commitReport;"
+    "anchor": "const committed = commitReport(p.workspace, output.report, output.reportText, p.home);",
+    "replacement": "const committed = undefined as string | undefined; void commitReport;"
   },
   {
     "name": "review fix: eval keeps quiet about the review session's other edits",

@@ -91,6 +91,8 @@ it.each(["send", "poll"] as const)("a failed %s never approves or blocks and can
   vi.mocked(s.notifier[method]).mockRejectedValueOnce(new Error("fake-reply transport failure"));
   const run = s.make(); await expect(run.tick()).resolves.toBeUndefined();
   expect(s.approvals()).toHaveLength(0);
+  // A failed send grants nothing: no send record, so no tap can count until a send succeeds (decision 117).
+  expect(s.ledger.entries().some((e) => e.kind === "notify" && (e.data as { phase?: string }).phase === "sent")).toBe(method === "poll");
   expect(s.warnings.join("\n")).not.toContain("fake-reply");
   await run.tick(); s.reply(s.button()); await run.tick();
   expect(s.approvals()).toHaveLength(1); await run.close();

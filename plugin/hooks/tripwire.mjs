@@ -69,7 +69,8 @@ function bashInRunnerHome(command, cwd, env) {
 // check proposals; the onboard and sweep reports and plans; the ship skill's release manifest (the runner
 // takes its targets from its own config, never from it). None of them is authority: candidates
 // touching `.jarvis/` are refused and the runner reads its own copies (decisions 87, 91). Every other
-// `.jarvis/` name stays refused. Never through "..".
+// `.jarvis/` name stays refused, except read-only access to the recorded research fixtures (below).
+// Never through "..".
 const NAME = "[A-Za-z0-9_-][A-Za-z0-9._-]*";
 const SESSION_FILES = [
   `notes\\/${NAME}\\.md`,
@@ -88,6 +89,16 @@ const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")}
 
 function sessionOwned(path) {
   return SESSION_OWNED.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
+}
+
+// The run provider's recorded research (decision 132): one file per source directly in
+// `.jarvis/research-fixtures/`. Sessions may list, search and read them, never write them, so a
+// session can't plant its own evidence. No subfolders, hidden files or "..".
+const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep"]);
+const FIXTURES = new RegExp(`(^|\\/)\\.jarvis\\/research-fixtures(\\/|\\/(${NAME}|\\*|\\*\\.md))?$`);
+
+function fixtureRead(tool, path) {
+  return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !/(^|\/)\.\.(\/|$)/.test(path);
 }
 
 /** A marker that exists as any kind of entry (a symlink, even a dangling one), or can't be checked. */
@@ -127,7 +138,7 @@ export function check(input, env = process.env) {
   if (tool !== "Bash" && inRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
   if (tool === "Bash" && bashInRunnerHome(text, input?.cwd, env)) return OFF_LIMITS;
   if (!isJarvisSession(input, env)) return undefined;
-  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text)) return OFF_LIMITS;
+  if (tool !== "Bash" && /(^|\/)\.jarvis(\/|$)/.test(text) && !sessionOwned(text) && !fixtureRead(tool, text)) return OFF_LIMITS;
   if (tool !== "Bash") return undefined;
   for (const [re, why] of RULES) if (re.test(text)) return why;
   return undefined;

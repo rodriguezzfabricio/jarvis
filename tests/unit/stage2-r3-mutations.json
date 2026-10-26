@@ -154,5 +154,29 @@
     "file": "skills/intake/SKILL.md",
     "anchor": "Keep partial preferences in `PRODUCT.md` without inventing fields or asking extra questions",
     "replacement": "Fill missing profile fields with inferred answers"
+  },
+  {
+    "name": "stage2 r3 tripwire refuses fixture reads",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": " && !fixtureRead(tool, text)) return OFF_LIMITS;",
+    "replacement": ") return OFF_LIMITS;"
+  },
+  {
+    "name": "stage2 r3 tripwire lets sessions write fixtures",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "const READ_ONLY_TOOLS = new Set([\"Read\", \"Glob\", \"Grep\"]);",
+    "replacement": "const READ_ONLY_TOOLS = new Set([\"Read\", \"Glob\", \"Grep\", \"Write\", \"Edit\"]);"
+  },
+  {
+    "name": "stage2 r3 tripwire opens fixture subfolders",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "research-fixtures(\\\\/|\\\\/(${NAME}|\\\\*|\\\\*\\\\.md))?$",
+    "replacement": "research-fixtures(\\\\/.*)?$"
+  },
+  {
+    "name": "stage2 r3 tripwire fixture reads through ..",
+    "file": "plugin/hooks/tripwire.mjs",
+    "anchor": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path) && !/(^|\\/)\\.\\.(\\/|$)/.test(path);",
+    "replacement": "return READ_ONLY_TOOLS.has(tool) && FIXTURES.test(path);"
   }
 ]

@@ -109,6 +109,34 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     }
   });
 
+  // Recorded research (decision 132): the run provider puts one file per source directly in
+  // `.jarvis/research-fixtures/`. The recorded researcher lists, searches and reads them; no tool may
+  // write there, or a session could plant its own evidence.
+  it("lets only Read, Glob and Grep reach the recorded research fixtures, directly in their folder", () => {
+    const tool = (tool_name: string, tool_input: Record<string, string>) => check({ tool_name, tool_input, cwd: jarvisRepo }, {});
+    for (const p of [
+      ".jarvis/research-fixtures", ".jarvis/research-fixtures/", ".jarvis/research-fixtures/INDEX.md",
+      ".jarvis/research-fixtures/001-catalogue-format.md", ".jarvis/research-fixtures/*.md", ".jarvis/research-fixtures/*",
+      "/Users/f/repo/.jarvis/research-fixtures/002-a.md", "/Users/x/.jarvis-work/worktrees/a/.jarvis/research-fixtures",
+    ]) {
+      expect(tool("Read", { file_path: p }), `Read ${p}`).toBeUndefined();
+      expect(tool("Glob", { pattern: "*.md", path: p }), `Glob in ${p}`).toBeUndefined();
+      expect(tool("Glob", { pattern: p }), `Glob ${p}`).toBeUndefined();
+      expect(tool("Grep", { pattern: "^title:", path: p }), `Grep in ${p}`).toBeUndefined();
+      for (const w of ["Write", "Edit"]) expect(tool(w, { file_path: p }), `${w} ${p}`).toBeTruthy();
+    }
+    for (const p of [
+      ".jarvis/research-fixtures/sub/a.md", ".jarvis/research-fixtures/.hidden.md", ".jarvis/research-fixtures/../ledger.jsonl",
+      ".jarvis/research-fixtures/..", ".jarvis/research-fixtures/**/*.md", ".jarvis/research-fixtures/a.md/",
+      ".jarvis/research-fixtures-old/a.md", ".jarvis/research-fixturesx", ".jarvis/research/a.md", ".jarvis/fixtures/a.md",
+      "~/.jarvis/research-fixtures/a.md", "$HOME/.jarvis/research-fixtures/a.md", "/Users/f/.jarvis/research-fixtures/a.md",
+      "/home/f/.jarvis/research-fixtures", "/Users/f/repo/../.jarvis/research-fixtures/a.md",
+      "../sibling/.jarvis/research-fixtures/a.md", "/Users/f/repo/sub/../../other/.jarvis/research-fixtures",
+    ]) {
+      for (const t of ["Read", "Glob", "Grep", "Write", "Edit"]) expect(tool(t, { file_path: p, path: p, pattern: p }), `${t} ${p}`).toBeTruthy();
+    }
+  });
+
   it("allows every .jarvis/ file a skill or template names as a target, so a new skill can't silently break", () => {
     const repo = fileURLToPath(new URL("../../", import.meta.url));
     // Placeholders the skills use in their .jarvis/ paths, filled with a valid example each.

@@ -1,14 +1,17 @@
+import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { crc32, inflateRawSync } from "node:zlib";
 
 /**
- * A bounded zip reader for fixture archives the runner unpacks outside any sandbox (decision 123; Codex security
- * review of dd0923f..a299593, highs 1 and 2). No subprocess, so no inherited UNZIP/UNZIPOPT can change what is
- * written. Every entry is listed and checked before anything is written: its path stays inside one folder, it
- * is a plain file or folder, and the archive's size, entry count and declared expansion are within limits.
- * While unpacking, each entry inflates to at most its declared size and the output budget left, must match its
- * CRC-32, and the whole unpack has a deadline. Every refusal starts with "refused:".
+ * A bounded zip reader for the toolchain zip the runner unpacks outside any sandbox (decision 123; Codex security
+ * reviews of dd0923f..a299593 and e13ca2a). It runs in its own process (zip-worker.ts), which the runner kills at
+ * the deadline, with a capped heap and no inherited environment. The bytes must hash to the pinned SHA-256 before
+ * any is parsed. Then every entry is checked before anything is written: its name's length, depth and the names'
+ * total are bounded before any string is built from it; its path stays inside one folder; it is a plain file or
+ * folder; no two paths are one on this Mac's disk (case and Unicode normalization fold); and the archive's size,
+ * entry count and declared expansion are within limits. Each entry inflates to at most its declared size and the
+ * budget left, and must match its CRC-32. Every refusal starts with "refused:".
  */
 
 export interface ZipLimits {
@@ -16,27 +19,42 @@ export interface ZipLimits {
   maxEntries: number;
   /** Declared and actual expanded bytes, all entries together. */
   maxTotalBytes: number;
+  /** One name, in bytes. */
+  maxNameBytes: number;
+  /** Folders in one path. */
+  maxDepth: number;
+  /** All names together, in bytes. */
+  maxTotalNameBytes: number;
+  /** The unpack process is killed at this deadline (go.ts). */
   timeoutMs: number;
+  /** The unpack process's V8 heap (go.ts). */
+  maxHeapMb: number;
 }
 
 interface Entry { name: string; dir: boolean; executable: boolean; method: number; crc: number; compressedSize: number; size: number; dataStart: number }
-export interface ZipListing { entries: Entry[]; totalBytes: number; data: Buffer }
+interface Listing { entries: Entry[]; data: Buffer }
 
-const EOCD = 0x06054b50, CENTRAL = 0x02014b50, LOCAL = 0x04034b50;
+const EOCD = 0x06054b50, CENTRAL = 0x02014b50, LOCAL = 0x04034b50, SLASH = 0x2f;
 const S_IFMT = 0o170000, S_IFREG = 0o100000, S_IFDIR = 0o040000;
 const refuse = (why: string): never => { throw new Error(`refused: the toolchain zip ${why}`); };
 
-/** Reads at most `limits.maxZipBytes` of the archive at `zipPath` and checks every entry against `within` (a relative folder). */
-export function listZip(zipPath: string, within: string, limits: ZipLimits): ZipListing {
+/** Reads the archive (at most `maxZipBytes`, never through a link) and checks it is the pinned one. */
+function readPinned(zipPath: string, sha256: string, limits: ZipLimits): Buffer {
   const fd = openSync(zipPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-  let data: Buffer;
   try {
-    const size = fstatSync(fd).size;
-    if (size > limits.maxZipBytes) refuse(`is larger than ${limits.maxZipBytes} bytes (${size})`);
-    data = Buffer.alloc(size);
-    for (let at = 0; at < size;) { const n = readSync(fd, data, at, size - at, at); if (n === 0) refuse("shrank while it was read"); at += n; }
+    const st = fstatSync(fd);
+    if (!st.isFile()) refuse("is not a plain file");
+    if (st.size > limits.maxZipBytes) refuse(`is larger than ${limits.maxZipBytes} bytes (${st.size})`);
+    const data = Buffer.alloc(st.size);
+    for (let at = 0; at < st.size;) { const n = readSync(fd, data, at, st.size - at, at); if (n === 0) refuse("shrank while it was read"); at += n; }
+    const actual = createHash("sha256").update(data).digest("hex");
+    if (actual !== sha256) refuse(`is not the pinned one (sha256 ${actual}, pinned ${sha256})`);
+    return data;
   } finally { closeSync(fd); }
+}
 
+/** Checks every entry of the pinned archive against `within` (a relative folder) before anything is written. */
+function listZip(data: Buffer, within: string, limits: ZipLimits): Listing {
   // End of central directory: the last record, with no zip64, spanning or trailing bytes.
   let eocd = -1;
   for (let i = data.length - 22; i >= Math.max(0, data.length - 22 - 0xffff); i--) if (data.readUInt32LE(i) === EOCD) { eocd = i; break; }
@@ -48,8 +66,9 @@ export function listZip(zipPath: string, within: string, limits: ZipLimits): Zip
   if (cdOffset + cdSize !== eocd) refuse("has a central directory out of place");
 
   const entries: Entry[] = [];
-  const seen = new Set<string>(), files = new Set<string>(), folders = new Set<string>();
-  let totalBytes = 0;
+  /** Collision keys: the path, Unicode-decomposed and case-folded as this Mac's disk compares names, "/" as "\0". */
+  const keys: { key: string; dir: boolean; name: string }[] = [];
+  let totalBytes = 0, nameBytes = 0;
   for (let i = 0, at = cdOffset; i < count; i++) {
     if (at + 46 > eocd || data.readUInt32LE(at) !== CENTRAL) refuse(`has a damaged central directory at entry ${i}`);
     const madeBy = data.readUInt16LE(at + 4) >> 8, flags = data.readUInt16LE(at + 8), method = data.readUInt16LE(at + 10);
@@ -57,7 +76,14 @@ export function listZip(zipPath: string, within: string, limits: ZipLimits): Zip
     const nameLen = data.readUInt16LE(at + 28), next = at + 46 + nameLen + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32);
     const external = data.readUInt32LE(at + 38), localOffset = data.readUInt32LE(at + 42);
     if (next > eocd) refuse(`has a damaged central directory at entry ${i}`);
+    // Bounded before any string is built from the name: its length, its depth, and all names together.
+    if (nameLen > limits.maxNameBytes) refuse(`has a name longer than ${limits.maxNameBytes} bytes (entry ${i}, ${nameLen} bytes)`);
+    nameBytes += nameLen;
+    if (nameBytes > limits.maxTotalNameBytes) refuse(`has names that add up to more than ${limits.maxTotalNameBytes} bytes`);
     const rawName = data.subarray(at + 46, at + 46 + nameLen);
+    let slashes = 0;
+    for (const b of rawName) if (b === SLASH) slashes++;
+    if (slashes > limits.maxDepth) refuse(`has a path deeper than ${limits.maxDepth} folders (entry ${i})`);
     const name = rawName.toString("utf8");
     at = next;
 
@@ -76,14 +102,7 @@ export function listZip(zipPath: string, within: string, limits: ZipLimits): Zip
     if (method !== 0 && method !== 8) refuse(`has an entry with compression method ${method}: ${JSON.stringify(name)}`);
     if (compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) refuse("uses zip64, which a toolchain module doesn't need");
     if ((method === 0 && compressedSize !== size) || (dir && size !== 0)) refuse(`has inconsistent sizes for ${JSON.stringify(name)}`);
-    // Names fold case on this Mac's disk: two names that differ only by case, or a file where a folder goes, collide.
-    const key = body.toLowerCase();
-    if (seen.has(key)) refuse(`has the same path twice: ${JSON.stringify(name)}`);
-    seen.add(key);
-    const parents = body.split("/").slice(0, -1).map((_, k, a) => a.slice(0, k + 1).join("/").toLowerCase());
-    if ((!dir && folders.has(key)) || parents.some((p) => files.has(p))) refuse(`has a file where a folder goes: ${JSON.stringify(name)}`);
-    (dir ? folders : files).add(key);
-    for (const p of parents) folders.add(p);
+    keys.push({ key: body.normalize("NFD").toLowerCase().normalize("NFD").replaceAll("/", "\u0000"), dir, name });
     totalBytes += size;
     if (totalBytes > limits.maxTotalBytes) refuse(`declares ${totalBytes} or more bytes, more than its ${limits.maxTotalBytes}-byte limit`);
 
@@ -95,22 +114,25 @@ export function listZip(zipPath: string, within: string, limits: ZipLimits): Zip
     if (dataStart + compressedSize > cdOffset) refuse(`has data past the archive for ${JSON.stringify(name)}`);
     entries.push({ name, dir, executable: (mode & 0o111) !== 0, method, crc, compressedSize, size, dataStart });
   }
+  // Collisions, in one sort (linear memory): equal keys are one path on disk; with "/" sorted as "\0", every path
+  // inside a file's name follows it directly, so a file where a folder goes is the next key starting with it.
+  keys.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  for (let k = 1; k < keys.length; k++) {
+    const prev = keys[k - 1]!, cur = keys[k]!;
+    if (cur.key === prev.key) refuse(`has the same path twice: ${JSON.stringify(cur.name)}`);
+    if (!prev.dir && cur.key.startsWith(`${prev.key}\u0000`)) refuse(`has a file where a folder goes: ${JSON.stringify(prev.name)}`);
+  }
   // Entries that share data can't expand past the limit either: every entry inflates to its declared size at
   // most, and the declared sizes together are bounded above.
-  return { entries, totalBytes, data };
+  return { entries, data };
 }
 
-/**
- * Writes a checked listing into `dest`, a fresh folder the caller made, file by file, never through a link
- * (O_EXCL | O_NOFOLLOW). A refusal leaves a partial folder: the caller removes it.
- */
-export function extractZip(listing: ZipListing, dest: string, limits: ZipLimits, now: () => number): { files: number; bytes: number } {
-  const deadline = now() + limits.timeoutMs;
+/** Writes a checked listing into `dest`, a fresh folder the caller made, never through a link (O_EXCL | O_NOFOLLOW). */
+function extractZip(listing: Listing, dest: string, limits: ZipLimits): { files: number; bytes: number } {
   let written = 0, files = 0;
   const made = new Set<string>();
   const folder = (p: string) => { if (!made.has(p)) { mkdirSync(p, { recursive: true, mode: 0o755 }); made.add(p); } };
   for (const e of listing.entries) {
-    if (now() > deadline) throw new Error(`refused: unpacking the toolchain zip took longer than ${limits.timeoutMs} ms`);
     const path = join(dest, e.name);
     if (e.dir) { folder(path); continue; }
     const raw = listing.data.subarray(e.dataStart, e.dataStart + e.compressedSize);
@@ -132,4 +154,9 @@ export function extractZip(listing: ZipListing, dest: string, limits: ZipLimits,
     files++;
   }
   return { files, bytes: written };
+}
+
+/** The whole unpack, as the worker process runs it: pinned bytes, a checked listing, then the bounded writes. */
+export function unpackZip(zipPath: string, dest: string, within: string, sha256: string, limits: ZipLimits): { files: number; bytes: number } {
+  return extractZip(listZip(readPinned(zipPath, sha256, limits), within, limits), dest, limits);
 }

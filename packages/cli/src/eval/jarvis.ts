@@ -22,8 +22,8 @@ import { safeGit } from "./git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
-import { evalGoFixture, evalToolchainDir, evalWritableRoots } from "./toolchain.ts";
-import { prepareGoToolchain, removeGoToolchain, type SessionToolchain, type ToolchainReport } from "../toolchain/go.ts";
+import { evalGoFixture, evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
+import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type SessionToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
  * The Jarvis arm of `jarvis eval` (decisions 35, 47; architecture §3.10): each golden task runs through
@@ -422,14 +422,20 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   // Decision 123: the gate's pinned Go for every session, offline and read-only, as the baseline's session gets it.
-  const go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
-  if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
-  let harness: Harness;
+  let go: PreparedToolchain | undefined;
   try {
+    go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
     // Never where any run's sessions write: the harness checks only this run's worktrees and caches.
     checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), ".jarvis-work")), p.jarvisHome]);
-    harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain);
-  } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
+  } catch (e) {
+    // Fail closed: a present but refused toolchain stops the run before any session, and summary.json says why.
+    if (go?.dir) removeGoToolchain(go.dir);
+    rmSync(p.cacheRoot, { recursive: true, force: true });
+    recordToolchainRefusal(p.resultsDir, { arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, outcome: "crashed", snapshot }, e);
+  }
+  if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
+  let harness: Harness;
+  try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
   const tier: TaskTier = t.tier ?? 1;
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
   const review = opts.review ?? productionReview(p, ledger, material, opts);

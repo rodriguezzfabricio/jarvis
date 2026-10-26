@@ -9,12 +9,12 @@ import { evalGoFixture, evalToolchainDir } from "../../packages/cli/src/eval/too
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import { fakeClaudeBin } from "../helpers.ts";
 import { addHidden, addTask, BUG_PROMPT, createEvalFixture, FIXED, harnessLoop, markerGate, type EvalFixture } from "./eval-jarvis-fixture.ts";
-import { FIXTURE_GO, makeGoFixture, toolchainModule } from "./helpers/go-fixture.ts";
+import { FIXTURE_GO, makeGoFixture, pinFixtureToolchain, toolchainModule } from "./helpers/go-fixture.ts";
 
 const fixtures: EvalFixture[] = [];
 afterEach(() => { fixtures.splice(0).forEach((f) => f.cleanup()); vi.restoreAllMocks(); });
 // The disk floor has its own test (toolchain-zip.test.ts); here the host's free disk must not decide the outcome.
-beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); });
+beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); pinFixtureToolchain(); });
 const GO_KEYS = ["GOTOOLCHAIN", "GOMODCACHE", "GOPROXY", "GOSUMDB", "GOFLAGS", "CGO_ENABLED"] as const;
 type Settings = { sandbox: { filesystem: { allowRead: string[]; allowWrite: string[]; denyWrite: string[] } } };
 
@@ -156,6 +156,33 @@ describe("eval sessions get the gate's Go, offline and read-only, in both arms (
     expect(sessions).toBe(0);
     expect(existsSync(evalToolchainDir(fx.workRoot, "05-go", "j5"))).toBe(false);
     expect(existsSync(fixture)).toBe(true);
+  });
+
+  it("fails closed: a fixture that is present but refused stops both arms before any session, and says why in summary.json", async () => {
+    const { fx, fixture } = goTask();
+    vi.spyOn(toolchainHost, "pinnedZipSha256").mockReturnValue("0".repeat(64)); // the fixture's zip is not the pinned one
+    const marker = join(fx.root, "session-started");
+    const task = loadTask(fx.evalsRepo, "05-go");
+    await expect(runBaseline(task, {
+      preflight: async () => ({ ok: true }), claudeBin: fakeClaudeBin(fx.root), jarvisHome: fx.jarvisHome, workRoot: fx.workRoot, runId: "b6",
+      parentEnv: { HOME: fx.home, USER: "t" }, extraEnv: { FAKE_CLAUDE_MODE: "go-env", FAKE_CLAUDE_MARKER: marker }, goFixture: fixture,
+    })).rejects.toThrow(/refused: the toolchain zip is not the pinned one/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(fx.jarvisHome, "evals", "05-go", "b6", "summary.json"))).toBe(true);
+    const b = json(join(fx.jarvisHome, "evals", "05-go", "b6", "summary.json"));
+    expect(b).toMatchObject({ started: false, toolchain: { status: "refused", reason: expect.stringMatching(/not the pinned one/) } });
+    expect(existsSync(evalToolchainDir(fx.workRoot, "05-go", "b6"))).toBe(false);
+    let sessions = 0;
+    await expect(runJarvis(task, {
+      preflight: async () => ({ ok: true }), evalsRepo: fx.evalsRepo, runLoop: harnessLoop(), review: async () => "pass", gate: markerGate().gate,
+      jarvisHome: fx.jarvisHome, workRoot: fx.workRoot, home: fx.home, runId: "j6",
+      harnessSeams: { binaryRealpath: () => "/usr/bin/true", session: async () => { sessions++; throw new Error("must not run"); } },
+    })).rejects.toThrow(/refused: the toolchain zip is not the pinned one/);
+    expect(sessions).toBe(0);
+    expect(existsSync(join(fx.jarvisHome, "evals", "05-go", "j6", "summary.json"))).toBe(true);
+    const j = json(join(fx.jarvisHome, "evals", "05-go", "j6", "summary.json"));
+    expect(j).toMatchObject({ arm: "jarvis", started: false, toolchain: { status: "refused", reason: expect.stringMatching(/not the pinned one/) } });
+    expect(existsSync(evalToolchainDir(fx.workRoot, "05-go", "j6"))).toBe(false);
   });
 
   it("names the gate's module cache, never the grading checks", () => {

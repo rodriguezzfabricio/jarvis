@@ -26,7 +26,7 @@ import { assertTaskDomains } from "./allowlist.ts";
 import { assertHiddenAbsent } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
-import { evalToolchainDir, evalWritableRoots } from "./toolchain.ts";
+import { evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
 import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
@@ -155,7 +155,8 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     } catch (e) {
       rmSync(cacheDir, { recursive: true, force: true });
       if (prepared?.dir) removeGoToolchain(prepared.dir);
-      throw e;
+      // Fail closed: a present but refused toolchain stops the run before its session, and summary.json says why.
+      return recordToolchainRefusal(resultsDir, { task: task.id, runId, resultsDir, workspace, snapshot }, e);
     }
   })();
   if (go.report.status === "unavailable") opts.log?.(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);

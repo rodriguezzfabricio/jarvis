@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hiddenDir } from "./hidden.ts";
 
@@ -29,6 +29,16 @@ export function evalGoFixture(evalsRepo: string, taskId: string): string {
  */
 export function evalWritableRoots(workRoot: string): string[] {
   return ["evals", "cache-runs", "worktrees", "caches", "checks", "feedback"].map((d) => join(workRoot, d)).filter((d) => existsSync(d)).map((d) => realpathSync(d));
+}
+
+/**
+ * A run the toolchain stopped before any session (fail closed): summary.json says it never started, and why,
+ * so the run isn't counted and the reason stays with it. Rethrows, so the schedule stops there.
+ */
+export function recordToolchainRefusal(resultsDir: string, summary: Record<string, unknown>, e: unknown): never {
+  const reason = e instanceof Error ? e.message : String(e);
+  writeFileSync(join(resultsDir, "summary.json"), `${JSON.stringify({ ...summary, started: false, usageLimited: false, toolchain: { status: "refused", reason } }, null, 2)}\n`);
+  throw e;
 }
 
 /** Where a run's toolchain is unpacked: outside the worktrees, caches and runner folder; removed after the run. */

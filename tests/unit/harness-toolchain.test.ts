@@ -8,7 +8,7 @@ import type { TaskInput } from "../../packages/cli/src/runner/harness.ts";
 import { DEFAULT_ROUTING } from "../../packages/cli/src/runner/routing.ts";
 import { prepareGoToolchain, toolchainHost, type SessionToolchain } from "../../packages/cli/src/toolchain/go.ts";
 import { shortTmp } from "../helpers.ts";
-import { makeGoFixture } from "./helpers/go-fixture.ts";
+import { makeGoFixture, pinFixtureToolchain } from "./helpers/go-fixture.ts";
 
 const roots: string[] = [];
 function removeAll(path: string): void {
@@ -18,7 +18,7 @@ function removeAll(path: string): void {
 }
 afterEach(() => { roots.splice(0).forEach(removeAll); vi.restoreAllMocks(); });
 // The disk floor has its own test (toolchain-zip.test.ts); here the host's free disk must not decide the outcome.
-beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); });
+beforeEach(() => { vi.spyOn(toolchainHost, "freeBytes").mockReturnValue(1e15); pinFixtureToolchain(); });
 const flag = (args: readonly string[], name: string) => args[args.indexOf(name) + 1];
 interface Captured { spec: SessionSpec; settings: { sandbox: { filesystem: { allowRead: string[]; allowWrite: string[]; denyWrite: string[] } } } }
 

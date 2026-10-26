@@ -26,12 +26,13 @@ async function setup(publishTime: unknown) {
       send: async (_message, actions) => { buttons.push(...actions); return { time: publishTime } as { time?: number }; },
       poll: async () => { const batch = replies; replies = []; return batch; },
     }) });
-  await run.tick();
+  // A ledger refusal here would stop phone approvals for the run: it must not happen.
+  const firstTick = await run.tick().then(() => undefined, (error: unknown) => error);
   const a = buttons[0]!;
   const sent = ledger.entries().find((e) => (e.data as { phase?: string }).phase === "sent")?.data;
   const tap = async (id: string, time: number) => { replies.push({ id, text: `approve:${a.requestId}:${a.nonce}`, time }); await run.tick(); };
   const approvals = () => ledger.entries().filter((e) => e.kind === "approval");
-  return { run, sent, tap, approvals };
+  return { run, firstTick, sent, tap, approvals };
 }
 
 it("records ntfy's publish time with the send and counts a tap after it", async () => {
@@ -46,6 +47,7 @@ it("records ntfy's publish time with the send and counts a tap after it", async 
 
 it.each([undefined, -1, 1.5, "940"])("ignores an unusable publish time (%s) and keeps the Mac's clock", async (publishTime) => {
   const s = await setup(publishTime);
+  expect(s.firstTick).toBeUndefined();
   expect(s.sent).toEqual(expect.objectContaining({ sentAt: 1_000_000 }));
   expect(s.sent).not.toHaveProperty("serverTime");
   await s.tap("early", 999);

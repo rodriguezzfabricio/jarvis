@@ -3,19 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runDoctor, doctorExitCode } from "../../packages/cli/src/doctor/doctor.ts";
-import { toolDoctorChecks } from "../../packages/cli/src/doctor/tools.ts";
+import { toolDoctorChecks, type ToolDoctorDeps } from "../../packages/cli/src/doctor/tools.ts";
 import { fakeToolchain } from "../fixtures/qa/toolchain.ts";
 import { pinnedMaestroBin, pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 
 const roots: string[] = [];
 const temp = () => { const p = mkdtempSync(join(tmpdir(), "doctor-tools-")); roots.push(p); return p; };
 afterEach(() => { for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }); });
+const IMPECCABLE = { bin: "/tools/impeccable", version: "0.1.16", sha256: "e".repeat(64) };
 const output = { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: "", stderr: "" };
 function setup() {
   const repo = temp(); const approved = fakeToolchain(temp());
-  const exec = vi.fn((bin: string, args: string[]) => bin.endsWith("maestro") ? "2.11.0\n" : bin.endsWith("tauri") ? "tauri-cli 2.9.1\n" : args.includes("-p") ? "/Library/Developer/CommandLineTools\n" : "package-id: com.apple.pkg.CLTools_Executables\nversion: 26.0.0.0.1.1757719678\n");
+  const exec = vi.fn((bin: string, args: string[], _env?: Record<string, string>) => bin.endsWith("impeccable") ? "0.1.16+engine\n" : bin.endsWith("maestro") ? "2.11.0\n" : bin.endsWith("tauri") ? "tauri-cli 2.9.1\n" : args.includes("-p") ? "/Library/Developer/CommandLineTools\n" : "package-id: com.apple.pkg.CLTools_Executables\nversion: 26.0.0.0.1.1757719678\n");
   const spawn = vi.fn(async () => ({ ...output, stdout: "1.2.3\n" }));
-  const options = { home: "/fake-home", repoPath: repo, platform: "darwin" as const, exec, exists: () => true, tauriBin: "/tools/tauri", toolchain: approved.toolchain, scannerPins: { gitleaks: { bin: "/tools/gitleaks", version: "1.2.3", args: [] } }, scannerDeps: { spawn } };
+  const options = { home: "/fake-home", repoPath: repo, platform: "darwin" as const, exec, exists: () => true, tauriBin: "/tools/tauri", impeccablePin: IMPECCABLE, hashFile: () => IMPECCABLE.sha256, toolchain: approved.toolchain, scannerPins: { gitleaks: { bin: "/tools/gitleaks", version: "1.2.3", args: [] } }, scannerDeps: { spawn } };
   return { repo, approved, exec, spawn, options };
 }
 describe("optional lane tools in doctor", () => {
@@ -28,17 +29,29 @@ describe("optional lane tools in doctor", () => {
     expect(checks.find(c => c.name === "xcode_clt")).toMatchObject({ level: "pass", detail: expect.stringContaining("26.0.0.0.1.1757719678") });
     expect(checks.find(c => c.name === "tauri")).toMatchObject({ level: "pass", detail: expect.stringContaining("2.9.1") });
     expect(checks.find(c => c.name === "qa_toolchain")).toMatchObject({ level: "pass", detail: expect.stringContaining("Playwright 1.58.0; axe 4.10.3") });
+    expect(checks.find(c => c.name === "impeccable")).toMatchObject({ level: "pass", detail: expect.stringContaining(`0.1.16+engine; sha256 ${IMPECCABLE.sha256}`) });
+    expect(exec).toHaveBeenCalledWith(IMPECCABLE.bin, ["--version"], { PATH: "/usr/bin:/bin", DO_NOT_TRACK: "1", IMPECCABLE_NO_TELEMETRY: "1" });
     expect(exec.mock.calls.every(([bin]) => bin.startsWith("/"))).toBe(true);
   });
   it("fails missing security scanners and warns for other optional tools", async () => {
     const { options } = setup();
     const missing = { ...options, exists: () => false, exec: () => { throw Error("missing"); }, scannerPins: {}, toolchain: undefined };
     const checks = await toolDoctorChecks(missing);
-    expect(checks.map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "xcode_clt", "tauri", "qa_toolchain"]);
+    expect(checks.map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "xcode_clt", "tauri", "impeccable", "qa_toolchain"]);
     expect(checks.filter(c => c.name.startsWith("security.")).every(c => c.level === "fail")).toBe(true);
     expect(checks.filter(c => !c.name.startsWith("security.")).every(c => c.level === "warn")).toBe(true); expect(doctorExitCode(checks)).toBe(1);
     const required = await toolDoctorChecks({ ...missing, required: ["maestro", "security.semgrep", "qa_toolchain"] });
     expect(required.filter(c => c.level === "fail").map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "qa_toolchain"]);
+  });
+  it("accepts only the pinned Impeccable engine file at its exact version (decision 124)", async () => {
+    const { options, exec } = setup();
+    const level = async (extra: Partial<ToolDoctorDeps>) => (await toolDoctorChecks({ ...options, ...extra })).find(c => c.name === "impeccable");
+    expect(await level({ hashFile: () => "f".repeat(64) })).toMatchObject({ level: "warn", detail: expect.stringContaining("differs from the pinned") });
+    expect(await level({ exec: (bin: string, args: string[]) => bin.endsWith("impeccable") ? "0.1.17+engine\n" : exec(bin, args) })).toMatchObject({ level: "warn", detail: expect.stringContaining("expected 0.1.16+engine") });
+    expect(await level({ exec: (bin: string, args: string[]) => bin.endsWith("impeccable") ? "0.1.16\n" : exec(bin, args) })).toMatchObject({ level: "warn" });
+    expect(await level({ impeccablePin: { ...IMPECCABLE, bin: "impeccable" } })).toMatchObject({ level: "warn", detail: expect.stringContaining("unavailable") });
+    expect(await level({ exists: (p: string) => p !== IMPECCABLE.bin })).toMatchObject({ level: "warn", detail: expect.stringContaining("unavailable") });
+    expect(await level({ hashFile: () => "f".repeat(64), required: ["impeccable"] })).toMatchObject({ level: "fail" });
   });
   it("does not mistake malformed output or a tampered manifest for an installed tool", async () => {
     const { options, approved } = setup();

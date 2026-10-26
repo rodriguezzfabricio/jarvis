@@ -21,3 +21,6 @@ export type { DesktopPlan, DesktopBuildObservation, DesktopNativeObservation, Na
 export type { DesktopProcess } from "./desktop-process.ts";
 export { installChromiumBundle, type ChromiumInstallInput } from "./chromium-install.ts";
 export { captureDesktopBundle, type DesktopArtifact } from "./desktop-artifact.ts";
+export { installDesignChecks, type DesignChecksPlan } from "./impeccable-install.ts";
+export { runImpeccable, evaluateImpeccable, impeccableDefinitions, type ImpeccablePin, type ImpeccableOptions, type ImpeccableResult, type ImpeccableTarget } from "./impeccable.ts";
+export { verifyImpeccableObservation } from "./impeccable-verify.ts";

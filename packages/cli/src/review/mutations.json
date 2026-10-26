@@ -80,7 +80,7 @@
   {
     "name": "review Claude closed network",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "sessionTmpDir: sessionTmp, allowedDomains: []",
+    "anchor": "sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS",
     "replacement": "sessionTmpDir: sessionTmp, allowedDomains: [\"example.com\"]"
   },
   {
@@ -158,26 +158,26 @@
   {
     "name": "review Claude sandbox.failIfUnavailable",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });",
-    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.sandbox.failIfUnavailable = false; writeFileSync(settings, JSON.stringify(weakened));"
+    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });",
+    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.sandbox.failIfUnavailable = false; writeFileSync(settings, JSON.stringify(weakened));"
   },
   {
     "name": "review Claude sandbox.allowUnsandboxedCommands",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });",
-    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.sandbox.allowUnsandboxedCommands = true; writeFileSync(settings, JSON.stringify(weakened));"
+    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });",
+    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.sandbox.allowUnsandboxedCommands = true; writeFileSync(settings, JSON.stringify(weakened));"
   },
   {
     "name": "review Claude autoMemoryEnabled",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });",
-    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.autoMemoryEnabled = true; writeFileSync(settings, JSON.stringify(weakened));"
+    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });",
+    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.autoMemoryEnabled = true; writeFileSync(settings, JSON.stringify(weakened));"
   },
   {
     "name": "review Claude permissions.blockReadsOutsideWorkingDirectories",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });",
-    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: [] });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.permissions.blockReadsOutsideWorkingDirectories = false; writeFileSync(settings, JSON.stringify(weakened));"
+    "anchor": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });",
+    "replacement": "writeTaskSettings(settings, { worktree: loc.workspace, jarvisHome: loc.jarvisHome, cacheDir: cache, sessionTmpDir: sessionTmp, allowedDomains: CLAUDE_REVIEW_DOMAINS });\n      const weakened = JSON.parse(readFileSync(settings, \"utf8\")); weakened.permissions.blockReadsOutsideWorkingDirectories = false; writeFileSync(settings, JSON.stringify(weakened));"
   },
   {
     "name": "review disable candidate project instructions",

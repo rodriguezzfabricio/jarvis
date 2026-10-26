@@ -1,0 +1,176 @@
+[
+  {
+    "name": "toolchain fixture symlink accepted",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  if (st.isSymbolicLink()) throw new Error(`refused: the Go fixture is a symlink: ${i.fixture}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "toolchain fixture behind a linked folder accepted",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  if (fixture !== resolve(i.fixture)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "toolchain fixture may hold links",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "    if (st.isSymbolicLink()) throw new Error(`refused: the ${what} holds a symlink: ${p}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "toolchain downloads allowed",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "GOTOOLCHAIN: \"local\"",
+    "replacement": "GOTOOLCHAIN: \"auto\""
+  },
+  {
+    "name": "toolchain proxy on",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "GOPROXY: \"off\"",
+    "replacement": "GOPROXY: \"https://proxy.golang.org\""
+  },
+  {
+    "name": "toolchain module cache not the fixture",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "GOMODCACHE: fixture,",
+    "replacement": "GOMODCACHE: join(dir, \"mod\"),"
+  },
+  {
+    "name": "toolchain unpacked into the fixture",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  if (under(realDest, fixture) || under(fixture, realDest)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "toolchain missing fixture crashes the run",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  if (st === undefined) return unavailable(",
+    "replacement": "  if (st === undefined) throw new Error("
+  },
+  {
+    "name": "toolchain removal skips read-only folders",
+    "file": "packages/cli/src/toolchain/go.ts",
+    "anchor": "  makeRemovable(dir);\n",
+    "replacement": ""
+  },
+  {
+    "name": "toolchain may overlap session-writable folders",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    for (const w of writable) if (under(d, w) || under(w, d)) throw",
+    "replacement": "    for (const w of writable) if (false) throw"
+  },
+  {
+    "name": "toolchain folder may be a link",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    if (!st?.isDirectory() || realpathSync(d) !== d) throw",
+    "replacement": "    if (!st) throw"
+  },
+  {
+    "name": "toolchain PATH may point anywhere",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "if (!isAbsolute(p) || p.includes(\":\") || !inside(p)) throw",
+    "replacement": "if (!isAbsolute(p)) throw"
+  },
+  {
+    "name": "toolchain may set any variable",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    if (!TOOLCHAIN_ENV.has(k)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "toolchain variables may point outside its folders",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    if (isAbsolute(v) && !inside(v)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "task session toolchain unchecked against its roots",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "checkSessionToolchain(opts.toolchain, [worktreeRoot, cacheRoot, jarvisHome])",
+    "replacement": "checkSessionToolchain(opts.toolchain, [])"
+  },
+  {
+    "name": "task session can't read its toolchain",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    ...(locations.toolchain.readOnlyDirs.length ? { readOnlyDirs: [...(locations.installDirs ?? []), ...locations.toolchain.readOnlyDirs] } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "task session toolchain drops the install",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "{ readOnlyDirs: [...(locations.installDirs ?? []), ...locations.toolchain.readOnlyDirs] }",
+    "replacement": "{ readOnlyDirs: [...locations.toolchain.readOnlyDirs] }"
+  },
+  {
+    "name": "task session gets no toolchain variables",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "    ...toolchainEnv(locations.toolchain, locations.installDirs && locations.node ? [join(locations.installDirs[0]!, SESSION_BIN)] : [], fixedPath(home)),\n",
+    "replacement": ""
+  },
+  {
+    "name": "task session toolchain before the jarvis launcher",
+    "file": "packages/cli/src/harness/claude/task.ts",
+    "anchor": "locations.installDirs && locations.node ? [join(locations.installDirs[0]!, SESSION_BIN)] : [], fixedPath(home))",
+    "replacement": "[], fixedPath(home))"
+  },
+  {
+    "name": "eval Go fixture may lead into the grading checks",
+    "file": "packages/cli/src/eval/toolchain.ts",
+    "anchor": "    if (under(f, g) || under(g, f)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "eval Go fixture read from the grading folder",
+    "file": "packages/cli/src/eval/toolchain.ts",
+    "anchor": "join(hiddenDir(evalsRepo, taskId, \"gate\"), \"fixtures\", \"gomodcache\")",
+    "replacement": "join(hiddenDir(evalsRepo, taskId, \"checks\"), \"fixtures\", \"gomodcache\")"
+  },
+  {
+    "name": "eval toolchain may sit where other runs write",
+    "file": "packages/cli/src/eval/toolchain.ts",
+    "anchor": "[\"evals\", \"cache-runs\", \"worktrees\", \"caches\", \"checks\", \"feedback\"]",
+    "replacement": "[]"
+  },
+  {
+    "name": "eval baseline session gets no pinned Go",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "...toolchainEnv(tc, [], fixedPath(parentEnv.HOME ?? home)), ",
+    "replacement": ""
+  },
+  {
+    "name": "eval baseline session can't read the pinned Go",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": ", ...(tc.readOnlyDirs.length ? { readOnlyDirs: tc.readOnlyDirs } : {}) });",
+    "replacement": " });"
+  },
+  {
+    "name": "eval baseline toolchain kept after the run",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "    if (go.dir) removeGoToolchain(go.dir);\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval baseline toolchain unchecked",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "tc: checkSessionToolchain(prepared.toolchain, [...evalWritableRoots(workRoot), cacheDir, jarvisHome])",
+    "replacement": "tc: checkSessionToolchain(prepared.toolchain, [])"
+  },
+  {
+    "name": "eval jarvis harness gets no toolchain",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    ...(toolchain ? { toolchain } : {}),\n",
+    "replacement": ""
+  },
+  {
+    "name": "eval jarvis toolchain kept after the run",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    rmSync(p.cacheRoot, { recursive: true, force: true });\n    if (go.dir) removeGoToolchain(go.dir);\n",
+    "replacement": "    rmSync(p.cacheRoot, { recursive: true, force: true });\n"
+  },
+  {
+    "name": "eval jarvis toolchain unchecked across runs",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), \".jarvis-work\")), p.jarvisHome]);\n",
+    "replacement": ""
+  }
+]

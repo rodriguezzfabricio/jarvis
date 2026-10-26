@@ -85,8 +85,9 @@ describe("eval sessions get the gate's Go, offline and read-only, in both arms (
   it("baseline: without a fixture the session still starts with the host's go, and the run says so", async () => {
     const { fx, fixture } = goTask({ fixture: false });
     const logs: string[] = [];
-    const r = await baseline(fx, "b2", fixture, logs);
-    expect(r.started).toBe(true);
+    const run = baseline(fx, "b2", fixture, logs);
+    await expect(run).resolves.toMatchObject({ started: true });
+    const r = await run;
     expect(r.toolchain).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/no Go fixture at/) });
     expect(json(join(r.resultsDir, "summary.json")).toolchain).toEqual(r.toolchain);
     expect(logs.join("\n")).toMatch(/05-go b2: go toolchain unavailable: no Go fixture at/);
@@ -119,8 +120,9 @@ describe("eval sessions get the gate's Go, offline and read-only, in both arms (
   it("jarvis arm: without a fixture the sessions still run on the host's go, and the run says so", async () => {
     const { fx } = goTask({ fixture: false });
     const logs: string[] = [];
-    const { r, seen } = await jarvis(fx, "j4", logs);
-    expect(r.outcome).toBe("complete");
+    const run = jarvis(fx, "j4", logs);
+    await expect(run).resolves.toMatchObject({ r: { outcome: "complete" } });
+    const { r, seen } = await run;
     expect(r.toolchain).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/no Go fixture at/) });
     expect(logs.join("\n")).toMatch(/05-go j4: go toolchain unavailable/);
     for (const { spec } of seen) expect(spec.env.GOTOOLCHAIN).toBeUndefined();

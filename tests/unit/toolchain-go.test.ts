@@ -24,6 +24,12 @@ function setup(goMod: string | null = `module example.com/app\n\ngo 1.26.10\n`) 
   const dest = join(root, "work", "toolchains", "05", "run-1");
   return { root, workspace, fixture, dest };
 }
+/** prepareGoToolchain where it must not throw: a throw is an assertion failure, not an error. */
+function prepared(i: Parameters<typeof prepareGoToolchain>[0]): ReturnType<typeof prepareGoToolchain> {
+  let p: ReturnType<typeof prepareGoToolchain> | undefined;
+  expect(() => { p = prepareGoToolchain(i); }).not.toThrow();
+  return p!;
+}
 
 describe("a pinned, offline Go for task sessions (decision 123)", () => {
   it("is not needed when the workspace has no go.mod, and creates nothing", () => {
@@ -64,21 +70,21 @@ describe("a pinned, offline Go for task sessions (decision 123)", () => {
 
   it("reports go unavailable when the task has no fixture, and creates nothing", () => {
     const s = setup();
-    const none = prepareGoToolchain({ workspace: s.workspace, fixture: undefined, dest: s.dest });
+    const none = prepared({ workspace: s.workspace, fixture: undefined, dest: s.dest });
     expect(none.report).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/no Go fixture/) });
     expect(none.toolchain).toBeUndefined();
-    const missing = prepareGoToolchain({ workspace: s.workspace, fixture: join(s.root, "nowhere", "gomodcache"), dest: s.dest });
+    const missing = prepared({ workspace: s.workspace, fixture: join(s.root, "nowhere", "gomodcache"), dest: s.dest });
     expect(missing.report).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/no Go fixture at .*nowhere/) });
     expect(existsSync(s.dest)).toBe(false);
   });
 
   it("reports go unavailable when the fixture lacks the toolchain go.mod asks for", () => {
     const s = setup("module m\n\ngo 1.27.0\n");
-    const p = prepareGoToolchain({ workspace: s.workspace, fixture: s.fixture, dest: s.dest });
+    const p = prepared({ workspace: s.workspace, fixture: s.fixture, dest: s.dest });
     expect(p.report).toMatchObject({ status: "unavailable", reason: expect.stringMatching(new RegExp(`go1\\.27\\.0.*${goPlatform()}`)) });
     expect(p.toolchain).toBeUndefined();
     expect(existsSync(s.dest)).toBe(false);
-    const nothing = prepareGoToolchain({ workspace: setup("module m\n").workspace, fixture: s.fixture, dest: s.dest });
+    const nothing = prepared({ workspace: setup("module m\n").workspace, fixture: s.fixture, dest: s.dest });
     expect(nothing.report).toMatchObject({ status: "unavailable", reason: expect.stringMatching(/go version/) });
   });
 
@@ -116,7 +122,7 @@ describe("a pinned, offline Go for task sessions (decision 123)", () => {
     const s = setup();
     const p = prepareGoToolchain({ workspace: s.workspace, fixture: s.fixture, dest: s.dest });
     chmodSync(join(p.dir!, toolchainModule(), "bin"), 0o555);
-    removeGoToolchain(p.dir!);
+    expect(() => removeGoToolchain(p.dir!)).not.toThrow();
     expect(existsSync(s.dest)).toBe(false);
     expect(existsSync(s.fixture)).toBe(true);
     expect(() => removeGoToolchain(s.dest)).not.toThrow();

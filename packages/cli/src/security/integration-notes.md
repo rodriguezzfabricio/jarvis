@@ -10,10 +10,10 @@ Proposed decision-register addition (the lane cannot edit docs/01-decisions.md):
 
 Coverage note for the integrator's docs:
 
-> Gitleaks dir does not scan Git history. Its default configuration allowlists node_modules/.
-> A pass covers the candidate's scanned current-tree files; it does not prove historical commits
-> or vendored dependency directories contain no secrets. History scanning and dependency-directory
-> coverage require separately approved checks and rules. Candidate suppression files are rejected,
+> Gitleaks dir does not scan Git history. Jarvis now supplies a protected copy of the 8.28.0
+> default rules without path allowlists, including dependency directories and lockfiles in scans.
+> A pass covers the candidate's scanned current-tree files; history requires separately approved
+> checks. Candidate suppression files are rejected,
 > preserved on disk and reported as errors rather than silently removed.
 
 ## Lane 22: offline scanners
@@ -77,3 +77,35 @@ Proposed decision-register additions: use a fixed system certificate path for
 Semgrep startup; use OSV's explicit local matcher plugin with both offline flags;
 require hashed ecosystem-covering cache snapshots; ship the small original sink
 ruleset and document its limits; record cache age without an expiry threshold.
+
+## Scanner coverage gaps (backlog 104–106)
+
+Semgrep now requires `paths.scanned` and compares it with every candidate JS/TS,
+Python and Go file, including `.mts`, `.cts` and extensionless interpreter scripts.
+Shebang detection reads at most 4096 bytes and does not depend on executable bits.
+The inventory excludes `.git`; symlinks, special files, unreadable inventory and
+an overlong shebang fail closed. Up to 20 missing paths are named. Reported
+`paths.skipped` and `skipped_targets` still refuse a pass, even with full coverage.
+
+The pinned Semgrep sources expose `--scan-unknown-extensions` for explicit file
+targets, but it adds unknown files to every configured language. `--lang` is used
+for pattern rules; it does not replace the languages in this protected ruleset.
+This lane keeps the existing invocation and reports omissions as errors. A
+separate language-scoped invocation needs live validation before replacing this
+fail-closed behavior. The optional live regression accepts only an actual eval
+finding or the specific named coverage error, not a generic infrastructure error.
+
+`gitleaks.toml` contains all 217 default rules from the pinned 8.28.0 binary,
+with the global paths field and three path-dependent rule allowlist tables removed.
+The remaining value-based exceptions are unchanged. The source hash, upstream
+location and MIT license are included. `withGitleaksConfig` supplies this config
+for existing pins, and installation copies it to the approved fixtures. Explicit
+reviewed configs keep the existing outside-checkout and fixture validation.
+No `config/pins.ts` or CLI change is required.
+
+Fresh checks installation and approval are required to pick up the new driver
+modules and gitleaks policy; existing installed plans are never overwritten.
+The lane ran only fake-based unit checks. The integrator should run
+`tests/unit/security-coverage-live.test.ts` with `JARVIS_SECURITY_LIVE=1` in its
+reserved evidence slot, alongside the existing scanner live checks. No network
+or live scanner was used by this lane.

@@ -48,7 +48,7 @@ describe("scanner adapters", () => {
 
   it("parses semgrep and osv JSON without source snippets", async () => {
     const { parseFindings } = await import("../../packages/cli/src/security/scanners.ts");
-    expect(parseFindings("semgrep", JSON.stringify({ results: [{ check_id: "injection", path: "app.ts", start: { line: 4 }, extra: { severity: "ERROR", message: "unsafe", lines: "private" } }], errors: [] }))[0]).toMatchObject({ rule: "injection", file: "app.ts", line: 4, severity: "high" });
+    expect(parseFindings("semgrep", JSON.stringify({ results: [{ check_id: "injection", path: "app.ts", start: { line: 4 }, extra: { severity: "ERROR", message: "unsafe", lines: "private" } }], errors: [], paths: { scanned: ["app.ts"] } }))[0]).toMatchObject({ rule: "injection", file: "app.ts", line: 4, severity: "high" });
     const osv = { results: [{ source: { path: "package-lock.json", type: "lockfile" }, packages: [{ package: { name: "dummy", version: "1" }, vulnerabilities: [{ id: "OSV-DUMMY", summary: "private", database_specific: { severity: "HIGH" } }] }] }] };
     expect(parseFindings("osv-scanner", JSON.stringify(osv))[0]).toMatchObject({ rule: "OSV-DUMMY", file: "package-lock.json", severity: "high" });
     expect(JSON.stringify(parseFindings("osv-scanner", JSON.stringify(osv)))).not.toContain("private");

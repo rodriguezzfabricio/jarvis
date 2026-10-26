@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { runSession, type SessionSpec, type SessionOutcome } from "../proc/session.ts";
+import { semgrepCoverage, semgrepScannedPaths } from "./coverage.ts";
 import { offlineArgs, osvCacheReady, reportedScannerVersion } from "./offline.ts";
 import { scannerEnvironment, withScannerRuntime, type ScannerRuntime } from "./runtime.ts";
 
@@ -85,9 +86,7 @@ function report(raw: unknown): ObjectValue {
 
 function semgrep(raw: unknown): Finding[] {
   const output = report(raw);
-  const paths = output.paths === undefined ? undefined : object(output.paths);
-  if (paths?.skipped !== undefined && array(paths.skipped).length !== 0) invalid();
-  if (output.skipped_targets !== undefined && array(output.skipped_targets).length !== 0) invalid();
+  semgrepScannedPaths(output);
   return array(output.results).map((value) => {
     const r = object(value); const rule = string(r.check_id); const file = string(r.path);
     const at = line(object(r.start).line); const extra = object(r.extra);
@@ -164,6 +163,10 @@ export async function runScanner(tool: Scanner, pin: ScannerPin | undefined, cwd
       if (reportPath && existsSync(reportPath) && lstatSync(reportPath).size > 4 * 1024 * 1024) return error("output limit");
       const output = reportPath && existsSync(reportPath) ? readFileSync(reportPath, "utf8") : r.stdout;
       try { findings = parseFindings(tool, output); } catch { return error("invalid output"); }
+      if (tool === "semgrep") {
+        const coverage = semgrepCoverage(cwd, semgrepScannedPaths(JSON.parse(output)));
+        if (coverage) return error(coverage);
+      }
       if (r.code !== 0 && findings.length === 0) return error("exit code");
       return { tool, status: findings.length > 0 ? "fail" : "pass", findings };
     } catch { return error("scanner failed"); }

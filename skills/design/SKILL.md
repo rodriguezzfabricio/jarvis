@@ -67,7 +67,7 @@ Generator scripts go in `.jarvis/scratch/make-mockups.mjs`, directly under the p
 - **Screenshot each screen** at that width and save `<screen>.png` beside its page. If no browser is available, keep the HTML paths and say so; intake attaches paths instead.
 - **One comparison page,** `.jarvis/mockups/index.html`, shows the three directions side by side, screen by screen, each with its name, dials and principles in a line or two (a comparison board, gstack's design-shotgun).
 
-Then name **a default for intake's question.** The default is chosen by fit, not by looks: the direction closest to the taste profile, the product's constraints and the domain conventions research found, with the reason stated in those terms ("closest to the calm, dense apps you admire; keeps the list-first layout habit apps share"). Never claim one is more beautiful (decision 56).
+Then name **a default for intake's question.** The default is chosen by fit, not by looks: the direction closest to the taste profile, the product's constraints and the domain conventions research found, with the reason stated in those terms ("closest to the calm, dense apps you admire; keeps the browse-first layout library catalogues share"). Never claim one is more beautiful (decision 56).
 
 Return to intake: the three direction names, the screenshot paths, the comparison page and the default with its reason.
 
@@ -123,7 +123,7 @@ Alignment, spacing and overlap are what vision models judge worst, which is why 
 
 Decision 55. Each item becomes a check where it can, or a reviewer question where it can't:
 - **One primary action per screen.** A secondary action never looks like the primary one.
-- **The first-value budget** from the spec: the most taps or clicks from first launch to the core result. The interaction test fails past it. Fewer taps only counts when the person still sees what they need to decide (the recipient and the exact message before approving an email).
+- **The first-value budget** from the spec: the most taps or clicks from first launch to the core result. The interaction test fails past it. Fewer taps only counts when the person still sees what they need to decide (the files affected and whether deletion can be undone before approving it).
 - **No tours on launch.** Empty states say what goes here and offer the button to start.
 - **Progressive disclosure:** frequent things up front, rare ones one step away, never more than two levels deep.
 - **Forms:** ask only what's needed, once; one question per step in multi-step flows; mark optional fields "(optional)" instead of asterisks; validate when the person leaves a field, not while they type; put errors next to the field, saying what's wrong and how to fix it, and keep what was typed.

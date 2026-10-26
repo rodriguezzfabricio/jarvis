@@ -230,7 +230,7 @@ Full model IDs, never aliases (decision 61). Codex review runs `codex exec` read
 4. The spec is written as `docs/spec/v1.md`, along with `PRODUCT.md` and `DESIGN.md`. The spec-reader checks it. The acceptance tests are generated into `~/.jarvis/projects/<id>/checks/` and their hashes locked.
 5. Handoff: `jarvis run --detach`. You can close Claude Code.
 6. The runner works through the tasks, with sessions, checks, reviews and last-green tags. Overnight it may wait out a usage window.
-7. On a production grant at intake, the broker promotes the release once it's release-ready and the live smoke test runs; without one, it stops at preview-ready.
+7. On a production grant, which ship asks for against the concrete release (decision 132; intake no longer asks), the broker promotes the release once it's release-ready and the live smoke test runs; without one, it stops at preview-ready.
 8. Morning: an ntfy notification says "Preview-ready. 2 Taste decisions to check." `REPORT.md` has the evidence, decisions and what's left. You reply or `jarvis steer` to change anything.
 
 ## 5. How `claude -p` is called
@@ -296,7 +296,8 @@ jarvis/
 │       ├── triage/           # classification signals, pipelines
 │       └── eval/             # snapshots, baseline runs, results
 ├── plugin/                   # Claude Code plugin: commands/, agents/, hooks/, output-styles/, skills → ../skills
-├── skills/                   # the 14 skills, standard format, each with evals/ and a gotchas section
+├── skills/                   # the 14 skills, standard format, each with a gotchas section
+├── evals/skills/             # each skill's evals, outside the plugin so no session can read them (decision 132)
 ├── templates/                # AGENTS.md block, spec, PRODUCT.md, DESIGN.md, decisions.md, report
 ├── stacks/                   # house-stack starters and their known-traps lists
 └── tests/                    # unit + integration (fake `claude` binary), safety tests, fault injection

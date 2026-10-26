@@ -832,5 +832,17 @@
     "file": "packages/cli/src/lanes/desktop-sandbox.ts",
     "anchor": "${subpaths(SYSTEM_DATA)} (literal \"/\") (literal \"/dev/zero\")",
     "replacement": "${subpaths(SYSTEM_DATA)} (subpath \"/\") (literal \"/dev/zero\")"
+  },
+  {
+    "name": "native sandbox launches without input isolation (identity default)",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "const isolate = deps.isolateInput; if (!isolate) throw",
+    "replacement": "const isolate = deps.isolateInput ?? ((s: SessionSpec) => s); if (false) throw"
+  },
+  {
+    "name": "native sandbox app launch skips input isolation",
+    "file": "packages/cli/src/lanes/desktop-sandbox.ts",
+    "anchor": "const app = await (deps.launch ?? launchDesktop)(spec(bin, []));",
+    "replacement": "const app = await (deps.launch ?? launchDesktop)({ ...spec(bin, []), bin: SANDBOX, args: [\"-f\", profile, bin] });"
   }
 ]

@@ -26,6 +26,14 @@ export interface NativeSandboxDeps {
   launch?: (spec: SessionSpec) => Promise<DesktopProcess>;
   platform?: NodeJS.Platform;
   exists?: (path: string) => boolean;
+  /**
+   * Required, no default (backlog 110): rewrites every sandboxed command so the app is its own
+   * TCC-responsible process. Seatbelt doesn't cover WindowServer: under the runner's responsibility
+   * (which holds the Accessibility grant the osascript probes need) a confined app's synthetic
+   * keystrokes and clicks reach the user's session, so it could type into the runner's terminal.
+   * Absent, the launcher refuses and native smoke stays "not run".
+   */
+  isolateInput?: (spec: SessionSpec) => SessionSpec;
 }
 const SANDBOX = "/usr/bin/sandbox-exec";
 const PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -122,6 +130,7 @@ export async function launchSandboxedDesktop(bundlePath: string, options: Native
   try {
     if ((deps.platform ?? process.platform) !== "darwin") throw new NativeSandboxUnavailable("native sandbox needs macOS Seatbelt");
     if (!(deps.exists ?? existsSync)(SANDBOX)) throw new NativeSandboxUnavailable("native sandbox-exec unavailable");
+    const isolate = deps.isolateInput; if (!isolate) throw new NativeSandboxUnavailable("no input isolation: WindowServer would take the app's synthetic input as the runner's (backlog 110)");
     const home = realpathSync(options.home), workRoot = realpathSync(options.workRoot);
     const bundle = checkBundle(bundlePath, workRoot);
     const jarvis = join(home, ".jarvis"), jarvisHome = existsSync(jarvis) ? realpathSync(jarvis) : jarvis;
@@ -130,7 +139,8 @@ export async function launchSandboxedDesktop(bundlePath: string, options: Native
     for (const dir of ["home", "tmp"]) mkdirSync(join(scratch, dir), { mode: 0o700 });
     const profile = join(scratch, "profile.sb"); writeFileSync(profile, profileText, { flag: "wx", mode: 0o600 });
     const env = { PATH, HOME: join(scratch, "home"), TMPDIR: join(scratch, "tmp"), LANG: "en_US.UTF-8" };
-    const spec = (bin: string, args: string[]): SessionSpec => ({ bin: SANDBOX, args: ["-f", profile, bin, ...args], cwd: bundle, env, timeoutMs: 10_000, maxOutputBytes: 4096, killGraceMs: 1000 });
+    // Canaries, plist parsing and the app all take the same path: isolation around the same profile.
+    const spec = (bin: string, args: string[]): SessionSpec => isolate({ bin: SANDBOX, args: ["-f", profile, bin, ...args], cwd: bundle, env, timeoutMs: 10_000, maxOutputBytes: 4096, killGraceMs: 1000 });
     const session = deps.session ?? runSession;
     await proveConfinement(scratch, spec, session);
     const bin = await executable(bundle, spec, session);

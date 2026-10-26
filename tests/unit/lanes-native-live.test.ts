@@ -52,7 +52,9 @@ exit 0
     writeFileSync(join(bundle, "Contents/MacOS/Canary"), script, { mode: 0o700 });
     // The real process launcher and sandbox. The hook only records the private HOME and opens a
     // broker-style socket in the private temp folder, with one runner-side control connection.
-    app = await launchSandboxedDesktop(bundle, { home, workRoot }, { launch: async spec => {
+    // This proves file and network confinement only: input isolation has no implementation yet
+    // (backlog 110), so it is the identity here, and this fake app posts no input.
+    app = await launchSandboxedDesktop(bundle, { home, workRoot }, { isolateInput: spec => spec, launch: async spec => {
       privateHome = spec.env.HOME!;
       const socket = join(spec.env.TMPDIR!, "broker.sock");
       await new Promise<void>((resolve, reject) => { broker.once("error", reject); broker.listen(socket, resolve); });

@@ -1,4 +1,4 @@
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,8 @@ function setup() {
   });
   const child = { pid: 4321, alive: () => true, waitForExit: vi.fn(async () => ({ code: 0, signal: null })), stop: vi.fn(async () => {}) };
   const launch = vi.fn(async (_spec: SessionSpec) => child);
-  const deps: NativeSandboxDeps = { session, launch, platform: "darwin", exists: () => true };
+  const isolateInput = vi.fn((spec: SessionSpec) => spec);
+  const deps: NativeSandboxDeps = { session, launch, platform: "darwin", exists: () => true, isolateInput };
   return { root, home, workRoot, bundle, session, launch, child, calls, deps, options: { home, workRoot } };
 }
 const policy = { bundle: "/Users/test/work/Test.app", scratch: "/Users/test/work/native-private-123", home: "/Users/test", hostTmp: "/custom-temp" };
@@ -75,6 +76,31 @@ describe("sandboxed native launcher", () => {
   });
   it.each(["linux", "win32"] as const)("refuses %s without launching", async platform => {
     const s = setup(); await expect(launchSandboxedDesktop(s.bundle, s.options, { ...s.deps, platform })).rejects.toThrow(NativeSandboxUnavailable); expect(s.session).not.toHaveBeenCalled(); expect(s.launch).not.toHaveBeenCalled();
+  });
+  it("refuses without input isolation: under the runner's responsibility the app's synthetic keystrokes reach the session", async () => {
+    const s = setup(); const { isolateInput: _none, ...deps } = s.deps;
+    await expect(launchSandboxedDesktop(s.bundle, s.options, deps)).rejects.toThrow(/input isolation/);
+    expect(s.session).not.toHaveBeenCalled(); expect(s.launch).not.toHaveBeenCalled();
+    expect(readdirSync(s.workRoot).filter(name => name.startsWith("native-private-"))).toEqual([]);
+  });
+  it("runs every sandboxed command through input isolation, the app included", async () => {
+    const s = setup(); const ISOLATE = "/fake/isolate";
+    const isolateInput = vi.fn((spec: SessionSpec): SessionSpec => ({ ...spec, bin: ISOLATE, args: [spec.bin, ...spec.args] }));
+    const session = vi.fn(async (spec: SessionSpec) => {
+      const inner = { ...spec, bin: spec.args[0]!, args: spec.args.slice(1) };
+      return s.session(inner);
+    });
+    const app = await launchSandboxedDesktop(s.bundle, s.options, { ...s.deps, session, isolateInput });
+    expect(isolateInput).toHaveBeenCalledTimes(4);
+    expect(session.mock.calls.every(([spec]) => spec.bin === ISOLATE && spec.args[0] === "/usr/bin/sandbox-exec")).toBe(true);
+    const launched = s.launch.mock.calls[0]![0];
+    expect(launched.bin).toBe(ISOLATE); expect(launched.args).toEqual(["/usr/bin/sandbox-exec", "-f", s.calls[0]!.args[1], join(s.bundle, "Contents/MacOS/Test")]);
+    await app.stop();
+  });
+  it("treats an input isolation failure as unavailable confinement and leaves nothing behind", async () => {
+    const s = setup(); const isolateInput = () => { throw new Error("responsibility not disclaimed"); };
+    await expect(launchSandboxedDesktop(s.bundle, s.options, { ...s.deps, isolateInput })).rejects.toThrow(NativeSandboxUnavailable);
+    expect(s.launch).not.toHaveBeenCalled(); expect(readdirSync(s.workRoot).filter(name => name.startsWith("native-private-"))).toEqual([]);
   });
   it("refuses missing sandbox-exec", async () => {
     const s = setup(); await expect(launchSandboxedDesktop(s.bundle, s.options, { ...s.deps, exists: () => false })).rejects.toThrow(/sandbox-exec/); expect(s.session).not.toHaveBeenCalled();

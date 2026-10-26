@@ -1165,6 +1165,17 @@ The lane wrote the round-1 judges' findings into the skills as examples: calenda
 *Why:* each was found by the real machine and none was visible in the lane's fakes: the lane's clone option copied everything, and its single-process browser could not take a second viewport.
 *From:* the Codex stage 4 fixes lane (gpt-6.1-sol) and its Sonnet review; backlog 127 (baseline wiring), 128 (baseline edges), 129 (single-process).
 
+### 116. A stage proof counts runs from one frozen Jarvis revision, rated by blind judges (new; Oct 26; the integrator, after the first stage 3 runs)
+- **One revision per proof.** The counted runs of a stage proof all come from one frozen clone of Jarvis; runs from an earlier revision move to `~/.jarvis/evals/_superseded/<task>/` with a README, and their results stay recorded. When a fix changes what both arms' sessions get (decision 123's toolchain), both arms are rerun.
+- **Ratings by two blind judges** (decision 105): each task's runs from both arms are shown to a fresh Claude `claude-opus-5-5` judge and a Codex `gpt-6-astra` judge under neutral labels; a run's rating is the two judges' mean rounded down, the same rule for both arms. A gap above 1 point or a split goes to Fabricio.
+- **Tuning on the proof tasks is disclosed.** Fixes found on a proof task must be general (decision 114's rule); a held-out task (backlog 118, 150) checks they generalize.
+
+### 129. A stage review confirms only its own stage's mutations; everything is confirmed once before v1 closes (new; Oct 26; Fabricio; supersedes decision 94's cross-stage fast pass)
+Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 mutations on the full suite (about 2 minutes each) plus 1,220 other stages' mutations in fast mode. Fabricio chose, Oct 26: "Check this stage only."
+- **A stage review's evidence** runs `--confirm-stage <s>` for that stage's mutations only; other stages' mutations aren't run at that review.
+- **Stage 7's close** still runs `--confirm` over every mutation, once.
+- Cutting the suite's CPU time stays the main lever for both.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

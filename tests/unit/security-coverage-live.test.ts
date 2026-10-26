@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 import { runScanner } from "../../packages/cli/src/security/scanners.ts";
@@ -10,15 +10,15 @@ const enabled = process.env.JARVIS_SECURITY_LIVE === "1";
 it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/semgrep"))("live Semgrep finds eval in mts and extensionless scripts with original paths", async () => {
   const root = mkdtempSync(join(tmpdir(), "security-coverage-live-"));
   try {
-    for (const [name, prefix] of [["app.mts", ""], ["script", "#!/usr/bin/env -S node --no-warnings\n"], ["seed", "#!/usr/bin/env tsx\n"]]) {
-      const checkout = join(root, name! + "-checkout"); mkdirSync(checkout);
+    for (const [index, [name, prefix]] of [["app.mts", ""], ["script", "#!/usr/bin/env -S node --no-warnings\n"], ["seed", "#!/usr/bin/env tsx\n"], ["src/App.TS", ""]].entries()) {
+      const checkout = join(root, `${index}-checkout`); mkdirSync(dirname(join(checkout, name!)), { recursive: true });
       writeFileSync(join(checkout, name!), `${prefix}eval(input);\n`, { mode: 0o600 });
       const result = await runScanner("semgrep", pinnedSecurityScanners().semgrep, checkout, { timeoutMs: 45_000 });
       expect(result.status).toBe("fail");
       expect(result.findings.some((finding) => finding.file === name && finding.rule.endsWith("jarvis.js.eval"))).toBe(true);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
-}, 110_000);
+}, 150_000);
 
 it.skipIf(!enabled || !existsSync("/opt/homebrew/bin/gitleaks"))("live protected gitleaks config detects generated fake tokens in lockfiles and dependencies", async () => {
   const root = mkdtempSync(join(tmpdir(), "security-gitleaks-coverage-live-"));

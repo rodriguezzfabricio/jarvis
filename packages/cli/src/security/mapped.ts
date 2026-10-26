@@ -10,8 +10,10 @@ export interface MappedSemgrepTree {
   originals: ReadonlyMap<string, string>;
 }
 
-function sourcePath(root: string, path: string): string {
-  let absolute = root;
+interface Source { absolute: string; dev: number; ino: number }
+
+function sourcePath(root: string, path: string): Source {
+  let absolute = root; let dev = 0; let ino = 0;
   const parts = path.split(sep);
   for (const [index, part] of parts.entries()) {
     if (!part || part === "." || part === "..") throw Error("Invalid mapped source path");
@@ -19,15 +21,18 @@ function sourcePath(root: string, path: string): string {
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) throw Error("Mapped source may not be a link");
     if (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile()) throw Error("Mapped source must be regular");
+    dev = stat.dev; ino = stat.ino;
   }
-  return absolute;
+  return { absolute, dev, ino };
 }
 
-function copyBounded(source: string, target: string, remaining: number): number {
-  const fd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+function copyBounded(source: Source, target: string, remaining: number): number {
+  const fd = openSync(source.absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw Error("Mapped source must be regular");
+    // O_NOFOLLOW covers only the last component; a parent swapped for a link opens a different file.
+    if (stat.dev !== source.dev || stat.ino !== source.ino) throw Error("Mapped source changed before copy");
     if (stat.size > remaining) throw Error("Mapped byte limit");
     // One extra byte detects growth after stat without an unbounded read/allocation.
     const buffer = Buffer.alloc(stat.size + 1); let bytes = 0;
@@ -46,8 +51,8 @@ function copyBounded(source: string, target: string, remaining: number): number 
 export async function withMappedSemgrep<T>(root: string, scanned: readonly string[], tmpDir: string, run: (tree: MappedSemgrepTree) => Promise<T>): Promise<T | undefined> {
   const reported = new Set(scanned.map((path) => resolve(root, path)));
   const files = coveredFiles(root).filter((path) => !reported.has(resolve(root, path))).flatMap((path) => {
-    const source = sourcePath(root, path); const extension = mappedSemgrepExtension(source);
-    return extension ? [{ path, source, extension }] : [];
+    const extension = mappedSemgrepExtension(sourcePath(root, path).absolute);
+    return extension ? [{ path, extension }] : [];
   });
   if (files.length === 0) return undefined;
   if (files.length > MAX_MAPPED_FILES) throw Error("Mapped file limit");

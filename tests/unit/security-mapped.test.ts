@@ -177,6 +177,22 @@ it.each(["link", "fifo"])("refuses a source replaced by a %s between lstat and o
   expect(called).toBe(false); expect(readdirSync(scratch)).toEqual([]);
 });
 
+// O_NOFOLLOW guards only the last component: a parent swapped for a link after the lstat walk must not copy an outside file.
+it("refuses a parent directory replaced by a link between lstat and open", async () => {
+  const { withMappedSemgrep } = await import("../../packages/cli/src/security/mapped.ts");
+  const { root, checkout } = setup({ "nested/app.mts": "original" }); const scratch = join(root, "scratch"); mkdirSync(scratch);
+  const outside = join(root, "outside"); mkdirSync(outside); writeFileSync(join(outside, "app.mts"), "dummy canary");
+  const source = join(checkout, "nested", "app.mts"); const open = fs.openSync;
+  vi.spyOn(fs, "openSync").mockImplementation((path, flags, mode) => {
+    if (path === source) { fs.renameSync(join(checkout, "nested"), join(root, "moved")); symlinkSync(outside, join(checkout, "nested")); }
+    return open(path, flags, mode);
+  });
+  let copied: string[] = [];
+  const rejected = await withMappedSemgrep(checkout, [], scratch, async (tree) => { copied = readdirSync(tree.cwd).map((name) => readFileSync(join(tree.cwd, name), "utf8")); }).then(() => false, () => true);
+  expect(copied).not.toContain("dummy canary");
+  expect(rejected).toBe(true); expect(readdirSync(scratch)).toEqual([]);
+});
+
 it("retains findings from both passes", async () => {
   const { checkout } = setup({ "a.js": "eval(input);", "b.mts": "eval(input);" });
   const pin = pinnedSecurityScanners().semgrep!;

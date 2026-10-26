@@ -718,5 +718,11 @@
     "file": "packages/cli/src/security/osv-database.ts",
     "anchor": "if (age < 0) return `osv snapshot date is in the future (${fetchedAt}); ${refresh}`;",
     "replacement": ""
+  },
+  {
+    "name": "security mapped: parent link swap copied",
+    "file": "packages/cli/src/security/mapped.ts",
+    "anchor": "if (stat.dev !== source.dev || stat.ino !== source.ino) throw Error(\"Mapped source changed before copy\");",
+    "replacement": ""
   }
 ]

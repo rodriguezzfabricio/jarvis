@@ -79,10 +79,10 @@ it("hides the whole text when a secret spans several words, never the recipient"
 });
 
 it.each([
-  ["a zero-width space", "pay​pal.example", "\\u200b"],
-  ["a right-to-left override", "evil‮elpmaxe.com", "\\u202e"],
-  ["a line separator", "a b", "\\u2028"],
-  ["a no-break space", "a b", "\\u00a0"],
+  ["a zero-width space", "pay\u200bpal.example", "\\u200b"],
+  ["a right-to-left override", "evil\u202eelpmaxe.com", "\\u202e"],
+  ["a line separator", "a\u2028b", "\\u2028"],
+  ["a no-break space", "a\u00a0b", "\\u00a0"],
 ])("prints %s as an escape, so the printed payload is the approved one", async (_label, target, escape) => {
   const request: BrokerRequest = { op: "spend", payload: { description: "Fake", target } };
   const s = await shown(request);

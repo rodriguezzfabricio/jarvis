@@ -98,6 +98,15 @@ it("loads runner configuration through an injectable notifier factory without pr
   expect(s.createNotifier).toHaveBeenCalledWith({ ...config, since: expect.any(String) }); expect(s.notifier.send).toHaveBeenCalledOnce(); expect(s.print.mock.calls.flat().join(" ")).not.toContain("fake-out");
   expect(Ledger.open(join(s.root, ".jarvis/projects/other")).entries().some((e) => (e.data as { timeoutMs?: number }).timeoutMs === 3000)).toBe(true);
 });
+it("sends the round through the stage 0 notifier file (backend, server, topic, reply_topic) without printing its topics", async () => {
+  const s = setup(); mkdirSync(join(s.root, ".jarvis"));
+  writeFileSync(join(s.root, ".jarvis/notify.json"), JSON.stringify({ backend: "ntfy", server: "https://example.invalid", topic: "fake-stage0-out", reply_topic: "fake-stage0-in" }));
+  await s.run("intake", "send", s.file);
+  expect(s.createNotifier).toHaveBeenCalledWith({ baseUrl: "https://example.invalid", topic: "fake-stage0-out", replyTopic: "fake-stage0-in", since: expect.any(String) });
+  expect(s.notifier.send).toHaveBeenCalledOnce();
+  expect(s.warn).not.toHaveBeenCalled();
+  expect([...s.print.mock.calls, ...s.warn.mock.calls].flat().join(" ")).not.toMatch(/fake-stage0/);
+});
 it("refuses invalid project ids, rounds, waits and config without exposing config contents", async () => {
   const s = setup();
   for (const id of ["../outside", "/tmp/outside", ".", "..", "a/b"]) await expect(s.run("intake", "send", s.file, "--project", id)).rejects.toThrow(/project/i);

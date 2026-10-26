@@ -5,6 +5,15 @@ capabilities. Keep the notifier configuration and ledger outside agent-readable 
 Callers pass short human summaries with no code, secrets, full payloads or report text.
 The byte limit is not a redactor. Full details belong in `REPORT.md` on the Mac.
 
+## The config file
+
+`~/.jarvis/notify.json` is one format for `jarvis setup` (the writer), intake and `jarvis run`,
+parsed only by `parseNotifyConfig` in `config.ts`. Setup writes `{ baseUrl, topic, replyTopic }`.
+The file stage 0 wrote by hand on Oct 23, `{ backend: "ntfy", server, topic, reply_topic }`, is read
+as the same config and left as it is, so the topics the phone already subscribes to keep working;
+`jarvis setup --redo ntfy` replaces it with the canonical form and new topics. Parse errors never
+quote the file, because the topics are bearer capabilities.
+
 `NtfyNotifier` implements `Notifier.send(message, actions)` and `poll()`. Configure
 `baseUrl`, distinct `topic` and `replyTopic`, and optionally `since` and `timeoutMs`.
 Public hosts require HTTPS; plain HTTP is accepted only for loopback hosts.

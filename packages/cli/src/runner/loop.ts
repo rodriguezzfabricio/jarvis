@@ -41,7 +41,10 @@ export interface ReviewInput {
 /**
  * A review verdict. A plain string is recorded by the loop as a review_result; a recorded verdict was
  * already appended by the review service (review/service.ts). "investigate" blocks the task for a
- * person; "error" is an infrastructure failure: the review is retried once, never charged as a repair.
+ * person; "error" is an infrastructure failure: the review is retried once, never charged as a repair,
+ * and if it errors again the task blocks with "review infrastructure error: <what the service recorded>".
+ * A review function that can fail for infrastructure reasons must return the recorded form: a plain
+ * "fail" is a verdict on the code and spends a repair.
  */
 export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true };
 export interface RunLoopOptions {
@@ -87,6 +90,8 @@ type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry): Data => entry.data as Data;
 const liveLoops = new Set<string>();
 const short = (value: unknown) => String(value).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 240);
+/** A review that errors (no verdict) gets one retry (decision 100). */
+const REVIEW_TRIES = 2;
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
 }
@@ -347,6 +352,7 @@ class Loop {
     const version = Number(spec ? dataOf(spec).version : 1);
     return { taskId: task.id, goal: task.definition.goal || task.definition.title, exitCondition: task.definition.exitCondition,
       acceptanceCriteria: task.definition.acceptanceCriteria, decisions: steers.map((a) => a.kind === "replan" ? `Steer #${a.seq}: ${a.note}` : ""),
+      plannerNotes: task.definition.planNotes ?? [],
       specPath: String(spec ? dataOf(spec).path ?? `docs/spec/v${version}.md` : "docs/spec/v1.md"),
       mayNotTouch: [".jarvis-routing.json", ".git/hooks/", ".git/config", ".claude/"], maxTurns: this.turns, specVersion: version };
   }
@@ -498,15 +504,24 @@ class Loop {
     for (const reviewer of task.definition.requiredReviews) {
       const old = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
       if (old) { if (dataOf(old).status === "pass") continue; return; }
+      // An "error" is the review's infrastructure failing, not the code (decisions 100, 111): it is retried, and
+      // if it persists the task blocks with that reason. Neither spends a repair or sends the builder a fix prompt.
       let status: "pass" | "fail" | "investigate" | "error" | undefined;
-      for (let tries = 0; tries < 2 && (status === undefined || status === "error"); tries++) status = await this.reviewOnce(taskId, attemptId, candidate, reviewer);
+      for (let tries = 0; tries < REVIEW_TRIES && (status === undefined || status === "error"); tries++) status = await this.reviewOnce(taskId, attemptId, candidate, reviewer);
       if (status === "fail") return;
       task = this.state().tasks[taskId]!;
       if (status === "investigate") return this.block(task, `review ${reviewer} needs investigation`);
-      if (status !== "pass") return this.block(task, status === "error" ? `review ${reviewer} failed twice to produce a verdict` : "reviewer returned an invalid verdict");
+      if (status === "error") return this.block(task, `review infrastructure error: ${this.reviewError(task, reviewer, candidate.revision)}`);
+      if (status !== "pass") return this.block(task, "reviewer returned an invalid verdict");
     }
     this.opts.onCheckpoint?.("passed", taskId);
     await this.promote(taskId, attemptId, candidate);
+  }
+  /** What the review service recorded about its last infrastructure error for this reviewer and revision. */
+  private reviewError(task: TaskState, reviewer: string, revision: string): string {
+    const recorded = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === revision).at(-1);
+    const reason = recorded ? dataOf(recorded).error ?? dataOf(recorded).summary : undefined;
+    return typeof reason === "string" && reason.trim() ? short(reason).slice(0, 160) : `review ${reviewer} produced no verdict`;
   }
   private async reviewOnce(taskId: string, attemptId: string, candidate: CandidateRevision, reviewer: string): Promise<"pass" | "fail" | "investigate" | "error" | undefined> {
     const task = this.state().tasks[taskId]!;

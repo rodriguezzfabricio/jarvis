@@ -1,28 +1,35 @@
 /**
  * The production composition of `jarvis run` (architecture §3.4): protected checks from the approved
  * store, the plan judged against the runner's copy of the approved spec and the installed checks
- * (decision 91), the Claude task harness, intake recovery and the reviewer (decision 88).
+ * (decision 91), the Claude task harness, intake recovery and the reviewer (decision 88), the project's
+ * broker hosted for the run's duration (§3.6) and the runner's notifier (decision 50).
  */
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Broker } from "../broker/broker.ts";
+import { hostBroker, projectBroker, type SignalHost } from "../broker/host.ts";
+import { brokerSocketIn } from "../broker/server.ts";
 import { ChecksStore } from "../checks/store.ts";
+import { privateDir } from "../config/private-file.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "../doctor/doctor.ts";
 import { safeGit } from "../eval/git.ts";
 import { createClaudeReviewer } from "../harness/claude/review.ts";
-import { createClaudeHarness } from "../harness/claude/task.ts";
+import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
+import type { Notifier } from "../notify/notifier.ts";
+import type { NtfyOptions } from "../notify/ntfy.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions } from "../runner/loop.ts";
-import { readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
+import { planTasks, readPlan, readSessionPlan, type Plan, type SessionPlanKind } from "../runner/plan.ts";
+import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
-import type { RunContext } from "./run.ts";
+import { runNotifications } from "./run-notify.ts";
+import type { PreparedRun, RunContext } from "./run.ts";
 
 export interface ApprovedSpec { version: number; path: string; text: string; spec: Spec }
 export interface ComposeOptions {
@@ -38,6 +45,14 @@ export interface ComposeOptions {
    * (review/service.ts) with fresh read-only Claude and Codex reviewers; it records its own verdicts.
    */
   createReview?: (deps: ReviewDeps) => RunLoopOptions["review"];
+  /** Test seam for the notifier built from ~/.jarvis/notify.json; production uses the ntfy adapter. */
+  createNotifier?: (config: NtfyOptions) => Notifier;
+  /** Where the run says a notification wasn't delivered (default stderr: the detached runner's log). */
+  warn?: (text: string) => void;
+  /** The process whose exit and signals tear the hosted broker down (default: this one). */
+  signals?: SignalHost;
+  /** Test seams for the task harness (the fake claude): the session runner, the binary check, the parent environment. */
+  harness?: Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "parentEnv">;
 }
 export interface ReviewDeps {
   context: RunContext;
@@ -50,6 +65,8 @@ export interface ReviewDeps {
 }
 
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
+/** The Jarvis install whose CLI sessions run as `jarvis act` (its packages/cli/bin/jarvis launcher), reopened read-only. */
+const INSTALL_DIR = realpathSync(fileURLToPath(new URL("../../../..", import.meta.url)));
 
 /** The newest committed docs/spec/vN.md on the run branch: committed and runner-gated, never a workspace copy. */
 export function approvedSpec(git: (args: readonly string[]) => string, branch: string): ApprovedSpec | undefined {
@@ -80,7 +97,7 @@ export function planFor(repoPath: string, kind: SessionPlanKind | undefined, spe
   return readPlan(repoPath, { spec: spec.spec, checks });
 }
 
-export async function prepareProductionRun(context: RunContext, options: ComposeOptions = {}): Promise<RunLoopOptions> {
+export async function prepareProductionRun(context: RunContext, options: ComposeOptions = {}): Promise<PreparedRun> {
   const home = options.home ?? homedir();
   const workRoot = join(home, ".jarvis-work");
   const worktreeRoot = join(workRoot, "worktrees");
@@ -97,8 +114,16 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
   const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, git, preflight });
-  const broker = new Broker({ ledger, project: context.projectId, adapters: [], secrets: { get: () => undefined } });
-  return {
+  const notifications = runNotifications({
+    configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
+    ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
+  });
+  // Hosted last, once everything above has been accepted: nothing after this can fail before the loop owns it.
+  const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger });
+  const runDir = realpathSync(privateDir(join(context.jarvisHome, "run")));
+  const hosted = await hostBroker(broker, brokerSocketIn(runDir, context.projectId), options.signals);
+  if (hosted.reconciled) (options.warn ?? console.error)(`Marked ${hosted.reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
+  const loop: RunLoopOptions = {
     projectId: context.projectId, projectDir: context.projectDir, jarvisHome: context.jarvisHome, repoPath: context.repoPath, runBranch,
     worktreeRoot, workRoot, gitHome: home,
     ...(options.git ? { git: options.git } : {}),
@@ -106,17 +131,35 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     createHarness: (routing) => createClaudeHarness({
       jarvisHome: context.jarvisHome, cacheRoot, worktreeRoot, allowedDomains: [], routing, home,
       ...(existsSync(PLUGIN_DIR) ? { pluginDir: PLUGIN_DIR } : {}),
+      // Sessions reach the run's broker at its bound address, and run `jarvis act` from the read-only install.
+      brokerSocket: hosted.socketPath, installDir: INSTALL_DIR,
       preflight: async () => ({ ok: await preflight() }),
+      ...options.harness,
     }),
     review, reprobe,
+    notify: notifications.usageWait, notifyBlocked: notifications.blocked,
     footprint: createFootprintLog({ worktrees: worktreeRoot, caches: [cacheRoot], evidence: join(context.projectDir, "evidence") }),
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
   };
+  return {
+    loop,
+    close: hosted.close,
+    finished: (result) => notifications.finished(result ? { status: result.status, summary: summary(ledger) } : { status: "error" }),
+  };
 }
 
+/** The report's one line for the notifier; a ledger that can't be read gives no summary, never a throw. */
+function summary(ledger: Ledger): string {
+  try {
+    const entries = ledger.entries();
+    return notifierSummary(rebuildState(entries, { now: Date.now() }), entries);
+  } catch { return "REPORT.md on your Mac has the details."; }
+}
+
+/** The plan's top-level notes ride on every task (decision 113), so each build prompt shows them as planner claims. */
 function toLoopPlan(plan: Plan): LoopPlan {
-  return { tasks: plan.tasks.map((task) => ({ ...task })) };
+  return { tasks: planTasks(plan) };
 }
 
 /** The review service: one review_result per review, keyed "code", recorded by the service itself. */

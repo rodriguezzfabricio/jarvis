@@ -109,7 +109,8 @@ describe("revision-bound design review",()=>{
   });
   it("requires all three friction findings in generic calibration",async()=>{
     const f=fixture();
-    const generic=f.ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:"generic",policyHash:DESIGN_POLICY_HASH,designVerdict:"fail",verdict:"fail",findings:[]}}).hash;
+    // The runner's friction record names only two of the three planted choices.
+    const generic=f.ledger.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:"generic",policyHash:DESIGN_POLICY_HASH,designVerdict:"fail",verdict:"fail",findings:[],friction:["launch-tour","multiple-primary"]}}).hash;
     const service=createDesignReviewService({...f.options,calibration:{generic,good:f.calibration("good")}});
     expect((await service.reviewDetailed(f.request)).verdict).toBe("error");expect(f.reviewer).not.toHaveBeenCalled();
   });

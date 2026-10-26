@@ -16,8 +16,9 @@ async function notifierWithProposedGuards(root: string): Promise<typeof import("
   const origin = new URL("../../packages/cli/src/notify/replies.ts", import.meta.url);
   let source = readFileSync(origin, "utf8");
   const pending = 'isPhase(e, "answer") && !entries.some((r) => isRecorded(r, e.seq))';
-  const guardedPending = 'isPhase(e, "answer") && data(e).intakeOwned !== true && !String(data(e).requestId ?? "").startsWith("intake-") && !entries.some((r) => isRecorded(r, e.seq))';
-  if (!source.includes(guardedPending)) { expect(source.split(pending).length - 1).toBe(1); source = source.replace(pending, guardedPending); }
+  // The guard has landed in replies.ts; detect it by its own text, not by how pending() is wrapped.
+  const intakeGuard = 'data(e).intakeOwned !== true && !String(data(e).requestId ?? "").startsWith("intake-")';
+  if (!source.includes(intakeGuard)) { expect(source.split(pending).length - 1).toBe(1); source = source.replace(pending, `isPhase(e, "answer") && ${intakeGuard} && !entries.some((r) => isRecorded(r, e.seq))`); }
   const guard = 'if (data(entry).intakeOwned === true || String(data(entry).requestId ?? "").startsWith("intake-")) throw new Error("intake replies require intake routing");';
   const anchor = 'if (!entry || canonical(result(entry)) !== canonical(answer)) throw new Error("no matching counted answer");';
   if (!source.includes(guard)) { expect(source.split(anchor).length - 1).toBe(1); source = source.replace(anchor, `${anchor}\n    ${guard}`); }

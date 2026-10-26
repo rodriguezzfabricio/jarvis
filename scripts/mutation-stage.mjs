@@ -27,6 +27,7 @@ const MAP = [
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
+  [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
   // Folder rules.
   [/^packages\/cli\/src\/doctor\/mutations[^/]*\.json$/, "0-1"],
   [/^packages\/cli\/src\/(decisions|notify|spec|triage|intake)\/mutations[^/]*\.json$/, "2"],

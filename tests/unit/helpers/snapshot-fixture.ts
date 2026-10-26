@@ -159,10 +159,11 @@ export async function snapshotErrors(entries: [string, string][]): Promise<strin
   mkdirSync(template, { recursive: true });
   buildRepoTemplate(template, true);
   const realGit = inject("realGit");
+  const shimEnv = inject("shimEnv");
   const errs: string[] = [];
   let next = 0;
   const lane = async () => {
-    const w = new Worker(new URL("../snapshot-case-worker.mjs", import.meta.url), { workerData: { root, template, realGit } });
+    const w = new Worker(new URL("../snapshot-case-worker.mjs", import.meta.url), { workerData: { root, template, realGit, shimEnv } });
     try {
       while (next < entries.length) {
         const i = next++;

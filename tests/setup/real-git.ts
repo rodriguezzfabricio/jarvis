@@ -4,4 +4,4 @@
 import { inject } from "vitest";
 import { useRealGit } from "./use-real-git.ts";
 
-useRealGit(inject("realGit"));
+useRealGit(inject("realGit"), inject("shimEnv"));

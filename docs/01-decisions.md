@@ -1071,6 +1071,13 @@ Vitest 5.0.5 rewrites the stack of every error raised in a `.rejects`/`.resolves
 - **So the launcher refuses without input isolation.** `NativeSandboxDeps.isolateInput` is required with no default; without it native smoke stays "not run". The verified remedy (a helper that spawns with a disclaimed TCC responsibility, `responsibility_spawnattrs_setdisclaim`, a private API, plus a per-run input canary) is backlog 111 and needs Fabricio's go before it ships.
 *From:* the Opus review of the Codex native-launch lane (backlog 87); backlog 110 (gate hook), 111 (input isolation), 112 (bundle defects).
 
+### 122. A Semgrep pass needs positive coverage, and gitleaks runs Jarvis's copy of its default rules (new; Oct 25; the scan-coverage lane and its Opus review, backlog 104–106; tightens 103)
+- **Semgrep coverage is checked against the tree.** Pinned Semgrep 1.182.0 skips `.mts`, `.cts`, uppercase extensions and every extensionless script without reporting it (verified live). After each scan the runner lists the candidate's JS/TS, Python and Go files, by extension plus a 4096-byte first-line read for `#!` runners (node, tsx, ts-node, bun, deno, npx, python, pypy, including behind `env` options or wrappers). It requires every one of them in `paths.scanned`. A gap is an error naming up to 20 paths. A symlink, a special file, an unreadable tree or a longer first line also gives an error. Reported `paths.skipped` or `skipped_targets` still refuse a pass. `.git` is not listed (a git checkout can't contain one).
+- **So such files make the pass an error, never a pass, until Semgrep scans them** (backlog 131). Semgrep's `--scan-unknown-extensions` applies explicit targets to every rule language, so it isn't used.
+- **gitleaks gets `packages/cli/src/security/gitleaks.toml`.** It is the default config embedded in the pinned 8.28.0 binary (all 217 rules) without the global `paths` allowlist and three path-scoped rule allowlists, so `node_modules/`, lockfiles, `go.mod`/`go.sum` and images are scanned (verified live: the built-in config missed 11 of 19 planted fake tokens, this one none). Value-based allowlists stay. The runner adds `--config` to every gitleaks pin that has none; installation copies the file into the approved fixtures, and a unit test pins its SHA-256. A pin bump re-vendors it from the new binary. An explicit `--config` still has to be a protected file outside the checkout. MIT notice in `security/gitleaks-LICENSE` and `skills/CREDITS.md`.
+
+*From:* the Codex scan-coverage lane (gpt-6-astra) and the Opus review, which added the tsx/bun/deno/npx runners and `env` handling and ran the live tests.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

@@ -1,4 +1,4 @@
-// One case of snapshot.test.ts's credential-encodings test, in a worker thread: createSnapshot and git
+// One case of the credential-encodings test (snapshot-2 and snapshot-3), in a worker thread: createSnapshot and git
 // run synchronously, so only separate threads let the cases run side by side. The test keeps every
 // case and every assertion; this file only builds the case's repository and returns the refusal.
 import { execFileSync } from "node:child_process";

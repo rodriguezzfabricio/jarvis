@@ -1,4 +1,4 @@
-// Live canary probe tests against a fake claude, part 1 of 2 (single-check cases). The tests are split over two files so they run in parallel;
+// Live canary probe tests against a fake claude, part 1 of 3 (single-check cases). The tests are split over three files so they run in parallel;
 // the shared fixture is tests/unit/helpers/probe-fixture.ts.
 
 import { rmSync } from "node:fs";

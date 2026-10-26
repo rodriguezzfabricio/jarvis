@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
+import { checkSessionToolchain } from "../harness/claude/toolchain.ts";
 import { createClaudeReviewer, type ClaudeReviewerOptions } from "../harness/claude/review.ts";
 import { Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { createReviewService, DEFAULT_REVIEW_ROUTING, type ReviewMaterial, type ReviewRequest } from "../review/index.ts";
@@ -21,6 +22,8 @@ import { safeGit } from "./git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
+import { evalGoFixture, evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
+import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type SessionToolchain, type ToolchainReport } from "../toolchain/go.ts";
 
 /**
  * The Jarvis arm of `jarvis eval` (decisions 35, 47; architecture §3.10): each golden task runs through
@@ -143,6 +146,8 @@ export interface JarvisRunResult {
   grade: Grade | null;
   gradeError?: string;
   snapshot: SnapshotManifest;
+  /** The sessions' Go (decision 123): the gate's pinned toolchain, or why they had the host's. */
+  toolchain: ToolchainReport;
   // What the scheduler reads (eval/schedule.ts's ScheduledRun).
   started: boolean;
   usageLimited: boolean;
@@ -292,7 +297,7 @@ export const JARVIS_PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", imp
  * The production harness, as the runner builds it: the live preflight before every session (decision 59),
  * and the Jarvis plugin, as `jarvis run` loads it (decision 114: the arm measures what production runs).
  */
-export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTable, opts: JarvisEvalOptions): Harness {
+export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTable, opts: JarvisEvalOptions, toolchain?: SessionToolchain): Harness {
   const pluginDir = opts.pluginDir ?? JARVIS_PLUGIN_DIR;
   if (!existsSync(join(pluginDir, ".claude-plugin", "plugin.json"))) throw new Error(`the Jarvis arm needs the Jarvis plugin at ${pluginDir}`);
   return createClaudeHarness({
@@ -303,6 +308,8 @@ export function productionHarness(task: GoldenTask, p: Paths, routing: RoutingTa
     routing,
     home: p.home,
     pluginDir,
+    // Decision 123: the gate's pinned Go, as the baseline's session gets it.
+    ...(toolchain ? { toolchain } : {}),
     preflight: async () => {
       const pre = await opts.preflight();
       return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) };
@@ -377,6 +384,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   assertHiddenDisjoint(loopChecks, grading);
   const approved = pipeline === "spec" ? loadApprovedSpec(opts.evalsRepo, task.id, loopChecks) : undefined;
   if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
+  const goFixture = evalGoFixture(opts.evalsRepo, task.id);
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -413,7 +421,21 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
-  const harness = opts.harness ?? productionHarness(task, p, routing, opts);
+  // Decision 123: the gate's pinned Go for every session, offline and read-only, as the baseline's session gets it.
+  let go: PreparedToolchain | undefined;
+  try {
+    go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
+    // Never where any run's sessions write: the harness checks only this run's worktrees and caches.
+    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), ".jarvis-work")), p.jarvisHome]);
+  } catch (e) {
+    // Fail closed: a present but refused toolchain stops the run before any session, and summary.json says why.
+    if (go?.dir) removeGoToolchain(go.dir);
+    rmSync(p.cacheRoot, { recursive: true, force: true });
+    recordToolchainRefusal(p.resultsDir, { arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, outcome: "crashed", snapshot }, e);
+  }
+  if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
+  let harness: Harness;
+  try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
   const tier: TaskTier = t.tier ?? 1;
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
   const review = opts.review ?? productionReview(p, ledger, material, opts);
@@ -421,7 +443,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
     checks: Object.keys(gate.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
-    workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, startedAt: new Date(started).toISOString(),
+    workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, toolchain: go.report, startedAt: new Date(started).toISOString(),
   }, null, 2)}\n`);
 
   let outcome: JarvisOutcome = "crashed";
@@ -458,6 +480,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     log(`${task.id} ${runId}: the run crashed: ${error}`);
   } finally {
     rmSync(p.cacheRoot, { recursive: true, force: true });
+    if (go.dir) removeGoToolchain(go.dir);
   }
 
   const metrics = jarvisMetrics(ledger.entries(), Date.now(), plannerSessions);
@@ -477,7 +500,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const out: JarvisRunResult = {
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
     outcome, ...(error !== undefined ? { error } : {}), loop,
-    claimedDone: outcome === "complete", baseRevision, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot,
+    claimedDone: outcome === "complete", baseRevision, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report,
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
   };

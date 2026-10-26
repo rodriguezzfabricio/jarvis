@@ -95,6 +95,12 @@ separate language-scoped invocation needs live validation before replacing this
 fail-closed behavior. The optional live regression accepts only an actual eval
 finding or the specific named coverage error, not a generic infrastructure error.
 
+Superseded by decision 127 (backlog 130, 93): `mapped.ts` copies the covered files
+the first pass missed that have a known mapping into a bounded private folder
+under numbered names, the same pinned invocation scans it, and findings map back
+to the original paths before fingerprinting. The live regression now requires the
+finding with its original path. An OSV snapshot older than 14 days is an error.
+
 `gitleaks.toml` contains all 217 default rules from the pinned 8.28.0 binary,
 with the global paths field and three path-dependent rule allowlist tables removed.
 The remaining value-based exceptions are unchanged. The source hash, upstream

@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { withGitleaksConfig } from "./gitleaks-config.ts";
-import { detectOsvEcosystems, osvDatabaseReady, pathInside } from "./osv-database.ts";
+import { detectOsvEcosystems, osvDatabaseReady, osvSnapshotAgeError, pathInside } from "./osv-database.ts";
 import type { Scanner, ScannerPin } from "./scanners.ts";
 import type { ScannerRuntime } from "./runtime.ts";
 
@@ -54,6 +54,12 @@ export function osvCacheReady(pin: ScannerPin, cwd: string, runtime: ScannerRunt
   if (!existsSync(path)) return false;
   if (!pathInside(realpathSync(runtime.fixturesDir), realpathSync(path))) throw Error("Invalid scanner environment");
   return osvDatabaseReady(path, detectOsvEcosystems(cwd), pin.version);
+}
+
+/** Called only after osvCacheReady has checked the protected path, hashes and ecosystem coverage. */
+export function osvCacheAgeError(pin: ScannerPin, runtime: ScannerRuntime, now: Date): string | undefined {
+  const path = pin.env!.OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY!.replaceAll("$JARVIS_FIXTURES", runtime.fixturesDir!);
+  return osvSnapshotAgeError(path, now);
 }
 
 export function reportedScannerVersion(tool: Scanner, stdout: string): string[] {

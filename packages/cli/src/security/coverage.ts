@@ -19,25 +19,43 @@ export function semgrepScannedPaths(raw: unknown): string[] {
   return paths.scanned as string[];
 }
 
-function coveredShebang(path: string): boolean {
+function shebangRunners(path: string): string[] {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     if (!fstatSync(fd).isFile()) throw Error("Not a regular file");
     const buffer = Buffer.alloc(4096);
     const bytes = readSync(fd, buffer, 0, buffer.length, 0);
     const text = buffer.subarray(0, bytes).toString("utf8");
-    if (!text.startsWith("#!")) return false;
+    if (!text.startsWith("#!")) return [];
     if (!text.includes("\n") && bytes === buffer.length) throw Error("Shebang exceeds read bound");
     const words = text.split("\n", 1)[0]!.slice(2).trim().split(/\s+/);
     const command = basename(words.shift() ?? "");
-    if (command !== "env") return interpreters.test(command);
+    if (command !== "env") return [command];
     // env takes options (-S, -i, -u NAME), NAME=value pairs and wrappers (pnpm exec) before the interpreter,
     // so any later word naming a covered runner counts; executable bits do not affect coverage.
-    return words.some((word) => interpreters.test(basename(word)));
+    return words.map((word) => basename(word));
   } finally { closeSync(fd); }
 }
 
-function coveredFiles(root: string): string[] {
+function coveredShebang(path: string): boolean {
+  const words = shebangRunners(path);
+  return words.some((word) => interpreters.test(basename(word)));
+}
+
+/** Only known language aliases are remapped; ordinary missing files must still fail coverage. */
+export function mappedSemgrepExtension(path: string): string | undefined {
+  const original = extname(path); const extension = original.toLowerCase();
+  if (extension === ".mts" || extension === ".cts") return ".ts";
+  if (extensions.has(extension) && original !== extension) return extension;
+  if (extension !== "") return undefined;
+  const runners = shebangRunners(path);
+  if (runners.some((runner) => /^(?:ts-node(?:-esm)?|tsx|bun|deno|npx)$/.test(runner))) return ".ts";
+  if (runners.some((runner) => /^(?:node|nodejs|js)$/.test(runner))) return ".js";
+  if (runners.some((runner) => /^(?:python(?:[23](?:\.\d+)?)?|pypy3?)$/.test(runner))) return ".py";
+  return undefined;
+}
+
+export function coveredFiles(root: string): string[] {
   const files: string[] = []; const pending = [""];
   while (pending.length) {
     const dir = pending.pop()!;

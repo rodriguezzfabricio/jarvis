@@ -59,7 +59,7 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
   const cursor = o.ledger.entries().filter((e) => phase(e, "approval-cursor") && data(e).project === o.project).at(-1);
   const config = loadRunNotifier({ ...o, since: cursor ? String(data(cursor).id) : "all" });
   if (config.status === "ok") assertApprovalIsolation(config.baseUrl, o.taskAllowlists);
-  else warn("Phone approvals are off for this run: approvals stay terminal-only (jarvis approve / jarvis reject).");
+  else warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; approvals stay terminal-only (jarvis approve / jarvis reject).`);
   const inbox = new ReplyInbox(o.ledger, { approvalProject: o.project });
   const stop = new AbortController();
   let timer: ReturnType<typeof setInterval> | undefined;

@@ -2,7 +2,8 @@
  * The production composition of `jarvis run` (architecture §3.4): protected checks from the approved
  * store, the plan judged against the runner's copy of the approved spec and the installed checks
  * (decision 91), the Claude task harness, intake recovery and the reviewer (decision 88), the project's
- * broker hosted for the run's duration (§3.6) and the runner's notifier (decision 50).
+ * broker hosted for the run's duration (§3.6), the runner's notifier (decision 50) and phone approvals
+ * of the broker's pending requests (backlog 99, decision 117).
  */
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -14,12 +15,13 @@ import { ChecksStore } from "../checks/store.ts";
 import { privateDir } from "../config/private-file.ts";
 import { allowsUnattended, doctorExitCode, runDoctor } from "../doctor/doctor.ts";
 import { safeGit } from "../eval/git.ts";
-import { createClaudeReviewer } from "../harness/claude/review.ts";
+import { CLAUDE_REVIEW_DOMAINS, createClaudeReviewer } from "../harness/claude/review.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
+import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
@@ -28,6 +30,7 @@ import { planTasks, readPlan, readSessionPlan, type Plan, type SessionPlanKind }
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
+import { runApprovals } from "./run-approvals.ts";
 import { runNotifications } from "./run-notify.ts";
 import type { PreparedRun, RunContext } from "./run.ts";
 
@@ -63,6 +66,9 @@ export interface ReviewDeps {
   git: (args: readonly string[]) => string;
   preflight: () => Promise<boolean>;
 }
+
+/** The build sessions' network allowlist: none. The same value goes to the harness and the phone approvals' isolation check. */
+const TASK_DOMAINS: readonly string[] = Object.freeze([]);
 
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
 /** The Jarvis install whose CLI sessions run as `jarvis act` (its packages/cli/bin/jarvis launcher), reopened read-only. */
@@ -118,8 +124,15 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
   });
-  // Hosted last, once everything above has been accepted: nothing after this can fail before the loop owns it.
   const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger });
+  // Before hosting: a notifier host that a session could reach refuses the run (backlog 99).
+  const approvals = runApprovals({
+    configPath: join(context.jarvisHome, "notify.json"), project: context.projectId, ledger, broker,
+    // Every session's effective network policy: the builder, the Claude reviewer and the Codex reviewer (and their subdomains).
+    taskAllowlists: [TASK_DOMAINS, CLAUDE_REVIEW_DOMAINS, CODEX_API_DOMAINS],
+    ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
+  });
+  // Hosted last, once everything above has been accepted: nothing after this can fail before the loop owns it.
   const runDir = realpathSync(privateDir(join(context.jarvisHome, "run")));
   const hosted = await hostBroker(broker, brokerSocketIn(runDir, context.projectId), options.signals);
   if (hosted.reconciled) (options.warn ?? console.error)(`Marked ${hosted.reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
@@ -129,7 +142,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     ...(options.git ? { git: options.git } : {}),
     checks: Object.fromEntries(checks.map((check) => [check.name, check])),
     createHarness: (routing) => createClaudeHarness({
-      jarvisHome: context.jarvisHome, cacheRoot, worktreeRoot, allowedDomains: [], routing, home,
+      jarvisHome: context.jarvisHome, cacheRoot, worktreeRoot, allowedDomains: TASK_DOMAINS, routing, home,
       ...(existsSync(PLUGIN_DIR) ? { pluginDir: PLUGIN_DIR } : {}),
       // Sessions reach the run's broker at its bound address, and run `jarvis act` from the read-only install.
       brokerSocket: hosted.socketPath, installDir: INSTALL_DIR,
@@ -142,9 +155,14 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
   };
+  approvals.start();
   return {
     loop,
-    close: hosted.close,
+    // The broker stops taking requests first; then the poller flushes the last ones to the phone and stops.
+    close: async () => {
+      try { await hosted.close(); }
+      finally { await approvals.close(); }
+    },
     finished: (result) => notifications.finished(result ? { status: result.status, summary: summary(ledger) } : { status: "error" }),
   };
 }

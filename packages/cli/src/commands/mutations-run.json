@@ -72,10 +72,28 @@
     "replacement": "    notifyBlocked: notifications.blocked,"
   },
   {
+    "name": "run never stops its phone approvals",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "      finally { await approvals.close(); }",
+    "replacement": "      finally { /* approvals left running */ }"
+  },
+  {
+    "name": "run never starts its phone approvals",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  approvals.start();",
+    "replacement": ""
+  },
+  {
+    "name": "run approvals skip the Codex reviewer's allowlist",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "taskAllowlists: [TASK_DOMAINS, CLAUDE_REVIEW_DOMAINS, CODEX_API_DOMAINS],",
+    "replacement": "taskAllowlists: [TASK_DOMAINS, CLAUDE_REVIEW_DOMAINS],"
+  },
+  {
     "name": "run never stops its broker",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "    close: hosted.close,",
-    "replacement": "    close: async () => {},"
+    "anchor": "      try { await hosted.close(); }",
+    "replacement": "      try { /* broker teardown skipped */ }"
   },
   {
     "name": "run sends no finished notice",
@@ -218,7 +236,7 @@
   {
     "name": "phone approvals forget terminal-only notice",
     "file": "packages/cli/src/commands/run-approvals.ts",
-    "anchor": "  else warn(\"Phone approvals are off for this run: approvals stay terminal-only (jarvis approve / jarvis reject).\");",
+    "anchor": "  else warn(`Phone approvals are off for this run: no valid notifier configuration at ${o.configPath}; approvals stay terminal-only (jarvis approve / jarvis reject).`);",
     "replacement": ""
   },
   {

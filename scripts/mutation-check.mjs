@@ -248,6 +248,7 @@ const mutations = [
   ["tripwire refuses check fixtures", TW, "  `checks\\\\/(fixtures|expected)(\\\\/${NAME})+`,\n", ""],
   ["tripwire lets checks nest anywhere", TW, "`checks\\\\/${NAME}\\\\.(check", "`checks\\\\/(${NAME}\\\\/)*${NAME}\\\\.(check"],
   ["tripwire refuses onboard and sweep files", TW, '  "(onboard|sweep)\\\\/([0-9]{4}-[0-9]{2}-[0-9]{2}\\\\.md|plan\\\\.json)",\n', ""],
+  ["tripwire refuses a review's findings", TW, '  "review\\\\/findings\\\\.json",\n', ""],
   // Scope: hard stops only in Jarvis sessions; the runner home everywhere; anything unreadable counts as Jarvis.
   ["tripwire enforces in every session", TW, "  if (!isJarvisSession(input, env)) return undefined;\n", ""],
   ["tripwire ignores JARVIS_SESSION", TW, '  if (env.JARVIS_SESSION === "1") return true;\n', ""],

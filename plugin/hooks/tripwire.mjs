@@ -67,7 +67,8 @@ function bashInRunnerHome(command, cwd, env) {
 // scratch scripts (decision 68: a script instead of a refused compound command), and what the skills
 // write there: intake rounds, answers and the taste draft; design mockups; the planner's plan and
 // check proposals; the onboard and sweep reports and plans; the ship skill's release manifest (the runner
-// takes its targets from its own config, never from it). None of them is authority: candidates
+// takes its targets from its own config, never from it); a review's findings beside its report (decision
+// 126: the runner plans the fixes itself, and checks each finding against the report). None of them is authority: candidates
 // touching `.jarvis/` are refused and the runner reads its own copies (decisions 87, 91). Every other
 // `.jarvis/` name stays refused. Never through "..".
 const NAME = "[A-Za-z0-9_-][A-Za-z0-9._-]*";
@@ -83,6 +84,7 @@ const SESSION_FILES = [
   `checks\\/(fixtures|expected)(\\/${NAME})+`,
   "(onboard|sweep)\\/([0-9]{4}-[0-9]{2}-[0-9]{2}\\.md|plan\\.json)",
   "release\\/manifest\\.json",
+  "review\\/findings\\.json",
 ];
 const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")})$`);
 

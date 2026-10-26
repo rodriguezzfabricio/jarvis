@@ -82,6 +82,62 @@ describe("triage: a review that asks for fixes (decision 126)", () => {
     expect(run(TASK3, { judgment: { type: "review" } }).then?.type).toBe("bug");
   });
 
+  // Codex security review, round 1 (high 3): a fix verb next to an explicit "don't" is not a fix request.
+  it("honors an explicit no-fix or no-edit constraint before adding an editing pipeline", () => {
+    for (const request of [
+      "Review the parser and fix nothing. Report only.",
+      "Review the patch. Do not edit; fix suggestions only.",
+      "Review the auth code and don't fix anything.",
+      "Review the parser read-only and list what to fix.",
+      "Review the importer. No changes. Address findings in a list.",
+      "Review the importer; only report what you'd fix.",
+      "Review the importer without changing anything, and fix suggestions go in a list.",
+      "Review the module and make no changes.",
+    ]) {
+      const t = run(request);
+      expect(t.then, request).toBeNull();
+      expect(ids(t), request).toEqual(["review"]);
+      expect(t.never, request).toEqual(["any edit"]);
+      expect(signal(t, "no-edit-words"), request).toBeDefined();
+    }
+    // The constraint wins over the model's judgment too.
+    expect(run("Review the parser and fix nothing.", { judgment: { then: "bug" } }).then).toBeNull();
+    expect(run("Review the parser. Do not edit.", { judgment: { then: "bug", report: "docs/parser.md" } }).review?.report).toBeNull();
+  });
+
+  it("a no-fix constraint still writes a report the request names; a no-edit constraint writes nothing", () => {
+    const fixNothing = run("Review the parser and put the findings in REVIEW.md. Report only, fix nothing.");
+    expect([fixNothing.then, fixNothing.review?.report, ids(fixNothing)]).toEqual([null, "REVIEW.md", ["review-report"]]);
+    const editNothing = run("Review the parser and put the findings in REVIEW.md. Do not edit anything.");
+    expect([editNothing.then, editNothing.review?.report, ids(editNothing)]).toEqual([null, null, ["review"]]);
+  });
+
+  it("a scope constraint is not a no-edit constraint", () => {
+    for (const request of [
+      "Review the parser and fix the bugs, but don't change the public API.",
+      "Review the importer and fix it without changing the file format.",
+      "Review the parser and fix the real problems; no changes to the CLI flags.",
+      "Review the parser and fix what's broken, but don't touch the tests.",
+    ]) {
+      expect(run(request).then?.type, request).toBe("bug");
+      expect(signal(run(request), "no-edit-words"), request).toBeUndefined();
+    }
+  });
+
+  it("a question's edits honor the same constraint", () => {
+    expect(run("Explain the ledger and fix the torn-line repair.").then?.type).toBe("bug");
+    expect(run("Explain the ledger and fix nothing.").then).toBeNull();
+    expect(run("How does the ledger work? Don't change anything.", { judgment: { then: "refactor" } }).then).toBeNull();
+  });
+
+  it("refuses build, config, agent and spec files as a report, even when the request names one", () => {
+    for (const bad of ["CMakeLists.txt", "requirements.txt"]) {
+      const t = run(`Review the parser, put the findings in ${bad} and fix them.`);
+      expect(t.review?.report, bad).toBe("REVIEW.md");
+      expect(signal(t, "report-refused")?.detail, bad).toContain(bad);
+    }
+  });
+
   it("only a review has a review block; an override never makes one", () => {
     expect(run("How does the ledger work?").review).toBeNull();
     expect(run("Chromium won't start in the container. Fix it.").review).toBeNull();

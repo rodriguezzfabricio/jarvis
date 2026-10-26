@@ -130,7 +130,7 @@ export type TriageInput = z.input<typeof Input>;
 export type SignalName =
   | "override" | "empty-folder" | "design-md" | "attached-error" | "error-text"
   | "bug-words" | "question-words" | "onboarding-words" | "review-words" | "refactor-words" | "release-words" | "edit-words"
-  | "fix-words" | "report-file" | "report-refused" | "security-words"
+  | "fix-words" | "report-file" | "report-refused" | "security-words" | "no-edit-words"
   | "tier2-area" | "several-modules" | "one-sentence" | "no-type-words"
   | "judgment" | "judgment-overruled" | "missing-behavior" | "new-screen" | "new-platform" | "tier-raised";
 export interface Signal { name: SignalName; detail: string }
@@ -180,6 +180,14 @@ const FIX_REQUEST = /(?:\b(?:and|then|also|please)\s+|[,;:]\s*|(?:^|[.!?]\s+))(?
 // A file the request says to put the findings in: "Put what you find in REVIEW.md", "write them to docs/x.md".
 const REPORT_FILE = /\b(?:put|write|save|record|list|document|keep|log|leave)\b[^.!?\n]{0,80}?\b(?:in|into|to|as)\s+(?:a\s+file\s+(?:called|named)\s+)?[`'"]?([^\s`'"]+?\.(?:md|markdown|txt))(?![\w/])/i;
 const SECURITY = /\b(secur\w*|vulnerab\w*|exploit\w*|injection|ssrf|xss|csrf|owasp|pen-?test\w*|threat model\w*)\b/i;
+// An explicit constraint against editing wins over every fix word and judgment (Codex security review, round 1).
+// Only whole-request constraints count: "don't change the public API" is a scope, not "don't edit".
+const ENDS = String.raw`(?=\s*(?:[.!?;,:]|$))`;
+const WHOLE = String.raw`(?:\s+(?:anything|any\s+(?:code|files?)|the\s+code|code|files?|it|them))?`;
+/** No edits at all, not even a report: "Do not edit;", "don't change anything", "make no changes", "read-only". */
+const NO_EDIT = new RegExp(String.raw`\b(?:do\s+not|don'?t|never)\s+(?:edit|change|modify|touch)${WHOLE}${ENDS}|\bmake\s+no\s+(?:code\s+)?(?:changes|edits)\b|\bno\s+(?:code\s+)?(?:changes|edits)${ENDS}|\bread[- ]only\b|\bwithout\s+(?:editing|changing|modifying|touching)${WHOLE}${ENDS}`, "im");
+/** No fixes, though a report the request names may be written: "fix nothing", "report only", "suggestions only". */
+const NO_FIX = new RegExp(String.raw`\bfix(?:es)?\s+nothing\b|\b(?:do\s+not|don'?t|never)\s+fix(?:\s+(?:anything|any\s+of\s+(?:it|them)|it|them|yet))?${ENDS}|\bno\s+fix(?:es)?${ENDS}|\b(?:report|findings|suggestions?|recommendations?)\s+only\b|\bonly\s+(?:report|suggest|list|flag)\w*|\bwithout\s+fixing${WHOLE}${ENDS}`, "im");
 // Edits a question asks for after it: "… and make it easier for agents to work in" (golden task 7).
 const EDITS = /\b(?:and|also)\s+(?:then\s+)?(?:please\s+)?(make|clean|tidy|simplify|improve|refactor|reorganiz\w*|restructur\w*|fix|add|update|create|build|write|set up|remove)\b/i;
 const EDIT_KIND: Record<string, EditType> = { fix: "bug", make: "refactor", clean: "refactor", tidy: "refactor", simplify: "refactor", improve: "refactor", refactor: "refactor" };
@@ -330,14 +338,21 @@ export function triage(raw: TriageInput): Triage {
     if (kind) then = pipeline(kind, LABELS[kind]);
   }
 
+  // An explicit no-edit or no-fix constraint wins over every word and judgment that would add an editing pipeline.
+  const noEdit = hit(NO_EDIT);
+  const noFix = noEdit ?? hit(NO_FIX);
+  if (noFix) add("no-edit-words", `"${noFix.trim()}": ${noEdit ? "no edits at all" : "no fixes"}`);
+  if (type === "question" && noFix && then) then = null;
+
   // A review that asks for fixes (decision 126) stays a review: its step writes the report, then a bug pipeline repairs the confirmed findings.
   let review: Triage["review"] = null;
   if (type === "review") {
     const verb = hit(FIX_REQUEST);
     if (verb) add("fix-words", `"${verb.trim()}"`);
-    const fixes = j.then === "none" ? false : j.then !== undefined || verb !== undefined;
-    let named = j.report;
-    const typed = REPORT_FILE.exec(text)?.[1];
+    const fixes = !noFix && (j.then === "none" ? false : j.then !== undefined || verb !== undefined);
+    // "No edits at all" writes no report either: a plain read-only review.
+    let named = noEdit ? undefined : j.report;
+    const typed = noEdit ? undefined : REPORT_FILE.exec(text)?.[1];
     if (named === undefined && typed !== undefined) {
       const problem = reportPathProblem(typed);
       if (problem) add("report-refused", `"${typed}": ${problem}`);

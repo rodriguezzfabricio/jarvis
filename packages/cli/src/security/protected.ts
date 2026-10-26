@@ -47,7 +47,7 @@ export function installSecurityChecks(store: ChecksStore, plan: SecurityPlan): v
     if (pin.rulesFile) copyRules(pin.rulesFile, join(fixture, "rules", tool));
     if (pin.databaseDir) {
       hashOsvDatabase(pin.databaseDir);
-      if (tool !== "osv-scanner" || !osvDatabaseReady(pin.databaseDir, [])) throw Error("Invalid OSV database");
+      if (tool !== "osv-scanner" || !osvDatabaseReady(pin.databaseDir, [], pin.version)) throw Error("Invalid OSV database");
       cpSync(pin.databaseDir, join(fixture, "osv-db"), { recursive: true, errorOnExist: true, force: false });
     }
     pins[tool] = { bin: pin.bin, version: pin.version, args: [...pin.args], ...(pin.rulesFile ? { rulesFile: tool } : {}), ...(pin.env ? { env: { ...pin.env } } : {}) };

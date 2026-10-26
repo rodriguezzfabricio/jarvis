@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 
 const dirs: string[] = [];
@@ -10,7 +11,7 @@ function fake(body: string) {
   dirs.push(dir);
   const bin = join(dir, "scanner");
   writeFileSync(bin, `#!${process.execPath}\nif (process.argv.includes('--version') || process.argv.includes('version')) console.log('8.28.0'); else { ${body} }`, { mode: 0o700 });
-  return { dir, pin: { bin, version: "8.28.0", args: ["scan", "--redact=100", "."] } };
+  return { dir, pin: { bin, version: "8.28.0", args: pinnedSecurityScanners().gitleaks!.args } };
 }
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
@@ -109,6 +110,6 @@ describe("scanner adapters", () => {
   ])("fails closed on scanner fault %s", async (body, detail) => {
     const { runScanner } = await import("../../packages/cli/src/security/scanners.ts");
     const { dir, pin } = fake(body);
-    expect(await runScanner("gitleaks", pin, dir, { timeoutMs: 250 })).toMatchObject({ status: "error", detail });
+    expect(await runScanner("gitleaks", pin, dir, { timeoutMs: detail === "timeout" ? 250 : 10_000, versionTimeoutMs: 10_000 })).toMatchObject({ status: "error", detail });
   });
 });

@@ -97,7 +97,7 @@ it("captures only sanitized scanner output through the installed worker", async 
   const bin = join(root, "fake-scanner");
   const raw = JSON.stringify([{ RuleID: "dummy", File: "app.ts", StartLine: 1, Secret: dummy, Match: dummy }]);
   writeFileSync(bin, `#!${process.execPath}\nconsole.log(process.argv.includes('version') ? '8.28.0' : ${JSON.stringify(raw)});`, { mode: 0o700 });
-  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { gitleaks: { bin, version: "8.28.0", args: ["dir", "--redact=100", "."] } } });
+  installSecurityChecks(store, { nodeBin: process.execPath, scanners: { gitleaks: { bin, version: "8.28.0", args: pinnedSecurityScanners().gitleaks!.args } } });
   store.approve(ledger, "approved scanner");
   const observed = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "gitleaks"], cwd: root, env: { JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(observed.code).toBe(0);
@@ -120,7 +120,8 @@ it("executes installed fake scanner drivers and the separate verifier; detected 
   }
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: pins });
   const db = join(store.checksDir, "fixtures/security/osv-db"); mkdirSync(db); writeFileSync(join(db, "cache.zip"), "fake database");
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
+  // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
   store.approve(ledger, "approved");
   let runs = 0;
   const gate = async (g: GateInput): Promise<GateResult> => {

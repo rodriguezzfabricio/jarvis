@@ -1,0 +1,62 @@
+[
+  {
+    "name": "doctor requires configured scanner pins",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "deps.scannerPins ?? pinnedSecurityScanners()",
+    "replacement": "deps.scannerPins ?? {}"
+  },
+  {
+    "name": "doctor preserves scanner failures",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "checks.push(...await scannerDoctorChecks(pins, deps.repoPath, scannerDeps));",
+    "replacement": "checks.push(...(await scannerDoctorChecks(pins, deps.repoPath, scannerDeps)).map(check => ({ ...check, level: \"warn\" as const })));"
+  },
+  {
+    "name": "doctor checks pinned binary existence",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "if (!exists(spec.bin)) throw new Error(\"binary unavailable\");",
+    "replacement": "if (false) throw new Error(\"binary unavailable\");"
+  },
+  {
+    "name": "doctor accepts labelled OSV version",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "stdout: deps.exec(spec.bin, [...spec.args], spec.env)",
+    "replacement": "stdout: version(deps.exec(spec.bin, [...spec.args], spec.env)) ?? \"\""
+  },
+  {
+    "name": "doctor forwards scanner environment",
+    "file": "packages/cli/src/doctor/tools.ts",
+    "anchor": "deps.exec(spec.bin, [...spec.args], spec.env)",
+    "replacement": "deps.exec(spec.bin, [...spec.args])"
+  },
+  {
+    "name": "doctor distinguishes ledger contention",
+    "file": "packages/cli/src/doctor/foundation.ts",
+    "anchor": "if (v.contended) out.push",
+    "replacement": "if (false) out.push"
+  },
+  {
+    "name": "doctor blocks unattended work while busy",
+    "file": "packages/cli/src/doctor/doctor.ts",
+    "anchor": "return checks.some((c) => c.status === \"busy\") ? 2 : 0;",
+    "replacement": "return 0;"
+  },
+  {
+    "name": "doctor busy ledger reads as a plain warning",
+    "file": "packages/cli/src/doctor/foundation.ts",
+    "anchor": "level: \"warn\", status: \"busy\",",
+    "replacement": "level: \"warn\","
+  },
+  {
+    "name": "doctor failures lose precedence over busy",
+    "file": "packages/cli/src/doctor/doctor.ts",
+    "anchor": "if (checks.some((c) => c.level === \"fail\")) return 1;",
+    "replacement": "if (false) return 1;"
+  },
+  {
+    "name": "doctor preserves verification failures",
+    "file": "packages/cli/src/doctor/foundation.ts",
+    "anchor": "v.ok ? \"pass\" : \"fail\", v.ok ?",
+    "replacement": "v.ok ? \"pass\" : \"warn\", v.ok ?"
+  }
+]

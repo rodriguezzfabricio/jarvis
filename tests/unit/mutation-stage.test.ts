@@ -19,6 +19,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-planning.json")).toBe("3");
     expect(stageOf("tests/unit/skills-build-mutations.json")).toBe("3");
     expect(stageOf("packages/cli/src/eval/mutations-jarvis.json")).toBe("3"); // the Jarvis arm proves stage 3 (tasks 2, 4, 5)
+    expect(stageOf("packages/cli/src/doctor/mutations-doctor.json")).toBe("0-1"); // jarvis doctor is stage 0-1 (backlog 91, 95)
   });
 
   // The integrator's mapping for the lanes landing now and next (stages 0-1 to 6).

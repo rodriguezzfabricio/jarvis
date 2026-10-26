@@ -47,7 +47,7 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
     semgrep: {
       bin: "/opt/homebrew/bin/semgrep", version: "1.182.0",
       rulesFile: fileURLToPath(new URL("../security/rules/", import.meta.url)),
-      args: ["scan", "--config", "@rules", "--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--oss-only", "--no-secrets-validation", "--no-git-ignore", "--x-ignore-semgrepignore-files", "--jobs=1", "."],
+      args: ["scan", "--config", "@rules", "--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--oss-only", "--no-secrets-validation", "--no-git-ignore", "--x-ignore-semgrepignore-files", "--jobs=1", "--max-target-bytes=0", "."],
       env: { SSL_CERT_FILE: "/etc/ssl/cert.pem" },
     },
     "osv-scanner": {

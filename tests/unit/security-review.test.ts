@@ -19,7 +19,7 @@ function setup() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "security-review-"))); roots.push(root);
   const checkout = join(root, "checkout"); const home = join(root, "home"); const fixtures = join(root, "fixtures");
   for (const p of [checkout, home, fixtures]) mkdirSync(p);
-  const pin = { bin: join(root, "fake-scanner"), version: "1.2.3", args: ["scan", "--redact=100", "."] };
+  const pin = { bin: join(root, "fake-scanner"), version: "1.2.3", args: pinnedSecurityScanners().gitleaks!.args };
   const spawn = async (s: { args: readonly string[] }) => ({ code: 0, stdout: s.args.some((a) => a === "version" || a === "--version") ? "1.2.3" : "[]", stderr: "", timedOut: false, overflowed: false, durationMs: 0 });
   return { root, checkout, home, fixtures, pin, spawn };
 }
@@ -47,7 +47,8 @@ it("preserves gate HOME/TMPDIR and expands the protected OSV database environmen
   writeFileSync(pin.bin, `#!${process.execPath}\nif(process.argv.includes('--version')) console.log('1.2.3'); else { if(process.env.HOME!==${JSON.stringify(home)} || process.env.TMPDIR!==${JSON.stringify(home)} || process.env.OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY!==${JSON.stringify(db)}) process.exit(2); console.log('{"results":[]}'); }`, { mode: 0o700 });
   installSecurityChecks(store, { nodeBin: process.execPath, scanners: { "osv-scanner": { ...pin, args: pinnedSecurityScanners()["osv-scanner"]!.args, env: { OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: "$JARVIS_FIXTURES/osv-db" } } } });
   mkdirSync(db); writeFileSync(join(db, "dummy.json"), "{}");
-  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "2.7.0", ecosystems: [], files: hashOsvDatabase(db) }));
+  // The snapshot names the pinned (fake) scanner version that fetched it (backlog 96).
+  writeFileSync(join(db, "manifest.json"), JSON.stringify({ schema: 1, scannerVersion: "1.2.3", ecosystems: [], files: hashOsvDatabase(db) }));
   const r = await runSession({ bin: process.execPath, args: [join(store.checksDir, "fixtures/security/security/worker.ts"), "osv-scanner"], cwd: checkout, env: { HOME: home, TMPDIR: home, JARVIS_FIXTURES: join(store.checksDir, "fixtures") }, timeoutMs: 5000 });
   expect(r.code).toBe(0);
   expect(JSON.parse(r.stdout)).toMatchObject({ status: "pass" });
@@ -88,7 +89,7 @@ it.each([["not_run", "fail"], ["not_run", "pass"], ["pass", "fail"]] as const)("
 
 it("uses and removes a private gitleaks report file instead of opening /dev/stdout", async () => {
   const { checkout, home, pin } = setup(); let report = "";
-  const result = await runScanner("gitleaks", { ...pin, args: [...pin.args, "--report-path=/dev/stdout"] }, checkout, { homeDir: home, tmpDir: home, spawn: async (s) => {
+  const result = await runScanner("gitleaks", { ...pin, args: pin.args.map((arg) => arg === "--report-path=@report" ? "--report-path=/dev/stdout" : arg) }, checkout, { homeDir: home, tmpDir: home, spawn: async (s) => {
     if (s.args.includes("version")) return { code: 0, stdout: "1.2.3", stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
     report = s.args.find((a) => a.startsWith("--report-path="))!.slice("--report-path=".length);
     if (report === "/dev/stdout") throw Error("sandbox denies opening stdout");
@@ -100,7 +101,7 @@ it("uses and removes a private gitleaks report file instead of opening /dev/stdo
 });
 it("caps private report files and removes them on failure", async () => {
   const { checkout, home, pin } = setup(); let report = "";
-  const result = await runScanner("gitleaks", { ...pin, args: [...pin.args, "--report-path=@report"] }, checkout, { homeDir: home, tmpDir: home, spawn: async (s) => {
+  const result = await runScanner("gitleaks", { ...pin, args: pin.args }, checkout, { homeDir: home, tmpDir: home, spawn: async (s) => {
     if (s.args.includes("version")) return { code: 0, stdout: "1.2.3", stderr: "", timedOut: false, overflowed: false, durationMs: 0 };
     report = s.args.find((a) => a.startsWith("--report-path="))!.slice("--report-path=".length);
     if (!report.startsWith(`${home}/`)) throw Error("report path is not private");

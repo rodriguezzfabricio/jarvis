@@ -34,6 +34,8 @@ it("pins all three installed scanners by absolute path and exact version", () =>
   const all = pins();
   expect(Object.fromEntries(Object.entries(all).map(([tool, pin]) => [tool, [pin.bin, pin.version]]))).toEqual({ gitleaks: ["/opt/homebrew/bin/gitleaks", "8.28.0"], semgrep: ["/opt/homebrew/bin/semgrep", "1.182.0"], "osv-scanner": ["/opt/homebrew/bin/osv-scanner", "2.7.0"] });
   expect(all.gitleaks!.args).toEqual(expect.arrayContaining(["--redact=100", "--ignore-gitleaks-allow", "--gitleaks-ignore-path=/dev/null"]));
+  // Semgrep skips files over 1 MB by default and reports nothing about them (backlog 92, verified live).
+  expect(all.semgrep!.args).toContain("--max-target-bytes=0");
 });
 
 it("uses only vendored Semgrep rules, disabled metrics, version checks and nosem", async () => {
@@ -41,7 +43,7 @@ it("uses only vendored Semgrep rules, disabled metrics, version checks and nosem
   const result = await runScanner("semgrep", pin, checkout, { fixturesDir: fixtures, spawn: async (spec) => { calls.push(spec); return ok(spec.args.includes("--version") ? "1.182.0\n" : '{"results":[],"errors":[]}'); } });
   expect(result.status).toBe("pass");
   const scan = calls[1]!;
-  expect(scan.args).toEqual(expect.arrayContaining(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--config", pin.rulesFile]));
+  expect(scan.args).toEqual(expect.arrayContaining(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0", "--config", pin.rulesFile]));
   expect(scan.env).toMatchObject({ SSL_CERT_FILE: "/etc/ssl/cert.pem", SEMGREP_SEND_METRICS: "off", SEMGREP_ENABLE_VERSION_CHECK: "0" });
   expect(scan.env.HOME).not.toBe(checkout); expect(scan.env.TMPDIR).not.toBe(checkout);
   expect(Object.keys(scan.env).sort()).toEqual(["CI", "HOME", "LANG", "PATH", "SEMGREP_ENABLE_VERSION_CHECK", "SEMGREP_SEND_METRICS", "SSL_CERT_FILE", "TMPDIR"]);
@@ -55,7 +57,7 @@ it.each(["auto", "p/security-audit", "https://example.invalid/rules.yml"])("reje
   expect(calls).toBe(0);
 });
 
-it.each(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json"])("refuses Semgrep pins missing %s", async (flag) => {
+it.each(["--metrics=off", "--disable-version-check", "--disable-nosem", "--json", "--max-target-bytes=0"])("refuses Semgrep pins missing %s", async (flag) => {
   const { checkout } = setup(); const pin = pins().semgrep!;
   expect((await runScanner("semgrep", { ...pin, args: pin.args.filter((arg) => arg !== flag) }, checkout, { spawn: async (spec) => ok(spec.args.includes("--version") ? "1.182.0" : '{"results":[],"errors":[]}') }))).toMatchObject({ status: "error", detail: "invalid offline semgrep configuration" });
 });

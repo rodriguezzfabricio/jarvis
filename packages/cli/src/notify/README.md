@@ -32,8 +32,13 @@ No setup, email transport, attachments or CLI commands are registered in this la
    delivery of the same notification; do not issue a new approval ID after a timeout.
 3. Build buttons with `actionsFor(kind, request.requestId, request.nonce)` and send a
    short message. Questions offer Use defaults; approvals offer Approve and Reject.
-   Do not forward `Broker.onApprovalRequest.summary` without reviewing its privacy:
-   a broker summary can contain recipient names or other sensitive payload details.
+   A broker summary can contain recipient addresses, subjects or other payload details.
+   `jarvis run`'s phone approvals (`commands/run-approvals.ts`, decision 117) send it
+   anyway, because a tap that approves a send, deploy or spend must show what it approves:
+   one line through `oneLineSummary` (no control, format or line-separator characters,
+   at most 300 characters) and the payload hash's first 12 characters. Never the payload.
+   Approval requests are registered with their project (`register(id, "approval", project)`)
+   and marked with `sent(id, sentAt)` only after a send succeeds; until then no tap counts.
 
 ## Receiving and recording
 

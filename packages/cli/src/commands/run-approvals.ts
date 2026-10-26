@@ -56,9 +56,19 @@ function unanswered(entries: readonly LedgerEntry[], request: LedgerEntry): bool
     && (data(e).decision === "approve" || data(e).decision === "reject"));
 }
 
+/** The broker's summary as one line a phone can show (decision 117). Its text is session-written (an
+ * email subject, a description), so control, format and line-separator characters go: no extra lines,
+ * no bidi tricks. At most 300 characters, never splitting one. The full payload stays in the ledger. */
+export function oneLineSummary(summary: unknown): string {
+  const flat = String(summary ?? "").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, " ").trim();
+  const chars = [...flat];
+  return chars.length > 300 ? `${chars.slice(0, 299).join("")}…` : flat;
+}
+
 /** Runner-owned polling, never an endpoint on the task-accessible broker socket. Hard stops have no
  * timeout default. Only the broker records approval for the exact payload, and a tap never executes it.
- * Legacy requests lacking an explicit project remain terminal-only. Phone messages omit raw payloads. */
+ * Legacy requests lacking an explicit project remain terminal-only. Phone messages carry the broker's
+ * one-line summary and a payload hash prefix, never the raw payload (decision 117). */
 export function runApprovals(o: RunApprovalOptions): RunApprovals {
   const warn = o.warn ?? console.error;
   const now = o.now ?? Date.now;
@@ -142,7 +152,7 @@ export function runApprovals(o: RunApprovalOptions): RunApprovals {
       if (registered && data(registered).project !== o.project) continue;
       if (entries.some((e) => phase(e, "sent") && data(e).requestId === id)) continue;
       const nonce = registered ? String(data(registered).nonce) : inbox.register(id, "approval", o.project).nonce;
-      const text = `Jarvis ${o.project}: approval needed for ${String(r.op)} (request ${id}). Exact payload details stay in the runner ledger on your Mac.`;
+      const text = `Jarvis ${o.project}: approve ${String(r.op)}? ${oneLineSummary(r.summary)} (request ${id}, payload ${String(r.payloadHash).slice(0, 12)}). The full payload is in the runner ledger on your Mac.`;
       if (await send({ kind: "approval", text }, actionsFor("approval", id, nonce)) && !closed) inbox.sent(id, now());
     }
   }

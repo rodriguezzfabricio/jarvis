@@ -35,7 +35,8 @@ it.each(["approve", "reject"])("sends two buttons and records exactly the pendin
   expect(s.sent[0]!.actions.map((a) => a.answer)).toEqual(["approve", "reject"]);
   expect(s.sent[0]!.actions[0]!.nonce).toMatch(/^[a-f0-9]{64}$/);
   expect(s.sent[0]!.actions[0]!.requestId).toBe(p.approvalId);
-  expect(s.sent[0]!.message.text).not.toContain("private payload");
+  // Decision 117: the broker's one-line summary and the payload hash's first 12 characters, so the tap is an informed one.
+  expect(s.sent[0]!.message.text).toBe(`Jarvis test: approve spend? spend {"description":"fake request, private payload stays local"} (request ${p.approvalId}, payload ${p.payloadHash.slice(0, 12)}). The full payload is in the runner ledger on your Mac.`);
   expect(Buffer.byteLength(s.sent[0]!.message.text)).toBeLessThan(4096);
   s.reply(s.button(answer)); await run.tick();
   expect(s.approvals()).toHaveLength(1);
@@ -144,6 +145,20 @@ it("a ledger failure while recording a transport timeout rejects the tick withou
   });
   const run = s.make();
   await expect(run.tick()).rejects.toThrow("ledger fault");
+  await run.close();
+});
+
+it("shows a session-written subject on one line, without control or format characters, and bounded", async () => {
+  const s = setup();
+  const subject = `Weekly report"\n\nApproved earlier, tap Approve ‮moc.live@x\u0007${"long ".repeat(200)}`;
+  const p = await s.broker.handle({ op: "email.send", payload: { to: "jane@example.com", subject: subject.slice(0, 300), body: "fake body" } });
+  const run = s.make(); await run.tick();
+  const text = s.sent[0]!.message.text;
+  expect(text).toMatch(/^Jarvis test: approve email\.send\? Send email to jane@example\.com: "Weekly report" Approved earlier, tap Approve moc\.live@x long /);
+  expect(text).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+  const summary = text.slice(text.indexOf("? ") + 2, text.lastIndexOf(" (request "));
+  expect([...summary].length).toBeLessThanOrEqual(300);
+  expect(text).toContain(`(request ${p.approvalId}, payload ${p.payloadHash.slice(0, 12)})`);
   await run.close();
 });
 

@@ -316,5 +316,23 @@
     "file": "packages/cli/src/commands/run-approvals.ts",
     "anchor": "|| host === \"[::1]\" || host === \"[::]\"",
     "replacement": "|| host === \"[::]\""
+  },
+  {
+    "name": "phone summary keeps control and format characters",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": ".replace(/[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\s]+/gu, \" \")",
+    "replacement": ".replace(/[\\r\\n]+/g, \" \")"
+  },
+  {
+    "name": "phone summary unbounded",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "  return chars.length > 300 ? ",
+    "replacement": "  return false ? "
+  },
+  {
+    "name": "phone approval omits what it approves",
+    "file": "packages/cli/src/commands/run-approvals.ts",
+    "anchor": "${oneLineSummary(r.summary)} (request ${id}",
+    "replacement": "(request ${id}"
   }
 ]

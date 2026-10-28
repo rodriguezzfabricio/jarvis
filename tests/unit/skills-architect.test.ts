@@ -15,7 +15,7 @@ describe("architect skill", () => {
     ["Read the contract", ["PRODUCT.md", "DESIGN.md", "docs/spec/vN.md", "jarvis decide", "--why"]],
     ["Write the plan", [".jarvis/plan.json", "exitCondition", "acceptanceCriteria", "dependencies", "requiredChecks", "requiredReviews", "mayTouch", "every AC", "small tasks", "any other key", "notes", "planner notes", "claims"]],
     ["Author protected checks", [".jarvis/checks/", "black box", "fixtures/", "expected/", "verify", "JARVIS-CHECK-COMPLETE", "JARVIS_COMPLETION_FILE", "no candidate imports", "never runnable unit tests", "no expectations in fixtures"]],
-    ["Hand off", ["never writes product code", "review", "notes", "claims", "runner", "hashes", "new review"]],
+    ["Hand off", ["never writes product code", "review", "notes", "claims", "runner", "hashes", "new review", "jarvis checks install", "stop if it refuses"]],
   ])("keeps decision requirements in %s", (heading, phrases) => { for (const phrase of phrases) expect(section(heading), phrase).toContain(phrase); });
   it("shows a plan example the runner's strict schema accepts, with top-level notes (decision 113)", () => {
     const plan = read().split("## Write the plan\n")[1]!.split(/^## /m)[0]!;

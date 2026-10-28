@@ -71,7 +71,7 @@ describe("eval jarvis: a review-fix task's reviews", { timeout: 240_000 }, () =>
     writeFileSync(taskJson, JSON.stringify({ ...JSON.parse(readFileSync(taskJson, "utf8")), reviewFix: true }));
     const scenarioPath = join(fx.root, "review-scenario", "scenario.json");
     mkdirSync(dirname(scenarioPath));
-    writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "review", match: "Independently review", repeat: true, steps: [{ result: { subtype: "success", text: "{\"findings\":[]}" } }] }] }));
+    writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "review", match: "Independently review", repeat: true, steps: [{ result: { subtype: "success", text: "{\"findings\":[],\"checked\":[\"spec-criteria\",\"data-flow\",\"error-paths\",\"unchanged-callers\",\"bug-brief-inputs\"]}" } }] }] }));
     const shim = join(fx.root, "bin", "claude");
     writeFakeClaudeShim(shim, scenarioPath);
     const specs: SessionSpec[] = [];

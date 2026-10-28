@@ -364,5 +364,29 @@
     "file": "packages/cli/src/commands/run-approvals.ts",
     "anchor": "create({ ...config, topic: config.replyTopic, replyTopic: config.topic })",
     "replacement": "create(config)"
+  },
+  {
+    "name": "run review ignores plan tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "baseRevision, tier: deps.tier, spec:",
+    "replacement": "baseRevision, tier: 1, spec:"
+  },
+  {
+    "name": "run bug review loses strong tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "tier: deps.reviewFix.bugTasks.has(taskId) ? 2 : deps.tier",
+    "replacement": "tier: deps.tier"
+  },
+  {
+    "name": "run reviewer deps ignore plan tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "cacheRoot, spec, tier: plan?.tier ?? 1, git",
+    "replacement": "cacheRoot, spec, tier: 1, git"
+  },
+  {
+    "name": "run loop ignores plan tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1,",
+    "replacement": "worktreeRoot, workRoot, gitHome: home, tier: 1,"
   }
 ]

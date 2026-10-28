@@ -32,10 +32,10 @@ const a=process.argv.slice(2); const val=f=>a[a.indexOf(f)+1];
 appendFileSync(${JSON.stringify(record)},JSON.stringify({args:a,env:process.env,stdin:readFileSync(0,'utf8')})+'\\n');
 if(a.includes('--version')) { console.log(${JSON.stringify(version)}); process.exit(0); }
 const mode=${JSON.stringify(mode)};
-if(mode==='timeout') { process.on('SIGTERM',()=>{ writeFileSync(val('-o'),JSON.stringify({findings:[]})); console.log(JSON.stringify({type:'turn.completed'})); process.exit(0); }); setInterval(()=>{},1000); }
+if(mode==='timeout') { process.on('SIGTERM',()=>{ writeFileSync(val('-o'),JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]})); console.log(JSON.stringify({type:'turn.completed'})); process.exit(0); }); setInterval(()=>{},1000); }
 else if(mode==='limit') { console.log(JSON.stringify({type:'error',message:"You've hit your usage limit"})); console.log(JSON.stringify({type:'turn.failed'})); process.exit(1); }
 else if(mode==='unrelated') { console.log("You've hit your usage limit"); process.exit(2); }
-else { writeFileSync(val('-o'), mode==='garbage'?'not-json':JSON.stringify({findings:[]})); console.log(JSON.stringify({type:mode==='failed'?'turn.failed':'turn.completed'})); }
+else { writeFileSync(val('-o'), mode==='garbage'?'not-json':JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]})); console.log(JSON.stringify({type:mode==='failed'?'turn.failed':'turn.completed'})); }
 `, { mode: 0o700 });
   }
   const input: ReviewerInput = { workspace, outputDir, prompt: "review candidate", model: "gpt-6.1-sol", effort: "high", maxTurns: 10, timeoutMs: mode === "timeout" ? 1500 : 20_000 };
@@ -54,13 +54,13 @@ describe("isolated Codex reviewer", () => {
   it.skipIf(!darwin)("checks the exact version and launches under Seatbelt with Codex's own sandbox off, ignored stdin and schema", async () => {
     const s = setup(); const result = await s.reviewer(s.input);
     expect(result.error).toBeUndefined();
-    expect(result.rawVerdict).toBe('{"findings":[]}');
+    expect(result.rawVerdict).toBe('{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}');
     expect(result.reviewer).toBe("codex");
     const calls = s.calls();
     expect(calls[0].args).toEqual(["--version"]);
     expect(calls[1].args).toEqual(["exec", "-C", s.input.workspace, "-m", "gpt-6.1-sol", "--sandbox", "danger-full-access", "--ephemeral", "--json", "--skip-git-repo-check", "-c", "project_doc_max_bytes=0", "-c", 'model_reasoning_effort="high"', "--output-schema", join(s.input.outputDir, "schema.json"), "-o", join(s.input.outputDir, "verdict.json"), "--", "review candidate"]);
     const schema = JSON.parse(readFileSync(join(s.input.outputDir, "schema.json"), "utf8"));
-    expect(schema.required).toEqual(["findings"]);
+    expect(schema.required).toEqual(["findings", "checked"]);
     expect(schema.properties.findings.items.required).toContain("confidence");
     for (const c of calls) {
       expect(Object.keys(c.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort()).toEqual(ENV_KEYS);

@@ -364,5 +364,41 @@
     "file": "packages/cli/src/review/service.ts",
     "anchor": ": verdict === \"error\" ? active.find((r) => r.verdict === \"error\")?.error : undefined;",
     "replacement": ": undefined;"
+  },
+  {
+    "name": "review checked requirement dropped",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "checked: z.array(z.enum([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\", \"bug-brief-inputs\"])).max(8)",
+    "replacement": "checked: z.array(z.enum([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\", \"bug-brief-inputs\"])).max(8).optional().default([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\"])"
+  },
+  {
+    "name": "review unchanged callers no longer required",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "const required = [\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\",",
+    "replacement": "const required = [\"spec-criteria\", \"data-flow\", \"error-paths\","
+  },
+  {
+    "name": "review bug brief inputs no longer required",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "...(options.kind === \"bug\" ? [\"bug-brief-inputs\"] : [])",
+    "replacement": "...[]"
+  },
+  {
+    "name": "review service ignores bug kind",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "evaluateVerdict(output.rawVerdict, material)",
+    "replacement": "evaluateVerdict(output.rawVerdict)"
+  },
+  {
+    "name": "review invalid checks charged as code failure",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "...(!evaluated.valid ? { verdict: \"error\" as const } : {}),",
+    "replacement": ""
+  },
+  {
+    "name": "review prompt omits check names",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "The output must also carry checked, listing spec-criteria (the spec’s criteria for this task), data-flow (the data flow of the change), error-paths (its error paths), unchanged-callers (the callers it did not change), and for a bug task bug-brief-inputs (the two traced inputs of the bug brief). A name may be listed only after you read the relevant code or spec criteria. An output without the required checks is invalid.",
+    "replacement": "Report your findings."
   }
 ]

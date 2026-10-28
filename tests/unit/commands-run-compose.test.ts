@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestBroker } from "../../packages/cli/src/broker/client.ts";
+import * as brokerHost from "../../packages/cli/src/broker/host.ts";
 import type { SignalHost } from "../../packages/cli/src/broker/host.ts";
-import { prepareProductionRun, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
+import { prepareProductionRun, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
 import type { PreparedRun } from "../../packages/cli/src/commands/run.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
@@ -36,10 +37,10 @@ async function prepare(p: E2EProject, ctx: object = {}, extra: Partial<ComposeOp
   prepared.push(run);
   return run;
 }
-function writePlan(p: E2EProject, criteria = true, notes?: string[]) {
+function writePlan(p: E2EProject, criteria = true, notes?: string[], tier?: 0 | 1 | 2) {
   mkdirSync(join(p.repoPath, ".jarvis"), { recursive: true });
   const tasks = p.tasks.map((t) => ({ id: t.id, title: t.title, goal: t.goal, exitCondition: t.exitCondition, acceptanceCriteria: criteria ? t.criteria : [], storyIds: [t.story], dependencies: t.dependencies, priority: t.priority, requiredChecks: t.requiredChecks, requiredReviews: t.requiredReviews }));
-  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), tasks }));
+  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), ...(tier !== undefined ? { tier } : {}), tasks }));
 }
 const runDir = (p: E2EProject) => join(p.jarvisHome, "run");
 const socketsIn = (p: E2EProject) => existsSync(runDir(p)) ? readdirSync(runDir(p)).filter((n) => n.endsWith(".sock")) : [];
@@ -50,6 +51,7 @@ describe("jarvis run production composition", () => {
     const { loop: opts } = await prepare(p);
     expect(Object.keys(opts.checks).sort()).toEqual(["ac1", "ac2", "ac3", "unit"]);
     expect(opts.runBranch).toBe(p.runBranch);
+    expect(opts.tier).toBe(1);
     expect(opts.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
     expect(opts.worktreeRoot).toBe(join(p.home, ".jarvis-work", "worktrees"));
     expect(typeof opts.createHarness).toBe("function"); expect(typeof opts.recoverIntake).toBe("function");
@@ -64,6 +66,30 @@ describe("jarvis run production composition", () => {
     const path = join(q.repoPath, ".jarvis", "plan.json");
     writeFileSync(path, JSON.stringify({ feature: "habits", ...JSON.parse(readFileSync(path, "utf8")) }));
     await expect(prepare(q)).rejects.toThrow(/Unrecognized key/);
+  });
+
+  it.each([0, 2] as const)("carries plan tier %s into the loop and review material", async (tier) => {
+    const p = project(); writePlan(p, true, undefined, tier);
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    let deps: ReviewDeps | undefined;
+    let loop: PreparedRun["loop"];
+    try { ({ loop } = await prepare(p, {}, { createReview: (input) => { deps = input; return async () => "pass"; } })); }
+    finally { hosted.mockRestore(); }
+    expect(loop.tier).toBe(tier);
+    safeGit(p.repoPath, ["commit", "--allow-empty", "-qm", "candidate"], { home: p.home });
+    expect(reviewMaterialFor(deps!, "T1", safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim())).toMatchObject({ tier });
+  });
+  it("reviews review-fix bug tasks at tier 2 and leaves the report update at the plan's tier", () => {
+    const p = project();
+    const deps: ReviewDeps = {
+      context: context(p), ledger: p.ledger, workRoot: p.home, cacheRoot: p.home, spec: undefined, tier: 1,
+      git: () => "base", preflight: async () => true,
+      reviewFix: { request: "Fix confirmed findings", tasks: new Map(), bugTasks: new Set(["T1"]) },
+    };
+    expect(reviewMaterialFor(deps, "T1", "candidate")).toMatchObject({ tier: 2, kind: "bug" });
+    expect(reviewMaterialFor(deps, "T2", "candidate")).toMatchObject({ tier: 1 });
+    expect(reviewMaterialFor(deps, "T2", "candidate").kind).toBeUndefined();
+    expect(reviewMaterialFor({ ...deps, tier: 2 }, "T2", "candidate").tier).toBe(2);
   });
 
   it("refuses to start without approved protected checks", async () => {

@@ -41,7 +41,7 @@ export function setup(tier: 0 | 1 | 2 = 2) {
     expect(input.prompt).toContain("RUNNER-PROOF");
     expect(input.prompt).toContain("+candidate");
     expect(input.prompt).toContain("AC1: keeps revision immutable");
-    return { reviewer: engine, model: input.model, rawOutput: `${engine}-raw`, rawVerdict: '{"findings":[]}' };
+    return { reviewer: engine, model: input.model, rawOutput: `${engine}-raw`, rawVerdict: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' };
   });
   const claude = reviewer("claude"), codex = reviewer("codex");
   const options = { ledger, projectDir, workRoot, home: root, routing: structuredClone(DEFAULT_ROUTING) as RoutingTable & { cross_model?: { codex: { model: string; effort: "medium" | "high" } } },

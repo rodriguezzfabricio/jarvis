@@ -17,10 +17,10 @@ Start from the spec and runner's evidence; never read the builder's notes, summa
 
 ## Findings and verdict
 
-Return exactly one JSON object with a findings array, without Markdown fences or a self-declared verdict. An empty review is:
+Return exactly one JSON object with a findings array and a checked array, without Markdown fences or a self-declared verdict. `checked` names what you read before judging: `spec-criteria` (the spec's criteria for this task), `data-flow` (the data flow of the change), `error-paths` (its error paths), `unchanged-callers` (the callers it did not change) and, for a bug task, `bug-brief-inputs` (the two traced inputs of the bug brief). List a name only after you read that code; the runner treats an output missing any required name as invalid, not as a pass. An empty review is:
 
 ```json
-{"findings":[]}
+{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}
 ```
 
 Each finding has all these fields:

@@ -13,7 +13,7 @@ describe("architect skill", () => {
   });
   it.each([
     ["Read the contract", ["PRODUCT.md", "DESIGN.md", "docs/spec/vN.md", "jarvis decide", "--why"]],
-    ["Write the plan", [".jarvis/plan.json", "exitCondition", "acceptanceCriteria", "dependencies", "requiredChecks", "requiredReviews", "mayTouch", "every AC", "small tasks", "any other key", "notes", "planner notes", "claims"]],
+    ["Write the plan", [".jarvis/plan.json", "\"tier\"", "triage","exitCondition", "acceptanceCriteria", "dependencies", "requiredChecks", "requiredReviews", "mayTouch", "every AC", "small tasks", "any other key", "notes", "planner notes", "claims", '"tier"', "triage’s tier"]],
     ["Author protected checks", [".jarvis/checks/", "black box", "fixtures/", "expected/", "verify", "JARVIS-CHECK-COMPLETE", "JARVIS_COMPLETION_FILE", "no candidate imports", "never runnable unit tests", "no expectations in fixtures"]],
     ["Hand off", ["never writes product code", "review", "notes", "claims", "runner", "hashes", "new review", "jarvis checks install", "stop if it refuses"]],
   ])("keeps decision requirements in %s", (heading, phrases) => { for (const phrase of phrases) expect(section(heading), phrase).toContain(phrase); });
@@ -21,7 +21,8 @@ describe("architect skill", () => {
     const plan = read().split("## Write the plan\n")[1]!.split(/^## /m)[0]!;
     const fences = [...plan.matchAll(/^```json\n([\s\S]*?)^```/gm)];
     expect(fences).toHaveLength(1);
-    const parsed = PlanSchema.parse(JSON.parse(fences[0]![1]!));
+    const parsed = PlanSchema.parse(JSON.parse(fences[0]![1]!.replace("<triage’s tier>", "2")));
+    expect(parsed.tier).toBe(2);
     expect(parsed.notes?.length).toBeGreaterThan(0);
   });
   it("has at least three gotchas and shows no compound session shell commands", () => {

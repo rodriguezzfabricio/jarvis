@@ -74,7 +74,7 @@ function setup(make: (dir: string) => void, candidate: Record<string, string> = 
     evidence: { dir: evidenceDir, files },
   } });
   const prompts: string[] = [];
-  let reply = (input: ReviewerInput): ReviewerOutput => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: '{"findings":[]}' });
+  let reply = (input: ReviewerInput): ReviewerOutput => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' });
   const claude = async (input: ReviewerInput): Promise<ReviewerOutput> => { prompts.push(input.prompt); return reply(input); };
   const service = createReviewService({ ledger, projectDir, workRoot, home: root, routing: DEFAULT_REVIEW_ROUTING, codex: null, claude,
     resolveMaterial: async () => ({ repoPath, baseRevision, tier: 1, spec: "Approved spec", acceptanceCriteria: ["AC1: filters by visible text"] }) });

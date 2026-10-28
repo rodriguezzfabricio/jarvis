@@ -502,5 +502,23 @@
     "file": "skills/architect/SKILL.md",
     "anchor": "  \"notes\": [\"Reuse the existing file store; add no dependencies.\"],\n",
     "replacement": ""
+  },
+  {
+    "name": "plan accepts tier 3",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "tier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional()",
+    "replacement": "tier: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional()"
+  },
+  {
+    "name": "build session ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "runHeaderPath: headerPath, role: \"build\", tier: this.opts.tier ?? 1,",
+    "replacement": "runHeaderPath: headerPath, role: \"build\", tier: 1,"
+  },
+  {
+    "name": "build usage ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "attemptId: workspace.attemptId, role: \"build\", tier: this.opts.tier ?? 1,",
+    "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
   }
 ]

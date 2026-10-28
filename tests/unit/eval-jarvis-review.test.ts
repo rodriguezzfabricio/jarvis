@@ -25,7 +25,7 @@ function setup(preflight: () => Promise<{ ok: boolean }>) {
   fixtures.push(fx);
   const scenarioPath = join(fx.root, "review-scenario", "scenario.json");
   mkdirSync(dirname(scenarioPath));
-  writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "review", match: "Independently review", repeat: true, steps: [{ result: { subtype: "success", text: "{\"findings\":[]}" } }] }] }));
+  writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "review", match: "Independently review", repeat: true, steps: [{ result: { subtype: "success", text: "{\"findings\":[],\"checked\":[\"spec-criteria\",\"data-flow\",\"error-paths\",\"unchanged-callers\",\"bug-brief-inputs\"]}" } }] }] }));
   const shim = join(fx.root, "bin", "claude");
   writeFakeClaudeShim(shim, scenarioPath);
   // Codex canary: if the eval wiring ever ran the pinned Codex, it would read a hidden file and leave a marker.

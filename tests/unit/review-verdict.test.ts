@@ -5,9 +5,30 @@ const finding = (patch: Record<string, unknown> = {}) => ({
   severity: "high", confidence: 0.9, impact: "other", file: "src/send.ts", line: 12,
   scenario: "A retry sends the same message twice", fix: "Keep an idempotency key", ...patch,
 });
-const evaluate = (...findings: unknown[]) => evaluateVerdict(JSON.stringify({ findings }));
+const checked = ["spec-criteria", "data-flow", "error-paths", "unchanged-callers"];
+const evaluate = (...findings: unknown[]) => evaluateVerdict(JSON.stringify({ checked, findings }));
 
 describe("review verdict policy", () => {
+  it.each(checked)("refuses a verdict missing the %s check and names it", (name) => {
+    const result = evaluateVerdict(JSON.stringify({ findings: [], checked: checked.filter((check) => check !== name) }));
+    expect(result).toMatchObject({ valid: false, verdict: "fail" });
+    expect(result.error).toContain(`review did not report its checks: ${name}`);
+  });
+  it("requires checked even with empty findings", () => {
+    expect(evaluateVerdict('{"findings":[]}')).toMatchObject({ valid: false, verdict: "fail" });
+  });
+  it("requires the bug brief inputs for bug reviews", () => {
+    const result = evaluateVerdict(JSON.stringify({ checked, findings: [] }), { kind: "bug" });
+    expect(result).toMatchObject({ valid: false, verdict: "fail" });
+    expect(result.error).toContain("bug-brief-inputs");
+    expect(evaluateVerdict(JSON.stringify({ checked: [...checked, "bug-brief-inputs"], findings: [] }), { kind: "bug" })).toMatchObject({ valid: true, verdict: "pass" });
+  });
+  it("allows duplicate check names within the bound", () => {
+    expect(evaluateVerdict(JSON.stringify({ checked: [...checked, ...checked], findings: [] }))).toMatchObject({ valid: true, verdict: "pass" });
+  });
+  it.each([{ names: [...checked, ...checked, "spec-criteria"] }, { names: [...checked, "invented-check"] }])("refuses invalid or oversized checks %j", ({ names }) => {
+    expect(evaluateVerdict(JSON.stringify({ checked: names, findings: [] }))).toMatchObject({ valid: false, verdict: "fail" });
+  });
   it("accepts an empty verdict", () => expect(evaluate().verdict).toBe("pass"));
   it.each(["critical", "high"])("fails %s with concrete evidence", (severity) => {
     expect(evaluate(finding({ severity })).verdict).toBe("fail");
@@ -38,7 +59,7 @@ describe("review verdict policy", () => {
     expect(evaluateVerdict(raw)).toMatchObject({ verdict: "fail", valid: false });
   });
   it.each([{ confidence: -0.1 }, { confidence: 1.1 }, { severity: "warning" }, { line: 0 }, { line: 1.5 }, { file: "" }, { fix: "" }, { impact: "unknown" }])("rejects invalid finding %j", (patch) => {
-    expect(VerdictSchema.safeParse({ findings: [finding(patch)] }).success).toBe(false);
+    expect(VerdictSchema.safeParse({ checked, findings: [finding(patch)] }).success).toBe(false);
     expect(evaluate(finding(patch)).verdict).toBe("fail");
   });
 });

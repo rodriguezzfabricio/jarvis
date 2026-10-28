@@ -24,8 +24,8 @@ export const PLAN_NOTES = { count: 32, chars: 2000, total: 16_000 } as const;
 const notes = z.array(z.string().trim().min(1).max(PLAN_NOTES.chars)).max(PLAN_NOTES.count)
   .refine((items) => items.reduce((n, s) => n + s.length, 0) <= PLAN_NOTES.total, `planner notes may hold at most ${PLAN_NOTES.total} characters in all`);
 
-/** Only `tasks` and the optional `notes`: any other top-level key refuses the plan. */
-export const PlanSchema = z.object({ notes: notes.optional(), tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
+/** Only `tasks`, optional `notes` and `tier`: any other top-level key refuses the plan. */
+export const PlanSchema = z.object({ tier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), notes: notes.optional(), tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
   const tasks = new Map(plan.tasks.map((task) => [task.id, task]));
   if (tasks.size !== plan.tasks.length) ctx.addIssue({ code: "custom", message: "duplicate task ids" });
   const visiting = new Set<string>();

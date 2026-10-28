@@ -24,6 +24,7 @@ import type { NtfyOptions } from "../notify/ntfy.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
+import type { TaskTier } from "../runner/harness.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
 import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
@@ -62,6 +63,7 @@ export interface ComposeOptions {
   harness?: Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "parentEnv">;
 }
 export interface ReviewDeps {
+  tier: TaskTier;
   context: RunContext;
   ledger: Ledger;
   workRoot: string;
@@ -85,13 +87,13 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   if (deps.reviewFix) {
     const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);
     return {
-      repoPath: deps.context.repoPath, baseRevision, tier: 1,
+      repoPath: deps.context.repoPath, baseRevision, tier: deps.reviewFix.bugTasks.has(taskId) ? 2 : deps.tier,
       spec: `Request, as typed: ${deps.reviewFix.request}\nGoal: ${def?.goal ?? "-"}\nExit condition: ${def?.exitCondition ?? "-"}`,
       acceptanceCriteria: def?.exitCondition ? [def.exitCondition] : [],
       ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: "bug" as const } : {}),
     };
   }
-  return { repoPath: deps.context.repoPath, baseRevision, tier: 1, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
+  return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
 }
 
 /**
@@ -176,7 +178,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
   const reviewFix = reviewRun ? { request: reviewRun.output.request, tasks: new Map((reviewRun.fix.plan?.tasks ?? []).map((t) => [t.id, t])), bugTasks: new Set(reviewRun.fix.taskIds) } : undefined;
-  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
+  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
   const notifications = runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
@@ -195,7 +197,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   if (hosted.reconciled) (options.warn ?? console.error)(`Marked ${hosted.reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
   const loop: RunLoopOptions = {
     projectId: context.projectId, projectDir: context.projectDir, jarvisHome: context.jarvisHome, repoPath: context.repoPath, runBranch,
-    worktreeRoot, workRoot, gitHome: home,
+    worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1,
     ...(options.git ? { git: options.git } : {}),
     checks: Object.fromEntries(checks.map((check) => [check.name, check])),
     createHarness: (routing) => createClaudeHarness({

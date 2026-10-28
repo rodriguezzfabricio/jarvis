@@ -13,7 +13,7 @@ afterEach(removeFixtureRoots);
 describe("loop reviewer boundary", () => {
   it("holds uncertain high-impact findings and explains investigation in the ledger", async () => {
     const s = setup(); const finding = { severity: "high", confidence: 0.2, impact: "security", file: "app.txt", line: 1, scenario: "Possible private destination fetch", fix: "Verify address validation" };
-    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: "uncertain", rawVerdict: JSON.stringify({ findings: [finding] }) });
+    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: "uncertain", rawVerdict: JSON.stringify({ checked: ["spec-criteria","data-flow","error-paths","unchanged-callers"], findings: [finding] }) });
     const service = createReviewService(s.options); const r = await service.reviewDetailed(s.request);
     expect(r.verdict).toBe("investigate");
     expect(r.entry.data).toMatchObject({ verdict: "investigate", reason: "review_investigation", investigate: [finding] });
@@ -31,7 +31,7 @@ describe("loop reviewer boundary", () => {
   it.each(["file", "scenario", "fix"])("fingerprints secret-looking tokens in finding %s before ledger storage", async (field) => {
     const s = setup(); const token = "sk-" + "A".repeat(40);
     const finding = { severity: "high", confidence: 0.9, impact: "security", file: "app.txt", line: 1, scenario: "A request leaks a credential", fix: "Remove the credential", [field]: token };
-    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: token, rawVerdict: JSON.stringify({ findings: [finding] }) });
+    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: token, rawVerdict: JSON.stringify({ checked: ["spec-criteria","data-flow","error-paths","unchanged-callers"], findings: [finding] }) });
     const r = await createReviewService(s.options).reviewDetailed(s.request);
     expect(JSON.stringify(r.entry.data)).not.toContain(token);
     expect(JSON.stringify(r.entry.data)).toContain("[redacted:sha256:" + sha(token) + "]");
@@ -39,7 +39,7 @@ describe("loop reviewer boundary", () => {
   it("fingerprints a synthetic JWT quoted in an investigation scenario", async () => {
     const s = setup(); const token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJub3QtcmVhbCJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
     const finding = { severity: "critical", confidence: 0.2, impact: "security", file: "app.txt", line: 1, scenario: token, fix: "Do not quote credentials" };
-    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: token, rawVerdict: JSON.stringify({ findings: [finding] }) });
+    s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: token, rawVerdict: JSON.stringify({ checked: ["spec-criteria","data-flow","error-paths","unchanged-callers"], findings: [finding] }) });
     const r = await createReviewService(s.options).reviewDetailed(s.request);
     expect(JSON.stringify(r.entry.data)).not.toContain(token);
     expect(JSON.stringify(r.entry.data)).toContain("[redacted:sha256:" + sha(token) + "]");

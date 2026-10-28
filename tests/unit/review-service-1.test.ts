@@ -42,20 +42,20 @@ describe("loop reviewer boundary", () => {
     expect(JSON.stringify(r.entry.data)).toContain(fallbackReason);
     expect(readFileSync(r.rawOutputPath, "utf8")).toContain("codex-unavailable");
   });
-  it.each(["garbage", '{"findings":null}'])("records malformed reviewer output as failure: %s", async (rawVerdict) => {
+  it.each(["garbage", '{"findings":null}', '{"findings":[]}'])("records malformed reviewer output as an error: %s", async (rawVerdict) => {
     const s = setup(); s.codex.mockResolvedValue({ reviewer: "codex", model: "gpt-6.1-sol", rawOutput: rawVerdict, rawVerdict });
     expect(await createReviewService(s.options).review(s.request)).toBe("fail");
     expect(s.claude).toHaveBeenCalledTimes(1);
-    expect(s.ledger.entries().at(-1)!.data).toMatchObject({ status: "fail" });
+    expect(s.ledger.entries().at(-1)!.data).toMatchObject({ status: "error", reason: "review_error" });
   });
   it("a later Codex pass cannot overwrite an earlier critical finding", async () => {
-    const s = setup(); s.claude.mockResolvedValue({ reviewer: "claude", model: "claude-opus-5-5", rawOutput: "raw", rawVerdict: JSON.stringify({ findings: [{ severity: "critical", confidence: 1, impact: "security", file: "app.txt", line: 1, scenario: "leaks", fix: "redact" }] }) });
+    const s = setup(); s.claude.mockResolvedValue({ reviewer: "claude", model: "claude-opus-5-5", rawOutput: "raw", rawVerdict: JSON.stringify({ checked: ["spec-criteria","data-flow","error-paths","unchanged-callers"], findings: [{ severity: "critical", confidence: 1, impact: "security", file: "app.txt", line: 1, scenario: "leaks", fix: "redact" }] }) });
     expect(await createReviewService(s.options).review(s.request)).toBe("fail");
   });
   it("a reviewer that writes despite a passing verdict fails", async () => {
     const s = setup(); s.codex.mockImplementation(async (i) => {
       writeFileSync(join(i.workspace, "app.txt"), "tampered");
-      return { reviewer: "codex", model: i.model, rawOutput: "write", rawVerdict: '{"findings":[]}' };
+      return { reviewer: "codex", model: i.model, rawOutput: "write", rawVerdict: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' };
     });
     const result = await createReviewService(s.options).reviewDetailed(s.request);
     expect(result.verdict).toBe("fail"); expect(JSON.stringify(result.entry.data)).toContain("checkout changed");
@@ -69,7 +69,7 @@ describe("loop reviewer boundary", () => {
 const a=process.argv.slice(2);
 if(a.includes('--version')) { console.log('codex-cli 0.164.0'); process.exit(0); }
 let outcome='written'; try { writeFileSync('app.txt','modified by reviewer'); } catch (e) { outcome=e.code; }
-writeFileSync(a[a.indexOf('-o')+1],JSON.stringify({findings:[]}));
+writeFileSync(a[a.indexOf('-o')+1],JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]}));
 console.log(JSON.stringify({type:'write',outcome}));
 console.log('{"type":"turn.completed"}');\n`, { mode: 0o700 });
     const options = { ...s.options, codex: createCodexReviewer({ home: s.root, binary }) };
@@ -89,6 +89,21 @@ console.log('{"type":"turn.completed"}');\n`, { mode: 0o700 });
       for (const name of ["AGENTS.md", "CLAUDE.md", "comments", "fixtures", "docs"]) expect(input.prompt).toContain(name);
       for (const rule of ["Do not invent requirements", "smallest correction", "runner-controlled checks", "new evidence", "never read the builder's notes"]) expect(input.prompt).toContain(rule);
     }
+  });
+  it("requires the prompt to name each check and tie reporting to reading the code", async () => {
+    const s = setup(); await createReviewService(s.options).review(s.request);
+    for (const { input } of s.called) {
+      for (const name of ["spec-criteria", "data-flow", "error-paths", "unchanged-callers", "bug-brief-inputs"]) expect(input.prompt).toContain(name);
+      for (const rule of ["checked", "only after", "read", "invalid"]) expect(input.prompt).toContain(rule);
+    }
+  });
+  it.each([false, true])("enforces bug-brief-inputs in service evaluation (reported: %s)", async (reported) => {
+    const s = setup();
+    const checked = ["spec-criteria", "data-flow", "error-paths", "unchanged-callers", ...(reported ? ["bug-brief-inputs"] : [])];
+    for (const reviewer of [s.claude, s.codex]) reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: JSON.stringify({ findings: [], checked }) }));
+    const result = await createReviewService({ ...s.options, resolveMaterial: async () => ({ ...await s.options.resolveMaterial(), kind: "bug" }) }).reviewDetailed(s.request);
+    expect(result.verdict).toBe(reported ? "pass" : "error");
+    if (!reported) expect(result.reviews[0]!.error).toContain("bug-brief-inputs");
   });
   it("takes the Codex model and effort from a frozen routing snapshot", async () => {
     const s = setup();

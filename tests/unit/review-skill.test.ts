@@ -20,7 +20,8 @@ describe("review skill", () => {
     const text = skill();
     for (const phrase of ["Read, Glob, Grep", "never read the builder's notes", "runner's evidence", "acceptance criteria", "critical", "high", "concrete scenario", "0.8", "investigate", "security", "data loss", "money", "messages", "confidence", "file", "line", "scenario", "fix", "new evidence"]) expect(text).toContain(phrase);
     const example = /```json\n([\s\S]*?)\n```/.exec(text);
-    expect(JSON.parse(example![1]!)).toEqual({ findings: [] });
+    expect(JSON.parse(example![1]!)).toEqual({ findings: [], checked: ["spec-criteria", "data-flow", "error-paths", "unchanged-callers"] });
+    for (const phrase of ["`checked`", "spec-criteria", "data-flow", "error-paths", "unchanged-callers", "bug-brief-inputs", "invalid"]) expect(text).toContain(phrase);
   });
   it("keeps the skill aligned with investigation holds and candidate trust", () => {
     expect(skill()).toContain("Critical or high findings awaiting investigation prevent completion");

@@ -7,7 +7,7 @@ import { runGate, verifyEvidence, type GateCheck, type GateInput, type GateResul
 import { ChecksStore } from "../checks/store.ts";
 import { safeGit } from "../eval/git.ts";
 import { atomicWrite, Ledger, type LedgerEntry } from "../ledger/ledger.ts";
-import type { EscalationReason, Harness, TaskInput, TaskOutcome } from "./harness.ts";
+import type { EscalationReason, Harness, TaskInput, TaskOutcome, TaskTier } from "./harness.ts";
 import { captureProcessGroup, cleanupLeftovers, readProcessStartTime, type ProcessStartTimeReader } from "./cleanup.ts";
 import { buildFootprintEntry, createFootprintLog, type FootprintLog } from "./footprint.ts";
 import { ingestSteerNotes, loadInboxCursor, readInbox, saveInboxCursor, type InboxAction } from "./inbox.ts";
@@ -60,6 +60,8 @@ export interface RunLoopOptions {
   createHarness?: (routing: RoutingTable) => LoopHarness;
   checks: Readonly<Record<string, GateCheck>>;
   review: (input: ReviewInput) => Promise<ReviewVerdict>;
+  /** The plan's triage tier; defaults to 1. */
+  tier?: TaskTier;
   taskTimeoutMs?: number;
   maxTurns?: number;
   maxConcurrent?: number;
@@ -442,13 +444,13 @@ class Loop {
       let outcome: TaskOutcome & { finalMessage?: string };
       try { outcome = await this.harness.runTask({
         workspace: workspace.path, prompt: `${buildTaskPrompt(input)}${repair ? `\n\n${repair}` : ""}${task.definition.mayTouch ? `\nMay touch only: ${task.definition.mayTouch.join(", ")}` : ""}`,
-        runHeaderPath: headerPath, role: "build", tier: 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
+        runHeaderPath: headerPath, role: "build", tier: this.opts.tier ?? 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
         ...(failure ? { failure } : {}),
         onSpawn: observer.onSpawn, onGroupExit: observer.onGroupExit,
       }); } finally { this.footprint?.sessionEnded(); }
       // A usage-log failure never fails the run (runner/usage-log.ts); a refused session isn't logged.
-      recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: 1,
-        route: routeTask("build", 1, failure, this.routing), ...(failure ? { failure } : {}), outcome });
+      recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: this.opts.tier ?? 1,
+        route: routeTask("build", this.opts.tier ?? 1, failure, this.routing), ...(failure ? { failure } : {}), outcome });
       return observer.result(outcome);
     } finally { observer.dispose(); }
   }

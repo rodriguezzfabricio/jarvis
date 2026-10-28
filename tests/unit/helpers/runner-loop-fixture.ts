@@ -1,6 +1,6 @@
 // Shared fixture for the runner loop tests (tests/unit/runner-loop-*.test.ts). Each test file calls
 // `afterEach(removeFixtureRoots)` so every fixture's temp folder is removed after its test.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, vi } from "vitest";
@@ -9,6 +9,7 @@ import { safeGit } from "../../../packages/cli/src/eval/git.ts";
 import { Ledger } from "../../../packages/cli/src/ledger/ledger.ts";
 import type { LoopTaskInput, RunLoopOptions } from "../../../packages/cli/src/runner/loop.ts";
 import type { TaskOutcome } from "../../../packages/cli/src/runner/harness.ts";
+import { initRepo } from "./git-repo.ts";
 
 const roots: string[] = [];
 export const removeFixtureRoots = () => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true }));
@@ -16,9 +17,9 @@ export const finished = (status: TaskOutcome["status"] = "finished"): TaskOutcom
 export function fixture(count = 1) {
   const root = mkdtempSync(join(tmpdir(), "loop-")); roots.push(root);
   const repoPath = join(root, "repo"), jarvisHome = join(root, "jarvis"), projectDir = join(jarvisHome, "projects/p");
-  mkdirSync(repoPath, { recursive: true });
+  initRepo(repoPath); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   const git = (args: string[]) => safeGit(repoPath, args, { home: root }).toString().trim();
-  git(["init", "-q", "-b", "main"]); writeFileSync(join(repoPath, ".gitignore"), ".jarvis/\n");
+  writeFileSync(join(repoPath, ".gitignore"), ".jarvis/\n");
   git(["add", "-A"]); git(["commit", "-qm", "base"]);
   const ledger = Ledger.open(projectDir);
   for (let i = 1; i <= count; i++) ledger.append({ kind: "task_created", actor: "runner", task_id: `T${i}`, data: { title: `Task ${i}`, goal: `Goal ${i}`, exitCondition: "proven", mayTouch: [`T${i}.txt`], requiredChecks: ["unit"], requiredReviews: ["code"] } });

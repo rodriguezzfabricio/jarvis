@@ -6,6 +6,7 @@ import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { createSnapshot, findCredentials, findSnapshotCredentials, isBase64UserPassword } from "../../packages/cli/src/eval/snapshot.ts";
 import { isCredentialShaped } from "../../packages/cli/src/eval/snapshot-literals.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 import { FAKE_NPM_TOKEN } from "./helpers/fake-tokens.ts";
 
 /**
@@ -35,7 +36,7 @@ async function snapshot(files: Record<string, string | Buffer>): Promise<string>
     mkdirSync(join(repo, name, ".."), { recursive: true });
     writeFileSync(join(repo, name), content);
   }
-  safeGit(repo, ["init", "-q", "-b", "main"], { home: root });
+  initRepo(repo); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   safeGit(repo, ["add", "-A"], { home: root });
   safeGit(repo, ["commit", "-qm", "fixture"], { home: root });
   await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest });

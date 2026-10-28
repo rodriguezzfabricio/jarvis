@@ -1,9 +1,10 @@
 // Shared fixture for the runner worktree tests (tests/unit/runner-worktrees-*.test.ts). Each test file
 // gets its own `root` (this module is evaluated once per test file) and removes it in its own afterAll.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeGit } from "../../../packages/cli/src/eval/git.ts";
 import { shortTmp } from "../../helpers.ts";
+import { initRepo } from "./git-repo.ts";
 
 export const root = shortTmp("jrw-");
 export const git = (cwd: string, ...args: string[]) => safeGit(cwd, args, { home: root }).toString().trim();
@@ -11,8 +12,7 @@ export const git = (cwd: string, ...args: string[]) => safeGit(cwd, args, { home
 export let n = 0;
 export function project() {
   const repoPath = join(root, `repo${++n}`);
-  mkdirSync(repoPath);
-  git(repoPath, "init", "-q", "-b", "run");
+  initRepo(repoPath, { branch: "run" }); // what `git init -q -b run` leaves, by copy (helpers/git-repo.ts)
   writeFileSync(join(repoPath, "value"), "base");
   writeFileSync(join(repoPath, ".gitignore"), ".jarvis/\n");
   git(repoPath, "add", "-A");

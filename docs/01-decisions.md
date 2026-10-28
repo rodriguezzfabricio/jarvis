@@ -1363,6 +1363,12 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **Note for the deferred work:** golden tasks plan through `eval/jarvis.ts` `runPlanner`, not `prepareProductionRun`, so a plan gate needs both callers.
 
 *From:* Fabricio, Oct 28 ("Yes and yes" to deferring Goldfish and launching the lanes); the integrator's check of the handoff's claims against the code at 21003f6.
+### 133. Tests run the real git binary, not the xcrun shim (new; Oct 26; superseded by 137; retained below as historical rationale)
+- **Why:** on macOS `/usr/bin/git` is a shim that looks up the developer directory and then runs the git inside it. A spawn through it costs about 22 ms of CPU, against about 8 ms for the same `git rev-parse` run directly. The unit suite started about 7,000 of them per run (about a quarter of its 415 CPU-seconds), and the mutation check runs that suite once per mutation.
+- **What:** `tests/setup/real-git-global.ts` finds the binary the shim would run (`DEVELOPER_DIR`, else `xcode-select -p`) once per run. `tests/setup/use-real-git.ts` makes each test process start it in place of a bare `git` (no shell) whose PATH search would find `/usr/bin/git`, with the same arguments, working folder and environment, plus the four variables the shim adds (`CPATH`, `LIBRARY_PATH`, `MANPATH`, `SDKROOT`), which only processes git itself starts can see. The global setup reads those by asking both binaries for their environment, and turns the redirect off if the two differ in any other way, if there is no developer directory, or off macOS.
+- **What it leaves alone:** an absolute `/usr/bin/git` (`scripts/review-run.mjs` and its test), a different `git` first on PATH, a spawn with a shell, child Node processes, and every line of production code: `safeGit`, the probe and the snapshot still ask for `git`; only the test process's `child_process` is wrapped. No test is about which git binary runs. The one visible difference is the text of a failed git's error, which names the binary's path.
+- **Pinned by `tests/unit/real-git-redirect.test.ts`:** what is and isn't redirected, that git and the processes it starts see the same environment either way, and that a caller's own variable wins. Each of four breakages of the redirect fails it.
+- **The live canary and the gate are unaffected:** the redirect exists only in Vitest's setup files; `jarvis doctor`, the probe and real task sessions run exactly the git they ran before.
 
 ## 6. Models, effort and cost
 
@@ -1842,3 +1848,53 @@ Fabricio explicitly requested a public GitHub repository and a README for recrui
 The public README describes the implemented components, incomplete proofs, installation requirements and evaluation limits. Do not claim a general benchmark win or equal-compute comparison. Preserve the existing development history after reviewing its secret-scan findings. The personal evaluation repository, local account credentials and notification settings remain private.
 
 The initial public repository is `rodriguezzfabricio/jarvis`, with the existing MIT license and adapted-skill credits.
+
+
+### 136. Integration helpers need a lifetime independent of a terminal turn (Oct 26, 2026; takeover integrator; extends 84)
+The first takeover turn ended while four Codex helpers were working. Their processes ended too; none produced a completed verifier verdict. A saved PID or partial audit is not proof that a worker is running or finished.
+- Launch long-lived integration helpers through the local service manager, with persistent logs and explicit exit records; do not rely on a child of a turn surviving that turn.
+- Verify the job identity and parent process, then verify survival from a later turn before relying on cross-turn persistence. Until verified, keep the integrator turn open while work is active.
+- A builder clone has its own frozen-lockfile dependency installation, including workspace package links. Linking node_modules to a read-only checkout blocks Vitest's cache and API-token writes; startup refusal is not a failing test of product behavior.
+- Preserve interrupted work and completed command evidence. Restart verifiers as fresh ephemeral sessions with memory disabled, supplied only requirements, revisions and raw evidence; partial prior opinions are not verdicts.
+This changes integration operations only. Task-session confinement, stage proofs and review gates are unchanged.
+
+Operational check for decision 136: legacy `launchctl submit` enables keepalive. Use an explicit job plist with `RunAtLoad: true` and `KeepAlive: false`; verify loaded properties so completion cannot silently start another builder. Changing a running submit job’s next invocation with `launchctl debug` requires root and was refused. Do not escalate. For those existing jobs only, a one-shot completion monitor retires each owned job when its explicit exit record or terminal turn event appears; future jobs use the explicit one-shot plist.
+
+
+### 138. A proof chain stops on an explicit guarded-stop result even when the CLI exits zero (Oct 26, 2026; takeover integrator)
+A proof-chain log recorded a usage-guard STOPPED result with exit zero, after which its shell script attempted the next arm. Shell exit status alone therefore does not establish completion of an eval command.
+- Host proof scripts stop the chain on a nonzero process exit or an explicit STOPPED result. They preserve both the original output and the stop reason; a guarded stop never triggers a later arm or a retry that bypasses the guard.
+- Check the authorized start time, the evidence slot and the existing disk floor immediately before dispatch. Keep the proof's frozen product revision unchanged.
+- Verify orchestration with local fake commands and fresh-copy negative controls before using the script for real runs. No test invokes a real model or changes a usage limit.
+This changes host orchestration only, not eval grading, the usage guard or the frozen proof checkout.
+
+
+### 137. Test processes keep native Node execution semantics (Oct 26; suite-speed repair; supersedes 133)
+
+Independent host observations against 6ac5c097 contradict decision 133's equivalence and coverage claims: relative PATH entries used the parent cwd, cached lookups missed a newly created earlier executable, and the shim modified caller CPATH/LIBRARY_PATH/MANPATH differently. Version-string tests missed disabled API redirects; failed discovery skipped coverage. The in-process decision-command harness also hid an uncaught parse error that the base subprocess test rejected. These observations are not final independent approval.
+
+- Remove global child_process interception and binary discovery. Keep inert compatibility context/exports for existing snapshot workers until their callers are removed together; all commands use Node's native argv, env, cwd and PATH behavior. No test coverage depends on discovering a developer directory. This supersedes every operational and equivalence claim in 133, including its four-breakage coverage claim.
+- Keep repository-template copies and fixture-local compile caching, with native execution and file/mode/content equivalence checks. Production safeGit still runs through its original path and must reject planted hooks, fsmonitor and global configuration. No comparable speed improvement is claimed by this repair.
+- Restore subprocess decision-command tests so expected Commander diagnostics and uncaught product errors remain distinguishable. Preserve base assertions and prove error controls fail when the expected handling is removed.
+- Restore the base broker readiness/test limits (5/15 seconds) and desktop readiness/lifetime limits (3 seconds). A loaded-machine explanation alone does not justify increasing them.
+- The AGENTS.md setup description and snapshot worker's redirect comment are superseded by this decision; their owners should update those descriptions. This lane cannot edit them. Full-suite, mutation and real Seatbelt evidence remain the integrator's responsibility.
+
+
+### 140. A quiet slot drains already-started lane checks before host evidence (Oct 26; takeover integrator; extends 81 and 104)
+
+A lane checking the slot before a test command does not stop a command that began just before the host acquired it. The host must acquire its own slot atomically and let already-running owned lane checks finish before starting evidence. Read only owned helper PID/parent/executable metadata for that drain; never process arguments or environments. No unrelated process is stopped. If the drain cannot establish quiet, preparation fails instead of accepting contended timeout evidence. Lanes retain their before-each-command slot checks, and stage-review evidence retains its exclusive evidence slot for the whole phase.
+
+### 142. Native test-probe infrastructure failures remain infrastructure failures (new; Oct 26; Codex)
+The native-process helper currently turns a child spawn error into an assertion about an undefined error. Fresh suite logs show ETIMEDOUT in that assertion, while the mutation classifier accepts completed assertion failures unless its timeout matcher recognizes them. A helper failure must not become apparent behavioral evidence.
+- Preserve child spawn errors, signal termination and nonzero probe exits as infrastructure failures with their diagnostics. Keep behavioral comparison assertions, case coverage and deadlines unchanged.
+- Tests must use the real classifier to distinguish these failures from actual comparison failures. Do not weaken the classifier or count an incomplete reproduction as proof.
+
+### 143. A slot handoff must let an already-started fake proof finish (new; Oct 26; Codex; clarifies 140)
+A fake-proof process can pause between cases when quiet-slot appears. Holding the slot while waiting for that process to exit then cannot drain it. Before evidence begins, the integrator may pause only its own preparation process, verify no evidence command has started, release only its own exact slot token, let the existing checks finish, and atomically reacquire the slot before resuming preparation. A running evidence phase is never released this way. Interrupted or expired preparation is unverified, not test evidence. Schedule whole proof invocations before slot acquisition to avoid this cycle; retain the quiet-machine requirement and all gates.
+
+### 145. Diagnose Git launcher UI without changing the owner toolchain (new; Oct 26; Fabricio report; Codex investigation)
+Fabricio reported repeated macOS command-line-tools installer dialogs during verification and supplied the installed Xcode Git path. Read-only inspection confirms the executable exists and the selected developer directory is Xcode; a direct clone with that executable succeeds. Test sources include bare Git lookup through `/usr/bin:/bin`, explicit `/usr/bin/git`, and deliberately altered caller variables. These facts identify launcher call paths, but do not yet establish which host condition caused each dialog.
+The test harness must not depend on installer UI or silently treat unavailable Git as successful behavioral coverage. Diagnose and correct the narrow call path with tests first; preserve native lookup, arguments, environment, failure visibility and safety checks. Do not install tools, change the global developer selection, intercept process APIs globally or weaken mutation gates to suppress the symptom. Any corrected candidate requires independent exact-revision verification; prior evidence remains bound to its original revision.
+
+### 146. Missing expected failures in tests are assertion failures, not worker infrastructure (new; Oct 26; Codex verification)
+A fresh guard-removal experiment reached a test helper that threw a plain Error when the operation unexpectedly succeeded. The mutation classifier correctly refused that as infrastructure, so the experiment did not establish a caught safeguard. A test expecting rejection must assert when rejection is absent; actual worker spawn, signal, nonzero-exit and malformed-output failures remain infrastructure under decision142. Correct only the test expectation boundary, preserve diagnostics, and reproduce the distinction with the unchanged real classifier. No mutation or classifier rule is weakened.

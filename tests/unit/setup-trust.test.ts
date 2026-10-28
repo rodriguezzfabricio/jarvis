@@ -10,6 +10,7 @@ import { assembleTaskPlugin, TASK_SKILLS } from "../../packages/cli/src/harness/
 import { runSetup, type SetupDeps } from "../../packages/cli/src/setup/setup.ts";
 import { taskPluginSource } from "../../packages/cli/src/setup/plugin.ts";
 import { InterruptedError, type Tty } from "../../packages/cli/src/setup/tty.ts";
+import { noAcl } from "./helpers/no-acl.ts";
 
 // Codex review of the setup branch: an untrusted runner folder lets another local user swap in plugin
 // hooks that run outside the sandbox. Every runner folder must be ours and writable only by us.
@@ -43,7 +44,7 @@ function deps(home: string, tty: Tty, extra: Partial<SetupDeps> = {}): SetupDeps
   return {
     home, tty, print: () => {}, pluginSource: PLUGIN, repoRoot: REPO,
     secrets: { location: "fake", prepare: () => {}, set: () => {} },
-    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)", ...extra,
+    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)", acl: noAcl, ...extra,
   };
 }
 const statePath = (home: string) => join(home, ".jarvis", "setup-state.json");

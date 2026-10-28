@@ -9,6 +9,7 @@ import { assertHiddenAbsent, assertHiddenDisjoint, gradeRecordedRun, gradeRun, h
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { fakeClaudeBin } from "../helpers.ts";
 import { addTask, BUGGY, createEvalFixture, FIXED, HIDDEN_TEST, type EvalFixture } from "./eval-jarvis-fixture.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 const fixtures: EvalFixture[] = [];
 afterEach(() => fixtures.splice(0).forEach((f) => f.cleanup()));
@@ -21,7 +22,7 @@ function runRepo(fx: EvalFixture): { repo: string; buggy: string; fixed: string 
   const g = (args: string[]) => safeGit(repo, args, { home: fx.home }).toString().trim();
   writeFileSync(join(repo, "package.json"), "{\"type\":\"module\"}\n");
   writeFileSync(join(repo, "src", "citizen.mjs"), BUGGY);
-  g(["init", "-q", "-b", "main"]); g(["add", "-A"]); g(["commit", "-q", "-m", "snapshot"]);
+  initRepo(repo); g(["add", "-A"]); g(["commit", "-q", "-m", "snapshot"]); // initRepo: what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   const buggy = g(["rev-parse", "HEAD"]);
   writeFileSync(join(repo, "src", "citizen.mjs"), FIXED);
   g(["commit", "-q", "-am", "fix"]);

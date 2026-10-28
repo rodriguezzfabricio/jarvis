@@ -7,6 +7,7 @@ import { pinnedClaudeBin } from "../../packages/cli/src/config/pins.ts";
 import type { SecretsWriter } from "../../packages/cli/src/broker/secrets.ts";
 import { register } from "../../packages/cli/src/setup/command.ts";
 import { InterruptedError, type Tty } from "../../packages/cli/src/setup/tty.ts";
+import { noAcl } from "./helpers/no-acl.ts";
 
 /** The rejection of a promise, or undefined: a mismatch then fails as a plain assertion. */
 async function failure(promise: Promise<unknown>): Promise<unknown> {
@@ -34,7 +35,7 @@ function cli(lines: string[], hidden: string[], withTty = true, existingHome?: s
   register(program, {
     home, print: (t) => { out.push(t); }, setExitCode: (c) => { codes.push(c); }, secrets,
     ...(withTty ? { tty } : { stdinIsTTY: false }),
-    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)",
+    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)", acl: noAcl,
     createNotifier: () => ({ send: async (m) => { sent.push(m.text); }, poll: async () => [] }),
   });
   return { home, out, codes, closed, stored, sent, run: (...args: string[]) => program.parseAsync(args, { from: "user" }) };

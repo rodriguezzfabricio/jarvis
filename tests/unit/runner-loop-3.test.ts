@@ -1,4 +1,4 @@
-// Runner loop tests, part 3 of 6 (recovery points, missing checks, routing snapshot, spawn identity, gate errors). The loop tests are spread over six files so they run in parallel;
+// Runner loop tests, part 3 of 9 (recovery points, missing checks, routing snapshot, spawn identity, gate errors). The loop tests are spread over nine files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { readFileSync, writeFileSync } from "node:fs";

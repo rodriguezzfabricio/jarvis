@@ -8,6 +8,7 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import type { TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
 import { runLoop, type LoopTaskInput, type RunLoopOptions } from "../../packages/cli/src/runner/loop.ts";
 import { rebuildState, repairsUsed } from "../../packages/cli/src/runner/state.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 /**
  * A review whose verdict is "error" is an infrastructure failure (no reviewer verdict), not a code
@@ -24,7 +25,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "loop-review-")); roots.push(root);
   const repoPath = join(root, "repo"), jarvisHome = join(root, "jarvis"), projectDir = join(jarvisHome, "projects/p");
   const git = (args: string[]) => safeGit(repoPath, args, { home: root }).toString().trim();
-  mkdirSync(repoPath, { recursive: true }); git(["init", "-q", "-b", "main"]);
+  initRepo(repoPath); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   writeFileSync(join(repoPath, ".gitignore"), ".jarvis/\n"); git(["add", "-A"]); git(["commit", "-qm", "base"]);
   const ledger = Ledger.open(projectDir);
   ledger.append({ kind: "task_created", actor: "runner", task_id: "T1", data: { title: "Task 1", goal: "Goal 1", exitCondition: "proven", requiredChecks: ["unit"], requiredReviews: ["code"] } });

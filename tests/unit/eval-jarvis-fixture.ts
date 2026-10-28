@@ -15,6 +15,7 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { buildSessionUsageEntry } from "../../packages/cli/src/runner/usage-log.ts";
 import { createWorkspace } from "../../packages/cli/src/runner/worktrees.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 export const BUGGY = "export function requiresCitizenship(html) {\n  return /US citizen/i.test(html);\n}\n";
 export const FIXED = "// FIXED: read the visible text: strip tags, fold no-break spaces.\nexport function requiresCitizenship(html) {\n  const text = html.replace(/<[^>]*>/g, \" \").replace(/\\u00a0|&nbsp;/g, \" \").replace(/\\s+/g, \" \");\n  return /US citizen/i.test(text);\n}\n";
@@ -96,7 +97,7 @@ export function createEvalFixture(): EvalFixture {
   for (const d of [home, sourceRepo, evalsRepo, jarvisHome, workRoot]) mkdirSync(d, { recursive: true, mode: 0o700 });
 
   put(sourceRepo, { "package.json": "{\"name\":\"jobs\",\"type\":\"module\"}\n", "src/citizen.mjs": BUGGY, "test/citizen.test.mjs": OWN_TEST });
-  git(sourceRepo, home, ["init", "-q", "-b", "main"]);
+  initRepo(sourceRepo); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   git(sourceRepo, home, ["add", "-A"]);
   git(sourceRepo, home, ["commit", "-q", "-m", "start"]);
   put(sourceRepo, { "src/citizen.mjs": FIXED });

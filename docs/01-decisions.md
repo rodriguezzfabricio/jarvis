@@ -1356,6 +1356,14 @@ Round 21's estimate was 20–30 hours of an otherwise idle Mac: 376 stage 0–1 
 - **The spec reader loop is bounded.** It ends on a clean pass, or stops after three passes with no new blocking gap; unresolved blockers keep the spec draft.
 - **The verifier fails closed (Codex review rounds 3 and 4).** A stage 2 run counts only if the post-run verifier passes on its transcript: every Read of a recording returns exactly the original lines, in order and within the requested range; any other route that could return recorded content (a Bash command with a reading tool near `.jarvis`, a recursive search that includes hidden folders, a Grep or Glob into `.jarvis` or with a hidden-folder pattern, a script that names the recordings, a duplicate or missing tool result) voids the run instead of being trusted. Residual risk: a session that reaches the recordings through a route the verifier doesn't recognise. The stand-in denies any command that touches `.jarvis` beyond the session's own files, and the judges see the transcript.
 
+### 147. The Goldfish plan review waits until after v1; the five wiring fixes go first (new; Oct 28; Fabricio; defers Part B of docs/ideas/handoff-egm.md)
+- **Deferred:** the fresh-context plan review before the build loop, required alternatives on engineering decisions and the contest/fix/escalate/decline protocol (docs/ideas/egm-gap-analysis.md, docs/ideas/handoff-egm.md Part B). It is new scope that no stage proof in architecture §8 needs, and as designed it refuses every feature run until a live negative control passes, which would block the stage 3 to 5 proofs. It is backlog 164; its decisions take the next free numbers when it starts.
+- **Kept:** Part A of the handoff, the wiring the first live runs showed missing: review findings reach the repair prompt; the review and build tier come from the plan; `installChecks` has a CLI caller; medium and low findings reach REPORT.md; a reviewer reports what it checked. Each is a Codex lane with tests and mutations, reviewed cross-family before merge (decision 82).
+- **Order after that:** the stage proofs in §8, closest to passing first: stage 3 (tasks 02, 04, 05 and the held-out 13 from one frozen revision, decision 116), stages 0 and 1 (round 21, `--confirm-stage 0-1`), stage 2's round 3 judge, then 4 to 7.
+- **Note for the deferred work:** golden tasks plan through `eval/jarvis.ts` `runPlanner`, not `prepareProductionRun`, so a plan gate needs both callers.
+
+*From:* Fabricio, Oct 28 ("Yes and yes" to deferring Goldfish and launching the lanes); the integrator's check of the handoff's claims against the code at 21003f6.
+
 ## 6. Models, effort and cost
 
 ### 24. A small routing table, not the model's choice

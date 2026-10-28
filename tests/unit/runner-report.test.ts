@@ -76,6 +76,22 @@ describe("shared-state morning report", () => {
     expect(renderReport(state, entries)).not.toContain("- T1: Login at");
   });
 
+  it("lists medium and low findings from final candidate review results as advisory", () => {
+    const ledger = run();
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", model: "claude-sonnet-5-5", revision, status: "fail", reviews: [{ reviewer: "claude", model: "claude-sonnet-5-5", findings: [
+      { severity: "medium", file: "src/form.ts", line: 12, scenario: "Invalid input is confusing", fix: "Show a useful error" },
+      { severity: "high", file: "src/auth.ts", line: 4, scenario: "Authentication bypass", fix: "Require a valid session" },
+    ], investigate: [] }] } });
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "security", revision: "b".repeat(40), status: "pass", reviews: [{ reviewer: "codex", model: "gpt-6.1-sol", findings: [
+      { severity: "low", file: "src/old.ts", line: 8, scenario: "Old revision issue", fix: "Update the old code" },
+    ], investigate: [] }] } });
+    const report = renderReport(stateOf(ledger), ledger.entries());
+    const section = report.split("## Advisory findings\n")[1]?.split("\n## ")[0] ?? "";
+    expect(section).toContain("T1: claude/claude-sonnet-5-5 [medium] src/form.ts:12: Invalid input is confusing. Fix: Show a useful error");
+    expect(section).not.toContain("src/auth.ts");
+    expect(section).not.toContain("src/old.ts");
+  });
+
   it("never displays broker-authored evidence or release states as runner proof", () => {
     const ledger = run(); const state = stateOf(ledger);
     const forged = ledger.append({ kind: "gate_result", actor: "broker", task_id: "T1", attempt_id: "a1", data: { check: "unit", status: "pass", revision, evidence: { dir: "BROKER_FORGED", files: {} } } });

@@ -19,6 +19,8 @@ export interface ReportOptions {
 type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry): Data => entry.data && typeof entry.data === "object" ? entry.data as Data : {};
 const line = (value: unknown): string => String(value ?? "").replace(/[\r\n\u0000-\u001f\u007f]/g, " ").replace(/[<>`*_[\]\\]/g, "\\$&");
+const boundedLine = (value: unknown, limit = 500): string => line(value).slice(0, limit);
+const record = (value: unknown): Data | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Data : undefined;
 const runnerAuthored = (entry: LedgerEntry): boolean => entry.actor === "runner";
 const orNone = (lines: string[]) => lines.length ? lines : ["- None."];
 
@@ -40,6 +42,32 @@ function evidenceLine(entry: LedgerEntry): string {
   const evidence = data.evidence as { dir: string; files: Record<string, string> };
   const hashes = Object.entries(evidence.files).map(([name, hash]) => `${line(name)} SHA-256 ${line(hash)}`).join("; ");
   return `  - #${entry.seq} Check ${line(data.check)}: ${line(evidence.dir)}; ${hashes}`;
+}
+
+function advisoryFindings(state: RunState, entries: readonly LedgerEntry[]): string[] {
+  const result: string[] = [];
+  for (const task of Object.values(state.tasks)) {
+    const reviews = entries.filter(runnerAuthored).filter((entry) => entry.kind === "review_result" && entry.task_id === task.id
+      && entry.attempt_id === task.attemptId && dataOf(entry).revision === task.candidateRevision);
+    for (const entry of reviews) {
+      const details = dataOf(entry).reviews;
+      if (!Array.isArray(details)) continue;
+      for (const detailValue of details) {
+        const detail = record(detailValue);
+        if (!detail) continue;
+        for (const field of ["findings", "investigate"] as const) {
+          if (!Array.isArray(detail[field])) continue;
+          for (const findingValue of detail[field]) {
+            const finding = record(findingValue);
+            if (!finding || (finding.severity !== "medium" && finding.severity !== "low")
+              || finding.file === undefined || finding.line === undefined || finding.scenario === undefined || finding.fix === undefined) continue;
+            result.push(`- ${boundedLine(task.id)}: ${boundedLine(detail.reviewer)}/${boundedLine(detail.model)} [${boundedLine(finding.severity)}] ${boundedLine(finding.file)}:${boundedLine(finding.line)}: ${boundedLine(finding.scenario)}. Fix: ${boundedLine(finding.fix)}`);
+          }
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function activeDecisions(entries: readonly LedgerEntry[]): LedgerEntry[] {
@@ -118,6 +146,7 @@ export function renderReport(state: RunState, entries: readonly LedgerEntry[], c
   if (release) lines.push(`Revision: ${line(dataOf(release).revision)} (#${release.seq})`, `Open/run: ${line(dataOf(release).open ?? "No instructions recorded")}`);
   lines.push(`Ledger head: ${entries.at(-1)?.hash ?? GENESIS}`, "", "## Check first", "", ...orNone(attention(entries)), "", "## Done", "", ...orNone(tasks.done));
   lines.push("", "## Blocked / reconciliation", "", ...orNone([...tasks.blocked, ...outsideUnknowns(entries)]));
+  lines.push("", "## Advisory findings", "", ...orNone(advisoryFindings(state, entries)));
   lines.push("", "## Skipped inbox items", "", ...orNone(inboxIssues(entries).map((issue) => `- ${line(issue.id)}: ${line(issue.reason)}`)));
   lines.push("", "## Usage waits", "", ...orNone(usageWaits(entries, options)), "", "## Left", "", ...orNone(tasks.left));
   if (options.leftAlone?.length) lines.push("", "## Left alone by this run", "", `- ${options.leftAlone.map(line).join(", ")}: other work in this project's ledger; this run may touch only its own tasks.`);

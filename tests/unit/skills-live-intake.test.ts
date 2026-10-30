@@ -14,7 +14,7 @@ function agent(name: keyof typeof agentFiles): { fields: Map<string, string>; bo
 }
 
 it.each([
-  ["researcher", "claude-sonnet-5-5", ["WebSearch", "WebFetch"]],
+  ["researcher", "claude-opus-5-5", ["WebSearch", "WebFetch"]],
   ["spec-reader", "claude-opus-5-5", ["Read", "Glob", "Grep"]],
 ] as const)("ships the %s plugin role with an explicit read-only tool allowlist and full model ID", (name, model, tools) => {
   const a = agent(name); expect(a.fields.get("name")).toBe(name); expect(a.fields.get("description")!.length).toBeGreaterThan(40);

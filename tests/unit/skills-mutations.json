@@ -200,8 +200,8 @@
   {
     "name": "skills researcher model becomes an alias",
     "file": "plugin/agents/researcher.md",
-    "anchor": "model: claude-sonnet-5-5",
-    "replacement": "model: sonnet"
+    "anchor": "model: claude-opus-5-5",
+    "replacement": "model: opus"
   },
   {
     "name": "skills spec reader model becomes an alias",

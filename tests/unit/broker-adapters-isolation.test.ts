@@ -31,7 +31,7 @@ function fixture(provider: "vercel" | "netlify", files: Record<string, string> =
   const calls: SessionSpec[] = []; const reads: string[] = [];
   let inspectCount = 0;
   let inspect = (_count: number): SessionOutcome => current("old");
-  let version = (): SessionOutcome => ok(provider === "vercel" ? "1.2.3\n" : "netlify/1.2.3 darwin-arm64 node-v24.0.0\n");
+  let version = (): SessionOutcome => ok(provider === "vercel" ? "1.2.3\n" : "netlify-cli/1.2.3 darwin-arm64 node-v24.0.0\n");
   let observe = (_s: SessionSpec): void => {};
   function current(id: string, siteId = "site", url = `https://${id}.${provider === "vercel" ? "vercel.app" : "netlify.app"}`) {
     return ok(JSON.stringify(provider === "vercel" ? { id, url, projectId: siteId } : { id: siteId, published_deploy: { id, deploy_ssl_url: url } }));
@@ -58,6 +58,24 @@ describe.each(["vercel", "netlify"] as const)("%s credential isolation", provide
     expect(result.status).toBe("failed"); expect(JSON.stringify(result)).toContain(/^(netlify|node_modules|\.netlify|\.vercel|\.git)\//.test(name) ? name.split("/")[0]! : name);
     expect(f.calls).toEqual([]); expect(f.reads).toEqual([]);
     expect(existsSync(join(f.m.artifactDir, "leaked"))).toBe(false);
+  });
+  it("names a refused file without its control, escape or bidi characters, at a bounded length", async () => {
+    const hostileName = "evil\u001b]8;;x\u0007\u202e\nhs.payload";
+    const deep = Array.from({ length: 12 }, (_, i) => `${"d".repeat(60)}${i}`).join("/");
+    for (const name of [hostileName, `${deep}/run.sh`]) {
+      const f = fixture(provider, { [name]: "x" });
+      const result = await f.broker().handle({ op: "deploy.preview", payload: { ref: releaseRef(f.m, "preview") } });
+      expect(result.status).toBe("failed");
+      const reason = String((result.receipt as { detail: { reason: string } }).detail.reason);
+      expect(reason).toMatch(/^non-static deployment file refused: /);
+      expect(reason).toMatch(/^[\x20-\x7e]*$/); expect(reason.length).toBeLessThanOrEqual(300);
+      expect(f.calls).toEqual([]); expect(f.reads).toEqual([]);
+    }
+  });
+  it("refuses an artifact root that is a file, not a static directory", () => {
+    const f = fixture(provider); const file = join(f.m.artifactDir, "index.html");
+    const m = parseManifest({ ...f.m, artifactDir: file, artifactHash: artifactDigest(file) });
+    expect(() => copyDeploymentArtifacts(m, { ...f.projectConfig, artifacts: { [m.revision]: m.artifactHash } }, f.ledger.dir)).toThrow(/artifact must be a static directory/);
   });
   it("constructs only static output and fixed metadata, checking the copied digest", () => {
     const f = fixture(provider); chmodSync(join(f.m.artifactDir, "assets/app.js"), 0o755);
@@ -109,9 +127,11 @@ describe.each(["vercel", "netlify"] as const)("%s credential isolation", provide
     expect(deploy!.cwd).not.toBe(probe!.cwd); expect(deploy!.env.HOME).not.toBe(probe!.env.HOME);
     for (const s of f.calls) { expect(existsSync(s.cwd)).toBe(false); expect(existsSync(s.env.HOME!)).toBe(false); }
   });
-  it.each(["mismatch", "malformed", "failure", "timeout", "overflow"])("refuses %s version verification before reading a token", async mode => {
+  it.each(["mismatch", "malformed", "wrong-name", "failure", "timeout", "overflow"])("refuses %s version verification before reading a token", async mode => {
     const f = fixture(provider);
-    f.setVersion(() => ({ ...ok(mode === "mismatch" ? "9.9.9" : "some text mentions 1.2.3"),
+    const wrongName = provider === "vercel" ? "Now CLI 1.2.3" : "netlify/1.2.3 darwin-arm64 node-v24.0.0";
+    f.setVersion(() => ({ ...ok(mode === "mismatch" ? (provider === "vercel" ? "9.9.9" : "netlify-cli/9.9.9 darwin-arm64 node-v24.0.0")
+      : mode === "wrong-name" ? wrongName : "some text mentions 1.2.3"),
       code: mode === "failure" ? 1 : 0, timedOut: mode === "timeout", overflowed: mode === "overflow" }));
     expect((await f.broker().handle({ op: "deploy.preview", payload: { ref: releaseRef(f.m, "preview") } })).status).toBe("failed");
     expect(f.reads).toEqual([]); expect(f.calls).toHaveLength(1);

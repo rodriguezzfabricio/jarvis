@@ -29,7 +29,7 @@ function setup(provider: "vercel" | "netlify" = "vercel", behavior?: (s: Session
     projectConfig, readyToPromote: () => true,
     providers: { [provider]: { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: privateRoot, cwd: privateRoot } },
     run: async spec => {
-      if (spec.args.includes("--version")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: provider === "vercel" ? "1.2.3" : "netlify/1.2.3", stderr: "" };
+      if (spec.args.includes("--version")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: provider === "vercel" ? "1.2.3" : "netlify-cli/1.2.3 darwin-arm64 node-v24.0.0", stderr: "" };
       calls.push(spec);
       if (spec.args.includes("inspect")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: JSON.stringify({ id: "old-deploy", url: "https://old.vercel.app", projectId: m.siteId }), stderr: "" };
       if (spec.args.includes("getSite")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: JSON.stringify({ id: m.siteId, published_deploy: { id: "old-deploy", deploy_ssl_url: "https://old.netlify.app" } }), stderr: "" };
@@ -110,7 +110,7 @@ describe("provider adapters through the broker", () => {
   it("refuses relative CLI paths", () => {
     const { ledger, projectConfig } = setup();
     expect(() => deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => undefined,
-      providers: { vercel: { bin: "vercel", home: "/home", cwd: "/control" } } })).toThrow(/absolute/);
+      providers: { vercel: { bin: "vercel", version: "1.2.3", home: "/home", cwd: "/control" } } })).toThrow(/absolute/);
   });
   it("does not use a grant for another manifest", async () => {
     const { broker, m, calls } = setup();
@@ -131,7 +131,7 @@ describe("provider adapters through the broker", () => {
     const { ledger, m, projectConfig } = setup(); const run = async (_spec: SessionSpec) => { throw new Error("must not execute"); };
     writeFileSync(join(m.artifactDir, "index.html"), "changed after approval");
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m, run,
-      providers: { vercel: { bin: "/trusted/bin/vercel", home: "/trusted/home", cwd: "/trusted/control" } } });
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: "/trusted/home", cwd: "/trusted/control" } } });
     let reads = 0;
     const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => { reads++; return TOKEN; } } });
     expect((await broker.handle({ op: "deploy.preview", payload: { ref: releaseRef(m, "preview") } })).status).toBe("failed");
@@ -140,7 +140,7 @@ describe("provider adapters through the broker", () => {
   it("does not promote before release-ready even with a bound grant", async () => {
     const { ledger, m, projectConfig } = setup(); let calls = 0;
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m,
-      providers: { vercel: { bin: "/trusted/bin/vercel", home: "/trusted/home", cwd: "/trusted/control" } },
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: "/trusted/home", cwd: "/trusted/control" } },
       run: async () => { calls++; throw new Error("must not run"); } });
     const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => TOKEN } });
     grantRelease(broker, m, "person", false);

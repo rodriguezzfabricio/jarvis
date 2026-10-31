@@ -344,8 +344,20 @@
   {
     "name": "release_candidate_config_refused",
     "file": "packages/cli/src/release/artifacts.ts",
-    "anchor": "assertStaticName(name, child, lstatSync(join(source, name)).isDirectory());",
-    "replacement": "if (name !== \"vercel.ts\") assertStaticName(name, child, lstatSync(join(source, name)).isDirectory());"
+    "anchor": "      assertStaticName(path, false);",
+    "replacement": "      if (path !== \"vercel.ts\") assertStaticName(path, false);"
+  },
+  {
+    "name": "release_candidate_config_folder_refused",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "if (path) assertStaticName(path, true);",
+    "replacement": "if (false) assertStaticName(path, true);"
+  },
+  {
+    "name": "release_refused_path_printable",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "const text = path.replace(/[^\\x20-\\x7e]/gu, ch => `\\\\u{${ch.codePointAt(0)!.toString(16)}}`);",
+    "replacement": "const text = path;"
   },
   {
     "name": "release_static_extension_allowlist",

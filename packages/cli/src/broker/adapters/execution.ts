@@ -23,12 +23,21 @@ export async function runCommand(options: DeployAdapterOptions, config: Provider
   }
 }
 
+/**
+ * The exact version a provider CLI's `--version` stdout names, or undefined. Vercel prints the bare version (its
+ * "Vercel CLI x.y.z" banner goes to stderr); Netlify prints its user agent, `netlify-cli/x.y.z <os>-<arch> node-v<n>`.
+ * Shared with doctor. Both formats still need checking against the pinned installs (decision 161).
+ */
+export function providerVersion(provider: Provider, stdout: string): string | undefined {
+  const output = stdout.trim();
+  return provider === "vercel" ? /^(?:Vercel CLI )?(\d+\.\d+\.\d+)$/.exec(output)?.[1]
+    : /^netlify-cli\/(\d+\.\d+\.\d+)(?: [A-Za-z0-9_.-]+)*$/.exec(output)?.[1];
+}
+
 /** Version probes run before credentials are read; failures cannot become a deployment attempt. */
 export async function verifyProvider(options: DeployAdapterOptions, config: ProviderConfig, provider: Provider): Promise<void> {
   if (!config.version || !/^\d+\.\d+\.\d+$/.test(config.version)) throw new Error("exact provider version required");
   const result = await runCommand(options, config, { args: ["--version"], env: {}, readUrl: () => "" });
-  const output = result.stdout.trim();
-  const version = provider === "vercel" ? /^(?:Vercel CLI )?(\d+\.\d+\.\d+)$/.exec(output)?.[1]
-    : /^netlify\/(\d+\.\d+\.\d+)(?: [A-Za-z0-9_.-]+)*$/.exec(output)?.[1];
+  const version = providerVersion(provider, result.stdout);
   if (result.code !== 0 || result.timedOut || result.overflowed || version !== config.version) throw new Error("provider version verification failed");
 }

@@ -38,7 +38,7 @@ function setup(provider: "vercel" | "netlify" = "vercel", project = "p") {
   let beforeRun: ((spec: SessionSpec) => void) | undefined;
   const config = { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: ledger.dir, cwd: ledger.dir };
   const run = async (spec: SessionSpec) => {
-    if (spec.args.includes("--version")) return outcome(provider === "vercel" ? "1.2.3" : "netlify/1.2.3");
+    if (spec.args.includes("--version")) return outcome(provider === "vercel" ? "1.2.3" : "netlify-cli/1.2.3 darwin-arm64 node-v24.0.0");
     calls.push(spec); beforeRun?.(spec);
     if (spec.args.includes("inspect")) return outcome(JSON.stringify({ ...current, projectId: m.siteId }));
     if (spec.args.includes("getSite")) return outcome(JSON.stringify({ id: m.siteId, published_deploy: { id: current.id, deploy_ssl_url: current.url } }));

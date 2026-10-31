@@ -5,8 +5,8 @@ import type { Provider, ReleaseAction, ReleaseManifest, ReleaseProjectConfig } f
 export interface ProviderConfig {
   /** Trusted absolute CLI path, installed outside candidate-writable directories. */
   bin: string;
-  /** Exact x.y.z pin. Missing legacy pins fail closed before reading a credential. */
-  version?: string;
+  /** Exact x.y.z pin (config/pins.ts), checked against `--version` before every credential read. */
+  version: string;
   /** Existing runner-owned parents below ledger.dir; fresh children are created per process. */
   home: string;
   cwd: string;

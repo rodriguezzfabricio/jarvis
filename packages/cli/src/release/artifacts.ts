@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { artifactDigest, manifestHash } from "./manifest.ts";
 import { realChild, within } from "./paths.ts";
 import type { ReleaseManifest, ReleaseProjectConfig } from "./types.ts";
@@ -8,33 +8,38 @@ export class ArtifactPolicyError extends Error {}
 
 const STATIC_EXTENSIONS = new Set([".html", ".htm", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".xml", ".svg", ".ico",
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".wasm", ".pdf", ".webmanifest", ".mp4", ".webm", ".mp3", ".ogg", ".wav"]);
-function assertStaticName(name: string, path: string, directory: boolean): void {
-  const lower = name.toLowerCase();
+/** A candidate path as printable ASCII of bounded length: it reaches receipts, reports and notifications. */
+function shown(path: string): string {
+  const text = path.replace(/[^\x20-\x7e]/gu, ch => `\\u{${ch.codePointAt(0)!.toString(16)}}`);
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+}
+function assertStaticName(path: string, directory: boolean): void {
+  const name = basename(path); const lower = name.toLowerCase();
   const reserved = /^(?:vercel|now)\.(?:json|[cm]?[jt]s)$/.test(lower) || lower === "netlify.toml"
     || ["netlify", "node_modules", "package.json"].includes(lower)
     || /(?:^|[.-])config\.(?:[cm]?[jt]s|json|toml|ya?ml)$/.test(lower);
   if (reserved || (name.startsWith(".") && name !== ".well-known") || /[\x00-\x1f\x7f\\]/.test(name)
     || (!directory && !STATIC_EXTENSIONS.has(extname(lower)) && !path.startsWith(".well-known/"))) {
-    throw new ArtifactPolicyError(`non-static deployment file refused: ${path}`);
+    throw new ArtifactPolicyError(`non-static deployment file refused: ${shown(path)}`);
   }
 }
+/** The name rule and the copy use the same stat, so a swap between checking and copying can't skip a rule. */
 function copyTree(source: string, target: string, path = ""): void {
   const st = lstatSync(source);
-  if (st.isSymbolicLink()) throw new ArtifactPolicyError(`artifact symlink refused: ${path}`);
+  if (st.isSymbolicLink()) throw new ArtifactPolicyError(`artifact symlink refused: ${shown(path)}`);
+  if (!path && !st.isDirectory()) throw new ArtifactPolicyError("artifact must be a static directory");
   if (st.isDirectory()) {
+    if (path) assertStaticName(path, true);
     mkdirSync(target, { mode: 0o700 });
-    for (const name of readdirSync(source)) {
-      const child = path ? `${path}/${name}` : name;
-      assertStaticName(name, child, lstatSync(join(source, name)).isDirectory());
-      copyTree(join(source, name), join(target, name), child);
-    }
+    for (const name of readdirSync(source)) copyTree(join(source, name), join(target, name), path ? `${path}/${name}` : name);
   } else if (st.isFile()) {
     const fd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
-      if (!fstatSync(fd).isFile()) throw new ArtifactPolicyError(`artifact must be a regular file: ${path}`);
+      if (!fstatSync(fd).isFile()) throw new ArtifactPolicyError(`artifact must be a regular file: ${shown(path)}`);
+      assertStaticName(path, false);
       writeFileSync(target, readFileSync(fd), { flag: "wx", mode: 0o600 });
     } finally { closeSync(fd); }
-  } else throw new ArtifactPolicyError(`artifact must contain regular files only: ${path}`);
+  } else throw new ArtifactPolicyError(`artifact must contain regular files only: ${shown(path)}`);
 }
 
 /** Input is the static publish directory, never a provider project or executable build-output tree. */

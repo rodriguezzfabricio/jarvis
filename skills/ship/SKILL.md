@@ -22,6 +22,8 @@ Ask for release, production and spending permissions here, against the concrete 
 
 Your manifest and notes are claims. Do not write ledger entries or manufacture check output. The runner runs checks, rehearses migrations, tests restore and collects deploy receipts and live smoke evidence after the session ends (decisions 44, 49).
 
+In the runner's release step you are the ship session: write the manifest and your notes and nothing else. The runner fills project, revision, provider, site, production URL, artifact and data source itself, builds the revision, runs the checks and asks the broker for the preview after you end; it discards any other change.
+
 Outside actions go through `jarvis act` on the run's explicit broker socket. Deploy payloads contain only `{ "ref": "release:<manifest SHA-256>:preview|promote|rollback" }`; the runner supplies that reference after accepting the manifest. Never run a provider CLI, read a token, pass a credential to a command, or create a grant from the task session.
 
 Without a recorded production grant bound to this manifest, stop at **preview-ready**. A request to ship is not permission to spend or a grant. With a grant, promotion requires **release-ready**. The broker copies approved artifacts into a fresh private directory, hashes that copy and stamps `/.well-known/jarvis-release` with the manifest hash before deploying. Smoke requests the provider-reported URL and, for production, the trusted live origin; both must serve that marker. Failed production smoke triggers automatic rollback only when the grant explicitly allows it. A person-approved rollback without `allowRollback` is manual; the task session never runs the provider CLI. Unknown outcomes await reconciliation and are never retried automatically.

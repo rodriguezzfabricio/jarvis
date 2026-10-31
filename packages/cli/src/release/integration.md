@@ -1,8 +1,28 @@
 # Ship lane integration
 
-This is a runner library with no new command or `cli.ts` registration. Replace the
-stage-1 deploy outbox adapters with `deployAdapters(...)`; preserve other outbox
-operations for evals. Broker selects the first adapter for each operation.
+## Wired (decisions 157–159)
+
+- `release/run.ts` `prepareRelease` loads the protected setup (`release/config.ts`,
+  `~/.jarvis/projects/<id>/release.json`, written by `jarvis release configure`),
+  verifies the pinned provider CLI (`release/provider-cli.ts`, `PROVIDER_CLI_PINS`)
+  and builds `deployAdapters(...)`. `jarvis run` hosts them in place of the outbox for
+  `deploy.preview` and `deploy.promote`; the outbox keeps the other operations, and
+  every operation when there is no release setup (evals).
+- `runReleaseStep` runs after a complete build loop (`commands/run-release.ts`):
+  ship session (`release/ship.ts`), fixed-revision build (`release/build.ts`),
+  manifest acceptance (`release/accepted.ts`), every approved check on the revision
+  (`runGate` with `taskId: null`), preview through the broker, `runSmoke`,
+  `reachState("preview-ready")` with the approved names as `requiredChecks`.
+- Readiness is complete against the plan and the approved names (`releaseScope`);
+  reports and notifications recheck with `releaseStatus`.
+- Tokens: `<PROVIDER>_PREVIEW_TOKEN` and `<PROVIDER>_PRODUCTION_TOKEN`, stored by
+  `jarvis setup` in the house-stack accounts file, which the hosted broker reads after
+  the project's own file.
+- Grants: `jarvis release grant <manifest-hash> [--allow-rollback]` shows the accepted
+  manifest and calls `grantRelease`.
+- Not wired yet: steps 4–7 below (backlog 185).
+
+The notes below are the library's contract.
 
 ## Protected project configuration
 

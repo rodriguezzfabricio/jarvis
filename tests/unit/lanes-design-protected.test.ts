@@ -23,6 +23,9 @@ it("installs real protected definitions without approval, requires review to ove
   expect(f.store.verify(f.ledger).ok).toBe(false);
   f.store.approve(f.ledger,"reviewed definitions");
   expect(readApprovedChecks(f.store,f.ledger).map(c=>c.name).sort()).toEqual(Object.keys(definitions).sort());
+  // The protected record the design service binds evidence to, outside the architect's check namespace; the loop runs exactly it.
+  expect(JSON.parse(readFileSync(join(f.store.checksDir,"design-lint","checks.json"),"utf8"))).toEqual(definitions);
+  for(const loaded of readApprovedChecks(f.store,f.ledger)) expect({cases:loaded.cases,verify:loaded.verify}).toEqual({cases:definitions[loaded.name as keyof typeof definitions].cases,verify:definitions[loaded.name as keyof typeof definitions].verify});
   expect(()=>installDesignLintChecks(f.store,f.input)).toThrow(/already|review/);
   writeFileSync(join(f.store.checksDir,"design-lint","verify.ts"),"console.log('pass')");
   expect(f.store.verify(f.ledger).ok).toBe(false);

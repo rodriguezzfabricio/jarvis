@@ -8,6 +8,7 @@ import { requestBroker } from "../../packages/cli/src/broker/client.ts";
 import type { SignalHost } from "../../packages/cli/src/broker/host.ts";
 import { prepareProductionRun, reviewDispatch, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
 import type { PreparedRun } from "../../packages/cli/src/commands/run.ts";
+import { approvedDesign } from "../../packages/cli/src/review/design-material.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import type { Message, Notifier } from "../../packages/cli/src/notify/notifier.ts";
@@ -256,6 +257,19 @@ describe("production design composition", () => {
     const request={taskId:"T1",attemptId:"a1",revision:"a".repeat(40)};
     expect(await run.loop.review!({...request,reviewer:"design"} as never)).toEqual({status:"pass",recorded:true});
     expect(reviewDetailed).toHaveBeenCalledWith(request);
+    // The real git seam reads the run branch's committed objects, never the edited working tree.
+    const git=(args: readonly string[])=>safeGit(p.repoPath,args,{home:p.gitHome}).toString().trim();
+    expect(approvedDesign(git,run.loop.runBranch)).toMatchObject({design:"## Overview\n- Principles: List first.",product:"Habits"});
+  });
+  it("a committed DESIGN.md without PRODUCT.md still starts the run; each design review's material is refused", async () => {
+    const p=project();
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"## Overview\n- Principles: List first.\n");
+    safeGit(p.repoPath,["add","DESIGN.md"],{home:p.gitHome});
+    safeGit(p.repoPath,["commit","-qm","design without product"],{home:p.gitHome});
+    const createDesignReview=vi.fn((_options: { resolveMaterial(request: { taskId: string; attemptId: string; revision: string }): Promise<unknown> }) => ({reviewDetailed:vi.fn()}));
+    await prepare(p,{}, {createDesignReview: createDesignReview as never});
+    expect(createDesignReview).toHaveBeenCalledOnce();
+    await expect(createDesignReview.mock.calls[0]![0].resolveMaterial({taskId:"T1",attemptId:"a1",revision:"a".repeat(40)})).rejects.toThrow(/PRODUCT\.md/);
   });
   it("does not compose design from a working-tree-only DESIGN.md", async () => {
     const p=project(); writeFileSync(join(p.repoPath,"DESIGN.md"),"unapproved");

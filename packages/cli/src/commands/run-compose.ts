@@ -21,7 +21,7 @@ import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
-import { approvedDesign, designMaterialFor } from "../review/design-material.ts";
+import { approvedDesign, designMaterialFor, designOnBranch } from "../review/design-material.ts";
 import { createDesignReviewService, type DesignReviewServiceOptions } from "../review/design-service.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
@@ -260,7 +260,12 @@ function toLoopPlan(plan: Plan): LoopPlan {
   return { tasks: planTasks(plan) };
 }
 
-/** The review service: one review_result per review, keyed "code", recorded by the service itself. */
+/**
+ * The review services, each recording its own review_result: "code" always, "design" when the run branch has a
+ * DESIGN.md (decision 156). Its material is read per review from the run branch's committed objects and the
+ * approved store, so a bad DESIGN.md or a missing PRODUCT.md is a recorded design review error, never a run
+ * that refuses to start or a design review that is skipped.
+ */
 function defaultReview(deps: ReviewDeps, designOptions: {home: string; runBranch: string; createDesignReview?: ComposeOptions["createDesignReview"]}): RunLoopOptions["review"] {
   const service = createReviewService({
     ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot, routing: DEFAULT_REVIEW_ROUTING,
@@ -268,7 +273,7 @@ function defaultReview(deps: ReviewDeps, designOptions: {home: string; runBranch
     codex: createCodexReviewer(),
     resolveMaterial: async (request) => reviewMaterialFor(deps, request.taskId, request.revision),
   });
-  const design = approvedDesign(deps.git, designOptions.runBranch)
+  const design = designOnBranch(deps.git, designOptions.runBranch)
     ? (designOptions.createDesignReview ?? createDesignReviewService)({
       ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot,
       home: designOptions.home, jarvisHome: deps.context.jarvisHome,

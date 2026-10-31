@@ -36,5 +36,7 @@ export function installDesignLintChecks(store: ChecksStore, input: DesignLintPla
     writeFileSync(join(store.checksDir, `${name}.check.json`), JSON.stringify(check), {flag:"wx",mode:0o600});
     definitions[name] = check;
   }
+  // The design service's own record of these definitions, outside the top-level names an authored check can take (decision 156).
+  writeFileSync(join(verify, "checks.json"), JSON.stringify(definitions), {flag:"wx",mode:0o600});
   return definitions;
 }

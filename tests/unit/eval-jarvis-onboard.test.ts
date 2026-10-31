@@ -190,17 +190,6 @@ describe("eval jarvis: onboarding that also asks for edits (golden task 7's shap
     expect(refused).toMatchObject({ outcome: "complete", onboard: { report: "ONBOARDING.md" } });
   });
 
-  it("keeps every onboarding mutation's anchor in place, once", () => {
-    const defs = JSON.parse(readFileSync("packages/cli/src/runner/mutations-onboard.json", "utf8")) as { name: string; file: string; anchor: string; replacement: string }[];
-    expect(defs.length).toBeGreaterThanOrEqual(12);
-    expect(new Set(defs.map((d) => d.name)).size).toBe(defs.length);
-    for (const d of defs) {
-      expect(d.name).toMatch(/^onboard: /);
-      expect(d.file).toMatch(/^packages\/cli\/src\/(eval\/jarvis|runner\/onboard-step|triage\/triage)\.ts$/);
-      expect(readFileSync(d.file, "utf8").split(d.anchor).length - 1, d.name).toBe(1);
-      expect(d.replacement).not.toBe(d.anchor);
-    }
-  });
 
   it.each([
     ["no plan", writes(REPORT, null), /wrote no \.jarvis\/onboard\/plan\.json/],

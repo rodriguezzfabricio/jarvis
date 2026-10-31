@@ -69,7 +69,7 @@ export const TASTE = ["Linear, Things, Stripe", "A generic AI landing page", "se
 export function fullAnswers(token = SENTINEL) {
   return {
     lines: ["y", "vercel", "", "y", "n", "y", "y", ...TASTE],
-    hidden: [token, `${token}-vercel`, `${token}-cf`, `${token}-oauth-id`, `${token}-oauth-secret`],
+    hidden: [token, `${token}-vercel-preview`, `${token}-vercel-production`, `${token}-cf`, `${token}-oauth-id`, `${token}-oauth-secret`],
   };
 }
 export function filesUnder(root: string): string[] {

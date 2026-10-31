@@ -64,6 +64,16 @@ export function pinnedImpeccable(home: string = homedir()): ImpeccablePin {
   };
 }
 
+/**
+ * Deploy provider CLIs (decision 157), run only by the broker's deploy adapters, outside the sandbox and with a
+ * token. Empty until Fabricio picks Vercel or Netlify and installs one exact version: the release step refuses a
+ * provider with no pin here, and one whose CLI at pinnedProviderBin doesn't report exactly that version.
+ */
+export const PROVIDER_CLI_PINS: Readonly<Partial<Record<"vercel" | "netlify", { version: string }>>> = {};
+export function pinnedProviderBin(provider: "vercel" | "netlify", home: string = homedir()): string {
+  return join(home, ".npm-global", "bin", provider);
+}
+
 /** Reviewed offline scanner policy; database downloads happen explicitly outside the gate. */
 export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
   return {

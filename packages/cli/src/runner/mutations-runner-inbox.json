@@ -164,8 +164,8 @@
   {
     "name": "runner-inbox notification byte cap",
     "file": "packages/cli/src/runner/report.ts",
-    "anchor": "return `${release ? String(dataOf(release).state) : \"not-reached\"}.",
-    "replacement": "return \"x\".repeat(4096) + `${release ? String(dataOf(release).state) : \"not-reached\"}."
+    "anchor": "return `${release.summary}.",
+    "replacement": "return \"x\".repeat(4096) + `${release.summary}."
   },
   {
     "name": "runner-inbox source bound to project ledger",

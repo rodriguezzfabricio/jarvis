@@ -202,5 +202,17 @@
     "file": "packages/cli/src/commands/release.ts",
     "anchor": "const allowRollback = o.allowRollback === true;",
     "replacement": "const allowRollback = true;"
+  },
+  {
+    "name": "release_compose_deploy_adapters",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "ledger, ...(release ? { deploy: release.adapters } : {}) });",
+    "replacement": "ledger });"
+  },
+  {
+    "name": "release_compose_runs_release_step",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    } : release ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive(",
+    "replacement": "    } : false ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive("
   }
 ]

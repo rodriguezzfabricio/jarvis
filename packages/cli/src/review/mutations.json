@@ -400,5 +400,23 @@
     "file": "packages/cli/src/review/service.ts",
     "anchor": "The output must also carry checked, listing spec-criteria (the spec’s criteria for this task), data-flow (the data flow of the change), error-paths (its error paths), unchanged-callers (the callers it did not change), and for a bug task bug-brief-inputs (the two traced inputs of the bug brief). A name may be listed only after you read the relevant code or spec criteria. An output without the required checks is invalid.",
     "replacement": "Report your findings."
+  },
+  {
+    "name": "fenced verdict never unwrapped",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "try { value = JSON.parse(unfencedJson(raw)); }",
+    "replacement": "try { value = JSON.parse(raw); }"
+  },
+  {
+    "name": "fence unwrapped from inside surrounding prose",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "return m && !m[1]!.includes(\"```\") ? m[1]! : raw;",
+    "replacement": "const n = /```(?:json)?\\n([\\s\\S]*?)\\n```/.exec(raw); return n ? n[1]! : raw;"
+  },
+  {
+    "name": "checked object with an empty entry counts",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "entries.every(([, read]) => typeof read === \"string\" && read.trim().length > 0)",
+    "replacement": "true"
   }
 ]

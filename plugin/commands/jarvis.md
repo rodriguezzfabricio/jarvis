@@ -26,7 +26,7 @@ Shell reads: Quote globs (`--include='*.go'`). Prefer `rg -F` or simple fixed-st
 
 Only after displaying the triage headline, start the steps whose `dispatch` is true, in order, passing the request, the type, the tier and the triage JSON. Each skill chains to the next one itself, so start nothing a skill already ran. Never run anything listed in `never`.
 - `register-check` or `research`: start the `research` skill. It runs any spike and chains to intake, intake to spec, and spec hands back here with the spec's status.
-- `design`: after spec hands back, run the `design` skill's "after the pick" part to write DESIGN.md (intake already had it make the mockups).
+- `design`: spec runs the `design` skill's "after the pick" part before its reader check, so DESIGN.md is confirmed with the spec. If DESIGN.md is missing when spec hands back, run that part, then spec's Confirm again; never change a confirmed artifact here.
 - `read-only-research` and `answer`: read the code and docs, answer with file citations, change nothing.
 - `decision-archaeology`: the `onboard` skill. When triage's `onboarding` is true, start it at `read-only-research`: it does the reading, the answer and the archaeology together.
 - `review`: the `review` skill: read-only findings with file references and fixes, no edits.

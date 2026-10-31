@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadTask } from "../../packages/cli/src/eval/baseline.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { pipelineFor, runJarvis, type RunLoop, type RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
+import { runSession, type SessionSpec } from "../../packages/cli/src/harness/claude/session.ts";
+import { sessionCalls, writeFakeClaudeShim } from "../integration/e2e-helpers.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import type { Harness, TaskInput, TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
 import { DEFAULT_ONBOARD_REPORT, ONBOARD_PLAN_FILE } from "../../packages/cli/src/runner/onboard-step.ts";
@@ -141,6 +143,32 @@ describe("eval jarvis: onboarding that also asks for edits (golden task 7's shap
     expect(json(join(r.resultsDir, "summary.json"))).toMatchObject({ pipeline: "onboard", onboard: { report: "ONBOARDING.md", tasks: ["T1", "T2"] } });
     expect(json(join(r.resultsDir, "manifest.json"))).toMatchObject({ pipeline: "onboard", onboard: { report: "ONBOARDING.md" } });
     expect(r.grade).toMatchObject({ pass: true });
+  });
+
+  it("runs the onboarding step through the production harness on the fake claude, inside the safety envelope", async () => {
+    const fx = fixture();
+    const scenarioPath = join(fx.root, "scenario", "scenario.json");
+    mkdirSync(join(fx.root, "scenario"));
+    writeFileSync(scenarioPath, JSON.stringify({ sessions: [{ name: "onboard", match: "^You are Jarvis's onboarding step", steps: [
+      { write: "ONBOARDING.md", content: REPORT }, { write: ONBOARD_PLAN_FILE, content: PLAN }, { result: { subtype: "success", text: "Mapped; two cleanup tasks planned." } },
+    ] }] }));
+    const shim = join(fx.root, "bin", "claude");
+    writeFakeClaudeShim(shim, scenarioPath);
+    const specs: SessionSpec[] = [];
+    const calls: RunLoopOptions[] = [];
+    const r = await runJarvis(onboardTask(fx), {
+      ...options(fx, { runLoop: cleanupLoop(calls), runId: "jarvis-ob-h" }), harness: undefined,
+      harnessSeams: { binaryRealpath: () => "/usr/bin/true", session: async (spec) => { specs.push(spec); return runSession({ ...spec, bin: shim }); } },
+    });
+    expect(r).toMatchObject({ outcome: "complete", pipeline: "onboard", onboard: { report: "ONBOARDING.md", tasks: ["T1", "T2"] } });
+    expect(specs).toHaveLength(1);
+    const args = specs[0]!.args;
+    expect(args).toContain("--restricted");
+    expect(args[args.indexOf("--plugin-dir") + 1]?.startsWith(`${fx.jarvisHome}/`)).toBe(true);
+    expect(args[args.indexOf("--model") + 1]).toMatch(/^claude-[a-z]+-\d+-\d+$/);
+    // The fake found the full safety envelope on its one launch, and the plan reached the loop's ledger.
+    expect(sessionCalls({ scenarioPath }).map((c) => [c.session, c.envelope])).toEqual([["onboard", []]]);
+    expect(created(calls[0]!.projectDir).map((t) => t.id)).toEqual(["T1", "T2"]);
   });
 
   it("writes the report where the request says, and to ONBOARDING.md when it names no file", async () => {

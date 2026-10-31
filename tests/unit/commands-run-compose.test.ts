@@ -267,7 +267,8 @@ describe("production design composition", () => {
     safeGit(p.repoPath,["add","DESIGN.md"],{home:p.gitHome});
     safeGit(p.repoPath,["commit","-qm","design without product"],{home:p.gitHome});
     const createDesignReview=vi.fn((_options: { resolveMaterial(request: { taskId: string; attemptId: string; revision: string }): Promise<unknown> }) => ({reviewDetailed:vi.fn()}));
-    await prepare(p,{}, {createDesignReview: createDesignReview as never});
+    // The run starts: a refusal here is an assertion failure, not an error (decision 146).
+    await expect(prepare(p,{}, {createDesignReview: createDesignReview as never})).resolves.toBeDefined();
     expect(createDesignReview).toHaveBeenCalledOnce();
     await expect(createDesignReview.mock.calls[0]![0].resolveMaterial({taskId:"T1",attemptId:"a1",revision:"a".repeat(40)})).rejects.toThrow(/PRODUCT\.md/);
   });

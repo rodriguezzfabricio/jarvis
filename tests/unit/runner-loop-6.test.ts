@@ -34,6 +34,8 @@ describe("promotion integrity", () => {
     expect(f.calls.filter((c) => taskOf(c) === "T2")).toHaveLength(2);
     expect(f.calls.at(-1)!.prompt).toContain("Repair T2 (1/2)");
     expect(f.ledger.entries().some((e) => e.kind === "reconciled" && data(e).type === "merge_candidate" && e.task_id === "T2")).toBe(true);
+    // A failed runner merge repairs from the new head (decision 100), never from the merge's files (decision 160).
+    expect(f.ledger.entries().filter((e) => data(e).type === "workspace_seeded" && e.task_id === "T2").map((e) => data(e).result)).toEqual(["unavailable"]);
     expectEveryPromotedRevisionGated(f, start);
   });
 
@@ -53,6 +55,7 @@ describe("promotion integrity", () => {
     expect(showAt(f, "last-green", "shared.txt")).toBe("one+two");
     expect(repairsUsed(rebuildState(f.ledger.entries(), { now: 9999, verifyEvidence: f.options.verifyEvidence! }).tasks.T2!)).toBe(0);
     expect(f.ledger.entries().some((e) => e.kind === "reconciled" && data(e).type === "stale_base" && e.task_id === "T2")).toBe(true);
+    expect(f.ledger.entries().some((e) => data(e).type === "workspace_seeded")).toBe(false);
     expectEveryPromotedRevisionGated(f, start);
   });
 

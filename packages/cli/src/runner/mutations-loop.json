@@ -36,5 +36,9 @@
 {"name": "runner-loop stage3 fixes recover review wait", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (dataOf(old).status !== \"usage-limited\") return;", "replacement": "return;"},
 {"name": "runner-loop stage3 fixes no phantom usage", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (observed.group) recordSessionUsage(this.ledger,", "replacement": "recordSessionUsage(this.ledger,"},
 {"name":"runner-loop stage3 fixes review limit waits for its reset","file":"packages/cli/src/runner/loop.ts","anchor":"if (previous && dataOf(previous).status === \"usage-limited\" && !waited) {","replacement":"if (false) {"},
-{"name":"runner-loop stage3 fixes review waits have a ceiling","file":"packages/cli/src/runner/loop.ts","anchor":"if (waits >= REVIEW_USAGE_WAITS) throw","replacement":"if (false) throw"}
+{"name":"runner-loop stage3 fixes review waits have a ceiling","file":"packages/cli/src/runner/loop.ts","anchor":"if (waits >= REVIEW_USAGE_WAITS) throw","replacement":"if (false) throw"},
+{"name":"runner-loop stage3 fixes repair seeded from the failed candidate","file":"packages/cli/src/runner/loop.ts","anchor":"if (!resuming && repair.kind === \"repair\" && !stale) seeded = this.seedRepair(task.id, view, workspace);","replacement":""},
+{"name":"worktrees stage3 fixes seed checks the candidate out","file":"packages/cli/src/runner/worktrees.ts","anchor":"run([\"read-tree\", \"--reset\", \"-u\", tree]);","replacement":""},
+{"name":"worktrees stage3 fixes seed reconciles a moved branch","file":"packages/cli/src/runner/worktrees.ts","anchor":"if (parents[0] === w.baseRevision) tree =","replacement":"if (true) tree ="},
+{"name":"worktrees stage3 fixes seed never from a runner merge","file":"packages/cli/src/runner/worktrees.ts","anchor":"if (parents.length !== 1) return \"unavailable\";","replacement":""}
 ]

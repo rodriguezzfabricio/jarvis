@@ -19,7 +19,7 @@ import { loadRouting, routeTask, type RoutingTable } from "./routing.ts";
 import { buildLease, isDone, rebuildState, type EvidenceVerifier, type ProcessGroupRecord, type RunState, type TaskCreatedData, type TaskState } from "./state.ts";
 import { activeUsageWait, waitForUsage, type UsageWaitNotice } from "./usage-wait.ts";
 import { recordSessionUsage } from "./usage-log.ts";
-import { commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
+import { commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes, seedWorkspace, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
 
 /** The process adapter calls these synchronously at spawn, and only after the entire group exits. */
 export interface LoopTaskInput extends TaskInput {
@@ -360,7 +360,10 @@ class Loop {
     this.lease(task.id, attemptId, path);
     const baseRevision = this.git(["rev-parse", "--verify", `refs/heads/${this.opts.runBranch}^{commit}`]);
     this.ledger.append({ kind: "attempt_started", actor: "runner", task_id: task.id, attempt_id: attemptId, data: { runId: this.runId, baseRevision, workspace: path } });
+    const stale = !resuming && task.attemptId !== null && this.records("stale_base", task.id, task.attemptId).length > 0
+      ? "The run branch moved while your previous attempt was being checked, and its changes conflict with work merged since. Redo the task on the current run branch; your workspace starts from it." : "";
     let workspace: TaskWorkspace;
+    let seeded = "";
     try {
       workspace = resuming ? this.workspaceRecord(task)! : createWorkspace({ repoPath: this.opts.repoPath, projectId: this.opts.projectId, taskId: task.id, attemptId, baseRevision,
         worktreeRoot: this.opts.worktreeRoot, ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
@@ -369,12 +372,22 @@ class Loop {
         mkdirSync(join(workspace.path, ".git/info"), { recursive: true });
         appendFileSync(join(workspace.path, ".git/info/exclude"), "\n/.jarvis/\n");
       }
+      // Decision 160: a repair edits the failed candidate's files instead of starting over. A stale base redoes
+      // the task from the new head, and a failed runner merge repairs from it (decision 100).
+      if (!resuming && repair.kind === "repair" && !stale) seeded = this.seedRepair(task.id, view, workspace);
     } catch (e) { return this.block(this.state().tasks[task.id]!, `workspace refused: ${short(e)}`); }
     const failure: EscalationReason | undefined = repair.kind !== "repair" ? undefined
       : view.evidence.some((e) => e.kind === "review_result" && dataOf(e).revision === view.candidateRevision && dataOf(e).status === "fail") ? "review_fail" : "gate_fail";
-    const stale = !resuming && task.attemptId !== null && this.records("stale_base", task.id, task.attemptId).length > 0
-      ? "The run branch moved while your previous attempt was being checked, and its changes conflict with work merged since. Redo the task on the current run branch; your workspace starts from it." : "";
-    await this.attempt(task, workspace, [repair.kind === "repair" ? repair.prompt : "", stale].filter(Boolean).join("\n\n"), failure);
+    await this.attempt(task, workspace, [repair.kind === "repair" ? repair.prompt : "", seeded, stale].filter(Boolean).join("\n\n"), failure);
+  }
+  /** Checks the failed candidate's files out over the repair's fresh workspace; the prompt line says what it starts from. */
+  private seedRepair(taskId: string, view: TaskState, workspace: TaskWorkspace): string {
+    if (!view.candidateRevision || !view.attemptId) return "";
+    const from = { revision: view.candidateRevision, ref: `refs/heads/jarvis/candidates/${taskId}/${view.attemptId}` };
+    const result = seedWorkspace(workspace, from, this.opts.git ? { git: this.opts.git } : {});
+    this.record("workspace_seeded", { from: from.revision, result }, taskId, workspace.attemptId);
+    if (result === "seeded") return `Your workspace starts from your previous attempt's files (candidate ${from.revision}), with any work merged on the run branch since. \`git diff --cached\` shows what that attempt changed. Fix what failed in them; don't start over.`;
+    return result === "conflict" ? "Your previous attempt's changes conflict with work merged on the run branch since, so your workspace starts from the current run branch; redo the change there." : "";
   }
   private repairView(task: TaskState): TaskState {
     const last = [...task.attempts].reverse().find((a) => a.outcome === "completed" && a.candidateRevision !== null);

@@ -34,5 +34,7 @@
 {"name": "runner-loop stage3 fixes timeout cannot charge usage", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (timedOut && outcome.status !== \"usage-limited\")", "replacement": "if (timedOut)"},
 {"name": "runner-loop stage3 fixes review limit does not spend retry", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (verdict.status === \"usage-limited\") continue;", "replacement": "if (verdict.status === \"usage-limited\") return \"error\";"},
 {"name": "runner-loop stage3 fixes recover review wait", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (dataOf(old).status !== \"usage-limited\") return;", "replacement": "return;"},
-{"name": "runner-loop stage3 fixes no phantom usage", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (observed.group) recordSessionUsage(this.ledger,", "replacement": "recordSessionUsage(this.ledger,"}
+{"name": "runner-loop stage3 fixes no phantom usage", "file": "packages/cli/src/runner/loop.ts", "anchor": "if (observed.group) recordSessionUsage(this.ledger,", "replacement": "recordSessionUsage(this.ledger,"},
+{"name":"runner-loop stage3 fixes review limit waits for its reset","file":"packages/cli/src/runner/loop.ts","anchor":"if (previous && dataOf(previous).status === \"usage-limited\" && !waited) {","replacement":"if (false) {"},
+{"name":"runner-loop stage3 fixes review waits have a ceiling","file":"packages/cli/src/runner/loop.ts","anchor":"if (waits >= REVIEW_USAGE_WAITS) throw","replacement":"if (false) throw"}
 ]

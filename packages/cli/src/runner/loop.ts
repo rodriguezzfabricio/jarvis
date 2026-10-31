@@ -100,6 +100,12 @@ const liveLoops = new Set<string>();
 const short = (value: unknown) => String(value).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 240);
 /** A review that errors (no verdict) gets one retry (decision 100). */
 const REVIEW_TRIES = 2;
+/**
+ * Usage waits for one review of one revision before the run stops, the review checkpointed (decision 160): a
+ * limit never blocks the task or spends a retry, but a reviewer the plan keeps refusing while the live probe
+ * passes would otherwise wait forever. The eval schedule stops at the same count.
+ */
+const REVIEW_USAGE_WAITS = 8;
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
 }
@@ -555,15 +561,16 @@ class Loop {
     return typeof reason === "string" && reason.trim() ? short(reason).slice(0, 160) : `review ${reviewer} produced no verdict`;
   }
   private async reviewOnce(taskId: string, attemptId: string, candidate: CandidateRevision, reviewer: string): Promise<"pass" | "fail" | "investigate" | "error" | undefined> {
-    let backoff = 0;
+    let waits = 0;
     for (;;) {
       const task = this.state().tasks[taskId]!;
       const previous = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
       const waited = previous && this.ledger.entries().some((e) => e.actor === "runner" && e.kind === "usage_wait" && e.task_id === taskId && e.attempt_id === attemptId && e.seq > previous.seq);
       if (previous && dataOf(previous).status === "usage-limited" && !waited) {
-        // The recorded limit is the checkpoint, including when a crash preceded usage_wait.
+        // The recorded limit is the checkpoint, including when a crash preceded usage_wait; the next run resumes from it.
+        if (waits >= REVIEW_USAGE_WAITS) throw new Error(`review ${reviewer} still usage-limited after ${waits} waits; dispatch remains paused and the review resumes on the next run`);
         const reset = dataOf(previous).resetAt;
-        await waitForUsage({ ledger: this.ledger, taskId, attemptId, backoffAttempt: backoff++, outcome: {
+        await waitForUsage({ ledger: this.ledger, taskId, attemptId, backoffAttempt: waits++, outcome: {
           status: "usage-limited", resetAt: typeof reset === "number" ? reset : undefined,
           exitCode: null, durationMs: 0, usage: [], usageWaitUntil: undefined,
         } }, { now: this.now, sleep: this.sleep, notify: this.opts.notify ?? (async () => {}), reprobe: () => this.probeUsage(),

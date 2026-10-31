@@ -41,6 +41,26 @@ it("recovers a checkpointed review limit without rebuilding the candidate", asyn
   expect(review.mock.calls[1]![0].revision).toBe(review.mock.calls[0]![0].revision);
 });
 
+it("stops the run after a ceiling of review waits, unblocked and uncharged, and the next run resumes the same review", async () => {
+  const f = fixture(); let limited = true;
+  const review = vi.fn(async (r: ReviewInput): Promise<ReviewVerdict> => {
+    if (review.mock.calls.length > 12) throw new Error("review waits without a ceiling");
+    const status = limited ? "usage-limited" : "pass";
+    f.ledger.append({ kind: "review_result", actor: "runner", task_id: r.taskId, attempt_id: r.attemptId, data: { reviewer: "code", revision: r.revision, status, resetAt: null } });
+    return { recorded: true, status };
+  });
+  await expect(runLoop({ ...f.options, review })).rejects.toThrow(/still usage-limited after 8 waits/);
+  expect(review).toHaveBeenCalledTimes(9);
+  expect(f.ledger.entries().filter(e => e.kind === "usage_wait")).toHaveLength(8);
+  expect(f.ledger.entries().filter(e => e.kind === "blocked")).toHaveLength(0);
+  limited = false;
+  expect((await runLoop({ ...f.options, review, pidAlive: () => false })).status).toBe("complete");
+  expect(f.calls).toHaveLength(1);
+  expect(new Set(review.mock.calls.map(([r]) => r.revision)).size).toBe(1);
+  expect(f.ledger.entries().filter(e => e.kind === "usage_wait")).toHaveLength(9); // the checkpointed limit is waited out first
+  expect(repairsUsed(rebuildState(f.ledger.entries(), { now: f.options.now!(), verifyEvidence: f.options.verifyEvidence! }).tasks.T1!)).toBe(0);
+});
+
 it.each([false, true])("a usage limit wins over the loop timer during shutdown (repair: %s)", async (repair) => {
   const f = fixture(); const limitCall = repair ? 2 : 1;
   if (repair) f.gate.mockImplementationOnce(async g => recordGate(g, "fail"));

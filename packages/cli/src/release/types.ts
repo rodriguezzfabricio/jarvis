@@ -60,6 +60,11 @@ export interface ReachStateInput {
   manifest: ReleaseManifest;
   state: ReleaseState;
   evidence: ReleaseEvidence;
+  /**
+   * Checks the runner requires from protected state (the approved store's names), added to the plan's own required
+   * checks (decision 157). Recorded with the state, so every recheck requires them again.
+   */
+  requiredChecks?: readonly string[];
 }
 export interface StateResult {
   missing: string[];

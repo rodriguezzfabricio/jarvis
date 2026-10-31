@@ -7,6 +7,7 @@ import { verifyEvidence } from "../../packages/cli/src/checks/gate.ts";
 import { manifestHash, parseManifest, releaseRef } from "../../packages/cli/src/release/manifest.ts";
 import { recordPlan, recordObservation, reachState } from "../../packages/cli/src/release/states.ts";
 import { runRehearsal } from "../../packages/cli/src/release/rehearsal.ts";
+import { doneTask } from "./helpers/release-fixture.ts";
 
 const root = mkdtempSync(join(tmpdir(), "release-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -32,6 +33,8 @@ function validatesPaths(path: string) {
 function setup() {
   const ledger = Ledger.open(join(root, `p${++n}`));
   const m = manifest();
+  // The protected required set (decision 157): a done plan task that requires the "test" check, promoted at m.revision.
+  doneTask(ledger, "T1", ["test"]);
   const obs = (check: string, status: "pass" | "fail" = "pass", extra = {}) => recordObservation(ledger, m, check, status, extra);
   const receipt = (action: "preview" | "promote") => ledger.append({ kind: "broker_receipt", actor: "broker", data: {
     status: "succeeded", op: action === "preview" ? "deploy.preview" : "deploy.promote",
@@ -66,7 +69,7 @@ describe("runner release states", () => {
     const { ledger, m } = setup();
     const r = reachState({ ledger, manifest: m, state: "deployed", evidence: {} });
     expect(r.missing).toEqual(expect.arrayContaining(["checks", "previewDeploy", "previewSmoke", "manifest", "rollback", "rehearsal", "restore", "production", "smoke", "failureSignal"]));
-    expect(ledger.entries().filter(e => e.kind === "state_reached")).toHaveLength(0);
+    expect(ledger.entries().filter(e => e.kind === "state_reached" && (e.data as { state: string }).state !== "passed")).toHaveLength(0);
   });
   it.each(["tampered", "fail", "revision", "hash", "empty", "broker", "wrong-smoke", "stale-check"])("refuses %s evidence", mode => {
     const { ledger, m, evidence } = setup();

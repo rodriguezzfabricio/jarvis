@@ -1,0 +1,44 @@
+[
+  {
+    "name": "release_required_checks_completeness",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "if (!requiredChecks.length || requiredChecks.some(name => !covered.has(name))) ok = false;",
+    "replacement": "if (false) ok = false;"
+  },
+  {
+    "name": "release_runner_required_names",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "const requiredChecks = [...new Set([...scope.checks, ...names(input.requiredChecks)])];",
+    "replacement": "const requiredChecks = [...new Set([...scope.checks])];"
+  },
+  {
+    "name": "release_plan_tasks_done",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "ok = scope.done && scope.lastGreen === manifest.revision;",
+    "replacement": "ok = true;"
+  },
+  {
+    "name": "release_last_green_binding",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "ok = scope.done && scope.lastGreen === manifest.revision;",
+    "replacement": "ok = scope.done;"
+  },
+  {
+    "name": "release_report_rechecks_evidence",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "if (manifest && !missing.length) {",
+    "replacement": "if (manifest) {"
+  },
+  {
+    "name": "release_report_needs_accepted_manifest",
+    "file": "packages/cli/src/release/accepted.ts",
+    "anchor": "if (e.kind !== \"decision\" || e.actor !== \"runner\" || d.type !== ACCEPTED_TYPE || d.manifestHash !== hash) continue;",
+    "replacement": "if (e.kind !== \"decision\" || d.type !== ACCEPTED_TYPE || d.manifestHash !== hash) continue;"
+  },
+  {
+    "name": "release_accepted_body_binding",
+    "file": "packages/cli/src/release/accepted.ts",
+    "anchor": "if (manifestHash(manifest) === hash && manifest.project === d.project) return manifest;",
+    "replacement": "return manifest;"
+  }
+]

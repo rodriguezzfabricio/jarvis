@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
-import { createDesignReviewService, DESIGN_POLICY_HASH } from "../../packages/cli/src/review/design-service.ts";
+import { createDesignReviewService, DESIGN_POLICY_HASH, saveDesignCalibration } from "../../packages/cli/src/review/design-service.ts";
 import type { ReviewGit } from "../../packages/cli/src/review/workspace.ts";
 const roots: string[]=[];
 afterEach(()=>{ for(const root of roots.splice(0)) rmSync(root,{recursive:true,force:true}); });
@@ -128,5 +128,66 @@ describe("revision-bound design review",()=>{
     f.ledger.append({kind:"gate_result",actor:"runner",task_id:"t",attempt_id:"a",data:{check:"design-browser",revision:f.request.revision,status:"fail",evidence:{dir,files:{stdout:sha(text)}}}});
     const result=await f.service.reviewDetailed(f.request,{fixture:"good"});
     expect(result.verdict,result.error).toBe("fail");expect(result.designVerdict).toBe("pass");
+  });
+});
+
+
+describe("shared runner calibration", () => {
+  function shared() {
+    const f=fixture(), jarvisHome=join(f.root,"runner"); mkdirSync(jarvisHome);
+    const control=Ledger.open(join(jarvisHome,"controls","design"));
+    const hashes={generic:f.calibration("generic"),good:f.calibration("good")};
+    const entries=f.ledger.entries().filter(e=>Object.values(hashes).includes(e.hash));
+    const copied=entries.map(e=>control.append({kind:e.kind,actor:e.actor,data:e.data}).hash);
+    const calibration={generic:copied[0]!,good:copied[1]!};
+    return {f,jarvisHome,control,calibration};
+  }
+  it("persists a verified control for a different project's counted review", async () => {
+    const {f,jarvisHome,control,calibration}=shared();
+    saveDesignCalibration({jarvisHome,ledger:control,calibration});
+    const target=fixture();
+    const result=await createDesignReviewService({...target.options,jarvisHome}).reviewDetailed(target.request);
+    expect(result.verdict,result.error).toBe("pass"); expect(result.counts).toBe(true);
+    expect(JSON.parse(readFileSync(join(jarvisHome,"design-calibration.json"),"utf8"))).toMatchObject({ledgerFile:join(realpathSync(control.dir),"ledger.jsonl"),...calibration,model:"gpt-6-astra",policyHash:DESIGN_POLICY_HASH});
+    expect(f.reviewer).not.toHaveBeenCalled();
+  });
+  it.each(["tampered-ledger","wrong-hash","wrong-policy","wrong-model","outside-root","symlink","malformed","missing"])("ignores an unverifiable record: %s", async fault => {
+    const {jarvisHome,control,calibration}=shared();
+    saveDesignCalibration({jarvisHome,ledger:control,calibration});
+    const file=join(jarvisHome,"design-calibration.json"), record=JSON.parse(readFileSync(file,"utf8"));
+    if(fault==="tampered-ledger") writeFileSync(join(control.dir,"ledger.jsonl"),readFileSync(join(control.dir,"ledger.jsonl"),"utf8").replace('"fail"','"pass"'));
+    if(fault==="wrong-hash") record.generic="f".repeat(64);
+    if(fault==="wrong-policy") record.policyHash="f".repeat(64);
+    if(fault==="wrong-model") record.model="other-model";
+    if(fault==="outside-root") {
+      const outside=join(jarvisHome,"..","outside"); mkdirSync(outside,{mode:0o700});
+      for(const name of ["ledger.jsonl","head.hash"]) copyFileSync(join(control.dir,name),join(outside,name));
+      record.ledgerFile=join(realpathSync(outside),"ledger.jsonl");
+    }
+    writeFileSync(file,JSON.stringify(record));
+    if(fault==="symlink") { const saved=file+".saved"; writeFileSync(saved,JSON.stringify(record)); rmSync(file); symlinkSync(saved,file); }
+    if(fault==="malformed") writeFileSync(file,"not json");
+    if(fault==="missing") rmSync(file);
+    const target=fixture();
+    const result=await createDesignReviewService({...target.options,jarvisHome}).reviewDetailed(target.request);
+    expect(result.verdict).toBe("error"); expect(result.counts).toBe(false); expect(target.reviewer).not.toHaveBeenCalled();
+  });
+  it("refuses to publish a control missing friction or whose good checks failed", () => {
+    const {jarvisHome,control,calibration}=shared();
+    const bad=control.append({kind:"review_result",actor:"runner",data:{reviewer:"design",model:"gpt-6-astra",purpose:"calibration",fixture:"good",policyHash:DESIGN_POLICY_HASH,designVerdict:"pass",verdict:"fail"}}).hash;
+    expect(()=>saveDesignCalibration({jarvisHome,ledger:control,calibration:{...calibration,good:bad}})).toThrow(/calibration/);
+    expect(()=>saveDesignCalibration({jarvisHome,ledger:control,calibration:{...calibration,generic:bad}})).toThrow(/calibration/);
+  });
+  it("discovers the project's own verified controls without a global record", async () => {
+    const f=fixture(); f.calibration("generic"); f.calibration("good");
+    expect((await f.service.reviewDetailed(f.request)).counts).toBe(true);
+  });
+  it.each(["impeccable-source","impeccable-url","ai-tells","token-lint","design-md-lint","design-browser"])("reports the absent %s check and never counts it", async missing => {
+    const f=fixture();
+    const entries=f.ledger.entries().filter(e=>(e.data as {check:string}).check!==missing);
+    const ledger=Ledger.open(join(f.root,"missing-browser"));
+    for(const e of entries) ledger.append({kind:e.kind,actor:e.actor,task_id:e.task_id,attempt_id:e.attempt_id,data:e.data});
+    const result=await createDesignReviewService({...f.options,ledger}).reviewDetailed(f.request,{fixture:"good"});
+    expect(result.verdict).toBe("error"); expect(result.counts).toBe(false); expect(result.error).toContain(missing); expect(f.reviewer).not.toHaveBeenCalled();
   });
 });

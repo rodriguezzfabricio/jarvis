@@ -21,6 +21,8 @@ import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
+import { approvedDesign, designMaterialFor } from "../review/design-material.ts";
+import { createDesignReviewService, type DesignReviewServiceOptions } from "../review/design-service.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
@@ -53,6 +55,8 @@ export interface ComposeOptions {
    * (review/service.ts) with fresh read-only Claude and Codex reviewers; it records its own verdicts.
    */
   createReview?: (deps: ReviewDeps) => RunLoopOptions["review"];
+  /** Design factory seam; production keeps the calibrated, confined Codex design route. */
+  createDesignReview?: (options: DesignReviewServiceOptions) => DesignReviewService;
   /** Test seam for the notifier built from ~/.jarvis/notify.json; production uses the ntfy adapter. */
   createNotifier?: (config: NtfyOptions) => Notifier;
   /** Where the run says a notification wasn't delivered (default stderr: the detached runner's log). */
@@ -178,7 +182,10 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
   const reviewFix = reviewRun ? { request: reviewRun.output.request, tasks: new Map((reviewRun.fix.plan?.tasks ?? []).map((t) => [t.id, t])), bugTasks: new Set(reviewRun.fix.taskIds) } : undefined;
-  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
+  const reviewDeps: ReviewDeps = { context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}) };
+  const review = options.createReview ? options.createReview(reviewDeps) : defaultReview(reviewDeps, {
+    home, runBranch, ...(options.createDesignReview ? { createDesignReview: options.createDesignReview } : {}),
+  });
   const notifications = runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
@@ -254,15 +261,24 @@ function toLoopPlan(plan: Plan): LoopPlan {
 }
 
 /** The review service: one review_result per review, keyed "code", recorded by the service itself. */
-function defaultReview(deps: ReviewDeps): RunLoopOptions["review"] {
+function defaultReview(deps: ReviewDeps, designOptions: {home: string; runBranch: string; createDesignReview?: ComposeOptions["createDesignReview"]}): RunLoopOptions["review"] {
   const service = createReviewService({
     ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot, routing: DEFAULT_REVIEW_ROUTING,
     claude: createClaudeReviewer({ jarvisHome: deps.context.jarvisHome, workRoot: deps.workRoot, cacheRoot: deps.cacheRoot, preflight: async () => ({ ok: await deps.preflight() }) }),
     codex: createCodexReviewer(),
     resolveMaterial: async (request) => reviewMaterialFor(deps, request.taskId, request.revision),
   });
-  // No design service yet: `jarvis run` has no runner-owned design material or calibration record (backlog 133).
-  return reviewDispatch(service);
+  const design = approvedDesign(deps.git, designOptions.runBranch)
+    ? (designOptions.createDesignReview ?? createDesignReviewService)({
+      ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot,
+      home: designOptions.home, jarvisHome: deps.context.jarvisHome,
+      resolveMaterial: async () => {
+        const snapshot = approvedDesign(deps.git, designOptions.runBranch);
+        if (!snapshot) throw new Error("approved DESIGN.md is missing from the run branch");
+        return designMaterialFor({repoPath:deps.context.repoPath, snapshot, store:new ChecksStore(deps.context.projectDir), ledger:deps.ledger});
+      },
+    }) : undefined;
+  return reviewDispatch(service, design);
 }
 
 /**

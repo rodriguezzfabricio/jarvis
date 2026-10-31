@@ -2,11 +2,11 @@ import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestBroker } from "../../packages/cli/src/broker/client.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as brokerHost from "../../packages/cli/src/broker/host.ts";
+import { requestBroker } from "../../packages/cli/src/broker/client.ts";
 import type { SignalHost } from "../../packages/cli/src/broker/host.ts";
-import { prepareProductionRun, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
+import { prepareProductionRun, reviewDispatch, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
 import type { PreparedRun } from "../../packages/cli/src/commands/run.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
@@ -33,7 +33,9 @@ const seams = (extra: Partial<ComposeOptions> = {}): ComposeOptions => ({
   preflight: async () => true, reprobe: async () => true, createReview: () => async () => "pass" as const, signals: new FakeHost(), warn: () => {}, ...extra,
 });
 async function prepare(p: E2EProject, ctx: object = {}, extra: Partial<ComposeOptions> = {}): Promise<PreparedRun> {
-  const run = await prepareProductionRun(context(p, ctx), { home: p.home, ...seams(extra) });
+  const options = { home: p.home, ...seams(extra) };
+  if (Object.hasOwn(extra, "createDesignReview")) delete options.createReview;
+  const run = await prepareProductionRun(context(p, ctx), options);
   prepared.push(run);
   return run;
 }
@@ -234,3 +236,42 @@ async function runTask(p: E2EProject, run: PreparedRun) {
     logPath: join(p.projectDir, "logs", "T1-a1.jsonl"), onSpawn: () => true, onGroupExit: () => {},
   });
 }
+
+
+describe("production design composition", () => {
+  beforeEach(() => { vi.spyOn(brokerHost,"hostBroker").mockResolvedValue({socketPath:"/fake/broker.sock",alias:"/fake/alias.sock",reconciled:0,close:async()=>{}}); });
+  afterEach(() => vi.restoreAllMocks());
+  it("composes the design service from committed design and dispatches its recorded verdict", async () => {
+    const p=project();
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"## Overview\n- Principles: List first.\n");
+    writeFileSync(join(p.repoPath,"PRODUCT.md"),"Habits");
+    safeGit(p.repoPath,["add","DESIGN.md","PRODUCT.md"],{home:p.gitHome});
+    safeGit(p.repoPath,["commit","-qm","approved design"],{home:p.gitHome});
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"candidate instructions");
+    const reviewDetailed=vi.fn(async()=>({verdict:"pass",counts:true} as never));
+    const createDesignReview=vi.fn(()=>({reviewDetailed}));
+    const run=await prepare(p,{}, {createDesignReview});
+    expect(createDesignReview).toHaveBeenCalledOnce();
+    expect(createDesignReview.mock.calls[0]).toMatchObject([{projectDir:p.projectDir,jarvisHome:p.jarvisHome}]);
+    const request={taskId:"T1",attemptId:"a1",revision:"a".repeat(40)};
+    expect(await run.loop.review!({...request,reviewer:"design"} as never)).toEqual({status:"pass",recorded:true});
+    expect(reviewDetailed).toHaveBeenCalledWith(request);
+  });
+  it("does not compose design from a working-tree-only DESIGN.md", async () => {
+    const p=project(); writeFileSync(join(p.repoPath,"DESIGN.md"),"unapproved");
+    const createDesignReview=vi.fn();
+    const run=await prepare(p,{}, {createDesignReview});
+    expect(createDesignReview).not.toHaveBeenCalled();
+    expect(await run.loop.review!({taskId:"T1",attemptId:"a1",revision:"a".repeat(40),reviewer:"design"} as never)).toEqual({status:"error",recorded:true});
+  });
+  it("dispatches code and design to separate services, preserving errors", async () => {
+    const code={reviewDetailed:vi.fn(async()=>({verdict:"fail"} as never))};
+    const design={reviewDetailed:vi.fn(async()=>({verdict:"error"} as never))};
+    const dispatch=reviewDispatch(code,design)!;
+    const request={taskId:"T1",attemptId:"a1",revision:"a".repeat(40)};
+    expect(await dispatch({...request,reviewer:"design"} as never)).toEqual({status:"error",recorded:true});
+    expect(code.reviewDetailed).not.toHaveBeenCalled();
+    expect(await dispatch({...request,reviewer:"code"} as never)).toEqual({status:"fail",recorded:true});
+    expect(code.reviewDetailed).toHaveBeenCalledOnce(); expect(design.reviewDetailed).toHaveBeenCalledOnce();
+  });
+});

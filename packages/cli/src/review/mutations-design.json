@@ -184,5 +184,89 @@
     "file": "packages/cli/src/review/design-evidence.ts",
     "anchor": "if (input.designSource !== \"new\" && input.designSource !== \"existing\") throw",
     "replacement": "if (false) throw"
+  },
+  {
+    "name": "Design material uses resolved branch objects",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": "design: git([\"show\", `${revision}:DESIGN.md`])",
+    "replacement": "design: git([\"show\", \"HEAD:DESIGN.md\"])"
+  },
+  {
+    "name": "Design material requires approved checks",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": "if (!input.store.verify(input.ledger).ok)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design source defaults to new",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": ".default(\"new\")",
+    "replacement": ".default(\"existing\")"
+  },
+  {
+    "name": "Shared design calibration verifies the source chain",
+    "file": "packages/cli/src/review/design-calibration.ts",
+    "anchor": "if (!verified.ok || verified.repairable.length)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Shared design calibration stays under runner home",
+    "file": "packages/cli/src/review/design-calibration.ts",
+    "anchor": "!file.startsWith(`${root}/`) || ",
+    "replacement": "false || "
+  },
+  {
+    "name": "Shared design calibration pins entry hashes",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "matchingCalibration(shared.entries, shared.record)",
+    "replacement": "matchingCalibration(shared.entries)"
+  },
+  {
+    "name": "Shared design calibration pins model",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "shared.record.model === DESIGN_REVIEW_MODEL",
+    "replacement": "true"
+  },
+  {
+    "name": "Shared design calibration pins policy",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "shared.record.policyHash === DESIGN_POLICY_HASH",
+    "replacement": "true"
+  },
+  {
+    "name": "Design review requires ai tells evidence",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "\"impeccable-url\", \"ai-tells\", \"token-lint\"",
+    "replacement": "\"impeccable-url\", \"token-lint\""
+  },
+  {
+    "name": "Design lint verify rejects findings",
+    "file": "packages/cli/src/lanes/design-lint-verify.ts",
+    "anchor": "if (value.findings.length !== 0)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design lint verify requires case completion",
+    "file": "packages/cli/src/lanes/design-lint-verify.ts",
+    "anchor": "if (readFileSync(join(dir, \"code\"), \"utf8\").trim() !== \"0\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "Design lint verify requires complete observation",
+    "file": "packages/cli/src/lanes/design-lint-verify.ts",
+    "anchor": "value.complete !== true || ",
+    "replacement": "false || "
+  },
+  {
+    "name": "Design lint uses approved tokens",
+    "file": "packages/cli/src/lanes/design-lint-driver.ts",
+    "anchor": "const design = lintDesign(config.design);",
+    "replacement": "const design = lintDesign(sourceText(repo, \"DESIGN.md\"));"
+  },
+  {
+    "name": "Design lint refuses symlink sources",
+    "file": "packages/cli/src/lanes/design-lint-driver.ts",
+    "anchor": "path = join(path, part);",
+    "replacement": "path = realpathSync(join(path, part));"
   }
 ]

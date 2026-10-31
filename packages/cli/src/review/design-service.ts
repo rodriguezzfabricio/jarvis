@@ -103,7 +103,8 @@ function evidenceFor(options: DesignReviewServiceOptions, request: ReviewRequest
   const missing = REQUIRED_CHECKS.filter(check => !latest.has(check));
   if (missing.length) throw new Error(`missing design code checks for this attempt and revision: ${missing.join(", ")}`);
   // The latest result under each required name must have run the runner's protected definition, cases and verify alike.
-  const definition = (value: {cases?: unknown; verify?: unknown}) => canonical({cases: value.cases, verify: value.verify});
+  if (typeof protectedChecks !== "object" || protectedChecks === null) throw new Error("design material names no protected design definitions");
+  const definition =(value: {cases?: unknown; verify?: unknown}) => canonical({cases: value.cases, verify: value.verify});
   const foreign = REQUIRED_CHECKS.filter(check => {
     const expected = Object.hasOwn(protectedChecks, check) ? protectedChecks[check] : undefined;
     return !expected || definition(latest.get(check)!.data as Record<string, unknown>) !== definition(expected);

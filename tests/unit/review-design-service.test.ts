@@ -220,6 +220,9 @@ describe("design evidence comes only from the protected design definitions", () 
     const {["design-browser"]:_browser,...rest}=material.checks;
     const result=await createDesignReviewService({...f.options,resolveMaterial:async()=>({...material,checks:rest})}).reviewDetailed(f.request,{fixture:"good"});
     expect(result.verdict).toBe("error"); expect(result.error).toContain("design-browser"); expect(f.reviewer).not.toHaveBeenCalled();
+    // A caller written before decision 156 (the control's harness) gets a plain refusal.
+    const none=await createDesignReviewService({...f.options,resolveMaterial:async()=>({...material,checks:undefined as never})}).reviewDetailed(f.request,{fixture:"good"});
+    expect(none.verdict).toBe("error"); expect(none.error).toMatch(/no protected design definitions/); expect(f.reviewer).not.toHaveBeenCalled();
   });
 });
 

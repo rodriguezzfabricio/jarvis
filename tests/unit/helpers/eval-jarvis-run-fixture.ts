@@ -41,7 +41,9 @@ export function planner(writes: string | null | readonly (string | null)[], outc
     const n = inputs.push(input) - 1;
     const write = pick(writeList, n);
     if (write !== null) { const dir = join(input.workspace, ".jarvis"); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.json"), write); }
-    return pick(outcomeList, n);
+    const outcome = pick(outcomeList, n);
+    if (outcome.status !== "refused") input.onSpawn?.(2100000000 + n);
+    return outcome;
   } } };
 }
 

@@ -47,7 +47,7 @@ export interface ReviewInput {
  * A review function that can fail for infrastructure reasons must return the recorded form: a plain
  * "fail" is a verdict on the code and spends a repair.
  */
-export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true };
+export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error" | "usage-limited"; recorded: true };
 export interface RunLoopOptions {
   projectId: string;
   projectDir: string;
@@ -426,7 +426,7 @@ class Loop {
     const result = (outcome: TaskOutcome & { finalMessage?: string }) => {
       if (checkpointError !== undefined) throw checkpointError;
       if (group && !groupExited) throw new Error("process group did not exit; attempt remains recoverable");
-      if (timedOut) outcome = { ...outcome, status: "timeout" };
+      if (timedOut && outcome.status !== "usage-limited") outcome = { ...outcome, status: "timeout" };
       return { outcome, group, identityMissing, endedGroup: group ? { ...group, exited: true } : undefined };
     };
     return { onSpawn, onGroupExit, result, dispose };
@@ -448,10 +448,11 @@ class Loop {
         ...(failure ? { failure } : {}),
         onSpawn: observer.onSpawn, onGroupExit: observer.onGroupExit,
       }); } finally { this.footprint?.sessionEnded(); }
-      // A usage-log failure never fails the run (runner/usage-log.ts); a refused session isn't logged.
-      recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: this.opts.tier ?? 1,
-        route: routeTask("build", this.opts.tier ?? 1, failure, this.routing), ...(failure ? { failure } : {}), outcome });
-      return observer.result(outcome);
+      const observed = observer.result(outcome);
+      // A usage-log failure never fails the run; a preflight that started nothing has no usage.
+      if (observed.group) recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: this.opts.tier ?? 1,
+        route: routeTask("build", this.opts.tier ?? 1, failure, this.routing), ...(failure ? { failure } : {}), outcome: observed.outcome });
+      return observed;
     } finally { observer.dispose(); }
   }
   private async attempt(task: TaskState, workspace: TaskWorkspace, repair: string, failure?: EscalationReason): Promise<void> {
@@ -533,7 +534,7 @@ class Loop {
     task = this.state().tasks[taskId]!;
     for (const reviewer of task.definition.requiredReviews) {
       const old = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
-      if (old) { if (dataOf(old).status === "pass") continue; return; }
+      if (old) { if (dataOf(old).status === "pass") continue; if (dataOf(old).status !== "usage-limited") return; }
       // An "error" is the review's infrastructure failing, not the code (decisions 100, 111): it is retried, and
       // if it persists the task blocks with that reason. Neither spends a repair or sends the builder a fix prompt.
       let status: "pass" | "fail" | "investigate" | "error" | undefined;
@@ -554,19 +555,35 @@ class Loop {
     return typeof reason === "string" && reason.trim() ? short(reason).slice(0, 160) : `review ${reviewer} produced no verdict`;
   }
   private async reviewOnce(taskId: string, attemptId: string, candidate: CandidateRevision, reviewer: string): Promise<"pass" | "fail" | "investigate" | "error" | undefined> {
-    const task = this.state().tasks[taskId]!;
-    await this.pauseUsage();
-    this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
-    const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
-      evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
-    if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
-      const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
-      // The service records its own verdict; trust only what reached the ledger for this revision.
-      return recorded && dataOf(recorded).status === verdict.status && ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
+    let backoff = 0;
+    for (;;) {
+      const task = this.state().tasks[taskId]!;
+      const previous = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
+      const waited = previous && this.ledger.entries().some((e) => e.actor === "runner" && e.kind === "usage_wait" && e.task_id === taskId && e.attempt_id === attemptId && e.seq > previous.seq);
+      if (previous && dataOf(previous).status === "usage-limited" && !waited) {
+        // The recorded limit is the checkpoint, including when a crash preceded usage_wait.
+        const reset = dataOf(previous).resetAt;
+        await waitForUsage({ ledger: this.ledger, taskId, attemptId, backoffAttempt: backoff++, outcome: {
+          status: "usage-limited", resetAt: typeof reset === "number" ? reset : undefined,
+          exitCode: null, durationMs: 0, usage: [], usageWaitUntil: undefined,
+        } }, { now: this.now, sleep: this.sleep, notify: this.opts.notify ?? (async () => {}), reprobe: () => this.probeUsage(),
+          ...(this.opts.usageMarginMs !== undefined ? { marginMs: this.opts.usageMarginMs } : {}) });
+      }
+      await this.pauseUsage();
+      this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
+      const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
+        evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
+      if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
+        const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
+        // The service records its own verdict; trust only what reached the ledger for this revision.
+        if (!recorded || dataOf(recorded).status !== verdict.status) return undefined;
+        if (verdict.status === "usage-limited") continue;
+        return ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
+      }
+      if (verdict !== "pass" && verdict !== "fail") return undefined;
+      this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status: verdict } });
+      return verdict;
     }
-    if (verdict !== "pass" && verdict !== "fail") return undefined;
-    this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status: verdict } });
-    return verdict;
   }
   /** Every required gate and review passed at the task's current candidate revision. */
   private verdictsPass(task: TaskState): boolean {
@@ -660,7 +677,9 @@ class Loop {
         }
         continue;
       }
-      if (task.evidence.some((e) => dataOf(e).revision === revision && ["fail", "tampered", "error", "investigate"].includes(String(dataOf(e).status)))) continue;
+      const latest = new Map<string, LedgerEntry>();
+      for (const e of task.evidence.filter((e) => dataOf(e).revision === revision)) latest.set(`${e.kind}:${String(dataOf(e).reviewer ?? dataOf(e).check)}`, e);
+      if ([...latest.values()].some((e) => ["fail", "tampered", "error", "investigate"].includes(String(dataOf(e).status)))) continue;
       await this.verifyCandidate(task.id, task.attemptId!, candidate);
     }
   }

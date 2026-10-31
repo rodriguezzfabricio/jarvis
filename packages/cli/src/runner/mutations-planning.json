@@ -520,5 +520,6 @@
     "file": "packages/cli/src/runner/loop.ts",
     "anchor": "attemptId: workspace.attemptId, role: \"build\", tier: this.opts.tier ?? 1,",
     "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
-  }
+  },
+{"name": "stage3 fixes bug handoff requires bug triage", "file": "packages/cli/src/runner/plan.ts", "anchor": "if (classified.type !== \"bug\") throw", "replacement": "if (false) throw"}
 ]

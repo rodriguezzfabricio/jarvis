@@ -74,8 +74,8 @@
   {
     "name": "review Claude live preflight",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "if (!(await opts.preflight(input)).ok)",
-    "replacement": "if (false)"
+    "anchor": "if (!preflight.ok) {",
+    "replacement": "if (false) {"
   },
   {
     "name": "review Claude closed network",
@@ -206,8 +206,8 @@
   {
     "name": "review injected investigation cannot pass",
     "file": "packages/cli/src/review/service.ts",
-    "anchor": "(await reviewDetailed(request)).verdict === \"pass\" ? \"pass\" : \"fail\"",
-    "replacement": "(await reviewDetailed(request)).verdict === \"error\" ? \"fail\" : \"pass\""
+    "anchor": "result.verdict === \"pass\" ? \"pass\" : \"fail\"",
+    "replacement": "\"pass\""
   },
   {
     "name": "review record investigation items",
@@ -392,7 +392,7 @@
   {
     "name": "review invalid checks charged as code failure",
     "file": "packages/cli/src/review/service.ts",
-    "anchor": "...(!evaluated.valid ? { verdict: \"error\" as const } : {}),",
+    "anchor": "...(!evaluated.valid && !output.usageLimit ? { verdict: \"error\" as const } : {}),",
     "replacement": ""
   },
   {
@@ -418,5 +418,23 @@
     "file": "packages/cli/src/review/verdict.ts",
     "anchor": "entries.every(([, read]) => typeof read === \"string\" && read.trim().length > 0)",
     "replacement": "true"
+  },
+  {
+    "name": "stage3 fixes review runtime limit",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "if (!result.overflowed && (limitedByError || infos.some((r) => r.status === \"rejected\")))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "stage3 fixes review preflight reset",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "if (preflight.usageWaitUntil !== undefined) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "stage3 fixes reviewer tokens",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "sessionUsage: sessionUsage(events)",
+    "replacement": "sessionUsage: sessionUsage([])"
   }
 ]

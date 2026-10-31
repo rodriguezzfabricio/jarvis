@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AppendInput } from "../ledger/ledger.ts";
 import type { Spec } from "../spec/index.ts";
-import type { Triage } from "../triage/triage.ts";
+import { triage, type Triage } from "../triage/triage.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
 const text = z.string().trim().min(1).max(16_000);
@@ -140,4 +140,15 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"],
     ...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),
   }] });
+}
+
+/** Runner-owned bug handoff; session-written architect plans still require an approved spec. */
+export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly { id: string; goal: string; exitCondition: string }[] = []): Plan {
+  const report = text.parse(request);
+  const classified = triage({ request: report, folder: { empty: false, designMd: false } });
+  if (classified.type !== "bug") throw new Error("--request accepts only bug work; other pipelines keep their spec or explicit session-plan handoff");
+  const plan = singleTaskPlan(classified, report, checks);
+  const same = existing.find((t) => t.goal === report && t.exitCondition === BUG_EXIT_CONDITION);
+  const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
+  return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });
 }

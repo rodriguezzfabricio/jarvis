@@ -14,7 +14,7 @@ export interface DesignChecksPlan { nodeBin:string; scanner:ImpeccableDriverConf
 const MODULES = [
   "lanes/impeccable.ts", "lanes/impeccable-browser.ts", "lanes/impeccable-driver.ts", "lanes/impeccable-verify.ts",
   "lanes/browser.ts", "lanes/browser-frames.ts", "lanes/toolchain.ts", "lanes/chromium-install.ts", "lanes/materialize.ts", "lanes/verify.ts",
-  "proc/session.ts", "review/design-browser.ts", "review/design-evidence.ts", "review/design-verdict.ts", "review/design-check.ts", "review/evidence.ts",
+  "proc/session.ts", "review/design-browser.ts", "review/design-evidence.ts", "review/design-verdict.ts", "review/verdict.ts", "review/design-check.ts", "review/evidence.ts",
 ];
 
 const sha256=(data:Buffer)=>createHash("sha256").update(data).digest("hex");

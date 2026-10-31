@@ -304,5 +304,11 @@
     "file": "packages/cli/src/review/design-service.ts",
     "anchor": "\n    && (!calibration || calibrationEntry(entries.find(e => e.hash === calibration[fixture]), fixture))",
     "replacement": ""
+  },
+  {
+    "name": "Design verdict reads one fenced JSON block",
+    "file": "packages/cli/src/review/design-verdict.ts",
+    "anchor": "JSON.parse(unfencedJson(raw))",
+    "replacement": "JSON.parse(raw)"
   }
 ]

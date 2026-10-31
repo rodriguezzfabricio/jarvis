@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runDoctor, doctorExitCode } from "../../packages/cli/src/doctor/doctor.ts";
 import { toolDoctorChecks, type ToolDoctorDeps } from "../../packages/cli/src/doctor/tools.ts";
 import { fakeToolchain } from "../fixtures/qa/toolchain.ts";
-import { NETLIFY_CLI_VERSION, VERCEL_CLI_VERSION, pinnedDeployProviderBin, pinnedDeployProviders, pinnedMaestroBin, pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
+import { pinnedMaestroBin, pinnedProviderBin, pinnedProviderNode, pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 
 const roots: string[] = [];
 const temp = () => { const p = mkdtempSync(join(tmpdir(), "doctor-tools-")); roots.push(p); return p; };
@@ -53,35 +53,36 @@ describe("optional lane tools in doctor", () => {
     expect(await level({ exists: (p: string) => p !== IMPECCABLE.bin })).toMatchObject({ level: "warn", detail: expect.stringContaining("unavailable") });
     expect(await level({ hashFile: () => "f".repeat(64), required: ["impeccable"] })).toMatchObject({ level: "fail" });
   });
-  it("checks the pinned deploy provider launchers by absolute path at their exact versions, never PATH (decision 161)", async () => {
-    const { options } = setup(); const homes: string[] = [];
-    const vercel = pinnedDeployProviderBin("vercel", "/fake-home"); const netlify = pinnedDeployProviderBin("netlify", "/fake-home");
-    expect(vercel).toBe(join("/fake-home", ".jarvis", "tools", "vercel", VERCEL_CLI_VERSION, "bin", "vercel"));
-    expect(netlify).toBe(join("/fake-home", ".jarvis", "tools", "netlify-cli", NETLIFY_CLI_VERSION, "bin", "netlify"));
-    const outputs: Record<string, string> = { [vercel]: `${VERCEL_CLI_VERSION}\n`, [netlify]: `netlify-cli/${NETLIFY_CLI_VERSION} darwin-arm64 node-v24.21.0\n` };
-    const exec = vi.fn((bin: string, _args: string[], env?: Record<string, string>) => {
-      if (!(bin in outputs)) return "";
+  it("checks the pinned deploy provider CLIs through the pinned Node, at their exact versions, never PATH (decision 161)", async () => {
+    const { options } = setup(); const homes: string[] = []; const node = pinnedProviderNode();
+    const vercel = pinnedProviderBin("vercel", "/fake-home"); const netlify = pinnedProviderBin("netlify", "/fake-home");
+    expect(node).toBe(process.execPath);
+    const outputs: Record<string, string> = { [vercel]: "48.0.0\n", [netlify]: "netlify-cli/23.0.0 darwin-arm64 node-v24.21.0\n" };
+    const exec = vi.fn((bin: string, args: string[], env?: Record<string, string>) => {
+      if (bin !== node || !(args[0]! in outputs)) return "";
       homes.push(env!.HOME!); expect(readdirSync(env!.HOME!)).toEqual([]);
-      return outputs[bin]!;
+      return outputs[args[0]!]!;
     });
-    const deploy = async (extra: Partial<ToolDoctorDeps> = {}) => (await toolDoctorChecks({ ...options, exec, ...extra })).filter(c => c.name.startsWith("deploy."));
+    const providerPins = { vercel: { version: "48.0.0" }, netlify: { version: "23.0.0" } };
+    const deploy = async (extra: Partial<ToolDoctorDeps> = {}) => (await toolDoctorChecks({ ...options, exec, providerPins, ...extra })).filter(c => c.name.startsWith("deploy."));
     expect(await deploy()).toEqual([
-      { name: "deploy.vercel", level: "pass", detail: `${vercel}: ${VERCEL_CLI_VERSION}` },
-      { name: "deploy.netlify", level: "pass", detail: `${netlify}: ${NETLIFY_CLI_VERSION}` }]);
-    for (const [bin, args, env] of exec.mock.calls.filter(([bin]) => bin in outputs)) {
-      expect(args).toEqual(["--version"]); expect(env).toEqual({ PATH: "/usr/bin:/bin", HOME: env!.HOME, CI: "1" });
-    }
+      { name: "deploy.vercel", level: "pass", detail: `${vercel}: 48.0.0` },
+      { name: "deploy.netlify", level: "pass", detail: `${netlify}: 23.0.0` }]);
+    const probes = exec.mock.calls.filter(([bin]) => bin === node);
+    expect(probes.map(([, args]) => args)).toEqual([[vercel, "--version"], [netlify, "--version"]]);
+    for (const [, , env] of probes) expect(env).toEqual({ PATH: "/usr/bin:/bin", HOME: env!.HOME, CI: "1" });
     expect(homes).toHaveLength(2); expect(homes.some(existsSync)).toBe(false);
+    const unpinned = await deploy({ providerPins: { netlify: { version: "23.0.0" } } });
+    expect(unpinned[0]).toMatchObject({ level: "warn", detail: expect.stringContaining("no pinned version in config/pins.ts PROVIDER_CLI_PINS") });
+    expect(exec.mock.calls.filter(([bin]) => bin === node)).toHaveLength(3);
     const missing = await deploy({ exists: (p: string) => p !== vercel });
     expect(missing[0]).toMatchObject({ level: "warn", detail: expect.stringContaining(`missing ${vercel}`) });
-    expect(missing[0]!.detail).toContain(`Vercel CLI ${VERCEL_CLI_VERSION}`); expect(missing[0]!.detail).toContain("never from PATH");
-    outputs[vercel] = "48.0.1\n"; outputs[netlify] = `netlify/${NETLIFY_CLI_VERSION}\n`;
+    expect(missing[0]!.detail).toContain("Vercel CLI 48.0.0"); expect(missing[0]!.detail).toContain("never from PATH");
+    outputs[vercel] = "48.0.1\n"; outputs[netlify] = "netlify/23.0.0\n";
     const wrong = await deploy({ required: ["deploy.netlify"] });
-    expect(wrong).toMatchObject([{ level: "warn", detail: expect.stringContaining(`reports 48.0.1, pinned ${VERCEL_CLI_VERSION}`) },
-      { level: "fail", detail: expect.stringContaining(`pinned ${NETLIFY_CLI_VERSION}`) }]);
-    expect(pinnedDeployProviders("/runner/projects/p", "/fake-home")).toEqual({
-      vercel: { bin: vercel, version: VERCEL_CLI_VERSION, home: "/runner/projects/p", cwd: "/runner/projects/p" },
-      netlify: { bin: netlify, version: NETLIFY_CLI_VERSION, home: "/runner/projects/p", cwd: "/runner/projects/p" } });
+    expect(wrong).toMatchObject([{ level: "warn", detail: expect.stringContaining("reports 48.0.1, pinned 48.0.0") },
+      { level: "fail", detail: expect.stringContaining("pinned 23.0.0") }]);
+    expect((await deploy({ providerPins: {}, required: ["deploy.vercel"] }))[0]).toMatchObject({ level: "fail" });
   });
   it("does not mistake malformed output or a tampered manifest for an installed tool", async () => {
     const { options, approved } = setup();

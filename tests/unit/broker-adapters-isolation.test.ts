@@ -5,6 +5,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Broker } from "../../packages/cli/src/broker/broker.ts";
 import { deployAdapters } from "../../packages/cli/src/broker/adapters/index.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
+import type { ProviderConfig } from "../../packages/cli/src/broker/adapters/types.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import { copyDeploymentArtifacts } from "../../packages/cli/src/release/artifacts.ts";
 import { artifactDigest, manifestHash, parseManifest, releaseRef } from "../../packages/cli/src/release/manifest.ts";
@@ -27,7 +28,7 @@ function fixture(provider: "vercel" | "netlify", files: Record<string, string> =
     siteId: "site", productionUrl: "https://app.example.com", smokePaths: ["/"], data: { kind: "none" }, rollback: { steps: ["Restore captured target"] } });
   const projectConfig = { project: "p", provider, siteId: "site", orgId: "org", productionUrl: m.productionUrl, artifactRoot: artifactDir,
     privateRoot, snapshotRoot: privateRoot, artifacts: { [m.revision]: m.artifactHash } };
-  const config = { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: privateRoot, cwd: privateRoot };
+  const config: ProviderConfig = { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: privateRoot, cwd: privateRoot };
   const calls: SessionSpec[] = []; const reads: string[] = [];
   let inspectCount = 0;
   let inspect = (_count: number): SessionOutcome => current("old");
@@ -50,7 +51,8 @@ function fixture(provider: "vercel" | "netlify", files: Record<string, string> =
 
 const hostile = ["vercel.ts", "vercel.js", "vercel.mjs", "vercel.cjs", "VERCEL.TS", "netlify.toml", "netlify/functions/leak.js",
   ".netlify/plugins/leak.js", "netlify/edge-functions/leak.js", "package.json", ".npmrc", ".yarnrc.yml", "node_modules/hook.js",
-  ".vercel/output/functions/leak.func/index.js", "vercel.json", "now.json", ".git/config", "assets/package.json", "payload.exe"];
+  ".vercel/output/functions/leak.func/index.js", "vercel.json", "now.json", ".git/config", "assets/package.json", "payload.exe",
+  "_redirects", "_headers", "assets/_redirects", "run.sh", "trailing."];
 describe.each(["vercel", "netlify"] as const)("%s credential isolation", provider => {
   it.each(hostile)("refuses approved but executable configuration %s before any process or credential read", async name => {
     const f = fixture(provider, { [name]: 'require("node:fs").writeFileSync("leaked", process.env.VERCEL_TOKEN || process.env.NETLIFY_AUTH_TOKEN)' });
@@ -71,6 +73,30 @@ describe.each(["vercel", "netlify"] as const)("%s credential isolation", provide
       expect(reason).toMatch(/^[\x20-\x7e]*$/); expect(reason.length).toBeLessThanOrEqual(300);
       expect(f.calls).toEqual([]); expect(f.reads).toEqual([]);
     }
+  });
+  it("deploys extensionless static files such as /health and CNAME", () => {
+    const f = fixture(provider, { health: "ok\n", CNAME: "app.example.com\n", "docs/LICENSE": "MIT\n" });
+    const staged = copyDeploymentArtifacts(f.m, f.projectConfig, f.ledger.dir);
+    try {
+      const web = join(staged.dir, provider === "vercel" ? ".vercel/output/static" : "public");
+      expect(readFileSync(join(web, "health"), "utf8")).toBe("ok\n");
+      expect(readFileSync(join(web, "CNAME"), "utf8")).toBe("app.example.com\n");
+      expect(readFileSync(join(web, "docs/LICENSE"), "utf8")).toBe("MIT\n");
+    } finally { staged.dispose(); }
+  });
+  it("starts an interpreted CLI through its absolute interpreter with the same arguments and environment", async () => {
+    const f = fixture(provider); f.config.interpreter = "/trusted/node/bin/node";
+    expect((await f.broker().handle({ op: "deploy.preview", payload: { ref: releaseRef(f.m, "preview") } })).status).toBe("succeeded");
+    expect(f.calls).toHaveLength(2);
+    for (const s of f.calls) { expect(s.bin).toBe("/trusted/node/bin/node"); expect(s.args[0]).toBe(f.config.bin); }
+    expect(f.calls[0]!.args.slice(1)).toEqual(["--version"]); expect(f.calls[0]!.env).toEqual({ PATH: "/usr/bin:/bin", HOME: f.calls[0]!.env.HOME, CI: "1" });
+    expect(f.calls[1]!.args[1]).toBe("deploy"); expect(f.calls[1]!.args).toContain(provider === "vercel" ? "--prebuilt" : "--no-build");
+    expect(Object.values(f.calls[1]!.env).filter(v => v === TOKEN)).toHaveLength(1);
+  });
+  it("refuses a relative interpreter, which would be a PATH lookup", () => {
+    const f = fixture(provider);
+    expect(() => deployAdapters({ ledger: f.ledger, project: "p", projectConfig: f.projectConfig, resolveManifest: () => f.m,
+      providers: { [provider]: { ...f.config, interpreter: "node" } } })).toThrow(/absolute/);
   });
   it("refuses an artifact root that is a file, not a static directory", () => {
     const f = fixture(provider); const file = join(f.m.artifactDir, "index.html");

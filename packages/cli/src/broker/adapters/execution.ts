@@ -3,7 +3,16 @@ import { join } from "node:path";
 import { runSession } from "../../proc/session.ts";
 import { realChild } from "../../release/paths.ts";
 import type { Provider } from "../../release/types.ts";
+import { PROVIDERS } from "./providers.ts";
 import type { DeployAdapterOptions, ProviderCommand, ProviderConfig } from "./types.ts";
+
+/**
+ * How a provider process starts: the pinned binary itself, or `<interpreter> <bin>` for a script CLI, both by absolute
+ * path. Shared with doctor, so its probe starts the CLI exactly as the adapters do.
+ */
+export function providerLaunch(config: Pick<ProviderConfig, "bin" | "interpreter">, args: readonly string[]): { bin: string; args: string[] } {
+  return config.interpreter !== undefined ? { bin: config.interpreter, args: [config.bin, ...args] } : { bin: config.bin, args: [...args] };
+}
 
 /** Each process gets fresh runner-only directories; provider state never survives to the next call. */
 export async function runCommand(options: DeployAdapterOptions, config: ProviderConfig, command: ProviderCommand) {
@@ -14,7 +23,8 @@ export async function runCommand(options: DeployAdapterOptions, config: Provider
   try {
     control = mkdtempSync(join(cwdRoot, "provider-control-"));
     const cwd = join(control, "cwd"); mkdirSync(cwd, { mode: 0o700 });
-    return await (options.run ?? runSession)({ bin: config.bin, args: command.args, cwd,
+    const launch = providerLaunch(config, command.args);
+    return await (options.run ?? runSession)({ bin: launch.bin, args: launch.args, cwd,
       env: { PATH: "/usr/bin:/bin", HOME: home, CI: "1", ...command.env }, timeoutMs: options.timeoutMs ?? 120_000,
       killGraceMs: 5_000, maxOutputBytes: 1024 * 1024 });
   } finally {
@@ -23,15 +33,9 @@ export async function runCommand(options: DeployAdapterOptions, config: Provider
   }
 }
 
-/**
- * The exact version a provider CLI's `--version` stdout names, or undefined. Vercel prints the bare version (its
- * "Vercel CLI x.y.z" banner goes to stderr); Netlify prints its user agent, `netlify-cli/x.y.z <os>-<arch> node-v<n>`.
- * Shared with doctor. Both formats still need checking against the pinned installs (decision 161).
- */
+/** The exact version a provider CLI's `--version` stdout names, or undefined (each provider's reader; shared with doctor). */
 export function providerVersion(provider: Provider, stdout: string): string | undefined {
-  const output = stdout.trim();
-  return provider === "vercel" ? /^(?:Vercel CLI )?(\d+\.\d+\.\d+)$/.exec(output)?.[1]
-    : /^netlify-cli\/(\d+\.\d+\.\d+)(?: [A-Za-z0-9_.-]+)*$/.exec(output)?.[1];
+  return PROVIDERS[provider].version(stdout);
 }
 
 /** Version probes run before credentials are read; failures cannot become a deployment attempt. */

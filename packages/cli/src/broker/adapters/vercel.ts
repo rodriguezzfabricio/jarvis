@@ -22,3 +22,7 @@ export function readVercelCurrent(stdout: string, setup: ReleaseProjectConfig): 
   if (data.projectId !== setup.siteId || typeof data.id !== "string" || typeof data.url !== "string") throw new Error("unexpected current production");
   return { id: data.id, url: data.url.startsWith("https://") ? data.url : `https://${data.url}` };
 }
+/** `--version` prints the bare version on stdout (the "Vercel CLI x.y.z" banner goes to stderr); unverified (backlog 195). */
+export function vercelVersion(stdout: string): string | undefined {
+  return /^(?:Vercel CLI )?(\d+\.\d+\.\d+)$/.exec(stdout.trim())?.[1];
+}

@@ -30,17 +30,23 @@ separately and rejects sources whose realpath escapes it, including symlink esca
 
 ## Provider execution and rollback
 
-Decision 161. Provider config is `pinnedDeployProviders(projectDir)` from
-`config/pins.ts`: `{ bin, version, home, cwd }`. `bin` is the absolute pinned
-launcher, `version` its exact `x.y.z` (required), and `home`/`cwd` existing
-runner-owned folders inside `ledger.dir` (the project folder). Every provider
-process, the version probe included, gets fresh private HOME and cwd children
-there, removed afterwards, and exactly `PATH=/usr/bin:/bin`, `HOME`, `CI=1` plus
-its own variables: one token (`VERCEL_TOKEN` with the project and org IDs, or
-`NETLIFY_AUTH_TOKEN`). Before any credential is read the adapter runs
-`<bin> --version` with no token and refuses anything but the pinned version.
-`jarvis doctor` reports `deploy.vercel`/`deploy.netlify` the same way (warn, or
-fail when listed in `required`). Credentials come only from `envFileSecrets` via
+Decision 161. `ProviderConfig` is `{ bin, version, interpreter?, home, cwd }`:
+`bin` the absolute CLI at `pinnedProviderBin(provider)`, `version` its exact
+`x.y.z` from `PROVIDER_CLI_PINS` (required; the table is empty until a CLI is
+installed), `interpreter` the absolute Node that runs it (`pinnedProviderNode()`;
+the npm CLIs' `#!/usr/bin/env node` finds no node under the adapters' PATH, so the
+process is `<interpreter> <bin> <args>`; omit it for a native binary), and
+`home`/`cwd` existing runner-owned folders inside `ledger.dir` (the project
+folder). Every provider process, the version probe included, gets fresh private
+HOME and cwd children there, removed afterwards, and exactly `PATH=/usr/bin:/bin`,
+`HOME`, `CI=1` plus its own variables: one token (`VERCEL_TOKEN` with the project
+and org IDs, or `NETLIFY_AUTH_TOKEN`). Before any credential is read the adapter
+runs `--version` with no token and refuses anything but the pinned version, read
+by the provider's own parser (`providers.ts`). `jarvis doctor` reports
+`deploy.vercel`/`deploy.netlify` the same way (warn, or fail when listed in
+`required`). Providers are reached only through the `PROVIDERS` registry
+(`broker/adapters/providers.ts`) and the deploy-tree table in `artifacts.ts`; a new
+`Provider` doesn't compile until it has both. Credentials come only from `envFileSecrets` via
 broker adapter child env: `VERCEL_PREVIEW_TOKEN`, `VERCEL_PRODUCTION_TOKEN`,
 `NETLIFY_PREVIEW_TOKEN`, `NETLIFY_PRODUCTION_TOKEN`. Candidate build commands never
 run with these tokens.
@@ -55,13 +61,14 @@ site/organization IDs); Netlify gets `public/<files>` beside a fixed `netlify.to
 (no command, no plugins). The copy refuses, before any provider process or
 credential read and naming the file: symlinks and special files, dot files other
 than `.well-known`, `vercel.*`/`now.*` configuration, `netlify.toml`, `netlify/`,
-`node_modules/`, any `package.json` or `*config.{js,ts,json,toml,yaml}`, and
-files outside the static extension list (HTML, CSS, browser JS, JSON, images,
-fonts, media, WASM, PDF; anything under `.well-known/`). Files are copied without
-execute bits. The copy is hashed against the approved digest, then stamped with
-`.well-known/jarvis-release` (the manifest hash) inside the web root. Functions,
-middleware, edge functions, `_redirects` and `_headers` are not supported; they
-need a separately reviewed contract. The CLI deploys this private copy; the live
+`node_modules/`, any `package.json` or `*config.{js,ts,json,toml,yaml}`,
+Netlify's `_redirects` and `_headers`, and files with an extension outside the
+static list (HTML, CSS, browser JS, JSON, images, fonts, media, WASM, PDF).
+Extensionless files (`health`, `CNAME`) and anything under `.well-known/` are
+static. Files are copied without execute bits. The copy is hashed against the
+approved digest, then stamped with `.well-known/jarvis-release` (the manifest
+hash) inside the web root. Functions, middleware, edge functions, redirects and
+headers are not supported; they need a separately reviewed contract. The CLI deploys this private copy; the live
 session directory is never reread by it. Copies are removed after completion or
 failure.
 

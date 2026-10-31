@@ -22,3 +22,7 @@ export function readNetlifyCurrent(stdout: string, setup: ReleaseProjectConfig):
   if (data.id !== setup.siteId || typeof data.published_deploy?.id !== "string" || typeof data.published_deploy.deploy_ssl_url !== "string") throw new Error("unexpected current production");
   return { id: data.published_deploy.id, url: data.published_deploy.deploy_ssl_url };
 }
+/** `--version` prints the CLI's user agent, `netlify-cli/x.y.z <os>-<arch> node-v<n>`; unverified (backlog 195). */
+export function netlifyVersion(stdout: string): string | undefined {
+  return /^netlify-cli\/(\d+\.\d+\.\d+)(?: [A-Za-z0-9_.-]+)*$/.exec(stdout.trim())?.[1];
+}

@@ -354,6 +354,18 @@
     "replacement": "if (false) assertStaticName(path, true);"
   },
   {
+    "name": "release_netlify_publish_config_refused",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "[\"netlify\", \"node_modules\", \"package.json\", \"_redirects\", \"_headers\"]",
+    "replacement": "[\"netlify\", \"node_modules\", \"package.json\"]"
+  },
+  {
+    "name": "release_absolute_provider_interpreter",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (config.interpreter !== undefined && !isAbsolute(config.interpreter))",
+    "replacement": "if (false)"
+  },
+  {
     "name": "release_refused_path_printable",
     "file": "packages/cli/src/release/artifacts.ts",
     "anchor": "const text = path.replace(/[^\\x20-\\x7e]/gu, ch => `\\\\u{${ch.codePointAt(0)!.toString(16)}}`);",

@@ -5,22 +5,22 @@ import { ArtifactPolicyError, copyDeploymentArtifacts } from "../../release/arti
 import { hasReleaseGrant } from "../../release/grants.ts";
 import { checkManifest, manifestHash, parseManifest, parseReleaseRef, releaseUrl } from "../../release/manifest.ts";
 import { isReleaseReady } from "../../release/states.ts";
-import { netlifyCommand, netlifyCurrentCommand, readNetlifyCurrent } from "./netlify.ts";
-import { vercelCommand, vercelCurrentCommand, readVercelCurrent } from "./vercel.ts";
+import { PROVIDERS } from "./providers.ts";
 import { recordCurrentProduction, recordedRollbackTarget } from "./production.ts";
 import type { DeployAdapterOptions, ProductionDeployment, ProviderConfig } from "./types.ts";
-export type { DeployAdapterOptions, ProviderConfig } from "./types.ts";
+export type { DeployAdapterOptions, ProviderConfig, ProviderModule } from "./types.ts";
+export { PROVIDER_NAMES, PROVIDERS } from "./providers.ts";
 
 const failed = (reason: string): AdapterResult => ({ outcome: "failed", detail: { reason } });
 const unknown = (): AdapterResult => ({ outcome: "unknown", detail: { reason: "provider outcome uncertain; reconcile before retrying" } });
 const safeUrl = (url: string, token: string): boolean => releaseUrl(url) && !url.includes(token) && !decodeURIComponent(url).includes(token);
 
 async function readProduction(options: DeployAdapterOptions, config: ProviderConfig, token: string): Promise<ProductionDeployment> {
-  const setup = options.projectConfig;
-  const command = (setup.provider === "vercel" ? vercelCurrentCommand : netlifyCurrentCommand)(setup, token);
+  const setup = options.projectConfig; const provider = PROVIDERS[setup.provider];
+  const command = provider.currentCommand(setup, token);
   const result = await runCommand(options, config, command);
   if (result.code !== 0 || result.timedOut || result.overflowed) throw new Error("current production could not be established");
-  const current = (setup.provider === "vercel" ? readVercelCurrent : readNetlifyCurrent)(result.stdout, setup);
+  const current = provider.readCurrent(result.stdout, setup);
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/.test(current.id) || !safeUrl(current.url, token) || JSON.stringify(current).includes(token)) throw new Error("current production refused");
   return current;
 }
@@ -29,6 +29,7 @@ async function readProduction(options: DeployAdapterOptions, config: ProviderCon
 export function deployAdapters(options: DeployAdapterOptions): Adapter[] {
   for (const config of Object.values(options.providers)) {
     if (![config.bin, config.home, config.cwd].every(isAbsolute)) throw new Error("provider bin, home and cwd must be absolute");
+    if (config.interpreter !== undefined && !isAbsolute(config.interpreter)) throw new Error("provider interpreter must be absolute");
   }
   const execute = (op: "deploy.preview" | "deploy.promote") => async (payload: unknown, secrets: SecretsBackend): Promise<AdapterResult> => {
     let prepared: ReturnType<typeof prepare>;
@@ -50,7 +51,7 @@ export function deployAdapters(options: DeployAdapterOptions): Adapter[] {
         catch { return failed("current production could not be established; no promotion attempted"); }
       }
       const deployManifest = staged ? { ...manifest, artifactDir: staged.dir } : manifest;
-      const command = (manifest.provider === "vercel" ? vercelCommand : netlifyCommand)(deployManifest, options.projectConfig, action, token, target);
+      const command = PROVIDERS[manifest.provider].command(deployManifest, options.projectConfig, action, token, target);
       const result = await runCommand(options, config, command);
       if (result.code !== 0 || result.timedOut || result.overflowed) return unknown();
       let url: string;

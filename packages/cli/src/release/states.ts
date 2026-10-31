@@ -178,7 +178,8 @@ export function releaseStatus(entries: readonly LedgerEntry[]): ReleaseStatus {
   const lapsed: ReleaseStatus["lapsed"] = [];
   const states = entries.filter(e => e.kind === "state_reached" && e.actor === "runner"
     && ["preview-ready", "release-ready", "deployed"].includes(String(data(e).state)));
-  for (const entry of states.reverse()) {
+  // The 20 newest: each recheck replays the ledger, and an older state can't hold once a newer promotion happened.
+  for (const entry of states.reverse().slice(0, 20)) {
     const d = data(entry);
     const state = d.state as ReleaseState;
     const manifest = acceptedManifest(entries, d.manifestHash);

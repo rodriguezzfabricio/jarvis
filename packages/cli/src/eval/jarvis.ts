@@ -15,6 +15,7 @@ import {
   commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, reportTargetProblem, reviewFixPlan, reviewStepEvidence, reviewStepHeader, reviewStepPrompt, reviewStepSkills, runReviewFixes, writeReportFile,
   type FindingOutcome, type ReviewOutput,
 } from "../runner/review-fix.ts";
+import { DEFAULT_ONBOARD_REPORT, onboardStepHeader, onboardStepPrompt, readOnboardOutput, type OnboardOutput } from "../runner/onboard-step.ts";
 import { loadRouting, routeTask, type RoutingTable } from "../runner/routing.ts";
 import { loadSkills } from "../runner/session-skills.ts";
 import { rebuildState, repairsUsed, type RunState } from "../runner/state.ts";
@@ -22,7 +23,7 @@ import { recordSessionUsage, summarizeUsage, type UsageTotals } from "../runner/
 import type { UsageWaitNotice } from "../runner/usage-wait.ts";
 import { createWorkspace } from "../runner/worktrees.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
-import { triage, type Triage } from "../triage/triage.ts";
+import { triage, typedReport, type Triage } from "../triage/triage.ts";
 import { checkEvalDomains, EXCLUDE, type GoldenTask } from "./baseline.ts";
 import { safeGit } from "./git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
@@ -37,7 +38,9 @@ import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type Ses
  * preflight, settings, sandbox and network allowlist (decisions 59, 70, 79), and its results land in the
  * same per-run folder layout (~/.jarvis/evals/<task>/<run>/), so the two arms compare run for run.
  *
- * Bug and refactor tasks (golden tasks 4 and 5) go triage → singleTaskPlan → the build loop. Feature and
+ * Bug and refactor tasks (golden tasks 4 and 5) go triage → singleTaskPlan → the build loop. An onboarding
+ * request that also asks for edits (golden task 7) runs the onboarding step as one session, then the loop runs
+ * the cleanup plan it wrote, as `jarvis run --plan onboard` would (decision 148). Feature and
  * new-product tasks (task 2) take the evals repo's written spec as the approved spec, run one planner
  * session, and read its plan against the runner's copy of that spec and the installed checks (decision
  * 91); a refused plan gets one corrective planner session with the refusal (decision 113). The loop's protected checks are the project's own suite from hidden/<task>/gate/ (decision 97),
@@ -86,9 +89,15 @@ export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promi
 // ---- Options and results ----------------------------------------------------------------------------
 
 export const JARVIS_VARIANT = "jarvis";
-/** "review-failed": a review that asked for fixes left no usable report or findings, so no fix started (decision 126). */
-export type JarvisOutcome = "complete" | "blocked" | "crashed" | "plan-failed" | "review-failed" | "usage-limited";
-export type Pipeline = "single-task" | "spec" | "review-fix";
+/**
+ * "review-failed": a review that asked for fixes left no usable report or findings, so no fix started (decision 126).
+ * "onboard-failed": the onboarding step left no usable report or cleanup plan, so no cleanup started (decision 148).
+ */
+export type JarvisOutcome = "complete" | "blocked" | "crashed" | "plan-failed" | "review-failed" | "onboard-failed" | "usage-limited";
+export type Pipeline = "single-task" | "spec" | "review-fix" | "onboard";
+
+/** An onboarding run (decision 148): the report the step wrote, the runner's commit of it, and the cleanup tasks its plan named. */
+export interface OnboardSummary { report: string; reportRevision: string | null; tasks: string[] }
 
 /** A review-fix run (decision 126): the report, the review's counts, and what the runner's records say happened to each finding. */
 export interface ReviewSummary {
@@ -162,6 +171,8 @@ export interface JarvisRunResult {
   baseRevision: string;
   /** A review-fix task's review (decision 126); null for every other pipeline, or when the review step left nothing usable. */
   review: ReviewSummary | null;
+  /** An onboarding task's report and cleanup tasks (decision 148); null for every other pipeline, or when the step left nothing usable. */
+  onboard: OnboardSummary | null;
   lastGreen: string | null;
   /** last-green, or the base revision when nothing was accepted: what Jarvis delivered. */
   finalCommit: string;
@@ -191,13 +202,17 @@ export function jarvisRequest(evalsRepo: string, task: GoldenTask): string {
   return existsSync(p) ? readFileSync(p, "utf8").trim() : task.prompt;
 }
 
-/** `then`: the pipeline triage runs after the first one. A review with a bug `then` asked for fixes (decision 126). */
 /**
  * `reviewFix`: the task's runner-owned opt-in to fix a review's findings (decision 126, round 3). A review's fixes
  * never come from its request's words, so a review without it has no build-loop arm.
+ * `question`: triage's read of a question. An onboarding question whose `then` (the edits it also asks for, decision
+ * 89) is a refactor or a bug runs the onboarding step and then its cleanup plan (decision 148); a feature `then`
+ * goes to the research skill, which the eval arm doesn't run.
  */
-export function pipelineFor(type: Triage["type"], reviewFix = false): Pipeline {
+export function pipelineFor(type: Triage["type"], reviewFix = false, question?: { onboarding: boolean; then: Triage["type"] | null }): Pipeline {
   if (type === "bug" || type === "refactor") return "single-task";
+  if (type === "question" && question?.onboarding === true && (question.then === "refactor" || question.then === "bug")) return "onboard";
+  if (type === "question" && question?.onboarding === true && question.then === "feature") throw new Error("triage says question (onboarding) with a feature after it: that goes to the research skill, so it has no Jarvis build-loop arm");
   if (type === "feature" || type === "new-product") return "spec";
   if (type === "review" && reviewFix === true) return "review-fix";
   throw new Error(`triage says ${type}: not a build-loop task, so it has no Jarvis build-loop arm${type === "review" ? " (a review's fixes need the task's runner-owned reviewFix opt-in in task.json, decision 126)" : ""}`);
@@ -420,9 +435,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const request = jarvisRequest(opts.evalsRepo, task);
   const t = triage({ request, folder: { empty: task.source === undefined, designMd: false } });
   const optIn = reviewFixOptIn(task);
-  const pipeline = pipelineFor(t.type, optIn !== null);
+  const pipeline = pipelineFor(t.type, optIn !== null, { onboarding: t.onboarding, then: t.then?.type ?? null });
   // The report the request names, else the default; the fixes and their limits come only from the task's opt-in.
-  const reportPath = pipeline === "review-fix" ? t.review?.report ?? DEFAULT_REVIEW_REPORT : null;
+  const reportPath = pipeline === "review-fix" ? t.review?.report ?? DEFAULT_REVIEW_REPORT : pipeline === "onboard" ? typedReport(request) ?? DEFAULT_ONBOARD_REPORT : null;
   const grading = loadHiddenChecks(hiddenDir(opts.evalsRepo, task.id, "checks"));
   const gateDir = hiddenDir(opts.evalsRepo, task.id, "gate");
   // Decision 97: the loop gates on the project's own suite; the hidden checks only grade, after the loop.
@@ -432,6 +447,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const approved = pipeline === "spec" ? loadApprovedSpec(opts.evalsRepo, task.id, loopChecks) : undefined;
   if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
   if (pipeline === "review-fix" && !loopChecks.checks.unit) throw new Error(`${task.id}: a review that asks for fixes needs a gate check named "unit" (its fix tasks' required check)`);
+  if (pipeline === "onboard" && !loopChecks.checks.unit) throw new Error(`${task.id}: an onboarding cleanup needs a gate check named "unit" (the onboard skill's required check)`);
   const goFixture = evalGoFixture(opts.evalsRepo, task.id);
 
   const pre = await opts.preflight();
@@ -468,6 +484,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   assertHiddenDisjoint(gate, grading);
   if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (pipeline === "review-fix" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
+  if (pipeline === "onboard" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   // Decision 123: the gate's pinned Go for every session, offline and read-only, as the baseline's session gets it.
@@ -485,7 +502,8 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
   let harness: Harness;
   try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
-  const tier: TaskTier = t.tier ?? 1;
+  // A question has no tier of its own; an onboarding run's sessions take its edits' tier (the `then` pipeline's).
+  const tier: TaskTier = (pipeline === "onboard" ? t.then?.tier : t.tier) ?? 1;
   // A review-fix task's fix tasks are bug fixes reviewed against their finding (decisions 114, 126); its report update is not.
   const fixTasks = new Set<string>();
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(fixTasks.has(taskId) ? { kind: "bug" as const } : {}), ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
@@ -493,6 +511,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   writeFileSync(join(p.resultsDir, "manifest.json"), `${JSON.stringify({
     task: task.id, title: task.title, variant: JARVIS_VARIANT, runId, request, triage: { type: t.type, tier: t.tier, decidedBy: t.decidedBy }, pipeline,
     ...(t.review ? { review: t.review } : {}),
+    ...(pipeline === "onboard" ? { onboard: { report: reportPath, then: t.then?.type } } : {}),
     checks: Object.keys(gate.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
     workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, toolchain: go.report, startedAt: new Date(started).toISOString(),
@@ -504,6 +523,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   let plannerSessions = 0;
   let usageWaitUntil: number | undefined;
   let reviewed: ReviewSummary | null = null;
+  let onboarded: OnboardSummary | null = null;
   const problems: string[] = [];
   const loopOptions = (): RunLoopOptions => ({
     projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
@@ -548,6 +568,22 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
           outcome = result.fixes.status === "complete" && result.updated ? "complete" : "blocked";
         }
       }
+    } else if (pipeline === "onboard") {
+      // Decision 148: the onboarding step maps the repo and writes the report and the cleanup plan; the runner commits
+      // the report, then runs the plan as `jarvis run --plan onboard` would. The report never replaces a snapshot file.
+      const target = reportTargetProblem(reportPath!, inRevision(p.workspace, baseRevision, reportPath!, p.home));
+      const step: OnboardStepResult = target ? { kind: "failed", reason: `${target.replace("a review's report", "an onboarding report").replace(" (--report <path>)", "")}; no onboarding session was started, so no cleanup was started`, sessions: 0 }
+        : await runOnboardStep({ harness, ledger, routing, tier, runId, task, request, report: reportPath!, checks: Object.keys(gate.checks), p, baseRevision });
+      plannerSessions = step.sessions;
+      if (step.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = step.until ?? Math.floor(Date.now() / 1000) + 3600; }
+      else if (step.kind === "failed") { outcome = "onboard-failed"; error = step.reason; log(`${task.id} ${runId}: ${step.reason}`); }
+      else {
+        problems.push(...step.problems);
+        const reportRevision = commitReport(p.workspace, step.output.report, step.output.reportText, p.home);
+        if (reportRevision) baseRevision = reportRevision;
+        onboarded = { report: step.output.report, reportRevision: reportRevision ?? null, tasks: step.output.plan.tasks.map((x) => x.id) };
+        plan = step.output.plan;
+      }
     } else {
       const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log });
       plannerSessions = r.sessions;
@@ -588,7 +624,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const out: JarvisRunResult = {
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
     outcome, ...(error !== undefined ? { error } : {}), loop,
-    claimedDone: outcome === "complete", baseRevision, review: reviewed, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report,
+    claimedDone: outcome === "complete", baseRevision, review: reviewed, onboard: onboarded, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report,
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
   };
@@ -687,13 +723,13 @@ function inRevision(repo: string, revision: string, file: string, home: string):
   try { safeGit(repo, ["cat-file", "-e", `${revision}:${file}`], { home }); return true; } catch { return false; }
 }
 
-/** What the review session changed besides its report and runner metadata: discarded with its checkout, and said so. */
-function strayEdits(workspace: string, report: string, home: string): string[] {
+/** What a review or onboarding session changed besides its report and runner metadata: discarded with its checkout, and said so. */
+function strayEdits(workspace: string, report: string, home: string, step: "review" | "onboarding" = "review"): string[] {
   const raw = safeGit(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { home }).toString();
   const changed = raw.split("\0").filter(Boolean).map((row) => row.slice(3)).filter((path) => path !== report && !path.startsWith(".jarvis/"));
   if (!changed.length) return [];
   const shown = changed.length > 10 ? `${changed.slice(0, 10).join(", ")} and ${changed.length - 10} more` : changed.join(", ");
-  return [`the review session also changed ${shown}; discarded (the review step writes only its report)`];
+  return [`the ${step} session also changed ${shown}; discarded (the ${step} step writes only its report${step === "onboarding" ? " and its plan" : ""})`];
 }
 
 /**
@@ -706,3 +742,42 @@ function commitReport(repo: string, report: string, text: string, home: string):
   return commitReportOnly((args) => safeGit(repo, args, { home }).toString().trim(), report, `review report ${report} (written by the review session)`);
 }
 
+
+// ---- An onboarding request that also asks for edits (decision 148) ---------------------------------------
+
+const ONBOARD_TASK = "onboard";
+
+type OnboardStepResult =
+  | { kind: "onboard"; output: OnboardOutput; sessions: number; problems: string[] }
+  | { kind: "usage-limited"; until: number | undefined; sessions: number }
+  | { kind: "failed"; reason: string; sessions: number };
+
+/**
+ * The onboarding step (decision 148): one session, as the architect, in a fresh checkout of the base revision,
+ * with the onboard skill as text. It writes the report and the cleanup plan; the runner reads both after it ends,
+ * the plan against the installed gate checks, and keeps nothing else it changed. A session that didn't finish,
+ * or left no usable report or plan, starts no cleanup. Never retried.
+ */
+async function runOnboardStep(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; report: string; checks: readonly string[]; p: Paths; baseRevision: string }): Promise<OnboardStepResult> {
+  const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: ONBOARD_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
+  try {
+    const sessionsDir = join(i.p.projectDir, "sessions");
+    mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
+    const header = join(sessionsDir, "onboard-a1.header.md");
+    writeFileSync(header, onboardStepHeader({ runId: i.runId, label: `Golden task ${i.task.id}.`, skills: loadSkills(["onboard"]) }), { mode: 0o600 });
+    const prompt = onboardStepPrompt({ request: i.request, report: i.report, checks: i.checks, maxTurns: i.task.maxTurns });
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "onboard-a1.jsonl") });
+    recordSessionUsage(i.ledger, { runId: i.runId, taskId: ONBOARD_TASK, attemptId: "a1", role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
+    const sessions = outcome.status === "refused" ? 0 : 1;
+    if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
+    if (outcome.status !== "finished") return { kind: "failed", reason: `onboarding session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}; no cleanup was started`, sessions };
+    try {
+      const output = readOnboardOutput(ws.path, i.report, i.checks.map((name) => ({ name })));
+      return { kind: "onboard", output, sessions, problems: strayEdits(ws.path, i.report, i.p.home, "onboarding") };
+    } catch (e) {
+      return { kind: "failed", reason: `${e instanceof Error ? e.message : String(e)}; no cleanup was started`, sessions };
+    }
+  } finally {
+    rmSync(ws.path, { recursive: true, force: true, maxRetries: 2 }); // the onboarding checkout: only the report and the plan leave it, through the runner
+  }
+}

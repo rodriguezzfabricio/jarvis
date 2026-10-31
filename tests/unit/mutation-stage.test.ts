@@ -44,6 +44,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");
     expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
     expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");
+    expect(stageOf("packages/cli/src/runner/mutations-onboard.json")).toBe("6"); // onboarding that asks for edits (decision 148), task 7's stage
   });
 
   it("lets an exact path beat a folder rule", () => {

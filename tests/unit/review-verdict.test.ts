@@ -30,6 +30,26 @@ describe("review verdict policy", () => {
     expect(evaluateVerdict(JSON.stringify({ checked: names, findings: [] }))).toMatchObject({ valid: false, verdict: "fail" });
   });
   it("accepts an empty verdict", () => expect(evaluate().verdict).toBe("pass"));
+  // The live Sonnet reviewer wraps its JSON in one Markdown fence (Oct 31, task 05): unwrapped, every review was an error.
+  it.each(["```json\n%s\n```", "```\n%s\n```", "\n```json\n%s\n```\n"])("reads a verdict that is one fenced JSON block (%j)", (shape) => {
+    const raw = shape.replace("%s", JSON.stringify({ checked, findings: [finding()] }, null, 2));
+    expect(evaluateVerdict(raw)).toMatchObject({ valid: true, verdict: "fail" });
+  });
+  // The same reviewer reported checked as an object of check name to what it read; the names are the keys.
+  it("reads checked given as names mapped to what was read", () => {
+    const named = Object.fromEntries([...checked, "bug-brief-inputs"].map((n) => [n, `read for ${n}`]));
+    expect(evaluateVerdict(JSON.stringify({ checked: named, findings: [] }), { kind: "bug" })).toMatchObject({ valid: true, verdict: "pass" });
+    const { "error-paths": _, ...partial } = named;
+    expect(evaluateVerdict(JSON.stringify({ checked: partial, findings: [] }))).toMatchObject({ valid: false, error: "review did not report its checks: error-paths" });
+  });
+  it.each([{ "spec-criteria": "" }, { "spec-criteria": "  " }, { "spec-criteria": 1 }, { "invented-check": "read" }])("refuses a checked object with an empty, non-text or unknown entry %j", (entry) => {
+    const named = { ...Object.fromEntries(checked.map((n) => [n, "read"])), ...entry };
+    expect(evaluateVerdict(JSON.stringify({ checked: named, findings: [] }))).toMatchObject({ valid: false, verdict: "fail" });
+  });
+  it.each(["Here is my review:\n```json\n%s\n```", "```json\n%s\n```\nDone.", "```json\n%s\n```\n```json\n%s\n```", "```js\n%s\n```"])("refuses JSON with anything else around or beside it (%j)", (shape) => {
+    const raw = shape.replaceAll("%s", JSON.stringify({ checked, findings: [] }));
+    expect(evaluateVerdict(raw)).toMatchObject({ valid: false, verdict: "fail", error: "review output is not JSON" });
+  });
   it.each(["critical", "high"])("fails %s with concrete evidence", (severity) => {
     expect(evaluate(finding({ severity })).verdict).toBe("fail");
   });

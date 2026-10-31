@@ -20,11 +20,26 @@ export interface EvaluatedVerdict {
 }
 export const CONFIDENCE_CUTOFF = 0.8;
 
+/** A reply that is exactly one Markdown-fenced JSON block (the live Claude reviewer's habit) yields the block; anything else is read as is. */
+export function unfencedJson(raw: string): string {
+  const m = /^\s*```(?:json)?\n([\s\S]*?)\n```\s*$/.exec(raw);
+  return m && !m[1]!.includes("```") ? m[1]! : raw;
+}
+
+/** checked given as {name: what was read} (the live Claude reviewer's other habit) becomes its names, when every value is non-empty text; the schema then judges the names. */
+function namedChecks(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || !("checked" in value)) return value;
+  const checked = (value as { checked: unknown }).checked;
+  if (typeof checked !== "object" || checked === null || Array.isArray(checked)) return value;
+  const entries = Object.entries(checked);
+  return entries.every(([, read]) => typeof read === "string" && read.trim().length > 0) ? { ...value, checked: entries.map(([name]) => name) } : value;
+}
+
 /** The runner computes the verdict; an agent cannot declare itself passed. */
 export function evaluateVerdict(raw: string, options: { kind?: "bug" } = {}): EvaluatedVerdict {
   let value: unknown;
-  try { value = JSON.parse(raw); } catch { return invalid("review output is not JSON"); }
-  const parsed = VerdictSchema.safeParse(value);
+  try { value = JSON.parse(unfencedJson(raw)); } catch { return invalid("review output is not JSON"); }
+  const parsed = VerdictSchema.safeParse(namedChecks(value));
   if (!parsed.success) return invalid("review output does not match the verdict schema");
   const required = ["spec-criteria", "data-flow", "error-paths", "unchanged-callers", ...(options.kind === "bug" ? ["bug-brief-inputs"] : [])];
   const missing = required.filter((name) => !(parsed.data.checked as readonly string[]).includes(name));

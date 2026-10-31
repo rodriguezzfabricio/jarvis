@@ -36,8 +36,9 @@ function setup(provider: "vercel" | "netlify" = "vercel", project = "p") {
   const current = { id: "runner-captured-id", url: `https://old.${provider === "vercel" ? "vercel.app" : "netlify.app"}` };
   const calls: SessionSpec[] = []; const reads: string[] = [];
   let beforeRun: ((spec: SessionSpec) => void) | undefined;
-  const config = { bin: `/trusted/bin/${provider}`, home: ledger.dir, cwd: ledger.dir };
+  const config = { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: ledger.dir, cwd: ledger.dir };
   const run = async (spec: SessionSpec) => {
+    if (spec.args.includes("--version")) return outcome(provider === "vercel" ? "1.2.3" : "netlify/1.2.3");
     calls.push(spec); beforeRun?.(spec);
     if (spec.args.includes("inspect")) return outcome(JSON.stringify({ ...current, projectId: m.siteId }));
     if (spec.args.includes("getSite")) return outcome(JSON.stringify({ id: m.siteId, published_deploy: { id: current.id, deploy_ssl_url: current.url } }));
@@ -128,16 +129,15 @@ describe("review H2 and artifact/rollback boundaries", () => {
     expect((await makeBroker(altered).handle({ op: "deploy.preview", payload: { ref: releaseRef(altered, "preview") } })).status).toBe("failed");
     expect(reads).toEqual([]);
   });
-  it("replaces session Vercel project metadata with the trusted site and organization", async () => {
-    const { m, projectConfig, makeBroker, setBeforeRun } = setup();
+  it("refuses candidate Vercel project metadata before running a provider or reading a credential", async () => {
+    const { m, projectConfig, makeBroker, calls, reads } = setup();
     mkdirSync(join(m.artifactDir, ".vercel"));
     writeFileSync(join(m.artifactDir, ".vercel/project.json"), JSON.stringify({ projectId: "session-site", orgId: "session-org" }));
     const manifest = parseManifest({ ...m, artifactHash: artifactDigest(m.artifactDir) });
     const trusted = { ...projectConfig, artifacts: { [m.revision]: manifest.artifactHash } };
-    let linked: unknown;
-    setBeforeRun(spec => { const dir = spec.args[spec.args.indexOf("--cwd") + 1]!; linked = JSON.parse(readFileSync(join(dir, ".vercel/project.json"), "utf8")); });
-    expect((await makeBroker(manifest, trusted).handle({ op: "deploy.preview", payload: { ref: releaseRef(manifest, "preview") } })).status).toBe("succeeded");
-    expect(linked).toEqual({ projectId: m.siteId, orgId: projectConfig.orgId });
+    const result = await makeBroker(manifest, trusted).handle({ op: "deploy.preview", payload: { ref: releaseRef(manifest, "preview") } });
+    expect(result.status).toBe("failed"); expect(JSON.stringify(result)).toContain(".vercel");
+    expect(calls).toEqual([]); expect(reads).toEqual([]);
   });
   it.each(["vercel", "netlify"] as const)("deploys an immutable %s private copy with the release marker despite live source replacement", async provider => {
     const { m, makeBroker, projectConfig, setBeforeRun } = setup(provider);
@@ -146,8 +146,9 @@ describe("review H2 and artifact/rollback boundaries", () => {
       const flag = provider === "vercel" ? "--cwd" : "--dir";
       deployedDir = spec.args[spec.args.indexOf(flag) + 1]!;
       writeFileSync(join(m.artifactDir, "index.html"), "swapped by session");
-      deployedBytes = readFileSync(join(deployedDir, "index.html"), "utf8");
-      const markerPath = provider === "vercel" ? join(deployedDir, ".vercel/output/static/.well-known/jarvis-release") : join(deployedDir, ".well-known/jarvis-release");
+      const webRoot = provider === "vercel" ? join(deployedDir, ".vercel/output/static") : deployedDir;
+      deployedBytes = readFileSync(join(webRoot, "index.html"), "utf8");
+      const markerPath = join(webRoot, ".well-known/jarvis-release");
       marker = existsSync(markerPath) ? readFileSync(markerPath, "utf8").trim() : "missing";
     });
     const r = await makeBroker().handle({ op: "deploy.preview", payload: { ref: releaseRef(m, "preview") } });
@@ -164,8 +165,9 @@ describe("review H2 and artifact/rollback boundaries", () => {
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "promote") } })).status).toBe("succeeded");
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "rollback") } })).status).toBe("succeeded");
     expect(calls[0]!.args).toContain(provider === "vercel" ? "inspect" : "getSite");
-    expect(calls.at(-1)!.args.join(" ")).toContain(current.id);
-    expect(calls.at(-1)!.args.join(" ")).not.toContain("session-chosen");
+    expect(calls.at(-2)!.args.join(" ")).toContain(current.id);
+    expect(calls.at(-2)!.args.join(" ")).not.toContain("session-chosen");
+    expect(calls.at(-1)!.args).toContain(provider === "vercel" ? "inspect" : "getSite");
     const recorded = ledger.entries().find(e => e.kind === "decision" && (e.data as { type?: string }).type === "release.production-before");
     expect(recorded?.data).toMatchObject({ deployment: current, manifestHash: manifestHash(m) });
   });

@@ -7,7 +7,7 @@ export function vercelCommand(manifest: ReleaseManifest, setup: ReleaseProjectCo
   const args = action === "rollback" ? ["rollback", target!.id, "--yes"]
     : ["deploy", "--prebuilt", "--yes", "--cwd", manifest.artifactDir, ...(action === "promote" ? ["--prod"] : [])];
   return { args, env: { VERCEL_TOKEN: token, VERCEL_PROJECT_ID: setup.siteId, ...(setup.orgId ? { VERCEL_ORG_ID: setup.orgId } : {}) }, readUrl(stdout) {
-    if (action === "rollback") return target!.url;
+    if (action === "rollback") throw new Error("rollback requires production readback");
     const value = stdout.trim().split(/\s+/).at(-1) ?? "";
     if (!new URL(value).hostname.endsWith(".vercel.app")) throw new Error("invalid deploy URL");
     return value;

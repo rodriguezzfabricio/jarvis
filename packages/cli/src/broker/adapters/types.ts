@@ -3,10 +3,12 @@ import type { SessionOutcome, SessionSpec } from "../../proc/session.ts";
 import type { Provider, ReleaseAction, ReleaseManifest, ReleaseProjectConfig } from "../../release/types.ts";
 
 export interface ProviderConfig {
-  /** Trusted absolute CLI path; the runner pins and verifies the installed provider version. */
+  /** Trusted absolute CLI path, installed outside candidate-writable directories. */
   bin: string;
+  /** Exact x.y.z pin. Missing legacy pins fail closed before reading a credential. */
+  version?: string;
+  /** Existing runner-owned parents below ledger.dir; fresh children are created per process. */
   home: string;
-  /** Empty runner-owned control folder, with no candidate config or plugins. */
   cwd: string;
 }
 export interface DeployAdapterOptions {

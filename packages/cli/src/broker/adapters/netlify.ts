@@ -1,12 +1,13 @@
+import { join } from "node:path";
 import type { ReleaseAction, ReleaseManifest, ReleaseProjectConfig } from "../../release/types.ts";
 import type { ProductionDeployment, ProviderCommand } from "./types.ts";
 
 export function netlifyCommand(manifest: ReleaseManifest, setup: ReleaseProjectConfig, action: ReleaseAction, token: string, target?: ProductionDeployment): ProviderCommand {
   if (action === "rollback" && !target) throw new Error("recorded rollback target required");
   const args = action === "rollback" ? ["api", "restoreSiteDeploy", "--data", JSON.stringify({ site_id: setup.siteId, deploy_id: target!.id })]
-    : ["deploy", "--no-build", "--dir", manifest.artifactDir, "--site", setup.siteId, "--json", ...(action === "promote" ? ["--prod"] : [])];
+    : ["deploy", "--no-build", "--dir", join(manifest.artifactDir, "public"), "--config", join(manifest.artifactDir, "netlify.toml"), "--site", setup.siteId, "--json", ...(action === "promote" ? ["--prod"] : [])];
   return { args, env: { NETLIFY_AUTH_TOKEN: token }, readUrl(stdout) {
-    if (action === "rollback") return target!.url;
+    if (action === "rollback") throw new Error("rollback requires production readback");
     const output = JSON.parse(stdout) as { deploy_url?: unknown };
     if (typeof output.deploy_url !== "string" || !new URL(output.deploy_url).hostname.endsWith(".netlify.app")) throw new Error("invalid deploy URL");
     return output.deploy_url;

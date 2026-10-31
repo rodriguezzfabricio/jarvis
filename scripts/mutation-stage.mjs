@@ -28,6 +28,7 @@ const MAP = [
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
+  [/^packages\/cli\/src\/commands\/mutations-run-design\.json$/, "4"], // jarvis run composes the design reviewer (decision 156): golden task 06, the stage 4 proof
   [/^packages\/cli\/src\/commands\/mutations-checks\.json$/, "3"], // jarvis checks install: the architect's proposals reviewed and installed (decision 147, handoff A3)
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof

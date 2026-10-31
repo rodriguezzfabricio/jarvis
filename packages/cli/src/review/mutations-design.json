@@ -188,8 +188,8 @@
   {
     "name": "Design material uses resolved branch objects",
     "file": "packages/cli/src/review/design-material.ts",
-    "anchor": "design: git([\"show\", `${revision}:DESIGN.md`])",
-    "replacement": "design: git([\"show\", \"HEAD:DESIGN.md\"])"
+    "anchor": "return git([\"show\", `${revision}:${file}`]);",
+    "replacement": "return git([\"show\", `HEAD:${file}`]);"
   },
   {
     "name": "Design material requires approved checks",
@@ -268,5 +268,41 @@
     "file": "packages/cli/src/lanes/design-lint-driver.ts",
     "anchor": "path = join(path, part);",
     "replacement": "path = realpathSync(join(path, part));"
+  },
+  {
+    "name": "Design material requires regular committed files",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": "if (!new RegExp(`^100(?:644|755) blob",
+    "replacement": "if (false && new RegExp(`^100(?:644|755) blob"
+  },
+  {
+    "name": "Protected design definitions refuse renames and duplicates",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": "if (check.name !== name || Object.hasOwn(checks, name)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "Design evidence binds protected definitions",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "definition(latest.get(check)!.data as Record<string, unknown>) !== definition(expected)",
+    "replacement": "false"
+  },
+  {
+    "name": "Design evidence needs a protected definition",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "return !expected || definition(",
+    "replacement": "return Boolean(expected) && definition("
+  },
+  {
+    "name": "Design calibration latest control decides",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "calibrationEntry(entries.filter(e => controlOf(e, fixture)).at(-1), fixture)",
+    "replacement": "entries.some(e => calibrationEntry(e, fixture))"
+  },
+  {
+    "name": "Design calibration named hashes must pass",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "\n    && (!calibration || calibrationEntry(entries.find(e => e.hash === calibration[fixture]), fixture))",
+    "replacement": ""
   }
 ]

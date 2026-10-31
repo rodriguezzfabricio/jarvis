@@ -5,7 +5,7 @@ description: Turns the research, the intake answers and the assumptions into a c
 
 # Spec
 
-Write down what will be built and what won't, in a form a test can check and a fresh reader can follow without asking anyone. The spec is the only up-front approval (decision 9): later approvals are the hard stops and the morning vetoes. Every task records which spec version and which assumptions it depends on, so the format and the IDs matter as much as the content.
+Write down what will be built and what won't, in a form a test can check and a fresh reader can follow without asking anyone. The spec is the only up-front approval (decision 9), and its confirmation covers every artifact handed to the builder (see Confirm); later approvals are the hard stops and the morning vetoes. Every task records which spec version and which assumptions it depends on, so the format and the IDs matter as much as the content.
 
 ## When to use
 
@@ -17,7 +17,7 @@ Write down what will be built and what won't, in a form a test can check and a f
 
 Also run it when the plan changes mid-run (decision 40): a change to a fixed constraint or a P1 story produces the next version, and so does a morning veto that changes an assumption the spec lists. Don't run it for a change that touches neither; the build loop records those as decisions.
 
-Confirmation belongs to the first hand-off only (decision 86). A mid-run version, from a steer note, a veto or a repair, goes through the checker and the reader, gets `status: unconfirmed` so it leads the morning report, and the runner replans only the slice that changed; there's never another confirmation round. A change that needs a choice outside what the user delegated (the only working provider costs money) doesn't become a version: it goes to decision 40's blocked state and waits for the user while the rest of the plan continues.
+Confirmation belongs to the first hand-off only (decision 86). A mid-run version, from a steer note, a veto or a repair, goes through the checker and the reader, gets `status: unconfirmed` so it leads the morning report, and the runner replans only the slice that changed; a mid-run version never gets its own confirmation round. A change that needs a choice outside what the user delegated (the only working provider costs money) doesn't become a version: it goes to decision 40's blocked state and waits for the user while the rest of the plan continues.
 
 ## Inputs
 
@@ -56,6 +56,8 @@ What goes in:
 - **Assumptions:** every fixed constraint from research and every answer, then every default and every Jarvis choice a story depends on. Tasks cite them by ID, and a morning veto of one replans what depends on it.
 - **Open questions:** only what doesn't block the build, each with the default the build uses meanwhile. A blocking product question belongs in intake; if one turns up now, see the reader check.
 
+**One-confirmation budget.** One confirmation can carry about 20 P1 acceptance criteria and 7 unconfirmed assumptions. When a draft has more of either, cut it to the walking skeleton as P1 and the rest as P2/P3 stories, each with its own criteria and assumptions; the runner still builds them all, P1 first. Never drop a safeguard or a fixed constraint, or merge independent assumptions, to fit; if the walking skeleton alone is over the budget, keep it whole and say so in the confirmation.
+
 Then run the spec format checker, `jarvis spec check`, and fix every problem it reports. It checks structure and references only; the content is the reader's job.
 
 Any decision you make while writing (a delegated choice the intake didn't cover) is recorded with `jarvis decide --by jarvis --class mechanical|taste --why "<the rationale>" --alternatives "<the alternatives>" --depends-on "<the story and criterion IDs, for Taste>" --source docs/spec/vN.md "<decision>"`. Never edit `docs/decisions.md` directly (decision 83).
@@ -70,7 +72,7 @@ Any decision you make while writing (a delegated choice the intake didn't cover)
 
 ## Check with a fresh reader
 
-Before anyone confirms it, have the spec read by a reader with a fresh context (decision 9): the plugin's `spec-reader` role (`jarvis:spec-reader`), which gets only the spec file, `PRODUCT.md`, `DESIGN.md` if it exists, and the files the spec cites, never the intake conversation or your notes. It reads like the builder will, so it finds what only you know.
+When the work has a design direction, or `DESIGN.md` is written from an existing design system, run that design skill step first (After the pick, or An existing design system), so the reader and the confirmation see the final `DESIGN.md`. Before anyone confirms it, have the spec read by a reader with a fresh context (decision 9): the plugin's `spec-reader` role (`jarvis:spec-reader`), which gets only the spec file, `PRODUCT.md`, `DESIGN.md` if it exists, and the files the spec cites, never the intake conversation or your notes. It reads like the builder will, so it finds what only you know.
 
 Ask it to report, each with the line it refers to:
 - stories with no criterion that would fail if the story were broken,
@@ -91,15 +93,17 @@ Fix each gap in the draft, or record why not. The reader's findings and what you
 
 ## Confirm
 
-Start by saying **"This is the separate spec confirmation round"**. The user gets one page: **"here's what I'm building, and what I'm not"**. Build it from the spec: the goals, the P1 stories in plain words, the non-goals, and the assumptions the user hasn't confirmed, those first. It must fit the round's summary of at most 5 lines; the full spec stays on the Mac.
+Start by saying **"This is the separate spec confirmation round"**. The user gets one page: **"here's what I'm building, and what I'm not"**. Build it from the spec: the goals, the P1 stories in plain words, the non-goals, and the assumptions the user hasn't confirmed, those first. List every unconfirmed assumption as a short numbered list, each one line with its ID; the count you report is the count in the file, P2/P3 stories included (recount after every edit; zero when there are none). The five-line summary is a digest, not a replacement for this list: put the full list in the confirmation question's `question` and print it in the session; keep `why` one line. The full spec stays on the Mac.
 
-Confirmation happens once, at the initial hand-off (decision 86). It goes out like an intake round (decisions 10 and 83), as one more round in `.jarvis/intake/` with one question:
+**What the user confirms is final.** Before sending, make the spec, `DESIGN.md`, `PRODUCT.md`, the register and the picked mockup agree (tokens, screens, flows), and update or mark superseded every file line that states an earlier position, research and intake records included (a "pending" marker, a reversed recommendation; `jarvis decide` for the register). When design revised the picked mockup, attach its new paths in `mockups`. Nothing in the spec, `DESIGN.md`, `PRODUCT.md`, the decision register or the picked mockup changes after confirmation without a new confirmation round; only the status line and the recorded confirmation answer are written after it. A later change starts a new draft version (Versions), goes through the checker and reader, and is confirmed again with every changed artifact shown. Mid-run versions follow When to use instead.
+
+Confirmation covers exactly the artifacts handed off. It goes out like an intake round (decisions 10 and 83), as one more round in `.jarvis/intake/` with one question:
 
 ```json
 { "formatVersion": 2, "round": 2, "spec": "docs/spec/v1.md",
-  "summary": "Separate spec confirmation round\nBuilding: …\nNot building: …\nUnconfirmed: A4 (archive format), A6 (local storage)",
-  "questions": [ { "id": "CONFIRM", "topic": "scope", "question": "Build spec v1 as written?",
-    "why": "It's the only up-front approval; later changes replan part of the work.",
+  "summary": "Separate spec confirmation round\nBuilding: …\nNot building: …\nUnconfirmed: 2 (listed below)",
+  "questions": [ { "id": "CONFIRM", "topic": "scope", "question": "Unconfirmed assumptions:\n1. A2: Archive format is a delegated choice.\n2. A4: Local storage is a delegated choice.\nBuild spec v1 as written?",
+    "why": "Confirm the scope and the listed assumptions together.",
     "default": { "answer": "Yes, build as written", "reason": "It follows your answers and the project's rules", "tradeOff": "The unconfirmed choices and their known costs are listed above; no build has started" },
     "alternatives": ["Build it with the changes I describe", "Don't build yet"] } ],
   "mockups": [] }
@@ -115,7 +119,7 @@ Confirmation happens once, at the initial hand-off (decision 86). It goes out li
 | Came back | Status | Then |
 |---|---|---|
 | "Yes", "defaults", or the phone's "Use defaults" | `status: confirmed` | Hand off |
-| Changes | `status: confirmed` on the changed draft | Apply the changes to the draft, run the checker and the reader again, record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM` (`jarvis decide`, the intake skill's first form, with `--source docs/spec/vN.md`), hand off. The answer is the confirmation; there's no second round |
+| Changes | stays `draft` | Apply the requested changes, align the other artifacts, run the checker and reader again, record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM` (`jarvis decide`, intake's first form, with `--source docs/spec/vN.md`), then show the revised artifacts in a new confirmation round |
 | "Don't build yet" | stays `draft` | Stop, and say what would unblock it |
 | A closed round reported by the CLI as a delivery-backed timeout | `status: unconfirmed` | Hand off; the unconfirmed spec goes at the top of the morning report |
 
@@ -125,7 +129,7 @@ Free text from the phone's publish box is a steer note, never an answer: it does
 
 ## Hand off
 
-Hand back to the `/jarvis` pipeline with the spec path, its status, and the unconfirmed assumption IDs. What runs next is the pipeline's call (architecture §2): for a new product or a new kind of screen with no design system, the design skill writes `DESIGN.md` from the picked direction; then architecture, the acceptance checks generated from the criteria, and the hand-off to the runner. Don't start the runner from this skill, and don't generate the checks here: the runner locks them outside the repo (decision 49).
+Hand off exactly the artifacts the confirmation covered; drift found now goes back through Confirm, never a silent fix. Hand back to the `/jarvis` pipeline with the spec path, its status, and the unconfirmed assumption IDs. What runs next is the pipeline's call (architecture §2): any step of the design skill already ran before the reader check, so next come architecture, the acceptance checks generated from the criteria, and the hand-off to the runner. Don't start the runner from this skill, and don't generate the checks here: the runner locks them outside the repo (decision 49).
 
 ## Gotchas
 

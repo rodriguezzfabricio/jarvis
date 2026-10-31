@@ -152,7 +152,7 @@
   {
     "name": "skills spec mid run reconfirms",
     "file": "skills/spec/SKILL.md",
-    "anchor": "there's never another confirmation round",
+    "anchor": "a mid-run version never gets its own confirmation round",
     "replacement": "it goes out for confirmation again"
   },
   {

@@ -14,8 +14,8 @@ Three entry points, each called by another step:
 | Called by | When | What runs here |
 |---|---|---|
 | Intake, before the round | A new product, or a new kind of screen while the project has neither `DESIGN.md` nor a design system in its code | Draft three directions and make the mockups. Return the mockup paths and the default direction to intake |
-| The pipeline, after the answers | A direction was picked, or defaulted | After the pick: write `DESIGN.md` and the theme plan |
-| Intake or the pipeline | A design system exists in the code but `DESIGN.md` doesn't | An existing design system: write `DESIGN.md` from it |
+| The spec skill, before its reader check | A direction was picked, or defaulted | After the pick: write `DESIGN.md` and the theme plan |
+| Intake or the spec skill, before its reader check | A design system exists in the code but `DESIGN.md` doesn't | An existing design system: write `DESIGN.md` from it |
 
 Backend-only work never gets this skill. A feature that fits the existing screens follows `DESIGN.md`, and the checks run on the UI it changes. A UI bug (a misaligned button) runs the checks on that one screen and never asks about direction or makes mockups (architecture §2).
 
@@ -96,7 +96,7 @@ Also the newer "tasteful AI" defaults: a cream background with a serif and a ter
 
 ## After the pick
 
-Intake records the pick once, like every other answer; it's already recorded by intake, so don't record it again.
+Intake records the pick once, like every other answer; it's already recorded by intake, so don't record it again. This step runs before the spec is confirmed: write every token and design rule decided here into `DESIGN.md` and record it (step 4) before the confirmation goes out. If the spec changes a screen or flow the picked mockup shows, revise that mockup and give the spec its new screenshots, or local HTML paths when screenshots are unavailable, so the confirmation shows it. After confirmation, `DESIGN.md` and the mockup change only through the spec skill's Confirm rule.
 
 1. **Write `DESIGN.md`** at the repo root from `templates/DESIGN.md`, in Google's DESIGN.md format: the tokens in the YAML front matter (colors, typography, rounded, spacing, components, with components referring to tokens like `{colors.primary}`), then a short rationale per section. Copy the picked direction's colors, type and principles; fill spacing and corners on one consistent scale. The Overview records the direction, its dials and who picked it (user, default accepted or default unconfirmed).
 2. **Plan the theme code** (decision 51): the same tokens wired into the web theme, starting with `--*: initial` so the framework's default palette no longer exists, and for mobile, the styling layer reading the same token file, so web and mobile can't drift. The theme is generated from `DESIGN.md` and never edited by hand. If the code doesn't exist yet, write the plan as a build task; the build loop generates it.

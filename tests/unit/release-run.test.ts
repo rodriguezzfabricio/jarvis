@@ -26,7 +26,7 @@ const ok = (stdout: string): SessionOutcome => ({ code: 0, timedOut: false, over
 const LOCK = "d".repeat(64);
 const CLAIMS = { smokePaths: ["/", "/health"], rollback: { steps: ["Restore the previous deploy."] }, data: { kind: "none" } };
 
-interface Options { setup?: Partial<ReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"] }
+interface Options { setup?: Partial<ReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; cliVersions?: string[]; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"] }
 async function step(o: Options = {}) {
   const dir = join(root, `s${++n}`);
   const repo = join(dir, "repo"); mkdirSync(repo, { recursive: true });
@@ -48,7 +48,7 @@ async function step(o: Options = {}) {
   const served = join(dir, "served"); mkdirSync(served);
   const providerCalls: SessionSpec[] = [];
   const seams: ReleaseSeams = {
-    cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => bin, run: async () => ok(`netlify-cli/${o.cliVersion ?? "99.1.0"}`) },
+    cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => bin, run: async () => ok(`netlify-cli/${o.cliVersions?.shift() ?? o.cliVersion ?? "99.1.0"}`) },
     run: async (spec) => {
       providerCalls.push(spec);
       cpSync(spec.args[spec.args.indexOf("--dir") + 1]!, join(served, "1"), { recursive: true });
@@ -107,6 +107,8 @@ describe("the release step", () => {
     ["the plan is not done", { doneAt: "none" } as Options, /not every planned task is done/],
     ["the head is not the revision the runner last promoted", { doneAt: "older" } as Options, /is not the revision the runner last promoted/],
     ["the provider CLI is not the pinned version", { cliVersion: "99.2.0" } as Options, /not the pinned version/],
+    // Hosted with the pinned CLI, checked again before the ship session, and once more right before the deploy.
+    ["the provider CLI changed before the deploy", { cliVersions: ["99.1.0", "99.1.0", "99.2.0"] } as Options, /not the pinned version/],
     ["the ship session did not finish", { sessionStatus: "timeout" } as Options, /the ship session timeout/],
     ["the manifest's claims are invalid", { claims: { smokePaths: ["https://evil.example.com"], rollback: { steps: ["x"] }, data: { kind: "none" } } } as Options, /manifest is refused/],
     ["the manifest declares data the setup has no source for", { claims: { ...CLAIMS, data: { kind: "sqlite", commands: { migrate: "m", backup: "b", restore: "r", verify: "v" } } } } as Options, /no data snapshot source/],

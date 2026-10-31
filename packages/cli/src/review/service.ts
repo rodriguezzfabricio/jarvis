@@ -216,9 +216,12 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
     } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); captures.push({ error }); }
     finally { if (directory) rmSync(directory, { recursive: true, force: true }); }
     const active = reviews.filter((r) => !r.superseded);
-    const limited = active.find((r) => r.verdict === "usage-limited");
-    const verdict: ReviewOutcome = !error && limited ? "usage-limited" : error || !active.length || active.some((r) => r.verdict === "error") ? "error"
-      : active.some((r) => r.verdict === "fail") ? "fail"
+    // A reviewer that hit the plan's limit gave no verdict: the review waits and runs again (decision 160), unless
+    // another reviewer already failed the code, a verdict no later review can overturn.
+    const limited = active.find((r) => r.verdict === "usage-limited"), failed = active.some((r) => r.verdict === "fail");
+    const verdict: ReviewOutcome = error || !active.length ? "error" : limited && !failed ? "usage-limited"
+      : active.some((r) => r.verdict === "error") ? "error"
+      : failed ? "fail"
       : active.some((r) => r.verdict === "investigate") ? "investigate" : "pass";
     const reason: ReviewReason | undefined = verdict === "error" ? "review_error" : verdict === "investigate" ? "review_investigation" : verdict === "fail" ? "review_failed" : undefined;
     const investigate = active.flatMap((r) => r.investigate);
@@ -229,7 +232,7 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
     const failure = error !== undefined ? redactReviewText(error) : verdict === "error" ? active.find((r) => r.verdict === "error")?.error : undefined;
     const entry = options.ledger.append({ kind: "review_result", actor: "runner", task_id: request.taskId, attempt_id: request.attemptId,
       // The models that reviewed; null when the review failed before any reviewer ran (never "", which reads as a model ID).
-      data: { reviewer: "code", model: reviews.length ? reviews.map((r) => r.model).join(" + ") : null, revision: request.revision, status: verdict, verdict, reviews, investigate, summary, ...(limited ? { resetAt: limited.resetAt ?? null } : {}), ...(reason ? { reason } : {}),
+      data: { reviewer: "code", model: reviews.length ? reviews.map((r) => r.model).join(" + ") : null, revision: request.revision, status: verdict, verdict, reviews, investigate, summary, ...(verdict === "usage-limited" ? { resetAt: limited?.resetAt ?? null } : {}), ...(reason ? { reason } : {}),
         rawOutputHash: hash(raw), evidence: { dir: outputDir, files: { "raw.json": hash(raw) } }, ...(failure ? { error: failure } : {}) },
     });
     return { verdict, entry, rawOutputPath, reviews, ...(reason ? { reason } : {}) };

@@ -436,5 +436,17 @@
     "file": "packages/cli/src/harness/claude/review.ts",
     "anchor": "sessionUsage: sessionUsage(events)",
     "replacement": "sessionUsage: sessionUsage([])"
+  },
+  {
+    "name": "stage3 fixes a fail stands over a limited fallback",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "limited && !failed ? \"usage-limited\"",
+    "replacement": "limited ? \"usage-limited\""
+  },
+  {
+    "name": "stage3 fixes no Codex review after a limited Claude review",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "if (primary.verdict !== \"usage-limited\" && route.crossModel === \"codex\"",
+    "replacement": "if (route.crossModel === \"codex\""
   }
 ]

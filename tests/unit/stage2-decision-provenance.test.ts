@@ -65,3 +65,45 @@ it("still refuses a blank rationale when adding answer provenance", async () => 
   await expect(s.run("Keep local history", s.proof, ["--why", " "])).rejects.toThrow(/why|blank/i);
   expect(DecisionRegister.open(s.repo).read().entries).toEqual([]);
 });
+
+// Decision 168: with --recorded-answer the entry states the decision, led by its question ID, while the
+// CLI still verifies the user's exact words against the ledger and keeps them in Why.
+it("stores a decision statement while verifying its separate exact answer", async () => {
+  const s = await setup({ Q1: "yes" }, "Keep local history?");
+  await s.run("Q1: Keep local history", s.proof, ["--recorded-answer", "yes"]);
+  expect(DecisionRegister.open(s.repo).read().entries[0]).toMatchObject({
+    madeBy: "fabricio", decision: "Q1: Keep local history",
+    why: expect.stringContaining(`Recorded user answer: ${s.proof}\nExact answer: "yes"`),
+  });
+});
+it("refuses a statement whose recorded answer is wrong, fabricated or a default", async () => {
+  const s = await setup({ Q1: "yes" }, "Keep local history?");
+  await expect(s.run("Q1: Keep local history", s.proof, ["--recorded-answer", "no"])).rejects.toThrow(/exact recorded answer/i);
+  await expect(s.run("Q1: Keep local history", "999:Q1", ["--recorded-answer", "yes"])).rejects.toThrow();
+  await expect(s.run("Q1: Keep local history", undefined, ["--recorded-answer", "yes"])).rejects.toThrow(/--answer/);
+  const defaults = await setup("defaults");
+  await expect(defaults.run("Q1: Keep local history", defaults.proof, ["--recorded-answer", "Keep local history"])).rejects.toThrow(/explicit|user answer/i);
+  expect(DecisionRegister.open(s.repo).read().entries).toEqual([]);
+});
+it("requires the statement to start with the answered question's ID", async () => {
+  const s = await setup({ Q1: "yes" }, "Keep local history?");
+  for (const text of ["Keep local history", "Q2: Keep local history", "Q1:", "Q1:  ", "Q1 Keep local history"]) {
+    await expect(s.run(text, s.proof, ["--recorded-answer", "yes"]), text).rejects.toThrow(/Q1: /);
+  }
+  expect(DecisionRegister.open(s.repo).read().entries).toEqual([]);
+});
+it("checks a supersession against the recorded question and answer, never the statement", async () => {
+  const s = await setup({ Q1: "yes" }, "Keep local history?");
+  DecisionRegister.open(s.repo).add({ date: "2026-10-25", decision: "Do not retain history", madeBy: "fabricio", source: "evidence.md", class: "Mechanical", reversibility: "easy", why: "Old rule", alternatives: [], dependsOn: [] });
+  await expect(s.run("Q1: Replace D1 and keep local history", s.proof, ["--recorded-answer", "yes", "--supersedes", "D1", "--reason", "yes"])).rejects.toThrow(/D1/);
+  expect(DecisionRegister.open(s.repo).read().entries).toHaveLength(1);
+});
+it("refuses --recorded-answer without --by user", async () => {
+  const s = await setup({ Q1: "yes" });
+  const command = new Command(); command.exitOverride(); command.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+  register(command, { home: s.home });
+  for (const by of ["default-accepted", "default-unconfirmed", "jarvis"]) {
+    await expect(command.parseAsync(["decide", "--repo", s.repo, "--by", by, "--class", "mechanical", "--source", "evidence.md", "--why", "Default", "--recorded-answer", "yes", "Q1: Keep local history"], { from: "user" }), by).rejects.toThrow(/--by user/);
+  }
+  expect(DecisionRegister.open(s.repo).read().entries).toEqual([]);
+});

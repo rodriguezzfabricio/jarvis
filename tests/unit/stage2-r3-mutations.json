@@ -128,14 +128,14 @@
   {
     "name": "stage2 r3 reader never stops",
     "file": "skills/spec/SKILL.md",
-    "anchor": "Stop after 3 passes with no new blocking gap",
+    "anchor": "At most 3 fresh-reader passes in total per spec version",
     "replacement": "Keep reviewing without a pass limit"
   },
   {
-    "name": "stage2 r3 reader passes unresolved blockers",
+    "name": "stage2 r3 reader hides unresolved gaps",
     "file": "skills/spec/SKILL.md",
-    "anchor": "unresolved blocking gaps leave the spec draft and prevent hand-off",
-    "replacement": "unresolved blocking gaps may be ignored at hand-off"
+    "anchor": "report every other remaining blocker there as a known gap. Then start confirmation, never another reader.",
+    "replacement": "ignore every other remaining blocker and hand off silently."
   },
   {
     "name": "stage2 r3 reader treats polish as blocking",

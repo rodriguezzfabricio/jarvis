@@ -24,3 +24,7 @@ Answer: <answer> · by: user | default accepted | default unconfirmed
 
 ## Engineering decisions
 - <decision> · rationale · alternatives · class · what depends on it (Taste) · reversibility
+
+## Spec check vN
+Fresh-reader passes: <0–3 total, never reset>
+- <finding> · action: fixed | default-unconfirmed assumption A<n> | known gap for confirmation

@@ -116,8 +116,8 @@
   {
     "name": "skills intake decide call drops why",
     "file": "skills/intake/SKILL.md",
-    "anchor": "jarvis decide --by user --class mechanical --why \"<the question's why>\" ",
-    "replacement": "jarvis decide --by user --class mechanical "
+    "anchor": "jarvis decide --by user --class mechanical|taste --why \"<the question's why>\" ",
+    "replacement": "jarvis decide --by user --class mechanical|taste "
   },
   {
     "name": "skills spec decide call drops why",
@@ -380,8 +380,8 @@
   {
     "name": "skills spec stops before clean final reread",
     "file": "skills/spec/SKILL.md",
-    "anchor": "until a pass finds no blocking gaps",
-    "replacement": "then proceed regardless of remaining gaps"
+    "anchor": "any fresh-reader pass counts toward the cap below",
+    "replacement": "fresh-reader passes after edits do not count toward the cap"
   },
   {
     "name": "skills spec ignores active register exclusions",
@@ -422,7 +422,7 @@
   {
     "name": "skills spec splits a confirmation into user decisions",
     "file": "skills/spec/SKILL.md",
-    "anchor": "record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM`",
+    "anchor": "record the answer once with its exact words as evidence, the decision itself as entry text, with `--answer <answerSeq>:CONFIRM`",
     "replacement": "record each change as the user's decision"
   },
   {

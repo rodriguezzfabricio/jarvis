@@ -50,7 +50,7 @@ describe("stage 2 round 4 rules (decision 155)", () => {
     expect(writing).toContain("One confirmation can carry about 20 P1 acceptance criteria and 7 unconfirmed assumptions.");
     expect(writing).toContain("cut it to the walking skeleton as P1 and the rest as P2/P3 stories, each with its own criteria and assumptions");
     expect(writing).toContain("the runner still builds them all, P1 first"); // the planner must cover every criterion (runner/plan.ts)
-    expect(writing).toContain("if the walking skeleton alone is over the budget, keep it whole and say so in the confirmation");
+    expect(writing).toContain("A walking skeleton over the budget is too thick: thin it to the shortest complete path and move the rest to P2/P3.");
     expect(writing).not.toMatch(/keep the spec draft|not part of the build/);
     const confirm = section(skill("spec"), "Confirm");
     expect(confirm).toContain("List every unconfirmed assumption as a short numbered list, each one line with its ID");

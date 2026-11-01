@@ -55,7 +55,7 @@ describe("jarvis decide (decisions 83, 85)", () => {
   it("registers the command and documents every flag", () => {
     const result = run(repo(), ["--help"]);
     expect(result.status).toBe(0);
-    for (const flag of ["--by", "--class", "--source", "--why", "--repo", "--reversibility", "--alternatives", "--depends-on", "--supersedes", "--reason", "--answer"]) expect(result.stdout).toContain(flag);
+    for (const flag of ["--by", "--class", "--source", "--why", "--repo", "--reversibility", "--alternatives", "--depends-on", "--supersedes", "--reason", "--answer", "--recorded-answer"]) expect(result.stdout).toContain(flag);
   });
 
   it("defaults to cwd, writes all settled defaults and prints only the new ID", () => {

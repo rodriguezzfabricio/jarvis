@@ -448,5 +448,59 @@
     "file": "packages/cli/src/review/service.ts",
     "anchor": "if (primary.verdict !== \"usage-limited\" && route.crossModel === \"codex\"",
     "replacement": "if (route.crossModel === \"codex\""
+  },
+  {
+    "name": "review schema normalizes digit lines",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "fields.line = Number(fields.line);",
+    "replacement": "fields.line = fields.line;"
+  },
+  {
+    "name": "review schema normalizes decimal confidence",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "fields.confidence = Number(fields.confidence);",
+    "replacement": "fields.confidence = fields.confidence;"
+  },
+  {
+    "name": "review schema normalizes severity case",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "fields.severity = fields.severity.toLowerCase();",
+    "replacement": "fields.severity = fields.severity;"
+  },
+  {
+    "name": "review schema reports issue paths and codes",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "invalid(schemaError(parsed.error.issues))",
+    "replacement": "invalid(\"review output does not match the verdict schema\")"
+  },
+  {
+    "name": "review schema never includes reviewer values or keys",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "${issue.code}",
+    "replacement": "${issue.message}"
+  },
+  {
+    "name": "review schema bounds the diagnostic",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "length + suffix.length > 160",
+    "replacement": "length + suffix.length > Infinity"
+  },
+  {
+    "name": "review schema never invents missing checks",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "const named = namedChecks(value);",
+    "replacement": "const named = namedChecks(value && typeof value === \"object\" ? { checked: [\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\"], ...value } : value);"
+  },
+  {
+    "name": "review security controls require a high finding",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "A change that disables or weakens a security control is a high finding unless the spec explicitly asks for it",
+    "replacement": "A change that disables or weakens a security control is advisory when it fixes a crash"
+  },
+  {
+    "name": "review schema never rounds confidence into range",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "/^(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)$/",
+    "replacement": "/^(?:0|1)(?:\\.[0-9]+)?$/"
   }
 ]

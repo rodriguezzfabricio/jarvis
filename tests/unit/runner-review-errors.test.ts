@@ -8,6 +8,7 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import type { TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
 import { runLoop, type LoopTaskInput, type RunLoopOptions } from "../../packages/cli/src/runner/loop.ts";
 import { rebuildState, repairsUsed } from "../../packages/cli/src/runner/state.ts";
+import { evaluateVerdict } from "../../packages/cli/src/review/verdict.ts";
 import { initRepo } from "./helpers/git-repo.ts";
 
 /**
@@ -117,4 +118,21 @@ describe("a review infrastructure error is not a code failure", () => {
       expect(d.replacement).not.toBe(d.anchor);
     }
   });
+});
+
+
+it("carries schema issue details from the review result into the blocked ledger entry and REPORT.md", async () => {
+  const f = fixture();
+  const review = async (r: { taskId: string; attemptId: string; revision: string }) => {
+    const evaluated = evaluateVerdict('{"findings":[{"severity":"high","confidence":0.9,"impact":"other","file":"app.ts","line":"PRIVATE","scenario":"failure","fix":"fix"}],"checked":[]}');
+    f.ledger.append({ kind: "review_result", actor: "runner", task_id: r.taskId, attempt_id: r.attemptId,
+      data: { reviewer: "code", revision: r.revision, status: "error", verdict: "error", error: evaluated.error } });
+    return { status: "error" as const, recorded: true as const };
+  };
+  expect((await runLoop({ ...f.options, review })).status).toBe("blocked");
+  const blocked = f.ledger.entries().filter((e) => e.kind === "blocked").at(-1)!;
+  expect(data(blocked).reason).toContain("findings.0.line:invalid_type");
+  const report = readFileSync(join(f.repoPath, ".jarvis/REPORT.md"), "utf8");
+  expect(report).toMatch(/- T1: review infrastructure error: .*findings\.0\.line:invalid/);
+  expect(report).not.toContain("PRIVATE");
 });

@@ -436,5 +436,89 @@
     "file": "packages/cli/src/runner/worktrees.ts",
     "anchor": "new TextDecoder(\"utf-8\", { fatal: false })",
     "replacement": "new TextDecoder(\"utf-8\", { fatal: true })"
+  },
+  {
+    "name": "runner-core ignore honors the runner exclude",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (!candidate.effective || candidate.negated)",
+    "replacement": "if (!candidate.root || candidate.negated)"
+  },
+  {
+    "name": "runner-core ignore requires effective protection",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "!candidate.effective || candidate.negated",
+    "replacement": "candidate.negated"
+  },
+  {
+    "name": "runner-core ignore preserves base root protection",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "return !base.root || candidate.root;",
+    "replacement": "return true;"
+  },
+  {
+    "name": "runner-core ignore rejects masked negations",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": " || candidate.negated",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core ignore folds APFS case",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "core.ignoreCase=true",
+    "replacement": "core.ignoreCase=false"
+  },
+  {
+    "name": "runner-core ignore reads the staged policy",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "tree ?? \"\"",
+    "replacement": "tree ?? w.baseRevision"
+  },
+  {
+    "name": "runner-core ignore guards every descendant",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "pattern.split(\"/\")[0]",
+    "replacement": "pattern"
+  },
+  {
+    "name": "runner-core ignore handles escaped separators",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": ".replace(/\\\\\\//g, \"/\")",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core ignore handles trailing spaces",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "${pattern.includes(\"/\") ? \"/\" : \"\"}",
+    "replacement": "/"
+  },
+  {
+    "name": "runner-core ignore fails closed on git faults",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if ((e as { status?: number }).status === 1) return { root: false, effective: false };\n    throw e;",
+    "replacement": "return { root: false, effective: true };"
+  },
+  {
+    "name": "runner-core ignore reads case-renamed files",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "entry.name.toLowerCase() === \".gitignore\"",
+    "replacement": "entry.name === \".gitignore\""
+  },
+  {
+    "name": "runner-core ignore rejects ambiguous root names",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "if (entries.length > 1) throw new Error(\"ambiguous root .gitignore spelling\");",
+    "replacement": ""
+  },
+  {
+    "name": "runner-core ignore never follows symlink rules",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "const contents = entry?.regular ?",
+    "replacement": "const contents = entry ?"
+  },
+  {
+    "name": "runner-core ignore does not hide blob failures",
+    "file": "packages/cli/src/runner/worktrees.ts",
+    "anchor": "const contents = entry?.regular ? command(git, w.path, [\"show\", `${tree}:${entry.name}`], w.home).toString() : \"\";",
+    "replacement": "let contents = \"\"; try { contents = entry?.regular ? command(git, w.path, [\"show\", `${tree}:${entry.name}`], w.home).toString() : \"\"; } catch {}"
   }
 ]

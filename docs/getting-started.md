@@ -52,7 +52,7 @@ Open your project in Claude Code. Restart Claude Code after installing the plugi
 
 `fix:`, `build:`, `feature:` and `ask:` explicitly select a request type. Without a prefix, Jarvis classifies the request. New products and ambiguous features go through intake; straightforward bugs can skip it.
 
-The intended flow hands an approved plan and protected checks to `jarvis run --detach`. A detached run continues after the interactive Claude Code session closes, while the Mac stays awake. Some handoff paths are still being evaluated. If the runner reports missing approved checks or a spec, the project is not ready; setup does not create those project-specific inputs.
+The intended flow hands an approved plan and protected checks to `jarvis run --detach`. An architect's plan (`.jarvis/plan.json`) also needs a counted Goldfish review at its hash (`jarvis plan review`, decision 170); until the live negative control has passed on this Mac and its pair is saved, that review does not count and the run is refused. A detached run continues after the interactive Claude Code session closes, while the Mac stays awake. Some handoff paths are still being evaluated. If the runner reports missing approved checks or a spec, the project is not ready; setup does not create those project-specific inputs.
 
 The interactive session uses your normal Claude Code permissions. Sandboxed unattended sessions use Jarvis’s generated settings. Installing the plugin adds hooks at user scope; action restrictions apply to Jarvis-marked sessions, while runner-home protection also applies elsewhere. To disable the plugin, use the pinned binary:
 
@@ -89,6 +89,8 @@ From `jarvis --help` today:
 | `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register; `--by user` needs `--answer <answerSeq>:<questionId>` from a recorded intake answer, quoted exactly |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
+| `jarvis plan review [--calibrate bad\|good] [--save-calibration <bad>:<good>]` | The Goldfish plan review (decision 170): three fresh read-only reviewers on the strong tier judge `.jarvis/plan.json` against the spec, the register and the approved checks; findings land in `.jarvis/plan-review/findings.json`. A review counts only after the negative control passed for this policy and model; until then `jarvis run` refuses architect plans |
+| `jarvis plan resolve` / `jarvis plan accept <id> --answer <text>` / `jarvis plan status` | Records the architect's resolution of each finding (contest with evidence, fix, escalate, decline; decision 172); answers an escalated question as the user; says whether `jarvis run` will accept the plan |
 | `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
 | `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |

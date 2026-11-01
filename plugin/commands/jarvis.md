@@ -19,20 +19,19 @@ Never write Claude Code memory files (auto-memory included), with any tool; keep
    - `--then <type>` for the edits a question also asks for (feature, refactor, bug, or none);
    - `--attached-error` for an attached error, stack trace or issue; `--touches <path>` for each file a quick search says the change touches;
    - `--onboarding`, `--judgment-tier <n>` (risk only raises it), `--reason "<one line>"`, and `--override <word>` if the user named an override another way.
-   The override and an empty folder outrank your judgment; mention any doubt in one line.
-3. **Before any progress narration, agent launch or skill dispatch, your first user-visible message MUST include the `headline` verbatim** from the final triage result. When there is an `upgrade.announcement`, display that sentence word for word immediately before the headline. Never upgrade silently. Do not substitute "research is running" for the headline.
-
-Shell reads: Quote globs (`--include='*.go'`). Prefer `rg -F` or simple fixed-string searches; `grep` may be ugrep. Do not rely on `jarvis <cmd> --help` exiting 0; inspect help separately from required work.
+   The override and an empty folder outrank your judgment.
+3. **Before any progress narration, agent launch or skill dispatch, your first user-visible message MUST include the `headline` verbatim** from the final triage result. When there is an `upgrade.announcement`, display that sentence word for word immediately before the headline. Never upgrade silently.
+Shell reads: Quote globs (`--include='*.go'`). Prefer `rg -F` or simple fixed-string searches; `grep` may be ugrep. Do not rely on `jarvis <cmd> --help` exiting 0.
 
 ## 2. Start the pipeline
 
-Only after displaying the triage headline, start the steps whose `dispatch` is true, in order, passing the request, the type, the tier and the triage JSON. Each skill chains to the next one itself, so start nothing a skill already ran. Never run anything listed in `never`.
+Only after displaying the triage headline, start the steps whose `dispatch` is true, in order, passing the request, the type, the tier and the triage JSON. Each skill chains to the next itself; start nothing a skill already ran. Never run anything listed in `never`.
 - `register-check` or `research`: start the `research` skill. It runs any spike and chains to intake, intake to spec, and spec hands back here with the spec's status.
 - `design`: spec runs the `design` skill's "after the pick" part before its reader check, so DESIGN.md is confirmed with the spec. If DESIGN.md is missing when spec hands back, run that part, then spec's Confirm again; never change a confirmed artifact here.
 - `read-only-research` and `answer`: read the code and docs, answer with file citations, change nothing.
-- `decision-archaeology`: the `onboard` skill. When triage's `onboarding` is true, start it at `read-only-research`: it does the reading, the answer and the archaeology together.
-- `review`: the `review` skill: read-only findings with file references and fixes, no edits.
-- `review-report`: that skill's report mode, writing to triage's `review.report`.
+- `decision-archaeology`: the `onboard` skill. When triage's `onboarding` is true, start it at `read-only-research`: it reads, answers and does the archaeology.
+- `review`: the `review` skill: read-only findings with fixes, no edits.
+- `review-report`: its report mode, written to triage's `review.report`.
 
 When `then` is set, do the steps above first, then treat `then` as the pipeline: its `steps`, `never` and `handoff`. Steps whose `by` is `runner` happen after the hand-off; don't do them here.
 
@@ -42,4 +41,6 @@ When `then` is set, do the steps above first, then treat `then` as the pipeline:
 - `handoff: "now"`: once the session steps, if any, are done.
 - `handoff: "none"`: stop after the answer or the review.
 
-**Stage 2 hand-off: Say what's ready and stop.** Name the spec and its status, the design and any unconfirmed assumptions. Do not invoke `jarvis run`, even with `--help`, or inspect runner options. Give this as a future user instruction only: "When the build runner is available, start it from the project folder with `jarvis run --detach`." Do not claim a run has started or that it is safe to close Claude Code.
+**Plan review before the runner** (decision 170): three fresh read-only lenses judge the architecture step's plan; it resolves each blocker or major by evidence, fix or escalation; the runner refuses a plan without a counted review.
+
+**Stage 2 hand-off: Say what's ready and stop.** Name the spec and its status, the design and any unconfirmed assumptions. Do not invoke `jarvis run`, even with `--help`, or inspect runner options. Say only: "When the build runner is available, start it from the project folder with `jarvis run --detach`." Do not claim a run has started or that it is safe to close Claude Code.

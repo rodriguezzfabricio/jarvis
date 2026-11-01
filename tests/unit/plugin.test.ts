@@ -71,6 +71,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
     ".jarvis/onboard/2026-10-24.md", ".jarvis/onboard/plan.json",
     ".jarvis/sweep/2026-10-24.md", ".jarvis/sweep/plan.json",
     ".jarvis/review/findings.json", // a review that asks for fixes (decision 126)
+    ".jarvis/plan-review/findings.json", ".jarvis/plan-review/resolution.json", // the Goldfish plan review (decisions 170, 172)
   ];
   const fileTool = (tool_name: string, file_path: string) => check({ tool_name, tool_input: { file_path }, cwd: jarvisRepo }, {});
 
@@ -106,6 +107,7 @@ describe("plugin tripwire (decision 12, layer 3)", () => {
       ".jarvis/onboard/notes.md", ".jarvis/onboard/2026-10-24.sh", ".jarvis/onboard/sub/plan.json",
       ".jarvis/sweep/26-10-24.md", ".jarvis/sweep/plan.json/x", ".jarvis/inbox/1.md", ".jarvis/evidence/1/log.txt",
       ".jarvis/review/plan.json", ".jarvis/review/findings.json.sh", ".jarvis/review/sub/findings.json", ".jarvis/review/../ledger.jsonl", ".jarvis/review/REVIEW.md",
+      ".jarvis/plan-review/plan.json", ".jarvis/plan-review/resolution.json.bak", ".jarvis/plan-review/sub/findings.json", ".jarvis/plan-review/../ledger.jsonl",
     ]) {
       for (const tool of ["Write", "Edit", "Read"]) expect(fileTool(tool, p), `${tool} ${p}`).toBeTruthy();
     }

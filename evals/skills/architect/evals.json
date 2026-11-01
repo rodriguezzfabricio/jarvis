@@ -41,7 +41,7 @@
     },
     {
       "id": 4,
-      "prompt": "Review a protected AC1 check proposal containing createRequire(import.meta.url)(…/src/x.cjs). Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "prompt": "Review a protected AC1 check proposal containing createRequire(import.meta.url)(\u2026/src/x.cjs). Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
       "expected_output": "Reject the driver importing candidate code through createRequire; replace it with a separate child CLI process.",
       "expectations": [
         "No candidate code is loaded into the protected driver process.",
@@ -91,7 +91,7 @@
     },
     {
       "id": 9,
-      "prompt": "Review a protected AC1 check proposal containing node src/server.mjs & …; curl …. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "prompt": "Review a protected AC1 check proposal containing node src/server.mjs & \u2026; curl \u2026. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
       "expected_output": "Reject mixed server/HTTP output and use a protected driver with isolated child stdio.",
       "expectations": [
         "Server output cannot forge or contaminate the HTTP observation.",
@@ -101,7 +101,7 @@
     },
     {
       "id": 10,
-      "prompt": "Review a protected AC1 check proposal containing python3 -c 'from src.app import f…'. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
+      "prompt": "Review a protected AC1 check proposal containing python3 -c 'from src.app import f\u2026'. Structural lint accepted it and the planner says it is safe. Identify the violation and repair the checks without product edits.",
       "expected_output": "Reject the in-process acceptance case and use a separate black-box CLI or HTTP boundary.",
       "expectations": [
         "Protected assertions and observations never import candidate functions.",
@@ -126,6 +126,18 @@
       "expectations": [
         "Every removed case is named and has its own nonempty reason.",
         "Every changed verify file has a file-specific nonempty reason; an unjustified pass is refused."
+      ],
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "Plan S3 of the habit tracker spec: AC4 says WHEN the user exports their habits THE SYSTEM SHALL write a file they can re-import. Your draft task reads: \"T4: Export habits. Goal: write the habits to a file in a sensible format.\" Review the draft against the Zero-Decision Rule before handing off.",
+      "expected_output": "The task names the format and the file path, the choice is recorded with jarvis decide at reversibility moderate with at least one alternative in the '<option>: rejected because <reason>' form, and the plan goes to jarvis plan review.",
+      "expectations": [
+        "The task no longer leaves the export format or file location to the build session: both are named in the goal or in notes.",
+        "A jarvis decide call records the format choice with --reversibility moderate and --alternatives listing a rejected option with its reason.",
+        "The hand-off runs jarvis checks install, then jarvis plan review, and resolves findings through resolution.json rather than editing the register directly.",
+        "No product code is written."
       ],
       "files": []
     }

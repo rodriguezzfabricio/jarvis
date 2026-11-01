@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createPlanReviewService, PLAN_POLICY_HASH, PLANTED_SCOPES, readPlanCalibration, savePlanCalibration } from "../../packages/cli/src/review/plan-service.ts";
 import { planReviewStatus } from "../../packages/cli/src/review/plan-resolve.ts";
 import { PLAN_LENSES } from "../../packages/cli/src/review/plan-verdict.ts";
-import { clean, removePlanFixtureRoots, setupPlanFixture, withFindings, type PlanFixture } from "./helpers/plan-review-fixture.ts";
+import { clean, removePlanFixtureRoots, seedCalibration, setupPlanFixture, withFindings, type PlanFixture } from "./helpers/plan-review-fixture.ts";
 
 afterEach(removePlanFixtureRoots);
 const planReviews = (f: PlanFixture) => f.ledger.entries().filter((e) => e.kind === "plan_review").map((e) => e.data as Record<string, unknown>);
@@ -24,7 +24,7 @@ const plantedAnswers = (lens: "zoom-out" | "critic" | "readiness") => lens === "
 describe("plan review service (decision 170)", () => {
   it("runs the three lenses in order on the strong tier, appends one entry per lens and an overall record, and writes findings.json", async () => {
     const f = setupPlanFixture();
-    await calibrate(f);
+    seedCalibration(f.ledger);
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result).toMatchObject({ verdict: "pass", counts: true, findings: [] });
     const entries = planReviews(f).filter((d) => d.purpose === "review");
@@ -56,7 +56,7 @@ describe("plan review service (decision 170)", () => {
   ];
   it.each(precedence)("verdict precedence: %s", async (_name, perLens, expected) => {
     const f = setupPlanFixture();
-    await calibrate(f);
+    seedCalibration(f.ledger);
     f.reviewer.mockImplementation(async (input) => { const lens = /Skeptical/.test(input.prompt) ? "zoom-out" : /Critic/.test(input.prompt) ? "critic" : "readiness"; const list = perLens[lens]; return { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: list ? withFindings(lens, list) : clean(lens) }; });
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result.verdict).toBe(expected);
@@ -65,7 +65,7 @@ describe("plan review service (decision 170)", () => {
   });
   it("a lens that did not report its checks, or returned garbage, makes the review an error, never a pass", async () => {
     const f = setupPlanFixture((lens) => lens === "critic" ? '{"findings":[],"checked":["alternatives"]}' : clean(lens));
-    await calibrate(f);
+    seedCalibration(f.ledger);
     f.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: /Critic/.test(input.prompt) ? "garbage" : clean(/Skeptical/.test(input.prompt) ? "zoom-out" : "readiness") }));
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result.verdict).toBe("error");
@@ -74,7 +74,7 @@ describe("plan review service (decision 170)", () => {
   });
   it("a reviewer that writes into its read-only checkout fails the review as an error and records nothing further", async () => {
     const f = setupPlanFixture();
-    await calibrate(f);
+    seedCalibration(f.ledger);
     f.reviewer.mockImplementation(async (input) => { writeFileSync(join(input.workspace, "src", "app.mjs"), "tampered"); return { reviewer: "claude", model: input.model, rawOutput: "w", rawVerdict: clean("zoom-out") }; });
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result.verdict).toBe("error"); expect(result.error).toContain("checkout changed");
@@ -84,7 +84,7 @@ describe("plan review service (decision 170)", () => {
   });
   it("a reviewer that throws makes an error entry for that lens and the review", async () => {
     const f = setupPlanFixture();
-    await calibrate(f);
+    seedCalibration(f.ledger);
     f.reviewer.mockRejectedValue(new Error("session exploded"));
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result.verdict).toBe("error");
@@ -134,7 +134,7 @@ describe("plan review service (decision 170)", () => {
   });
   it("refuses a plan hash that does not match the plan, and a work root inside runner-owned data", async () => {
     const f = setupPlanFixture();
-    await calibrate(f);
+    seedCalibration(f.ledger);
     const bad = await createPlanReviewService(f.options).review({ ...f.material, planHash: "0".repeat(64) });
     expect(bad.verdict).toBe("error"); expect(bad.error).toContain("hash");
     const inside = await createPlanReviewService({ ...f.options, workRoot: f.projectDir }).review(f.material);

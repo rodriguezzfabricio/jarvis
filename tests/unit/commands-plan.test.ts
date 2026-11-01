@@ -12,7 +12,7 @@ import { readPlanCalibration } from "../../packages/cli/src/review/plan-service.
 import type { ReviewerInput, ReviewerOutput } from "../../packages/cli/src/review/types.ts";
 import { runnerProjectDir } from "../../packages/cli/src/runner/inbox.ts";
 import { initRepo } from "./helpers/git-repo.ts";
-import { clean, lensOf, withFindings } from "./helpers/plan-review-fixture.ts";
+import { clean, lensOf, seedCalibration, withFindings } from "./helpers/plan-review-fixture.ts";
 
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof import("../../packages/cli/src/commands/plan.ts").register>[0] };
 const FIXTURES = fileURLToPath(new URL("../fixtures/plan-review/", import.meta.url));
@@ -106,7 +106,7 @@ describe("jarvis plan (decisions 170, 172)", () => {
     expect(s.out.at(-1)).toContain("jarvis run may build it");
   });
   it("a major is listed, fails the command, and runs only after jarvis plan resolve records a contest with evidence", async () => {
-    const s = setup(); await s.calibrate();
+    const s = setup(); seedCalibration(s.ledger());
     s.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: lensOf(input.prompt) === "readiness" ? withFindings("readiness", [{ severity: "major", scope: "T1" }]) : clean(lensOf(input.prompt)) }));
     expect((await s.invoke("review")).code).toBe(1);
     expect(s.out.at(-2)).toContain("Plan review resolve; 1 finding(s)"); expect(s.out.at(-1)).toContain("readiness-1 [major] T1");
@@ -120,7 +120,7 @@ describe("jarvis plan (decisions 170, 172)", () => {
     expect((await s.invoke("status")).code).toBeUndefined();
   });
   it("an escalation waits for jarvis plan accept, answered once", async () => {
-    const s = setup(); await s.calibrate();
+    const s = setup(); seedCalibration(s.ledger());
     s.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: lensOf(input.prompt) === "critic" ? withFindings("critic", [{ severity: "major", scope: "D1" }]) : clean(lensOf(input.prompt)) }));
     await s.invoke("review");
     mkdirSync(join(s.repo, ".jarvis", "plan-review"), { recursive: true });

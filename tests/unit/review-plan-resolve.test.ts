@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { acceptEscalation, canonicalPlan, contestEvidence, planFileHash, planHashOf, planReviewStatus, resolvePlanReview } from "../../packages/cli/src/review/plan-resolve.ts";
 import { createPlanReviewService } from "../../packages/cli/src/review/plan-service.ts";
-import { clean, PLAN_TEXT, removePlanFixtureRoots, setupPlanFixture, withFindings, type PlanFixture } from "./helpers/plan-review-fixture.ts";
+import { clean, PLAN_TEXT, removePlanFixtureRoots, seedCalibration, setupPlanFixture, withFindings, type PlanFixture } from "./helpers/plan-review-fixture.ts";
 
 afterEach(removePlanFixtureRoots);
 const register = [{ id: 1, status: { kind: "active" } }, { id: 2, status: { kind: "superseded" } }];
@@ -14,10 +14,7 @@ const lensOf = (prompt: string) => /Skeptical/.test(prompt) ? "zoom-out" as cons
 async function reviewed(perLens: Partial<Record<"zoom-out" | "critic" | "readiness", F[]>>): Promise<PlanFixture> {
   const f = setupPlanFixture();
   const service = createPlanReviewService(f.options);
-  f.reviewer.mockImplementation(async (input) => { const lens = lensOf(input.prompt); return { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: lens === "zoom-out" ? withFindings(lens, [{ severity: "major", scope: "T2" }]) : lens === "critic" ? withFindings(lens, [{ severity: "blocker", scope: "D3" }]) : withFindings(lens, [{ severity: "major", scope: "T3" }]) }; });
-  await service.review(f.material, { fixture: "bad" });
-  f.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: clean(lensOf(input.prompt)) }));
-  await service.review(f.material, { fixture: "good" });
+  seedCalibration(f.ledger);
   f.reviewer.mockImplementation(async (input) => { const lens = lensOf(input.prompt); const list = perLens[lens]; return { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: list ? withFindings(lens, list) : clean(lens) }; });
   await service.review(f.material);
   return f;

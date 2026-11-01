@@ -87,7 +87,7 @@ Ask it to report, each with the line it refers to:
 - whether recorded state matches what happened: preparing something, handing it to another app, the user confirming they did it and an outside service confirming it are distinct states,
 - whether inferred labels need evidence or lower confidence; never state a guessed role or category as fact.
 
-Fix each gap in the draft, or record why not. The reader's findings and what you did with each go in the intake record under "Spec check vN".
+Each finding gets one action (decision 172): fix the draft; contest it citing a file or decision, never "intentional"; escalate what no file settles into the confirmation, never pad the spec; decline nits. Record each under "Spec check vN".
 
 **No second round of questions** (decision 8). A gap that turns out to be a product question becomes a `[delegated]` assumption using the default you would have offered, labeled "default unconfirmed", and is listed first in the confirmation. After fixing, re-read the whole spec after the last fixes, check it against the whole current decision register, and run a fresh reader again while blocking gaps remain; any fresh-reader pass counts toward the cap below. Check no superseded citations, no answered question left open, and decision header ranges are current. Check goals, non-goals, stories, criteria and assumptions together; do not reintroduce anything an active decision excludes. Re-run `jarvis spec check` after each final edit. Nonblocking gaps may stay under Open questions with explicit defaults. Repeat the self-check and format checker after confirmation changes; a fresh reader runs only if the cap below permits it.
 

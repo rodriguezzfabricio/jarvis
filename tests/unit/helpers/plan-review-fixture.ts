@@ -9,7 +9,7 @@ import { Ledger } from "../../../packages/cli/src/ledger/ledger.ts";
 import { DEFAULT_REVIEW_ROUTING } from "../../../packages/cli/src/review/routing.ts";
 import { canonicalPlan, planHashOf } from "../../../packages/cli/src/review/plan-resolve.ts";
 import { PLAN_LENSES, REQUIRED_CHECKS, type PlanLens } from "../../../packages/cli/src/review/plan-verdict.ts";
-import type { PlanReviewMaterial, PlanReviewServiceOptions } from "../../../packages/cli/src/review/plan-service.ts";
+import { PLAN_POLICY_HASH, PLANTED_SCOPES, type PlanReviewMaterial, type PlanReviewServiceOptions } from "../../../packages/cli/src/review/plan-service.ts";
 import type { ReviewerInput, ReviewerOutput } from "../../../packages/cli/src/review/types.ts";
 import { initRepo } from "./git-repo.ts";
 
@@ -65,3 +65,13 @@ export function setupPlanFixture(answer: (lens: PlanLens, input: ReviewerInput) 
 }
 
 export const exists = (path: string) => existsSync(path);
+
+/**
+ * Two counted controls under the current policy, written as the service writes its overall calibration records
+ * (bad failed naming every planted scope, good passed), so a test that is not about calibration skips six reviews.
+ */
+export function seedCalibration(ledger: Ledger, model = "claude-opus-5-5"): void {
+  const base = { revision: "0".repeat(40), planHash: "0".repeat(64), policyHash: PLAN_POLICY_HASH, model, counts: false, findings: [], purpose: "calibration" };
+  ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { ...base, lens: "overall", fixture: "bad", verdict: "fail", planted: [...PLANTED_SCOPES] } });
+  ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { ...base, lens: "overall", fixture: "good", verdict: "pass", planted: [] } });
+}

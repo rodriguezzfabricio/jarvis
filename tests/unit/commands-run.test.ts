@@ -81,3 +81,17 @@ it("caffeinate runs the absolute pin with -i -w <pid> on macOS only", () => {
   expect(spawn).toHaveBeenCalledWith("/usr/bin/caffeinate", ["-i", "-w", "4242"], expect.objectContaining({ detached: true, stdio: "ignore" }));
   spawn.mockClear(); caffeinate(4242, "linux", spawn); expect(spawn).not.toHaveBeenCalled();
 });
+
+it("hands a bug request to both foreground and detached production runs", async () => {
+  const request = "The citizenship filter is missing jobs. Fix it.";
+  const f = setup(); await f.program.parseAsync(["run", "--request", request], { from: "user" });
+  expect(f.run).toHaveBeenCalledWith(expect.objectContaining({ request }));
+  const spawn = fakeSpawn(); const g = setup({ spawn, entrypoint: "/runner/cli.ts" });
+  await g.program.parseAsync(["run", "--request", request, "--detach"], { from: "user" });
+  expect((spawn.mock.calls[0]! as unknown as [string, string[]])[1]).toContain(request);
+});
+it("rejects combining a request with a session plan before probing", async () => {
+  const f = setup();
+  await expect(f.program.parseAsync(["run", "--request", "Fix a bug", "--plan", "onboard"], { from: "user" })).rejects.toThrow(/request.*plan/);
+  expect(f.probe).not.toHaveBeenCalled();
+});

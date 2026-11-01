@@ -29,7 +29,7 @@ import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.
 import type { TaskTier } from "../runner/harness.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
-import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
+import { bugRequestPlan, planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
 import {
   commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordedFixYes, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
   type ReviewFixPlan, type ReviewOutput,
@@ -75,6 +75,8 @@ export interface ReviewDeps {
   spec: ApprovedSpec | undefined;
   git: (args: readonly string[]) => string;
   preflight: () => Promise<boolean>;
+  /** The runner-generated bug task and its original report. */
+  bugRequest?: { request: string; tasks: ReadonlyMap<string, PlanTask> };
   /** `jarvis run --plan review` (decision 126): the request and the fix tasks, reviewed against their finding with the bug brief. */
   reviewFix?: { request: string; tasks: ReadonlyMap<string, PlanTask>; bugTasks: ReadonlySet<string> };
 }
@@ -88,6 +90,9 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   const task = rebuildState(deps.ledger.entries(), { now: Date.now() }).tasks[taskId];
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
+  const bug = deps.bugRequest?.tasks.get(taskId);
+  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, kind: "bug",
+    spec: `Request, as typed: ${deps.bugRequest!.request}\nGoal: ${bug.goal}\nExit condition: ${bug.exitCondition}`, acceptanceCriteria: [bug.exitCondition] };
   if (deps.reviewFix) {
     const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);
     return {
@@ -178,11 +183,15 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const spec = approvedSpec(git, runBranch);
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
-  const plan = reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
+  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
+  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing)
+    : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  const bugRequest = context.request !== undefined ? { request: context.request, tasks: new Map(plan!.tasks.map((t) => [t.id, t])) } : undefined;
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
   const reviewFix = reviewRun ? { request: reviewRun.output.request, tasks: new Map((reviewRun.fix.plan?.tasks ?? []).map((t) => [t.id, t])), bugTasks: new Set(reviewRun.fix.taskIds) } : undefined;
-  const reviewDeps: ReviewDeps = { context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}) };
+  const reviewDeps: ReviewDeps = { context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}), ...(bugRequest ? { bugRequest } : {}) };
   const review = options.createReview ? options.createReview(reviewDeps) : defaultReview(reviewDeps, {
     home, runBranch, ...(options.createDesignReview ? { createDesignReview: options.createDesignReview } : {}),
   });
@@ -221,7 +230,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
     // A review run may touch only the tasks it created (decision 126): never the project's other unfinished work.
-    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : {}),
+    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),
   };
   approvals.start();
   const fix = reviewRun?.fix;

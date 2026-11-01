@@ -1,6 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import * as gates from "../../packages/cli/src/checks/gate.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pinnedCodexBin } from "../../packages/cli/src/config/pins.ts";
 import { loadTask } from "../../packages/cli/src/eval/baseline.ts";
 import { jarvisMetrics, runJarvis, type RunLoopOptions } from "../../packages/cli/src/eval/jarvis.ts";
@@ -20,7 +22,7 @@ const contains = (files: string[], marker: string) => files.filter((f) => readFi
  * production Claude reviewer, whose one session is a fake reviewer process (the fake claude acting out a
  * scenario that returns an empty findings list). A fake Codex sits at the pinned path as a canary.
  */
-function setup(preflight: () => Promise<{ ok: boolean }>) {
+function setup(preflight: () => Promise<{ ok: boolean; waitUntil?: number }>) {
   const fx = createEvalFixture();
   fixtures.push(fx);
   const scenarioPath = join(fx.root, "review-scenario", "scenario.json");
@@ -104,6 +106,21 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     expect(r.metrics.repairs).toBe(0);
   });
 
+  it("keeps a review preflight reset in its typed ledger outcome without counting a session", async () => {
+    let n = 0;
+    const s = setup(async () => ++n === 1 ? { ok: true } : { ok: false, waitUntil: 2000 });
+    const gate = vi.spyOn(gates, "runGate").mockImplementation(async g => {
+      const dir = join(g.projectDir, "evidence", "fake-gate"); mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "stdout"), "verified fake gate");
+      const entry = g.ledger.append({ kind: "gate_result", actor: "runner", task_id: g.taskId, attempt_id: g.attemptId,
+        data: { check: g.check.name, revision: g.revision, status: "pass", evidence: { dir, files: { stdout: createHash("sha256").update("verified fake gate").digest("hex") } } } });
+      return { status: "pass", entry, evidenceDir: dir };
+    });
+    let r; try { r = await s.run(); } finally { gate.mockRestore(); }
+    expect(s.reviewerSpecs).toHaveLength(0);
+    expect(reviewResults(s.calls[0]!.projectDir)[0]).toMatchObject({ status: "usage-limited", resetAt: 2000 });
+    expect(r.metrics.sessions.review).toBe(0);
+  });
   it("reviews a gate whose log is several MB from a bounded excerpt, and the task completes (the Oct 25 live run)", async () => {
     const s = setup(async () => ({ ok: true }));
     // The project's own suite prints a few MB, as FreeHire's `go test -json ./...` printed 5 MB.
@@ -132,8 +149,9 @@ describe("eval jarvis: review sessions in the run metrics", () => {
       entry(2, { reviewer: "code", status: "pass", reviews: [{ reviewer: "claude" }] }),
       entry(3, { reviewer: "code", status: "fail", reviews: [{ reviewer: "claude" }, { reviewer: "codex" }] }),
       entry(4, { reviewer: "session", status: "fail", summary: "task timeout" }),
-      entry(5, { reviewer: "code", status: "pass" }), // a plain verdict recorded by the loop: one review
+      entry(5, { reviewer: "code", status: "pass" }), // a verdict alone is not a process start
+      ...[6, 7, 8].map(n => ({ ...entry(n, { type: "review_process_started" }), kind: "reconciled" as const })),
     ], 0, 0);
-    expect(m.sessions.review).toBe(4);
+    expect(m.sessions.review).toBe(3);
   });
 });

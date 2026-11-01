@@ -95,6 +95,36 @@ describe("jarvis run production composition", () => {
     expect(reviewMaterialFor({ ...deps, tier: 2 }, "T2", "candidate").tier).toBe(2);
   });
 
+  it.each(["The citizenship filter is missing some jobs that require US citizenship.", "Chromium won't start in the container. Fix it."])("plans a bug request without a spec: %s", async (request) => {
+    const p = project();
+    safeGit(p.repoPath, ["rm", "-r", "docs/spec"], { home: p.home });
+    safeGit(p.repoPath, ["commit", "-qm", "no spec"], { home: p.home });
+    let deps: ReviewDeps | undefined;
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    let loop: PreparedRun["loop"];
+    try { ({ loop } = await prepare(p, { request }, { createReview: input => { deps = input; return async () => "pass"; } })); }
+    finally { hosted.mockRestore(); }
+    expect(loop.plan?.tasks).toHaveLength(1);
+    const task = loop.plan!.tasks[0]!;
+    expect(task.goal).toBe(request);
+    expect(task.exitCondition).toContain("every path");
+    expect(task.requiredChecks).toContain("unit");
+    expect(task.requiredReviews).toContain("code");
+    expect(reviewMaterialFor(deps!, task.id, safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim())).toMatchObject({
+      kind: "bug", tier: loop.tier, spec: expect.stringContaining(request), acceptanceCriteria: [task.exitCondition],
+    });
+  });
+  it("refuses a feature request through the spec-free bug handoff", async () => {
+    const p = project();
+    await expect(prepare(p, { request: "Build a new habit tracker app" })).rejects.toThrow(/bug.*spec|spec.*bug/);
+    expect(socketsIn(p)).toEqual([]);
+  });
+  it("keeps the approved spec requirement for an ordinary architect plan", async () => {
+    const p = project(); writePlan(p);
+    safeGit(p.repoPath, ["rm", "-r", "docs/spec"], { home: p.home });
+    safeGit(p.repoPath, ["commit", "-qm", "no spec"], { home: p.home });
+    await expect(prepare(p)).rejects.toThrow(/approved spec/);
+  });
   it("refuses to start without approved protected checks", async () => {
     const p = project(false);
     await expect(prepare(p)).rejects.toThrow(/approved/);

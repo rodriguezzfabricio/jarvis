@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import * as accounts from "../../packages/cli/src/setup/accounts.ts";
 import { verifyProviderCli } from "../../packages/cli/src/release/provider-cli.ts";
+import { RENDER_TOOL_PINS } from "../../packages/cli/src/config/pins.ts";
+import { renderTools } from "../../packages/cli/src/release/render-tools.ts";
 import { toolDoctorChecks } from "../../packages/cli/src/doctor/tools.ts";
 import type { SessionSpec } from "../../packages/cli/src/proc/session.ts";
 
@@ -25,8 +27,14 @@ describe("Render tools in registry consumers", () => {
     expect(result).not.toHaveProperty("interpreter"); expect(calls.map(s => s.args)).toEqual([["--version"], ["-V"]]);
     expect(calls.some(s => existsSync(s.cwd) || existsSync(s.env.HOME!))).toBe(false);
   });
+  it("takes Git and SSH from config/pins.ts by absolute path, never PATH", () => {
+    expect(RENDER_TOOL_PINS.git.bin).toBe("/Applications/Xcode.app/Contents/Developer/usr/bin/git");
+    expect(RENDER_TOOL_PINS.ssh.bin).toBe("/usr/bin/ssh");
+    expect(renderTools()).toEqual([{ ...RENDER_TOOL_PINS.git, args: ["--version"] }, { ...RENDER_TOOL_PINS.ssh, args: ["-V"] }]);
+    expect(renderTools({ git: { bin: "git", version: "git version 2.50.1" }, ssh: RENDER_TOOL_PINS.ssh })).toBeUndefined();
+  });
   it("refuses an unpinned or wrong native tool and tools under an untrusted root", async () => {
-    expect(await verifyProviderCli(input)).toMatchObject({ ok: false });
+    expect(await verifyProviderCli(input, { nativeTools: [] })).toMatchObject({ ok: false });
     expect(await verifyProviderCli(input, { nativeTools: tools, run: async () => ok("wrong") })).toMatchObject({ ok: false });
     const run = vi.fn(async () => ok());
     expect(await verifyProviderCli({ ...input, untrusted: ["/bin"] }, { nativeTools: tools, run })).toMatchObject({ ok: false }); expect(run).not.toHaveBeenCalled();

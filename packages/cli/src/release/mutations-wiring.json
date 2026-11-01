@@ -224,7 +224,7 @@
   {
     "name": "release_adapters_get_pinned_version_and_node",
     "file": "packages/cli/src/release/run.ts",
-    "anchor": "{ bin: cli.bin, version: cli.version, interpreter: cli.interpreter, home: roots.providerHome, cwd: roots.providerCwd }",
-    "replacement": "{ bin: cli.bin, version: cli.version, home: roots.providerHome, cwd: roots.providerCwd }"
+    "anchor": "{ bin: cli.bin, version: cli.version, ...(cli.interpreter ? { interpreter: cli.interpreter } : {}), ...(cli.ssh ? { ssh: cli.ssh } : {}),",
+    "replacement": "{ bin: cli.bin, version: cli.version, ...(cli.ssh ? { ssh: cli.ssh } : {}),"
   }
 ]

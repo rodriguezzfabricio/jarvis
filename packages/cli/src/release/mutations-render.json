@@ -1,5 +1,23 @@
 [
   {
+    "name": "render_promote_unaccepted_refused",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "} catch { return { outcome: \"failed\" as const, detail: { reason: \"current Render production serves no accepted manifest; no promotion attempted\" } }; }",
+    "replacement": "} catch (error) { throw error; }"
+  },
+  {
+    "name": "render_tool_pins_absolute",
+    "file": "packages/cli/src/release/render-tools.ts",
+    "anchor": "if (!pins || !isAbsolute(pins.git.bin) || !isAbsolute(pins.ssh.bin) || !pins.git.version || !pins.ssh.version) return undefined;",
+    "replacement": "if (!pins) return undefined;"
+  },
+  {
+    "name": "render_setup_offers_key_generation",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (spec?.provider === \"render\") return (ctx.deps.renderSetup ?? setupRenderAccount)(",
+    "replacement": "if (false) return (ctx.deps.renderSetup ?? setupRenderAccount)("
+  },
+  {
     "name": "render_static_allowlist",
     "file": "packages/cli/src/release/artifacts.ts",
     "anchor": "assertStaticName(path, false);",

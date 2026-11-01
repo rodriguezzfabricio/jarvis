@@ -62,29 +62,42 @@ export function register(program: Command, seams: ReleaseCommandOptions = {}): v
 
   release.command("configure").description("Write the project's protected release setup: provider, site, live origin, build and data source")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
-    .requiredOption("--provider <name>", "vercel or netlify")
-    .requiredOption("--site <id>", "the Vercel project id or the Netlify site id")
+    .requiredOption("--provider <name>", "render, vercel or netlify")
+    .requiredOption("--site <id>", "the Vercel project id, the Netlify site id, or a label for the Render sites")
     .option("--org <id>", "the Vercel account or team id")
-    .requiredOption("--url <origin>", "the live production origin, https://…")
-    .option("--plan <plan>", "the account's plan; only the free plan is accepted (hobby on Vercel, free on Netlify)")
+    .requiredOption("--url <origin>", "the live production origin, https://… (Render: the production site's https://<name>.onrender.com)")
+    .option("--plan <plan>", "the account's plan; only the free plan is accepted (hobby on Vercel, free on Netlify and Render)")
+    .option("--preview-repo <ssh-url>", "Render: the preview deploy repository, git@github.com:<owner>/<repo>.git")
+    .option("--production-repo <ssh-url>", "Render: the production deploy repository, a different one")
+    .option("--preview-url <origin>", "Render: the preview site's https://<name>.onrender.com")
+    .option("--preview-branch <branch>", "Render: the branch the preview site deploys", "main")
+    .option("--production-branch <branch>", "Render: the branch the production site deploys", "main")
     .option("--build <command>", "the build the runner runs on the checked revision, offline in the sandbox", "npm run build")
     .option("--output <folder>", "the static output folder the build leaves in the checkout", "out")
     .option("--timeout-ms <ms>", "the build's time limit")
     .option("--data-kind <kind>", "sqlite or postgres, when the app keeps data")
     .option("--data-source <path>", "the consistent SQLite export or Postgres dump the runner copies for a rehearsal")
-    .action((o: { project?: string; provider: string; site: string; org?: string; url: string; plan?: string; build: string; output: string; timeoutMs?: string; dataKind?: string; dataSource?: string }) => {
+    .action((o: { project?: string; provider: string; site: string; org?: string; url: string; plan?: string; build: string; output: string; timeoutMs?: string; dataKind?: string; dataSource?: string;
+      previewRepo?: string; productionRepo?: string; previewUrl?: string; previewBranch: string; productionBranch: string }) => {
       const id = project(o.project);
       if ((o.dataKind === undefined) !== (o.dataSource === undefined)) throw new Error("--data-kind and --data-source go together");
+      if (o.provider !== "render" && [o.previewRepo, o.productionRepo, o.previewUrl].some((v) => v !== undefined)) throw new Error("--preview-repo, --production-repo and --preview-url are only for --provider render");
+      const render = o.provider === "render" ? { render: {
+        preview: { repo: o.previewRepo, branch: o.previewBranch, url: o.previewUrl },
+        production: { repo: o.productionRepo, branch: o.productionBranch, url: o.url } } } : {};
       const setup = parseReleaseSetup({ version: 1, provider: o.provider, plan: o.plan ?? FREE_PLANS[o.provider as keyof typeof FREE_PLANS] ?? "", siteId: o.site,
-        ...(o.org !== undefined ? { orgId: o.org } : {}), productionUrl: o.url,
+        ...(o.org !== undefined ? { orgId: o.org } : {}), productionUrl: o.url, ...render,
         build: { command: o.build, output: o.output, ...(o.timeoutMs !== undefined ? { timeoutMs: Number(o.timeoutMs) } : {}) },
         ...(o.dataKind !== undefined ? { data: { kind: o.dataKind, source: o.dataSource } } : {}) });
       const dir = dirOf(id);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       const path = saveReleaseSetup(dir, setup, seams.trust);
-      const tokens = `${setup.provider.toUpperCase()}_PREVIEW_TOKEN and ${setup.provider.toUpperCase()}_PRODUCTION_TOKEN`;
+      const tokens = setup.provider === "render" ? "RENDER_PREVIEW_DEPLOY_KEY and RENDER_PRODUCTION_DEPLOY_KEY"
+        : `${setup.provider.toUpperCase()}_PREVIEW_TOKEN and ${setup.provider.toUpperCase()}_PRODUCTION_TOKEN`;
+      const tools = setup.provider === "render" ? "Git and SSH must match config/pins.ts RENDER_TOOL_PINS"
+        : `the ${setup.provider} CLI must be pinned (config/pins.ts PROVIDER_CLI_PINS)`;
       out([`Wrote ${path}.`, `Previews deploy to ${setup.provider} site ${setup.siteId} on the ${setup.plan} plan; production ${setup.productionUrl} stays gated until you grant a manifest.`,
-        `The broker reads ${tokens} (jarvis setup --redo accounts.deploy stores them), and the ${setup.provider} CLI must be pinned (config/pins.ts PROVIDER_CLI_PINS).`].join("\n"));
+        `The broker reads ${tokens} (jarvis setup --redo accounts.deploy stores them), and ${tools}.`].join("\n"));
     });
 
   release.command("show").description("Print the release setup, the latest accepted manifest and the release state that holds now")

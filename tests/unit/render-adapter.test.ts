@@ -156,6 +156,14 @@ describe("Render broker deploys", () => {
     const b = new Broker({ ledger: f.ledger, project: "p", adapters: runtime!.adapters, secrets: { get: key => key === "RENDER_PREVIEW_DEPLOY_KEY" ? PREVIEW : undefined } });
     expect((await b.handle(f.request(m))).status).toBe("succeeded"); expect(f.urls).toEqual([`${destinations.preview.url}/.jarvis-build.json`]);
   });
+  it.each(["unaccepted", "absent"])("refuses a promotion as failed, not unknown, when production serves an %s manifest: nothing was pushed", async mode => {
+    const f = fixture(); const b = f.broker(); grantRelease(b, f.manifest, "person", true);
+    if (mode === "unaccepted") f.marker("c".repeat(64)); else f.fail("oversize");
+    const result = await b.handle(f.request(f.manifest, "promote"));
+    expect(result.status).toBe("failed");
+    expect(f.calls.filter(s => s.args.includes("push") || s.args.includes("ls-remote"))).toEqual([]); expect(f.reads).toEqual([]);
+    expect(f.ledger.entries().some(e => e.kind === "decision" && (e.data as { type?: string }).type === "release.production-before")).toBe(false);
+  });
   it("never falls back to another tier's key", async () => {
     const f = fixture(); f.missingKey();
     expect((await f.broker().handle(f.request())).status).toBe("failed");

@@ -89,7 +89,8 @@ export async function toolDoctorChecks(deps: ToolDoctorDeps): Promise<DoctorChec
     if (found !== `${impeccable.version}+engine`) throw new Error(`expected ${impeccable.version}+engine, found ${found.slice(0, 80)}`);
     add("impeccable", true, `${impeccable.bin}: ${found}; sha256 ${digest}`);
   } catch (error) { add("impeccable", false, `not run: impeccable (${String(error)})`); }
-  // Deploy provider CLIs (decision 161): the PROVIDER_CLI_PINS version of the CLI at started as the
+  // Deploy provider tools. Render (decision 163): the RENDER_TOOL_PINS Git and SSH, run as its adapter runs them.
+  // CLI providers (decision 161): the PROVIDER_CLI_PINS version of the CLI at its pinned path, started as the
   // adapters start it (through pinnedProviderNode, no token, a fresh empty HOME, PATH=/usr/bin:/bin). Never PATH or an install.
   for (const provider of PROVIDER_NAMES) {
     const module = PROVIDERS[provider];

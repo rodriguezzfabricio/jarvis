@@ -9,7 +9,7 @@ import { parseNotifyConfig } from "../notify/config.ts";
 import { saveTaste } from "../intake/taste.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import { NtfyNotifier, type NtfyOptions } from "../notify/ntfy.ts";
-import { ACCOUNTS, DEPLOY, type AccountSpec } from "./accounts.ts";
+import { ACCOUNTS, DEPLOY, setupRenderAccount, type AccountSpec } from "./accounts.ts";
 import { installPlugin } from "./plugin.ts";
 import { ACCOUNT_STEPS, STEPS, isFinished, jarvisHome, loadState, saveState, type SetupState, type StepName, type StepRecord } from "./state.ts";
 import type { Tty } from "./tty.ts";
@@ -35,6 +35,8 @@ export interface SetupDeps {
   uid?: number;
   /** Test seam for the macOS ACL listing (`/bin/ls -lde`); defaults to the real one on macOS. */
   acl?: (path: string) => string;
+  /** Test seam: Render's deploy-key generation (decision 163); defaults to setupRenderAccount. */
+  renderSetup?: (o: { privateRoot: string; secrets: SecretsWriter; print(text: string): void }) => Promise<Outcome>;
 }
 export interface SetupOptions { redo?: readonly string[]; sendTest?: boolean }
 export interface SetupResult { ok: boolean; state: SetupState; pending: StepName[] }
@@ -194,13 +196,15 @@ async function accountStep(spec: AccountSpec, ctx: Context, confirm: boolean): P
 
 async function deployStep(ctx: Context): Promise<Outcome> {
   if (!isFinished(ctx.state.steps.secrets)) return { status: "failed", detail: "the secrets backend isn't ready; fix the secrets step first" };
-  ctx.deps.print("Deploy host for web apps: Vercel Hobby for personal projects, Netlify Free for commercial ones (decision 33).");
+  ctx.deps.print("Deploy host for web apps: Render free static sites (decision 163), Vercel Hobby for personal projects, or Netlify Free for commercial ones (decision 33).");
   for (;;) {
-    const answer = (await ctx.deps.tty.ask("Deploy host: Vercel or Netlify? [vercel/netlify, Enter to skip] ")).toLowerCase();
+    const answer = (await ctx.deps.tty.ask("Deploy host: Render, Vercel or Netlify? [render/vercel/netlify, Enter to skip] ")).toLowerCase();
     if (answer === "" || answer === "n" || answer === "skip") return { status: "skipped", detail: SKIPPED_ACCOUNT };
     const spec = DEPLOY[answer];
+    // Render takes no pasted token: setup generates its two deploy keys runner-side and prints the public halves.
+    if (spec?.provider === "render") return (ctx.deps.renderSetup ?? setupRenderAccount)({ privateRoot: ctx.jarvis, secrets: ctx.secrets, print: ctx.deps.print });
     if (spec) return accountStep(spec, ctx, false);
-    ctx.deps.print("Answer vercel, netlify, or press Enter to skip.");
+    ctx.deps.print("Answer render, vercel, netlify, or press Enter to skip.");
   }
 }
 

@@ -60,9 +60,13 @@ async function renderDeploy(input: ProviderDeployInput) {
   if (action === "promote") {
     const previous = await readRenderMarker(setup.productionUrl, options.fetch);
     if (!previous) return { outcome: "failed" as const, detail: { reason: "current Render production marker unavailable; no promotion attempted" } };
-    const old = parseManifest(options.resolveManifest(previous));
-    if (manifestHash(old) !== previous) throw new Error("unknown production manifest");
-    checkManifest(old, setup);
+    // Nothing has been pushed yet, so a production marker that names no accepted manifest of this setup is a refusal
+    // ("failed", safe to retry), not an uncertain outcome.
+    try {
+      const old = parseManifest(options.resolveManifest(previous));
+      if (manifestHash(old) !== previous) throw new Error("unknown production manifest");
+      checkManifest(old, setup);
+    } catch { return { outcome: "failed" as const, detail: { reason: "current Render production serves no accepted manifest; no promotion attempted" } }; }
     recordCurrentProduction(options.ledger, manifest, setup, { id: previous, url: setup.productionUrl });
   }
   const key = secrets.get(action === "preview" ? "RENDER_PREVIEW_DEPLOY_KEY" : "RENDER_PRODUCTION_DEPLOY_KEY");

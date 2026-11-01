@@ -108,3 +108,15 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
 export function pinnedProviderNode(): string {
   return process.execPath;
 }
+
+/**
+ * Render's deploy tools (decision 163): Render has no provider CLI, so the broker pushes with this Git and this SSH, by
+ * absolute path, never through PATH (and never `/usr/bin/git`, the xcrun shim that picks whichever developer folder is
+ * selected). `version` is the exact line `git --version` and `ssh -V` print, read on Fabricio's Mac on Oct 31, 2026
+ * (Xcode's Git, macOS's OpenSSH). An Xcode or macOS update that changes either fails closed: the adapter refuses before
+ * reading a deploy key, and doctor's `deploy.render` says which differs; update the line here after checking it.
+ */
+export const RENDER_TOOL_PINS: { readonly git: { bin: string; version: string }; readonly ssh: { bin: string; version: string } } = {
+  git: { bin: "/Applications/Xcode.app/Contents/Developer/usr/bin/git", version: "git version 2.50.1 (Apple Git-155)" },
+  ssh: { bin: "/usr/bin/ssh", version: "OpenSSH_10.2p1, LibreSSL 3.3.6" },
+};

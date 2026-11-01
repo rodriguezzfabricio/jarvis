@@ -46,6 +46,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");
     expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
     expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");
+    expect(stageOf("tests/unit/setup-nosync-mutations.json")).toBe("0-1"); // the test workers' fsync replacement (decision 154)
   });
 
   it("lets an exact path beat a folder rule", () => {

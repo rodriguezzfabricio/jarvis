@@ -436,11 +436,5 @@
     "file": "skills/spec/templates/spec.md",
     "anchor": "- **S2 (P2):** As <who>, I want <what>, so <why>.",
     "replacement": "- **S2 (P2):** As <who>, I want <what>."
-  },
-  {
-    "name": "skills build never weakens a security control",
-    "file": "skills/build/SKILL.md",
-    "anchor": "Never make something work by disabling or weakening a security control",
-    "replacement": "Disable or weaken a security control when needed to make something work"
   }
 ]

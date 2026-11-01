@@ -47,6 +47,10 @@ describe("release dependency inputs", () => {
     ["preexisting modules", (f: ReturnType<typeof fixture>) => mkdirSync(join(f.dir, "node_modules")), /node_modules/],
     ["linked lockfile", (f: ReturnType<typeof fixture>) => { rmSync(join(f.dir, "package-lock.json")); symlinkSync("package.json", join(f.dir, "package-lock.json")); }, /regular/],
     ["inconsistent root", (f: ReturnType<typeof fixture>) => { f.lock.packages[""].devDependencies.vite = "2.0.0"; f.write(); }, /match/],
+    // A lock path whose "name" is a dot segment would place a package at the checkout root; npm names never start with "." or "_".
+    ["a dot-segment install path", (f: ReturnType<typeof fixture>) => { (f.lock.packages as Record<string, unknown>)["node_modules/.."] = { ...f.lock.packages["node_modules/vite"], resolved: "https://registry.npmjs.org/../-/..-1.0.0.tgz" }; f.write(); }, /registry names/],
+    ["a hidden-name install path", (f: ReturnType<typeof fixture>) => { (f.lock.packages as Record<string, unknown>)["node_modules/vite/node_modules/.bin"] = { ...f.lock.packages["node_modules/vite"], resolved: "https://registry.npmjs.org/.bin/-/.bin-1.0.0.tgz" }; f.write(); }, /registry names/],
+    ["an underscore dependency name", (f: ReturnType<typeof fixture>) => { (f.manifest.devDependencies as Record<string, string>)._x = "1.0.0"; (f.lock.packages[""].devDependencies as Record<string, string>)._x = "1.0.0"; f.write(); }, /name/],
   ])("refuses %s before a process runs", async (_label, change, reason) => {
     const f = fixture(); (change as (f: ReturnType<typeof fixture>) => void)(f);
     await expect(inspect(f.dir)).rejects.toThrow(reason as RegExp);

@@ -8,7 +8,7 @@ import { materializeTree } from "../lanes/materialize.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
 import { tempRoots } from "../sandbox/temp.ts";
-import { ARTIFACT_TYPE, STEP_TYPE, type ReleaseSetup } from "./config.ts";
+import { ARTIFACT_TYPE, DEPENDENCIES_TYPE, type ReleaseSetup } from "./config.ts";
 import { installDependencies, type DependencyLimits } from "./deps.ts";
 import type { DependencyPins } from "./dependency-pins.ts";
 import { artifactDigest } from "./manifest.ts";
@@ -85,14 +85,14 @@ export async function buildRelease(i: ReleaseBuildInput): Promise<ReleaseBuildRe
       const dependencies = await installDependencies({ checkout: real(checkout), scratch: real(scratch), evidenceDir, policy,
         ...(i.dependencyPins ? { pins: i.dependencyPins } : {}), ...(i.dependencyLimits ? { limits: i.dependencyLimits } : {}), ...(i.sandbox ? { sandbox: i.sandbox } : {}) });
       if (dependencies) i.ledger.append({ kind: "decision", actor: "runner", data: {
-        type: "release.dependencies", project: i.project, revision: i.revision, runId: i.runId, status: "pass", ...dependencies,
+        type: DEPENDENCIES_TYPE, project: i.project, revision: i.revision, runId: i.runId, status: "pass", ...dependencies,
         lockHash: sha(join(checkout, dependencies.lockfile)), evidence: { dir: evidenceDir, files: dependencyLogs(evidenceDir) },
       } });
     } catch (error) {
+      // The failed attempt and its evidence; the release step's own "stopped" line is written by its caller (run.ts).
       const reason = `the release dependencies failed: ${String(error instanceof Error ? error.message : error).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 300)}; output: ${evidenceDir}`;
-      i.ledger.append({ kind: "decision", actor: "runner", data: { type: "release.dependencies", project: i.project, revision: i.revision, runId: i.runId,
+      i.ledger.append({ kind: "decision", actor: "runner", data: { type: DEPENDENCIES_TYPE, project: i.project, revision: i.revision, runId: i.runId,
         status: "fail", reason, evidence: { dir: evidenceDir, files: dependencyLogs(evidenceDir) } } });
-      i.ledger.append({ kind: "decision", actor: "runner", data: { type: STEP_TYPE, runId: i.runId, outcome: `stopped: ${reason}` } });
       return { status: "fail", reason };
     }
     const r = await (i.sandbox ?? runSandboxed)({

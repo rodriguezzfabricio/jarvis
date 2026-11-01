@@ -61,6 +61,12 @@ describe("runner-owned dependency execution", () => {
     expect(r.env.npm_config_ignore_scripts).toBe("true"); expect(r.env.npm_config_registry).toBe("https://registry.npmjs.org/");
     expect(r.env.npm_config_globalconfig).toBe(join(r.env.HOME!, "global.npmrc"));
     expect(r.env.PATH).toBe("/usr/bin:/bin"); expect(r.env.NODE_OPTIONS).toBeUndefined();
+    // Neither Corepack nor pnpm may fetch another package manager, whatever the project declares.
+    expect(r.env.COREPACK_ENABLE_NETWORK).toBe("0"); expect(r.env.npm_config_manage_package_manager_versions).toBe("false");
+    if (manager === "pnpm") expect(r.command).toContain("--config.manage-package-manager-versions=false");
+    // No credential or token-shaped variable reaches the install, and nothing from the runner's own environment.
+    expect(Object.keys(r.env).filter(k => /token|secret|auth|key|npm_config__/i.test(k))).toEqual([]);
+    expect(Object.keys(r.env).every(k => ["PATH", "LANG", "HOME", "TMPDIR", "CI", "COREPACK_ENABLE_NETWORK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "PNPM_HOME"].includes(k) || k.startsWith("npm_config_"))).toBe(true);
     expect(f.requests).toEqual(["registry.npmjs.org"]);
     expect(existsSync(join(f.checkout, "SHOULD_NOT_EXIST"))).toBe(false);
     expect(readFileSync(join(f.checkout, "node_modules/tiny.js"), "utf8")).toContain("value = 1");

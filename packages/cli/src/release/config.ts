@@ -19,6 +19,8 @@ export const FREE_PLANS: Readonly<Record<Provider, string>> = { vercel: "hobby",
 /** Runner ledger entry types the release step writes (`decision` kind, actor runner). */
 export const ARTIFACT_TYPE = "release.artifact";
 export const STEP_TYPE = "release.step";
+/** The dependency step before a build (decision 173): one entry per attempt, pass or fail, with its evidence. */
+export const DEPENDENCIES_TYPE = "release.dependencies";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/, "letters, digits, '.', '_' or '-'");
 const outputPath = z.string().max(500).regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/, "a checkout-relative folder")

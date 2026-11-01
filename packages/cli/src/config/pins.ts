@@ -1,5 +1,6 @@
 import type { ScannerPins } from "../security/scanners.ts";
 import type { ImpeccablePin } from "../lanes/impeccable.ts";
+import type { DependencyPins } from "../release/dependency-pins.ts";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -117,6 +118,30 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
  */
 export function pinnedProviderNode(): string {
   return process.execPath;
+}
+
+/**
+ * The release build's dependency step (decision 173): the Node that starts the package manager, and npm or pnpm as
+ * a script file that Node runs, all by absolute path, never `npm`, `pnpm`, `npx` or Corepack's launcher through PATH
+ * (Corepack downloads whatever a package.json declares). `version` is what `<node> <bin> --version` prints; the step
+ * refuses a project whose `packageManager` declares any other version, and the worker inside the sandbox checks the
+ * printed version again before installing. Read on Fabricio's Mac on Nov 1, 2026: Homebrew's node@24 keg and its
+ * bundled npm, and the pnpm Corepack had already cached for this repo's own `packageManager`. The pnpm copy lives in
+ * a cache Corepack may clear (backlog 238 moves it under the runner's own cache with a hash).
+ */
+export const DEPENDENCY_NODE_VERSION = "24.21.0";
+export const DEPENDENCY_NPM_VERSION = "11.19.0";
+export const DEPENDENCY_PNPM_VERSION = "11.7.0";
+export function pinnedDependencyTools(home: string = homedir()): DependencyPins {
+  const nodeRoot = `/opt/homebrew/Cellar/node@24/${DEPENDENCY_NODE_VERSION}`;
+  const npmRoot = join(nodeRoot, "lib", "node_modules", "npm");
+  const pnpmRoot = join(home, ".cache", "node", "corepack", "v1", "pnpm", DEPENDENCY_PNPM_VERSION);
+  return {
+    node: join(nodeRoot, "bin", "node"),
+    nodeVersion: DEPENDENCY_NODE_VERSION,
+    npm: { bin: join(npmRoot, "bin", "npm-cli.js"), root: npmRoot, version: DEPENDENCY_NPM_VERSION },
+    pnpm: { bin: join(pnpmRoot, "bin", "pnpm.mjs"), root: pnpmRoot, version: DEPENDENCY_PNPM_VERSION },
+  };
 }
 
 /**

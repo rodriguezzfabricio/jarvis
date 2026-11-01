@@ -9,8 +9,6 @@ import { runSession } from "../../packages/cli/src/proc/session.ts";
 import { buildRelease } from "../../packages/cli/src/release/build.ts";
 import { releaseProjectConfig, parseReleaseSetup } from "../../packages/cli/src/release/config.ts";
 import { manifestHash, parseManifest, releaseRef } from "../../packages/cli/src/release/manifest.ts";
-import { renderReport } from "../../packages/cli/src/runner/report.ts";
-import { rebuildState } from "../../packages/cli/src/runner/state.ts";
 import type { SandboxedRun } from "../../packages/cli/src/sandbox/srt.ts";
 import { shortTmp } from "../helpers.ts";
 import { initRepo } from "../unit/helpers/git-repo.ts";
@@ -94,15 +92,15 @@ describe("release dependencies through the Render deploy tree", () => {
     expect(existsSync(build.cwd)).toBe(false);
     expect(built.artifactDir.startsWith(realpathSync(f.input.artifactRoot))).toBe(true);
   });
-  it("refuses an uncommitted lockfile, records the stop, and shows its reason in REPORT.md", async () => {
+  it("refuses an uncommitted lockfile and records the failed attempt with its reason", async () => {
     const f = fixture(false); writeFileSync(join(f.repo, "package-lock.json"), f.lockBytes);
     const built = await buildRelease(f.input);
     expect(built).toMatchObject({ status: "fail", reason: expect.stringMatching(/dependencies.*lockfile/) });
     expect(f.calls).toEqual([]);
     const entries = f.ledger.entries();
     expect(entries.some(e => (e.data as { type?: string }).type === "release.artifact")).toBe(false);
-    const report = renderReport(rebuildState(entries, { now: Date.now() }), entries);
-    expect(report).toMatch(/stopped:.*dependencies.*lockfile/);
+    // The release step's own "stopped" line and REPORT.md are the caller's (release-run.test.ts).
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ type: "release.dependencies", status: "fail", reason: expect.stringMatching(/dependencies.*lockfile/) }) })]));
   });
   it("never builds or registers an artifact after a failed dependency process", async () => {
     const f = fixture();

@@ -2,8 +2,9 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSandboxed, type SrtPolicy } from "../sandbox/srt.ts";
+import { pinnedDependencyTools } from "../config/pins.ts";
 import { readDependencyPlan, type DependencyPlan } from "./deps-lock.ts";
-import { pinnedDependencyTools, type DependencyPins } from "./dependency-pins.ts";
+import type { DependencyPins } from "./dependency-pins.ts";
 import { within } from "./paths.ts";
 
 export interface DependencyLimits { timeoutMs: number; maxOutputBytes: number; maxBytes: number; maxFiles: number }
@@ -74,7 +75,8 @@ export async function installDependencies(i: DependencyInput): Promise<Dependenc
   });
   if (result.timedOut) throw new Error("dependency install timed out");
   if (result.overflowed) throw new Error("dependency install output limit exceeded");
-  const failures: Record<number, string> = { 72: "dependency tool version differs from pin", 73: "dependency install size limit exceeded", 74: "dependency install file count limit exceeded", 75: "dependency install has a link outside its roots or a special file" };
+  const failures: Record<number, string> = { 72: "dependency tool version differs from pin", 73: "dependency install size limit exceeded", 74: "dependency install file count limit exceeded",
+    75: "dependency install has a link outside its roots or a special file", 76: "the package manager exited with an error; see deps-stderr in the evidence folder" };
   if (result.code !== 0) throw new Error(failures[result.code ?? -1] ?? `dependency install exited ${String(result.code)}`);
   return { ...plan, durationMs: result.durationMs };
 }

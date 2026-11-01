@@ -12,7 +12,9 @@ import { parseReleaseSetup, saveReleaseSetup, type ReleaseSetup } from "../../pa
 import { prepareRelease, runReleaseStep, type ReleaseSeams } from "../../packages/cli/src/release/run.ts";
 import { releaseStatus } from "../../packages/cli/src/release/states.ts";
 import type { Harness, TaskInput, TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
+import { renderReport } from "../../packages/cli/src/runner/report.ts";
 import { DEFAULT_ROUTING } from "../../packages/cli/src/runner/routing.ts";
+import { rebuildState } from "../../packages/cli/src/runner/state.ts";
 import type { SandboxedRun } from "../../packages/cli/src/sandbox/srt.ts";
 import { shortTmp } from "../helpers.ts";
 import { initRepo } from "./helpers/git-repo.ts";
@@ -27,13 +29,14 @@ const ok = (stdout: string): SessionOutcome => ({ code: 0, timedOut: false, over
 const LOCK = "d".repeat(64);
 const CLAIMS = { smokePaths: ["/", "/health"], rollback: { steps: ["Restore the previous deploy."] }, data: { kind: "none" } };
 
-interface Options { setup?: Partial<ReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; cliVersions?: string[]; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"] }
+interface Options { setup?: Partial<ReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; cliVersions?: string[]; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"]; files?: Record<string, string> }
 async function step(o: Options = {}) {
   const dir = join(root, `s${++n}`);
   const repo = join(dir, "repo"); mkdirSync(repo, { recursive: true });
   initRepo(repo, { identity: true });
   writeFileSync(join(repo, "index.html"), "<h1>Habits</h1>\n");
   writeFileSync(join(repo, "health"), "ok\n");
+  for (const [name, text] of Object.entries(o.files ?? {})) writeFileSync(join(repo, name), text);
   safeGit(repo, ["add", "-A"], { home: dir }); safeGit(repo, ["commit", "-q", "-m", "app"], { home: dir });
   const head = safeGit(repo, ["rev-parse", "HEAD"], { home: dir }).toString().trim();
   const jarvisHome = join(dir, "jarvis"); const projectDir = join(jarvisHome, "projects", "habits");
@@ -124,6 +127,8 @@ describe("the release step", () => {
     ["the manifest's claims are invalid", { claims: { smokePaths: ["https://evil.example.com"], rollback: { steps: ["x"] }, data: { kind: "none" } } } as Options, /manifest is refused/],
     ["the manifest declares data the setup has no source for", { claims: { ...CLAIMS, data: { kind: "sqlite", commands: { migrate: "m", backup: "b", restore: "r", verify: "v" } } } } as Options, /no data snapshot source/],
     ["the build fails", { setup: { build: { command: "exit 4", output: "site", timeoutMs: 10_000 } } } as Options, /release build exited 4/],
+    // Decision 173: a Node project without its committed lockfile stops before any package manager or build runs.
+    ["the dependencies are refused", { files: { "package.json": JSON.stringify({ name: "habits", packageManager: "npm@11.19.0" }) } } as Options, /release dependencies failed: committed package-lock.json lockfile required/],
     ["a protected check fails on the release revision", { failGate: "e2e" } as Options, /protected check e2e failed/],
     ["the provider's outcome is uncertain", { providerOutput: "not json" } as Options, /the preview deploy unknown/],
     ["the preview smoke test fails", { failSmoke: true } as Options, /preview smoke test failed/],
@@ -133,6 +138,15 @@ describe("the release step", () => {
     expect(s.steps.at(-1)).toMatch(/^stopped: /);
     expect(s.ledger.entries().some((e) => e.kind === "state_reached" && (e.data as { state: string }).state === "preview-ready")).toBe(false);
     expect(s.requests.filter((op) => op !== "deploy.preview")).toEqual([]);
+  });
+
+  it("shows a dependency refusal as the release step's one stop in REPORT.md", async () => {
+    const s = await step({ files: { "package.json": JSON.stringify({ name: "habits", packageManager: "pnpm@11.7.0" }) } });
+    expect(s.outcome).toMatchObject({ status: "stopped", reason: expect.stringMatching(/dependencies failed: committed pnpm-lock.yaml lockfile required/) });
+    expect(s.steps.filter((line) => /dependencies/.test(line))).toHaveLength(1);
+    const entries = s.ledger.entries();
+    expect(entries.filter((e) => (e.data as { type?: string }).type === "release.dependencies")).toHaveLength(1);
+    expect(renderReport(rebuildState(entries, { now: Date.now() }), entries)).toMatch(/stopped: the release dependencies failed: committed pnpm-lock.yaml lockfile required/);
   });
 
   it("refuses a paid plan even if the setup file was written around the schema", async () => {

@@ -4,7 +4,10 @@ import { parseDocument, visit } from "yaml";
 
 export interface DependencyPlan { manager: "npm" | "pnpm"; version: string; lockfile: string }
 type ObjectValue = Record<string, unknown>;
-const NAME = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/;
+// npm's own rule for new names: lowercase, URL-safe, never starting with "." or "_" (so no "." or ".." path segment either).
+const SEGMENT = "(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*";
+const NAME = new RegExp(`^${SEGMENT}$`);
+const LOCK_PATH = new RegExp(`^(?:node_modules\\/${SEGMENT}\\/)*node_modules\\/${SEGMENT}$`);
 const VERSION = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/;
 const GROUPS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
 
@@ -58,7 +61,7 @@ function npmLock(raw: string, manifest: ObjectValue): void {
   for (const [path, value] of Object.entries(packages)) {
     const pkg = object(value); groups(pkg);
     if (path === "") continue;
-    if (!/^(?:node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+\/)*node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/.test(path) || pkg.link || pkg.inBundle) throw new Error("only registry packages, no links or bundled dependencies");
+    if (!LOCK_PATH.test(path) || pkg.link || pkg.inBundle) throw new Error("only registry packages at registry names, no links or bundled dependencies");
     const name = path.slice(path.lastIndexOf("node_modules/") + 13);
     if (typeof pkg.version !== "string" || !VERSION.test(pkg.version)) throw new Error("registry package needs an exact version");
     const base = name.slice(name.lastIndexOf("/") + 1);

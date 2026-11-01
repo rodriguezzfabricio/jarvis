@@ -347,8 +347,34 @@
     "anchor": "The runner refuses a plan with any other key, at the top or in a task (a feature name, a summary, comments). ",
     "replacement": ""
   },
-{"name": "eval jarvis stage3 fixes count actual builds", "file": "packages/cli/src/eval/jarvis.ts", "anchor": "e.kind === \"attempt_started\" && typeof (e.data as { processGroup?: unknown }).processGroup === \"number\"", "replacement": "e.kind === \"attempt_started\""},
-{"name": "eval jarvis stage3 fixes validated tier", "file": "packages/cli/src/eval/jarvis.ts", "anchor": "tier = plan.tier ?? tier;", "replacement": "tier = t.tier ?? 1;"},
-{"name": "eval jarvis stage3 fixes preserve review reset", "file": "packages/cli/src/eval/jarvis.ts", "anchor": "preflight: async () => { const pre = await opts.preflight(); return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) }; }, ...(opts.reviewerSeams", "replacement": "preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams"},
-{"name": "eval jarvis stage3 fixes durable planner count", "file": "packages/cli/src/eval/jarvis.ts", "anchor": "recordEvalStart(i.ledger, i.runId, PLAN_TASK, attemptId);", "replacement": ""}
+  {
+    "name": "eval jarvis stage3 fixes count actual builds",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "e.kind === \"attempt_started\" && typeof (e.data as { processGroup?: unknown }).processGroup === \"number\"",
+    "replacement": "e.kind === \"attempt_started\""
+  },
+  {
+    "name": "eval jarvis stage3 fixes validated tier",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "tier = plan.tier ?? tier;",
+    "replacement": "tier = t.tier ?? 1;"
+  },
+  {
+    "name": "eval jarvis stage3 fixes preserve review reset",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "preflight: async () => { const pre = await opts.preflight(); return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) }; }, ...(opts.reviewerSeams",
+    "replacement": "preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams"
+  },
+  {
+    "name": "eval jarvis stage3 fixes durable planner count",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "recordEvalStart(i.ledger, i.runId, PLAN_TASK, attemptId);",
+    "replacement": ""
+  },
+  {
+    "name": "compare counts every round when a label is given",
+    "file": "packages/cli/src/eval/compare.ts",
+    "anchor": "    if (opts.label !== undefined && !hasLabel(runId, opts.label)) continue;\n",
+    "replacement": ""
+  }
 ]

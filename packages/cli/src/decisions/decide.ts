@@ -38,6 +38,16 @@ function requireStatement(decision: string, reference: string): void {
 
 export interface DecideDeps { home?: string }
 
+/** Reversibility levels whose decisions must name what they rejected (decision 171, EGM's Alternatives Rule). */
+export const ALTERNATIVES_REQUIRED = ["moderate", "hard", "irreversible"] as const;
+const ALTERNATIVE_FORM = /^.{3,}: rejected because .{10,}$/s;
+export const ALTERNATIVES_ERROR = "a decision of this reversibility needs at least one alternative, each as '<option>: rejected because <reason>'";
+/** A user's answer is its own reason, so `--by user` decisions are exempt. */
+export function requireAlternatives(reversibility: string, by: string, alternatives: readonly string[]): void {
+  if (by === "user" || !(ALTERNATIVES_REQUIRED as readonly string[]).includes(reversibility)) return;
+  if (!alternatives.length || !alternatives.every((item) => ALTERNATIVE_FORM.test(item))) throw new Error(ALTERNATIVES_ERROR);
+}
+
 export function register(program: Command, deps: DecideDeps = {}): void {
   program.command("decide")
     .description("Add or supersede a project decision with its provenance")
@@ -63,6 +73,7 @@ export function register(program: Command, deps: DecideDeps = {}): void {
         if (options.by === "user") verifyUserAnswer(options.repo, options.answer, options.recordedAnswer ?? decision, { ...deps, ...(oldId === undefined ? {} : { supersedes: oldId }) });
         else if (options.answer !== undefined || options.recordedAnswer !== undefined) throw new Error("--answer and --recorded-answer require --by user");
         if (options.recordedAnswer !== undefined) requireStatement(decision, options.answer!);
+        requireAlternatives(options.reversibility, options.by, list(options.alternatives, "--alternatives"));
         const exact = options.recordedAnswer === undefined ? "" : `\nExact answer: ${JSON.stringify(options.recordedAnswer)}`;
         const input: DecisionInput = {
           date: new Date().toISOString().slice(0, 10), decision,

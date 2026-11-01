@@ -33,6 +33,8 @@ const MAP = [
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run-design\.json$/, "4"], // jarvis run composes the design reviewer (decision 156): golden task 06, the stage 4 proof
   [/^packages\/cli\/src\/commands\/mutations-checks\.json$/, "3"], // jarvis checks install: the architect's proposals reviewed and installed (decision 147, handoff A3)
+  [/^packages\/cli\/src\/review\/mutations-plan\.json$/, "3"], // the Goldfish plan review before the build loop (decisions 170, 172): the stage 3 hand-off
+  [/^packages\/cli\/src\/decisions\/mutations-plan\.json$/, "3"], // required alternatives on hard-to-undo decisions (decision 171), checked by the plan review
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "decide accepts a hard decision without alternatives",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "  if (!alternatives.length || !alternatives.every((item) => ALTERNATIVE_FORM.test(item))) throw new Error(ALTERNATIVES_ERROR);\n",
+    "replacement": ""
+  },
+  {
+    "name": "decide accepts an alternative without a rejection reason",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "const ALTERNATIVE_FORM = /^.{3,}: rejected because .{10,}$/s;",
+    "replacement": "const ALTERNATIVE_FORM = /^.{3,}$/s;"
+  }
+]

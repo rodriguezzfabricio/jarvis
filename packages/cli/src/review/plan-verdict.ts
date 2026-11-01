@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { unfencedJson } from "./verdict.ts";
+import { schemaError, unfencedJson } from "./verdict.ts";
 
 /**
  * The Goldfish plan review (decision 170): three fresh-context lenses read the plan before the build loop.
@@ -45,7 +45,7 @@ export function evaluatePlanVerdict(raw: string, lens: PlanLens): PlanLensVerdic
   let value: unknown;
   try { value = JSON.parse(unfencedJson(raw)); } catch { return invalid("plan review output is not JSON"); }
   const parsed = PlanVerdictSchema.safeParse(namedChecks(value));
-  if (!parsed.success) return invalid("plan review output does not match the verdict schema");
+  if (!parsed.success) return invalid(schemaError(parsed.error.issues, "plan review output does not match the verdict schema: "));
   const missing = REQUIRED_CHECKS[lens].filter((c) => !parsed.data.checked.includes(c));
   if (missing.length) return invalid(`plan review did not report checks: ${missing.join(", ")}`);
   const findings = parsed.data.findings;

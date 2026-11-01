@@ -1,0 +1,30 @@
+{
+  "name": "item-blank",
+  "criteria": [
+    "AC2"
+  ],
+  "cases": [
+    {
+      "id": "reset",
+      "command": "rm -f data/items.jsonl"
+    },
+    {
+      "id": "blank",
+      "command": "node src/cli.mjs add \"  \""
+    },
+    {
+      "id": "missing",
+      "command": "node src/cli.mjs add"
+    },
+    {
+      "id": "newline",
+      "command": "node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
+    },
+    {
+      "id": "file",
+      "command": "cat data/items.jsonl 2>/dev/null || true"
+    }
+  ],
+  "verify": "sh \"$JARVIS_CHECKS/verify-blank.sh\"",
+  "timeoutMs": 60000
+}

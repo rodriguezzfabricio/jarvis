@@ -5,8 +5,20 @@
   ],
   "cases": [
     {
-      "id": "add",
+      "id": "reset",
+      "command": "rm -f data/items.jsonl"
+    },
+    {
+      "id": "empty",
+      "command": "node src/cli.mjs list"
+    },
+    {
+      "id": "first",
       "command": "node src/cli.mjs add exercise"
+    },
+    {
+      "id": "second",
+      "command": "node src/cli.mjs add \"buy milk\""
     },
     {
       "id": "list",

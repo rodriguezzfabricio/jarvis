@@ -1,31 +1,37 @@
 {
   "tier": 1,
   "notes": [
-    "Retries follow D3."
+    "Retries follow D3.",
+    "Today src/cli.mjs only prints the usage line and exits 2, and src/store.mjs does not exist. T3 creates src/store.mjs and gives src/cli.mjs its shape: the command switch, the usage error (exit 2) for anything but `add` and `list`, and one try/catch around the commands that prints a thrown error's message to stderr and exits 1. T1 adds its branch to that shape. No dependency is added; package.json stays without one.",
+    "Names and errors: `add` takes the arguments after `add` joined by one space (`add buy milk` and `add \"buy milk\"` both save `buy milk`), then trims surrounding whitespace. Under spec A2 the trimmed name is blank when nothing remains or when a line break remains inside it; saveItem then throws new Error(\"item name must not be blank\") before writing. A missing argument is the empty string, so it is blank. The try/catch from T3 prints the message to stderr and exits 1.",
+    "Checks: item-add (AC1), item-blank (AC2: spaces only, no argument, a line break inside the name) and item-list (AC3) each start by removing data/items.jsonl and run every command as its own process, so each case starts from nothing and list reads from disk in a new process."
   ],
   "tasks": [
     {
       "id": "T1",
-      "title": "Validate item names",
-      "goal": "Reject a blank item name at the CLI boundary",
-      "exitCondition": "AC2 passes: a blank name exits nonzero and persists nothing",
+      "title": "Reject a blank name",
+      "goal": "`add` with a blank name reports the error on stderr, exits 1 and persists nothing",
+      "exitCondition": "item-blank passes and item-add still passes",
       "acceptanceCriteria": [
         "AC2"
       ],
       "storyIds": [
         "S1"
       ],
-      "dependencies": [],
-      "priority": 9,
+      "dependencies": [
+        "T3"
+      ],
+      "priority": 8,
       "requiredChecks": [
-        "item-create"
+        "item-blank",
+        "item-add"
       ],
       "requiredReviews": [
         "code"
       ],
       "mayTouch": [
-        "src/cli.mjs",
-        "src/store.mjs"
+        "src/store.mjs",
+        "src/cli.mjs"
       ]
     },
     {
@@ -37,10 +43,12 @@
       "storyIds": [
         "S1"
       ],
-      "dependencies": [],
-      "priority": 8,
+      "dependencies": [
+        "T3"
+      ],
+      "priority": 7,
       "requiredChecks": [
-        "item-create"
+        "item-add"
       ],
       "requiredReviews": [
         "code"
@@ -51,9 +59,9 @@
     },
     {
       "id": "T3",
-      "title": "Persist items",
-      "goal": "Pick a storage format for items and persist each saved item so that list shows it after a restart",
-      "exitCondition": "AC1 and AC3 pass",
+      "title": "Persist and list items",
+      "goal": "Pick a storage format for items and persist each saved item so that `list` shows it after a restart",
+      "exitCondition": "item-add and item-list pass",
       "acceptanceCriteria": [
         "AC1",
         "AC3"
@@ -62,12 +70,10 @@
         "S1",
         "S2"
       ],
-      "dependencies": [
-        "T1"
-      ],
-      "priority": 7,
+      "dependencies": [],
+      "priority": 9,
       "requiredChecks": [
-        "item-create",
+        "item-add",
         "item-list"
       ],
       "requiredReviews": [

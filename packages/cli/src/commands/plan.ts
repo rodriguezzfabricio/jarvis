@@ -17,7 +17,7 @@ import { Ledger } from "../ledger/ledger.ts";
 import { readPlanningFile } from "../runner/checks-author.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
 import { acceptEscalation, canonicalPlan, planHashOf, planReviewStatus, resolvePlanReview } from "../review/plan-resolve.ts";
-import { createPlanReviewService, savePlanCalibration, type PlanFixture, type PlanReviewMaterial, type PlanReviewResult } from "../review/plan-service.ts";
+import { createPlanReviewService, lensDiagnostics, savePlanCalibration, type PlanFixture, type PlanReviewMaterial, type PlanReviewResult } from "../review/plan-service.ts";
 import { DEFAULT_REVIEW_ROUTING } from "../review/routing.ts";
 import type { Reviewer } from "../review/types.ts";
 import { approvedSpec, runBranchOf } from "./run-compose.ts";
@@ -119,6 +119,8 @@ export function register(program: Command, deps: PlanCommandOptions = {}): void 
         const recorded = (overall?.data as { verdict?: string } | undefined)?.verdict ?? result.verdict;
         out(`Plan review ${recorded}${options.calibrate || result.counts ? "" : " (does not count: no passing negative control)"}; ${result.findings.length} finding(s)${options.calibrate ? `; control entry ${overall?.hash ?? "?"}` : "; findings in .jarvis/plan-review/findings.json"}`);
         for (const f of result.findings) out(`  ${f.id} [${f.severity}] ${f.scope}: ${f.finding}`);
+        // An error verdict names the lens that caused it: its validity, the checks it reported and its error.
+        if (recorded === "error") for (const line of lensDiagnostics(result.entries)) out(`  ${line}`);
         if (result.error) { out(result.error); process.exitCode = 1; }
         else if (result.verdict !== "pass") process.exitCode = 1;
       } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }

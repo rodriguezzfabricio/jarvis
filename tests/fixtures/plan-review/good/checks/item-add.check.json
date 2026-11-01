@@ -1,0 +1,22 @@
+{
+  "name": "item-add",
+  "criteria": [
+    "AC1"
+  ],
+  "cases": [
+    {
+      "id": "reset",
+      "command": "rm -f data/items.jsonl"
+    },
+    {
+      "id": "add",
+      "command": "node src/cli.mjs add exercise"
+    },
+    {
+      "id": "file",
+      "command": "cat data/items.jsonl"
+    }
+  ],
+  "verify": "sh \"$JARVIS_CHECKS/verify-add.sh\"",
+  "timeoutMs": 60000
+}

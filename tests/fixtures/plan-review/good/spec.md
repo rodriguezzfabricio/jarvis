@@ -19,7 +19,8 @@ supersedes: none
 - **AC3 (S2):** WHEN `node src/cli.mjs list` runs in a new process THE SYSTEM SHALL print every saved item, one per line, in the order saved.
 ## Assumptions
 - A1 [delegated]: items are stored as JSON lines in data/items.jsonl (D2).
-- A2 [delegated]: an item name is trimmed of surrounding whitespace; it is blank when nothing remains, or when a line break remains inside it (an item is one line of text).
+- A2 [delegated]: an item name is trimmed of surrounding whitespace; it is blank when nothing remains, or when a line feed (U+000A) or a carriage return (U+000D) remains inside it; every other character is an ordinary part of the name (an item is one line of text).
 - A3 [delegated]: one process uses the data file at a time.
+- A4 [delegated]: data/items.jsonl in the checkout is working data that the protected checks reset before each case; nothing anyone wants to keep is stored there.
 ## Open questions
 None.

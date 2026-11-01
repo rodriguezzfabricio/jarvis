@@ -148,5 +148,17 @@
     "file": "packages/cli/src/lanes/selection.ts",
     "anchor": "[\"impeccable-url\", \"design-browser\", \"axe\", \"playwright\"]",
     "replacement": "[\"impeccable-url\", \"axe\", \"playwright\"]"
+  },
+  {
+    "name": "Design runtime ships the verdict parser",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "\"review/verdict.ts\", ",
+    "replacement": ""
+  },
+  {
+    "name": "Impeccable installs loop-readable definitions",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "for (const [name, definition] of Object.entries(definitions)) writeFileSync",
+    "replacement": "for (const [name, definition] of Object.entries({})) writeFileSync"
   }
 ]

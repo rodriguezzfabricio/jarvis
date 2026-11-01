@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { createSnapshot, findCredentials, findEncodedCredentials, findSecretFields, scanViews } from "../../packages/cli/src/eval/snapshot.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 const root = shortTmp("jts-backlog-");
 // Removing ~200 repositories can outlast a short hook limit under a loaded full run (Oct 25: 14 s).
@@ -32,7 +33,7 @@ async function snapshot(name: string, content: string | Buffer, allow = false): 
   mkdirSync(repo);
   writeFileSync(join(repo, name), content);
   const home = root;
-  safeGit(repo, ["init", "-q", "-b", "main"], { home });
+  initRepo(repo); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   safeGit(repo, ["add", "-A"], { home });
   safeGit(repo, ["commit", "-qm", "synthetic fixture"], { home });
   await createSnapshot({ sourceRepo: repo, rev: "HEAD", dest, ...(allow ? { allowSecretsIn: [name] } : {}) });

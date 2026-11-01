@@ -1,0 +1,14 @@
+[
+  {
+    "name": "repair prompt omits review findings",
+    "file": "packages/cli/src/runner/repair.ts",
+    "anchor": "    lines.push(...reviewFindingLines(entry));",
+    "replacement": "    // Review findings omitted from repair context."
+  },
+  {
+    "name": "report omits advisory findings",
+    "file": "packages/cli/src/runner/report.ts",
+    "anchor": "  lines.push(\"\", \"## Advisory findings\", \"\", ...orNone(advisoryFindings(state, entries)));",
+    "replacement": "  // Advisory findings section omitted."
+  }
+]

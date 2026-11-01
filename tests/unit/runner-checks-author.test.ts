@@ -162,7 +162,8 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
   });
   it("revalidates caller bundles and destination symlinks before reviewing or writing", async () => {
     const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p); const reviewVerdict = vi.fn(async () => ({ status: "pass" }));
-    await expect(installChecks(p.store, { ...files, files: { ...files.files, "fixtures/../escape": "bad" } }, p.ledger, { spec, reviewVerdict })).rejects.toThrow();
+    // A driver script any other rule accepts: only the path rule can refuse it (the extensionless one was refused as a fixture type).
+    await expect(installChecks(p.store, { ...files, files: { ...files.files, "fixtures/../escape.mjs": "console.log('escaped')" } }, p.ledger, { spec, reviewVerdict })).rejects.toThrow("invalid authored check file");
     symlinkSync(w.dir, p.store.checksDir);
     await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict })).rejects.toThrow(); expect(reviewVerdict).not.toHaveBeenCalled();
   });

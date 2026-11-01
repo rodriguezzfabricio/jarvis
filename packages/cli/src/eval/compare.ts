@@ -101,12 +101,16 @@ function jarvisRow(runId: string, s: Record<string, unknown>): Omit<RunRow, "hid
   };
 }
 
-/** Every run folder of a task, both arms, oldest first. A folder without summary.json is an incomplete run. */
-export function readRuns(evalsHome: string, taskId: string): RunRow[] {
+/** A labelled round's run ids carry `-<label>-r<n>-a<n>` (eval/schedule.ts). */
+const hasLabel = (runId: string, label: string) => runId.split("-").some((part, i, parts) => part === label && /^r\d+$/.test(parts[i + 1] ?? "") && /^a\d+$/.test(parts[i + 2] ?? "") && i + 3 === parts.length);
+
+/** Every run folder of a task, both arms, oldest first; with a label, only that round's runs (decision 116). A folder without summary.json is an incomplete run. */
+export function readRuns(evalsHome: string, taskId: string, opts: { label?: string } = {}): RunRow[] {
   const dir = join(evalsHome, taskId);
   if (!existsSync(dir)) return [];
   const rows: RunRow[] = [];
   for (const runId of readdirSync(dir).sort()) {
+    if (opts.label !== undefined && !hasLabel(runId, opts.label)) continue;
     const runDir = join(dir, runId);
     if (!lstatSync(runDir).isDirectory()) continue;
     const arm = armOf(runId, readJson(join(runDir, "manifest.json")));

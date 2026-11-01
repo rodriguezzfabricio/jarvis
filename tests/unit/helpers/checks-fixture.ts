@@ -7,6 +7,7 @@ import { runGate } from "../../../packages/cli/src/checks/gate.ts";
 import { ChecksStore } from "../../../packages/cli/src/checks/store.ts";
 import { Ledger } from "../../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../../helpers.ts";
+import { initRepo } from "./git-repo.ts";
 
 export const root = shortTmp("jtk-");
 export const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: root, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
@@ -21,10 +22,7 @@ export function project() {
   const ledger = Ledger.open(projectDir);
   const store = new ChecksStore(projectDir);
   const repo = join(root, `work${n}`, "repo");
-  mkdirSync(repo, { recursive: true });
-  git(repo, "init", "-q", "-b", "main");
-  git(repo, "config", "user.email", "t@t");
-  git(repo, "config", "user.name", "t");
+  initRepo(repo, { identity: true }); // git init -q -b main, user.email t@t, user.name t: by copy (helpers/git-repo.ts)
   writeFileSync(join(repo, "value.txt"), "42\n");
   git(repo, "add", "-A");
   git(repo, "commit", "-qm", "c1");

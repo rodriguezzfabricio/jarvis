@@ -28,6 +28,16 @@ describe("protected design installation",()=>{
     expect(JSON.parse(readFileSync(join(store.checksDir,"design-checks.json"),"utf8"))).toEqual(defs);
     expect(()=>installDesignChecks(store,input)).toThrow(/already/);
   });
+  it("the installed design-browser verifier loads its whole import chain from its own copy",async()=>{
+    const root=mkdtempSync(join(tmpdir(),"design-chain-"));roots.push(root);const store=new ChecksStore(join(root,"project"));
+    installDesignChecks(store,{nodeBin:process.execPath,scanner:{pin:engine(root),files:["App.tsx"],browser},plan,axeVersion:"4.14.0"});
+    // design-check -> design-browser -> design-evidence -> design-verdict -> verdict: a module missing from the copy fails to load, before main runs.
+    for(const copy of ["design-runtime","fixtures/design-runtime"]) {
+      const run=await runSession({bin:process.execPath,args:[join(store.checksDir,copy,"review/design-check.ts")],cwd:root,env:{PATH:"/usr/bin:/bin"},timeoutMs:5000,maxOutputBytes:1024*1024});
+      expect(run.stderr).not.toMatch(/ERR_MODULE_NOT_FOUND|Cannot find module/);
+      expect(run.stderr).toContain("missing design verifier inputs");
+    }
+  });
   it("copies the pinned engine into the protected fixtures, because a gate case can't read the home folder (decision 124)",()=>{
     const root=mkdtempSync(join(tmpdir(),"design-engine-"));roots.push(root);const store=new ChecksStore(join(root,"project"));
     const pin=engine(root);

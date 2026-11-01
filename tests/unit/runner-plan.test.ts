@@ -25,6 +25,17 @@ describe("planner plans", () => {
     const { id, ...definition } = task();
     expect(planEntries(plan)).toEqual([{ kind: "task_created", actor: "runner", task_id: id, data: definition }]);
   });
+  it.each([0, 1, 2] as const)("accepts the optional plan tier %s", (tier) => {
+    const root = workspace(); writeFileSync(join(root, ".jarvis/plan.json"), JSON.stringify({ tier, tasks: [task()] }));
+    expect(readPlan(root, context).tier).toBe(tier);
+    expect(PlanSchema.parse({ tasks: [task()] }).tier).toBeUndefined();
+  });
+  it.each([3, -1, 1.5, "2", null])("refuses an invalid tier %j", (tier) => {
+    expect(PlanSchema.safeParse({ tier, tasks: [task()] }).success).toBe(false);
+  });
+  it("still refuses unknown top-level keys alongside a valid tier", () => {
+    expect(PlanSchema.safeParse({ tier: 2, tasks: [task()], model: "chosen-by-planner" }).success).toBe(false);
+  });
   it("never judges coverage against the workspace's own spec or checks", () => {
     const root = workspace(); mkdirSync(join(root, "docs/spec"), { recursive: true });
     writeFileSync(join(root, "docs/spec/v1.md"), specText);
@@ -183,4 +194,15 @@ describe("session-owned plans (onboarding and sweeps)", () => {
   it("refuses an invalid plan file", () => {
     expect(() => readSessionPlan(sessionPlan("sweep", [{ ...unitTask(), id: "X" }]), "sweep", [{ name: "unit" }])).toThrow();
   });
+});
+
+it("allocates a bug handoff after existing tasks and resumes only the matching bug", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const checks = [{ name: "unit" }];
+  const request = "The citizenship filter is missing jobs.";
+  const existing = [{ id: "T1", goal: "unrelated", exitCondition: "done" }];
+  const plan = bugRequestPlan(request, checks, existing);
+  expect(plan.tasks[0]!.id).toBe("T2");
+  expect(bugRequestPlan(request, checks, [...existing, plan.tasks[0]!]).tasks[0]!.id).toBe("T2");
+  expect(() => bugRequestPlan("Build a new dashboard", checks, existing)).toThrow(/bug.*spec/);
 });

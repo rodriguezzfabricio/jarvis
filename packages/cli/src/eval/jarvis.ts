@@ -3,6 +3,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { ChecksStore } from "../checks/store.ts";
+import { installDesignLintChecks } from "../lanes/design-protected.ts";
+import { designLintPath } from "../lanes/design-lint-driver.ts";
+import { readPlanningFile } from "../runner/checks-author.ts";
+import { approvedDesign, designMaterialFor, designOnBranch } from "../review/design-material.ts";
+import { createDesignReviewService, type DesignReviewService, type DesignReviewServiceOptions } from "../review/design-service.ts";
 import type { GateCheck, GateInput, GateResult } from "../checks/gate.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { checkSessionToolchain } from "../harness/claude/toolchain.ts";
@@ -46,7 +52,8 @@ import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type Ses
  * 91); a refused plan gets one corrective planner session with the refusal (decision 113). The loop's protected checks are the project's own suite from hidden/<task>/gate/ (decision 97),
  * installed in a runner-owned folder no session can read. The grading checks (hidden/<task>/checks/) never
  * enter the loop, its ledger or any prompt: they run only after the run ends, in their own folder, on
- * the final revision, exactly as for the baseline. Reviews are Claude-only in evals (no Codex).
+ * the final revision, exactly as for the baseline. Code reviews stay Claude-only; design uses the confined
+ * Codex design service and its verified negative control (decisions 124, 156).
  */
 
 // ---- The loop's interface (runner/loop.ts, integrated on another branch) ---------------------------
@@ -72,6 +79,7 @@ export interface RunLoopOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   usageMarginMs?: number;
+  tier?: TaskTier;
   reprobe?: () => Promise<boolean>;
   notify?: (n: UsageWaitNotice) => Promise<void>;
   gitHome?: string;
@@ -84,7 +92,7 @@ export type RunLoop = (opts: RunLoopOptions) => Promise<RunLoopResult>;
  * The loop's review function (runner/loop.ts's ReviewVerdict): a plain verdict, which the loop records,
  * or one the review service already recorded, whose "error" means no verdict (an infrastructure failure).
  */
-export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promise<"pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true }>;
+export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promise<"pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error" | "usage-limited"; recorded: true }>;
 
 // ---- Options and results ----------------------------------------------------------------------------
 
@@ -127,7 +135,9 @@ export interface JarvisEvalOptions {
   harness?: Harness;
   harnessSeams?: HarnessSeams;
   reviewerSeams?: ReviewerSeams;
-  /** Default: the review service with a fresh Claude reviewer only (decision 88). No Codex in evals yet (decisions 97, 110). */
+  /** Test seam for design composition; production uses the confined, pinned Codex adapter. */
+  createDesignReview?: (options: DesignReviewServiceOptions) => Pick<DesignReviewService, "reviewDetailed">;
+  /** Default: Claude code review plus calibrated Codex design review when the run branch has DESIGN.md. */
   review?: LoopReview;
   /** Grading seam; production is the protected-check gate. */
   gate?: (input: GateInput) => Promise<GateResult>;
@@ -266,7 +276,7 @@ const PLAN_SKELETON = JSON.stringify({
   }],
 }, null, 2);
 
-export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number }): string {
+export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number; design?: boolean }): string {
   const list = Object.keys(input.checks.checks).sort().map((n) => `- ${n}: ${input.checks.criteria[n]!.join(", ") || "no criteria (project tests)"}`);
   return [
     "Plan this approved feature for Jarvis's build loop. You write a plan only: no product code, no checks, no commits.",
@@ -276,6 +286,7 @@ export function plannerPrompt(input: { request: string; specPath: string; checks
     `Only these keys are accepted: "tasks" and the optional "notes" at the top, and the ten keys shown in each task. The runner refuses a plan with any other key, at the top or in a task (a feature name, a summary, comments). Put anything else the build sessions should know in notes: at most ${PLAN_NOTES.count} strings of at most ${PLAN_NOTES.chars} characters each, ${PLAN_NOTES.total} in all. Every build session sees them as your claims, not as evidence.`,
     "Task ids are T1, T2, ...; acceptanceCriteria are AC ids and storyIds are S ids from the spec; dependencies are task ids; priority is a number (higher runs first); requiredChecks are names from the list below; requiredReviews is [\"code\"]. Use small tasks in dependency order with no cycles. Cover every acceptance criterion in the spec, and link each task's criteria to its stories.",
     `Installed protected checks (names, and the criteria each covers; the runner owns them and you cannot read them). A task listing an AC must require a check that covers it:\n${list.join("\n")}`,
+    ...(input.design ? ["This is a design task: the runner also requires its six protected design checks and a design review on every task; the plan cannot remove them."] : []),
     `Stop after ${input.maxTurns} turns. The runner reads only .jarvis/plan.json.`,
   ].join("\n\n");
 }
@@ -295,8 +306,8 @@ const revisionOf = (repo: string, ref: string, home: string): string | null => {
   try { return safeGit(repo, ["rev-parse", "-q", "--verify", `${ref}^{commit}`], { home }).toString().trim(); } catch { return null; }
 };
 
-/** Run metrics from the loop's ledger: tasks, repairs (decision 87's count), sessions, usage waits, usage. */
-export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plannerSessions: number): JarvisMetrics {
+/** Run metrics from the ledger. The legacy planner count is ignored: only recorded process starts count. */
+export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, _plannerSessions = 0): JarvisMetrics {
   const problems: string[] = [];
   let tasks: TaskSummary[] = [];
   try {
@@ -306,14 +317,9 @@ export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plan
     problems.push(`ledger replay failed: ${e instanceof Error ? e.message : String(e)}`);
   }
   const runner = entries.filter((e) => e.actor === "runner");
-  const build = runner.filter((e) => e.kind === "attempt_started").length;
-  // Reviewer sessions that ran: the service lists them (none when it failed before any reviewer, decision 111);
-  // a plain verdict the loop recorded is one review; the loop's "session" marker for a failed build session is none.
-  const review = runner.filter((e) => e.kind === "review_result").reduce((n, e) => {
-    const data = e.data as { reviews?: unknown; reviewer?: unknown } | null;
-    if (data?.reviewer === "session") return n;
-    return n + (Array.isArray(data?.reviews) ? data.reviews.length : 1);
-  }, 0);
+  const plannerSessions = runner.filter((e) => e.kind === "reconciled" && (e.data as { type?: unknown }).type === "eval_session_started").length;
+  const build = runner.filter((e) => e.kind === "attempt_started" && typeof (e.data as { processGroup?: unknown }).processGroup === "number").length;
+  const review = runner.filter((e) => e.kind === "reconciled" && (e.data as { type?: unknown }).type === "review_process_started").length;
   const waits = runner.filter((e) => e.kind === "usage_wait");
   const waitMs = waits.reduce((n, e) => {
     const ms = (e.data as { waitMs?: unknown } | null)?.waitMs;
@@ -401,8 +407,8 @@ export function reviewMaterial(ledger: Ledger, input: { repoPath: string; baseRe
 /**
  * The review service as the loop takes it: the service records its own review_result and the loop reads
  * that verdict back, so an infrastructure "error" stays an error, retried and never a code failure
- * (decisions 100, 111). The service reviews as "code" only; another named reviewer gets no recorded
- * verdict and the loop blocks the task, as in `jarvis run` (commands/run-compose.ts).
+ * (decisions 100, 111). Design uses the same branch material, protected definitions and shared
+ * calibration as `jarvis run`; code remains Claude-only (decision 97).
  */
 function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, attemptId: string) => ReviewMaterial, opts: JarvisEvalOptions): LoopReview {
   const service = createReviewService({
@@ -413,16 +419,62 @@ function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, a
     home: p.home,
     resolveMaterial: async (r) => material(r.taskId, r.attemptId),
     // The Claude reviewer runs under the task-session settings: reads outside its checkout are blocked and the
-    // runner-owned folder is denied. Codex's reads are confined now (decision 110), but evals stay Claude-only
-    // until a decision adds Codex back to the eval arm (decision 97).
-    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams ?? {}) }),
+    // runner-owned folder is denied. Decision 97 stays in force for code reviews.
+    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => { const pre = await opts.preflight(); return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) }; }, ...(opts.reviewerSeams ?? {}) }),
     codex: null,
   });
-  return async (input) => {
+  const git = (args: readonly string[]) => safeGit(p.workspace, args, { home: p.home }).toString();
+  const design = designOnBranch(git, "main") ? (opts.createDesignReview ?? createDesignReviewService)({
+    ledger, projectDir: p.projectDir, workRoot: p.reviewRoot, home: p.home, jarvisHome: p.jarvisHome,
+    resolveMaterial: async () => {
+      const snapshot = approvedDesign(git, "main");
+      if (!snapshot) throw new Error("approved DESIGN.md is missing from the run branch");
+      return designMaterialFor({ repoPath: p.workspace, snapshot, store: new ChecksStore(p.projectDir), ledger });
+    },
+  }) : undefined;
+  return async input => {
+    const request = { taskId: input.taskId, attemptId: input.attemptId, revision: input.revision };
+    if (input.reviewer === "design" && design) return { status: (await design.reviewDetailed(request)).verdict, recorded: true };
     if (input.reviewer !== undefined && input.reviewer !== "code") return { status: "error", recorded: true };
-    const result = await service.reviewDetailed({ taskId: input.taskId, attemptId: input.attemptId, revision: input.revision });
-    return { status: result.verdict, recorded: true };
+    return { status: (await service.reviewDetailed(request)).verdict, recorded: true };
   };
+}
+
+const LintScope = z.object({
+  designSource: z.enum(["existing", "new"]).default("new"),
+  axeVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+  files: z.array(z.string().refine(designLintPath, "invalid design lint path")).min(1).max(256),
+  tokenFiles: z.array(z.string().refine(designLintPath, "invalid token file path")).max(256),
+}).strict();
+
+type DesignLintScope = z.infer<typeof LintScope>;
+/**
+ * A golden task is a design task when the evals repo gives it a lint scope, tasks/<id>/design-lint.json
+ * (decision 162). Read before the preflight, like everything else from the evals repo.
+ */
+function designScopeOf(evalsRepo: string, task: GoldenTask): DesignLintScope | undefined {
+  const taskDir = join(evalsRepo, "tasks", task.id);
+  if (!existsSync(join(taskDir, "design-lint.json"))) return undefined;
+  return LintScope.parse(JSON.parse(readPlanningFile(realpathSync(taskDir), "design-lint.json")));
+}
+
+/** Explicit eval-owned scope: inherited design tokens are definitions, not candidate raw-color violations. */
+function installEvalDesignLint(task: GoldenTask, p: Paths, store: ChecksStore, ledger: Ledger, scope: DesignLintScope): void {
+  const git = (args: readonly string[]) => safeGit(p.workspace, args, { home: p.home }).toString();
+  const files = scope.files.filter(file => !scope.tokenFiles.includes(file));
+  const design = git(["show", "refs/heads/main:DESIGN.md"]);
+  installDesignLintChecks(store, { nodeBin: process.execPath, axeVersion: scope.axeVersion, designSource: scope.designSource, files, design });
+  store.approve(ledger, `golden task ${task.id}: protected design lint from the eval-owned scope and committed design reference`);
+}
+
+const DESIGN_CHECKS = ["impeccable-source", "impeccable-url", "design-browser", "ai-tells", "token-lint", "design-md-lint"];
+/** A design task cannot silently become code-only because the planner omitted the design gates. */
+function requireDesignEvidence(plan: Plan, required: boolean): Plan {
+  if (!required) return plan;
+  return { ...plan, tasks: plan.tasks.map(task => ({ ...task,
+    requiredChecks: [...new Set([...task.requiredChecks, ...DESIGN_CHECKS])],
+    requiredReviews: [...new Set([...task.requiredReviews, "design"])],
+  })) };
 }
 
 const ms = (minutes: number) => minutes * 60_000;
@@ -449,6 +501,8 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (pipeline === "review-fix" && !loopChecks.checks.unit) throw new Error(`${task.id}: a review that asks for fixes needs a gate check named "unit" (its fix tasks' required check)`);
   if (pipeline === "onboard" && !loopChecks.checks.unit) throw new Error(`${task.id}: an onboarding cleanup needs a gate check named "unit" (the onboard skill's required check)`);
   const goFixture = evalGoFixture(opts.evalsRepo, task.id);
+  const designScope = designScopeOf(opts.evalsRepo, task);
+  const designRequired = designScope !== undefined;
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -480,8 +534,16 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const gateStore = installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
   // The loop runs what was installed and locked, never the copy parsed before the preflight (the evals repo may
   // have changed since): re-parse the installed copy and re-check what the plan needs against it.
+  if (designScope) {
+    // A design task is judged against its committed reference (decision 162): without one it would finish on code review alone.
+    if (!designOnBranch(args => safeGit(p.workspace, args, { home: p.home }).toString(), "main")) throw new Error(`${task.id}: a design task (tasks/${task.id}/design-lint.json) needs a committed DESIGN.md on the snapshot's main; there is none, so no design review could run (decision 162)`);
+    installEvalDesignLint(task, p, gateStore, ledger, designScope);
+  }
   const gate = loadHiddenChecks(gateStore.checksDir);
   assertHiddenDisjoint(gate, grading);
+  const missingDesign = designRequired ? DESIGN_CHECKS.filter((name) => !Object.hasOwn(gate.checks, name)) : [];
+  // Every task would block at dispatch after the planner had spent its session: refuse before any session instead.
+  if (missingDesign.length) throw new Error(`${task.id}: a design task needs the protected design checks installed; missing ${missingDesign.join(", ")} (decision 162)`);
   if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (pipeline === "review-fix" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (pipeline === "onboard" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
@@ -503,7 +565,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   let harness: Harness;
   try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
   // A question has no tier of its own; an onboarding run's sessions take its edits' tier (the `then` pipeline's).
-  const tier: TaskTier = (pipeline === "onboard" ? t.then?.tier : t.tier) ?? 1;
+  let tier: TaskTier = (pipeline === "onboard" ? t.then?.tier : t.tier) ?? 1;
   // A review-fix task's fix tasks are bug fixes reviewed against their finding (decisions 114, 126); its report update is not.
   const fixTasks = new Set<string>();
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(fixTasks.has(taskId) ? { kind: "bug" as const } : {}), ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
@@ -528,7 +590,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const loopOptions = (): RunLoopOptions => ({
     projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
     worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: gate.checks, review,
-    taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
+    taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home, tier,
     reprobe: async () => (await opts.preflight()).ok,
     notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),
     ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}),
@@ -558,8 +620,8 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
           const result = await runReviewFixes({
             output, fix,
             // Each loop run may touch only this review's own task ids (decision 126).
-            runFixes: async () => { for (const e of planEntries(fix.plan!)) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds] }); },
-            runUpdate: async (update) => { for (const e of planEntries({ tasks: [update] })) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds, update.id] }); },
+            runFixes: async () => { for (const e of planEntries(requireDesignEvidence(fix.plan!, designRequired))) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds] }); },
+            runUpdate: async (update) => { for (const e of planEntries(requireDesignEvidence({ tasks: [update] }, designRequired))) ledger.append(e); return opts.runLoop({ ...loopOptions(), only: [...fix.taskIds, update.id] }); },
             state: () => { try { return rebuildState(ledger.entries(), { now: Date.now() }); } catch { return { tasks: {} } as unknown as RunState; } },
             changedFiles: (revision) => safeGit(p.workspace, ["diff", "--name-only", "-z", `${revision}^1`, revision], { home: p.home }).toString().split("\0").filter(Boolean),
           });
@@ -585,14 +647,15 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
         plan = step.output.plan;
       }
     } else {
-      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log });
+      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log, design: designRequired });
       plannerSessions = r.sessions;
       if (r.kind === "plan") plan = r.plan;
       else if (r.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = r.until ?? Math.floor(Date.now() / 1000) + 3600; }
       else { outcome = "plan-failed"; error = r.reason; }
     }
     if (plan) {
-      for (const e of planEntries(plan)) ledger.append(e);
+      tier = plan.tier ?? tier;
+      for (const e of planEntries(requireDesignEvidence(plan, designRequired))) ledger.append(e);
       log(`${task.id} ${runId}: ${plan.tasks.length} task(s) planned; starting the build loop`);
       loop = await opts.runLoop(loopOptions());
       outcome = loop.status === "complete" ? "complete" : "blocked";
@@ -632,7 +695,12 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   return out;
 }
 
-/** `sessions` counts the planner sessions that started (a refused session never started). */
+/** Persist the process start even when capture or parsing fails before a session returns. */
+function recordEvalStart(ledger: Ledger, runId: string, taskId: string, attemptId: string): void {
+  ledger.append({ kind: "reconciled", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { type: "eval_session_started", runId } });
+}
+
+/** `sessions` counts the planner processes that started. */
 type PlannerResult =
   | { kind: "plan"; plan: Plan; sessions: number }
   | { kind: "usage-limited"; until: number | undefined; sessions: number }
@@ -644,12 +712,12 @@ type PlannerResult =
  * the refusal and rewrites .jarvis/plan.json. A session that didn't finish (usage-limited, refused, timed out,
  * crashed) is never retried. Each session has its own header, log and usage record (plan-a1, plan-a2).
  */
-async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string; log: (m: string) => void }): Promise<PlannerResult> {
+async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string; log: (m: string) => void; design: boolean }): Promise<PlannerResult> {
   const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: PLAN_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
   try {
     const sessionsDir = join(i.p.projectDir, "sessions");
     mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
-    const promptInput = { request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns };
+    const promptInput = { request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns, design: i.design };
     const context = { spec: i.spec, checks: Object.keys(i.checks.checks).map((name) => ({ name, criteria: i.checks.criteria[name]! })) };
     const refusals: string[] = [];
     let sessions = 0;
@@ -659,9 +727,8 @@ async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: Routin
       const header = join(sessionsDir, `plan-${attemptId}.header.md`);
       writeFileSync(header, `Jarvis eval run: ${i.runId}\nRole: planner (architect). Golden task ${i.task.id}.${n > 1 ? " Corrective attempt: the runner refused the previous plan." : ""}\nPlans are claims, not evidence.\n`, { mode: 0o600 });
       const prompt = refusals.length ? plannerRetryPrompt(promptInput, refusals.at(-1)!) : plannerPrompt(promptInput);
-      const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, `plan-${attemptId}.jsonl`) });
-      recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId, role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
-      if (outcome.status !== "refused") sessions++;
+      const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, `plan-${attemptId}.jsonl`), onSpawn: () => { recordEvalStart(i.ledger, i.runId, PLAN_TASK, attemptId); sessions++; return true; } });
+      if (sessions >= n) recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId, role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
       if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
       if (outcome.status !== "finished") return { kind: "failed", reason: [...refusals, `${label}planner session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}`].join("; "), sessions };
       try {
@@ -702,9 +769,9 @@ async function runReviewStep(i: { harness: Harness; ledger: Ledger; routing: Rou
     const header = join(sessionsDir, "review-a1.header.md");
     writeFileSync(header, reviewStepHeader({ runId: i.runId, label: `Golden task ${i.task.id}.`, skills: loadSkills(reviewStepSkills(i.security)) }), { mode: 0o600 });
     const prompt = reviewStepPrompt({ request: i.request, report: i.report, maxTurns: i.task.maxTurns, security: i.security, evidence });
-    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "review", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "review-a1.jsonl") });
-    recordSessionUsage(i.ledger, { runId: i.runId, taskId: REVIEW_TASK, attemptId: "a1", role: "review", tier: i.tier, route: routeTask("review", i.tier, undefined, i.routing), outcome });
-    const sessions = outcome.status === "refused" ? 0 : 1;
+    let sessions = 0;
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "review", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "review-a1.jsonl"), onSpawn: () => { recordEvalStart(i.ledger, i.runId, REVIEW_TASK, "a1"); sessions++; return true; } });
+    if (sessions) recordSessionUsage(i.ledger, { runId: i.runId, taskId: REVIEW_TASK, attemptId: "a1", role: "review", tier: i.tier, route: routeTask("review", i.tier, undefined, i.routing), outcome });
     if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
     if (outcome.status !== "finished") return { kind: "failed", reason: `review session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}; no fixes were started`, sessions };
     try {
@@ -766,9 +833,10 @@ async function runOnboardStep(i: { harness: Harness; ledger: Ledger; routing: Ro
     const header = join(sessionsDir, "onboard-a1.header.md");
     writeFileSync(header, onboardStepHeader({ runId: i.runId, label: `Golden task ${i.task.id}.`, skills: loadSkills(["onboard"]) }), { mode: 0o600 });
     const prompt = onboardStepPrompt({ request: i.request, report: i.report, checks: i.checks, maxTurns: i.task.maxTurns });
-    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "onboard-a1.jsonl") });
-    recordSessionUsage(i.ledger, { runId: i.runId, taskId: ONBOARD_TASK, attemptId: "a1", role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
-    const sessions = outcome.status === "refused" ? 0 : 1;
+    // Decision 160: a session counts when the runner records its process start, not from its outcome.
+    let sessions = 0;
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "onboard-a1.jsonl"), onSpawn: () => { recordEvalStart(i.ledger, i.runId, ONBOARD_TASK, "a1"); sessions++; return true; } });
+    if (sessions) recordSessionUsage(i.ledger, { runId: i.runId, taskId: ONBOARD_TASK, attemptId: "a1", role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
     if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
     if (outcome.status !== "finished") return { kind: "failed", reason: `onboarding session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}; no cleanup was started`, sessions };
     try {

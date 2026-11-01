@@ -89,7 +89,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Check the decision register", phrase: "An explicit new request beats an older decision" }, // decision 48
       { section: "Check the decision register", phrase: "Silence never overrides an old decision" },
       { section: "Check the decision register", phrase: "Jarvis's own ideas never override the user's" },
-      { section: "Check the decision register", phrase: "Default: keep the old decision" },
+      { section: "Check the decision register", phrase: "its default follows Request fidelity" }, // decision 155 (was "keep")
       { section: "Check the decision register", phrase: "names the very behavior the old decision rules out" },
       { section: "Check the decision register", phrase: "Confirm it with the user once" }, // decision 48 firmness
       { section: "Check the decision register", phrase: "Revisit it without a question" },
@@ -99,7 +99,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Frame the job", phrase: "top 3 reasons it could fail" },
       { section: "Frame the job", phrase: "story map" },
       { section: "Frame the job", phrase: "walking skeleton" },
-      { section: "Frame the job", phrase: "Activities a fixed constraint rules out don't appear on the map" }, // decision 38
+      { section: "Frame the job", phrase: "Apply fixed product constraints, not build-action limits, to the map" }, // decisions 38 and 155
       { section: "Frame the job", phrase: "the first-value budget" }, // decision 55
       { section: "Frame the job", phrase: "draft `PRODUCT.md`" }, // decision 51: grounding for the design skill
       { section: "List assumptions first", phrase: "confidence level" }, // decision 8, assumptions mode
@@ -117,7 +117,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Write the questions", phrase: "why it matters" },
       { section: "Write the questions", phrase: "recommended default" },
       { section: "Write the questions", phrase: "2–3 **alternatives**" },
-      { section: "Write the questions", phrase: "A default never spends money, never messages a real person without approval" },
+      { section: "Write the questions", phrase: "accepting a default never authorizes the build to spend money, message a real person or bypass a build constraint" },
       { section: "Write the questions", phrase: "made-up sample data" },
       { section: "Send the round", phrase: "One round, all at once" },
       { section: "Send the round", phrase: "Reply 'defaults' to accept all" },
@@ -209,10 +209,10 @@ const skills: Record<string, SkillRules> = {
       { section: "Confirm", phrase: "as **plain text**" },
       { section: "Hand off", phrase: "the design skill" },
       { section: "Gotchas", phrase: "`docs/spec/`" },
-      // Decision 86: one confirmation, at the initial hand-off; bounded waiting.
-      { section: "When to use", phrase: "never another confirmation round" },
+      // Decision 86: no confirmation round mid-run; bounded waiting. Decision 155: a "changes" answer is confirmed again.
+      { section: "When to use", phrase: "a mid-run version never gets its own confirmation round" },
       { section: "When to use", phrase: "blocked state" }, // decision 40
-      { section: "Confirm", phrase: "Confirmation happens once, at the initial hand-off" },
+      { section: "Confirm", phrase: "Confirmation covers exactly the artifacts handed off" },
       { section: "Confirm", phrase: "`jarvis intake answers <n> --wait 540`" },
       { section: "Confirm", phrase: "at most twice" },
     ],

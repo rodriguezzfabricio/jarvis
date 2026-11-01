@@ -16,8 +16,27 @@ export type RepairDecision =
 type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry) => entry.data as Data;
 const short = (value: unknown, limit = 160) => String(value ?? "").replace(/[\r\n\u0000-\u001f]/g, " ").slice(0, limit);
+const record = (value: unknown): Record<string, unknown> | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 function currentEvidence(task: TaskState): LedgerEntry[] {
   return task.evidence.filter((e) => e.actor === "runner" && e.task_id === task.id && e.attempt_id === task.attemptId && dataOf(e).revision === task.candidateRevision);
+}
+
+function reviewFindingLines(entry: LedgerEntry): string[] {
+  const reviews = dataOf(entry).reviews;
+  if (!Array.isArray(reviews)) return [];
+  const lines: string[] = [];
+  for (const value of reviews) {
+    const review = record(value);
+    if (!review) continue;
+    const findings = [...(Array.isArray(review.findings) ? review.findings : []), ...(Array.isArray(review.investigate) ? review.investigate : [])];
+    for (const value of findings) {
+      const finding = record(value);
+      if (!finding || finding.severity === undefined || finding.file === undefined || finding.line === undefined || finding.scenario === undefined || finding.fix === undefined) continue;
+      lines.push(short(`${short(review.reviewer)}/${short(review.model)}: [${short(finding.severity)}] ${short(finding.file)}:${short(finding.line)}: ${short(finding.scenario)}. Fix: ${short(finding.fix)}`, 500));
+      if (lines.length === 8) return lines;
+    }
+  }
+  return lines;
 }
 
 function repairPrompt(task: TaskState, count: number, options: RepairOptions): string {
@@ -29,7 +48,10 @@ function repairPrompt(task: TaskState, count: number, options: RepairOptions): s
     for (const c of evidence.cases.slice(0, 3)) lines.push(`${short(c.id)}: exit ${c.code ?? "signal"}; timed out: ${c.timedOut}`, `stdout tail:\n${c.stdout}`, `stderr tail:\n${c.stderr}`);
     if (evidence.verification) lines.push(`Verification: exit ${evidence.verification.code ?? "signal"}; timed out: ${evidence.verification.timedOut}; completed: ${evidence.verification.completed}`, evidence.verification.stdout, evidence.verification.stderr);
   }
-  for (const entry of currentEvidence(task).filter((e) => e.kind === "review_result" && dataOf(e).status === "fail").slice(0, 4)) lines.push(`${short(dataOf(entry).reviewer)}: ${short(dataOf(entry).summary ?? "review failed", 500)}`);
+  for (const entry of currentEvidence(task).filter((e) => e.kind === "review_result" && dataOf(e).status === "fail").slice(0, 4)) {
+    lines.push(...reviewFindingLines(entry));
+    lines.push(`${short(dataOf(entry).reviewer)}: ${short(dataOf(entry).summary ?? "review failed", 500)}`);
+  }
   const buffer = Buffer.from(lines.join("\n"));
   let end = Math.min(buffer.length, 16_384);
   while (end < buffer.length && (buffer[end]! & 0xc0) === 0x80) end--;

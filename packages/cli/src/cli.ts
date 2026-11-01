@@ -31,6 +31,7 @@ import { register as registerReport } from "./commands/report.ts";
 import { register as registerGate } from "./commands/gate.ts";
 import { register as registerMode } from "./commands/mode.ts";
 import { register as registerMemory } from "./commands/memory.ts";
+import { register as registerChecks } from "./commands/checks.ts";
 import * as intake from "./intake/index.ts";
 import { register as registerSetup } from "./setup/command.ts";
 import * as lanes from "./lanes/index.ts";
@@ -187,8 +188,9 @@ evalCmd
   .description("Both arms of a golden task, run for run: hidden checks, claimed and false done, wall time, sessions, repairs, usage, ratings")
   .argument("<task>", "task id")
   .option("--json", "print JSON")
-  .action((taskId: string, opts: { json?: boolean }) => {
-    const rows = readRuns(evalsHome(), taskId);
+  .option("--label <s>", "only the runs of one labelled round (decision 116: a proof counts one frozen revision)")
+  .action((taskId: string, opts: { json?: boolean; label?: string }) => {
+    const rows = readRuns(evalsHome(), taskId, opts.label === undefined ? {} : { label: opts.label });
     console.log(opts.json ? JSON.stringify(rows, null, 2) : formatCompare(taskId, rows));
   });
 
@@ -270,6 +272,7 @@ registerReport(program);
 registerGate(program);
 registerMode(program);
 registerMemory(program);
+registerChecks(program);
 intake.register(program);
 registerSetup(program);
 lanes.register(program);

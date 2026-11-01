@@ -58,9 +58,11 @@ describe("fake claude scenario mode", { timeout: 60_000 }, () => {
 
   it("uses each session once, in order per task, and fails loudly when none is left", async () => {
     const p = project("repair");
-    expect(readFileSync(join((await launch(p, "T1")).cwd, "src/multiply.mjs"), "utf8")).toContain("a + b");
+    const first = (await launch(p, "T1")).cwd;
+    expect(readFileSync(join(first, "src/multiply.mjs"), "utf8")).toContain("a + b");
     expect(readFileSync(join((await launch(p, "T2")).cwd, "src/clamp.mjs"), "utf8")).toContain("Math.min");
-    expect(readFileSync(join((await launch(p, "T1")).cwd, "src/multiply.mjs"), "utf8")).toContain("a * b");
+    // The repair edits the first attempt's files (decision 160), so it runs where the runner seeds them.
+    expect(readFileSync(join((await launch(p, "T1", { cwd: first })).cwd, "src/multiply.mjs"), "utf8")).toContain("a * b");
     const extra = await launch(p, "T1");
     expect(extra.code).toBe(1);
     expect(extra.events.at(-1)).toMatchObject({ type: "result", is_error: true });

@@ -50,6 +50,7 @@ function onboarder(write: (ws: string) => void, outcome: TaskOutcome = finished(
   const inputs: (TaskInput & { header: string })[] = [];
   return { inputs, harness: { runTask: async (input) => {
     inputs.push({ ...input, header: readFileSync(input.runHeaderPath, "utf8") });
+    if (outcome.status !== "refused") input.onSpawn?.(2100000000);
     write(input.workspace);
     return outcome;
   } } };
@@ -156,8 +157,10 @@ describe("eval jarvis: onboarding that also asks for edits (golden task 7's shap
     writeFakeClaudeShim(shim, scenarioPath);
     const specs: SessionSpec[] = [];
     const calls: RunLoopOptions[] = [];
+    // No injected harness: the arm builds the production one.
+    const { harness: _injected, ...base } = options(fx, { runLoop: cleanupLoop(calls), runId: "jarvis-ob-h" });
     const r = await runJarvis(onboardTask(fx), {
-      ...options(fx, { runLoop: cleanupLoop(calls), runId: "jarvis-ob-h" }), harness: undefined,
+      ...base,
       harnessSeams: { binaryRealpath: () => "/usr/bin/true", session: async (spec) => { specs.push(spec); return runSession({ ...spec, bin: shim }); } },
     });
     expect(r).toMatchObject({ outcome: "complete", pipeline: "onboard", onboard: { report: "ONBOARDING.md", tasks: ["T1", "T2"] } });

@@ -10,6 +10,7 @@ import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { readInstalledChecks } from "../../packages/cli/src/runner/checks-author.ts";
 import { Ledger, LedgerTamperError } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
@@ -37,8 +38,8 @@ function project() {
   const ledger = Ledger.open(projectDir);
   // A runner gate_result already on record, so "nothing appended" is checked against a real ledger.
   ledger.append({ kind: "task_created", actor: "runner", task_id: "T1", data: { title: "Value" } });
-  const repo = join(root, `repo${i}`); mkdirSync(repo);
-  git(repo, "init", "-q", "-b", "main"); git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t");
+  const repo = join(root, `repo${i}`);
+  initRepo(repo, { identity: true }); // git init -q -b main, user.email t@t, user.name t: by copy (helpers/git-repo.ts)
   writeFileSync(join(repo, "value.txt"), "41\n"); writeFileSync(join(repo, ".gitignore"), "ignored.txt\n");
   git(repo, "add", "-A"); git(repo, "commit", "-qm", "c1");
   return { jarvisHome, projectDir, ledger, store: new ChecksStore(projectDir), repo, workRoot: join(root, `work${i}`) };

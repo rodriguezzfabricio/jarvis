@@ -98,6 +98,7 @@ From `jarvis --help` today:
 | `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
 | `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
 | `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence |
+| `jarvis checks install` | Reviews the architect's `.jarvis/checks` proposals in a fresh read-only session and installs them as protected checks only on a pass |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off |
 | `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
 

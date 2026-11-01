@@ -81,4 +81,24 @@ describe("shared-state repair policy", () => {
     forged.append({ kind: "review_result", actor: "broker", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", status: "fail", revision } });
     expect(decideRepair(task(forged), { kind: "failure" })).toEqual({ kind: "resume" });
   });
+
+  it("puts review findings in the repair prompt and limits them to eight lines", () => {
+    const ledger = run(1, "completed", "pass");
+    const findings = Array.from({ length: 10 }, (_, index) => ({ severity: index === 0 ? "high" : "medium", confidence: 0.9, impact: "other", file: `src/file-${index}.ts`, line: index + 1, scenario: `Scenario ${index}`, fix: `Fix text ${index}` }));
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", status: "fail", revision, reviews: [{ reviewer: "claude", model: "claude-opus-5-5", findings, investigate: [] }], summary: "Review fail" } });
+    const decision = decideRepair(task(ledger), { kind: "failure" });
+    if (decision.kind !== "repair") throw new Error("expected repair");
+    expect(decision.prompt).toContain("claude/claude-opus-5-5: [high] src/file-0.ts:1: Scenario 0. Fix: Fix text 0");
+    expect(decision.prompt.match(/\[medium\] src\/file-/g)).toHaveLength(7);
+    expect(decision.prompt).not.toContain("src/file-8.ts");
+  });
+
+  it("ignores malformed review details when building a repair prompt", () => {
+    const ledger = run(1, "completed", "pass");
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", status: "fail", revision, reviews: [{ reviewer: null, model: {}, findings: "bad", investigate: null }] } });
+    const decision = decideRepair(task(ledger), { kind: "failure" });
+    if (decision.kind !== "repair") throw new Error("expected repair");
+    expect(decision.prompt).toContain("code: review failed");
+    expect(decision.prompt).not.toContain("[undefined]");
+  });
 });

@@ -1,7 +1,8 @@
 ---
 name: researcher
 description: Read-only web research for Jarvis product research and build-vs-buy spikes. Return dated sources and findings to the research skill; never implement or take outside actions.
-model: claude-sonnet-5-5
+model: claude-opus-5-5
+effort: medium
 tools: WebSearch, WebFetch
 ---
 

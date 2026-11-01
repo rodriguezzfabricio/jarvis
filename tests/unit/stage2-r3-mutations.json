@@ -122,8 +122,8 @@
   {
     "name": "stage2 r3 default ignores documented conflict",
     "file": "skills/intake/SKILL.md",
-    "anchor": "quote the exact doc line with its path and line number and say the default follows it",
-    "replacement": "silently use a narrower default"
+    "anchor": "quote the exact doc line with its path and line number;",
+    "replacement": "silently use a narrower default;"
   },
   {
     "name": "stage2 r3 reader never stops",

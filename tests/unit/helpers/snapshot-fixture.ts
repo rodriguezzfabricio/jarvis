@@ -6,8 +6,11 @@ import type { KeyPairKeyObjectResult } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
+import { inject } from "vitest";
 import { shortTmp } from "../../helpers.ts";
 import { FAKE_NPM_TOKEN } from "./fake-tokens.ts";
+import { initRepo } from "./git-repo.ts";
+import { buildRepoTemplate } from "./git-template.ts";
 
 export const root = shortTmp("jts-");
 export const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
@@ -15,9 +18,7 @@ export const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd
 export function sourceRepo(): { repo: string; base: string; fix: string } {
   const repo = join(root, "src");
   mkdirSync(join(repo, "ext"), { recursive: true });
-  git(repo, "init", "-q", "-b", "main");
-  git(repo, "config", "user.email", "t@t");
-  git(repo, "config", "user.name", "t");
+  initRepo(repo, { identity: true });
   git(repo, "remote", "add", "origin", "https://example.invalid/upstream.git");
   writeFileSync(join(repo, "app.go"), "package app\n// buggy\n");
   writeFileSync(join(repo, "ext", ".env.production"), "WXT_HIRE_ORIGIN=https://example.invalid\nWXT_GA_API_SECRET=abc123notreal\nDB_PASSWORD=\n# API_KEY=commented\n");
@@ -146,28 +147,42 @@ export function encodedCases(edKey: KeyPairKeyObjectResult): [string, string][] 
 }
 
 /**
- * Snapshots each case's file in its own repository, four at a time, each in its own worker thread
- * (snapshot-case-worker.mjs): createSnapshot and git block the thread, so only threads overlap them.
+ * Snapshots each case's file in its own repository, four at a time, on four worker threads
+ * (snapshot-case-worker.mjs): createSnapshot and git block the thread, so only threads overlap them. A thread
+ * takes its next case when it has finished the last, so its start-up (about 100 ms of CPU) is paid four times,
+ * not once per case. Each case's repository starts as a copy of one template (helpers/git-repo.ts); a worker
+ * thread uses native child_process APIs (the old redirect context is inert, decision 137).
  * Resolves with each case's refusal message ("" if the snapshot was accepted), in order.
  */
 export async function snapshotErrors(entries: [string, string][]): Promise<string[]> {
-  const runCase = (name: string, content: string) =>
-    new Promise<string>((resolve, reject) => {
-      const w = new Worker(new URL("../snapshot-case-worker.mjs", import.meta.url), { workerData: { root, name, content } });
-      w.once("message", resolve);
-      w.once("error", reject);
-      w.once("exit", (code) => reject(new Error(`case ${name}: worker exited ${code} without a result`)));
-    });
+  const template = join(root, "repo-template");
+  mkdirSync(template, { recursive: true });
+  buildRepoTemplate(template, true);
+  const realGit = inject("realGit");
+  const shimEnv = inject("shimEnv");
   const errs: string[] = [];
   let next = 0;
-  await Promise.all(
-    Array.from({ length: 4 }, async () => {
+  const lane = async () => {
+    const w = new Worker(new URL("../snapshot-case-worker.mjs", import.meta.url), { workerData: { root, template, realGit, shimEnv } });
+    try {
       while (next < entries.length) {
         const i = next++;
         const [name, content] = entries[i]!;
-        errs[i] = await runCase(name, content);
+        errs[i] = await new Promise<string>((resolve, reject) => {
+          const onExit = (code: number) => reject(new Error(`case ${name}: worker exited ${code} without a result`));
+          const done = (settle: () => void) => { w.off("message", onMessage); w.off("error", onError); w.off("exit", onExit); settle(); };
+          const onMessage = (message: string) => done(() => resolve(message));
+          const onError = (error: Error) => done(() => reject(error));
+          w.on("message", onMessage);
+          w.on("error", onError);
+          w.on("exit", onExit);
+          w.postMessage({ name, content });
+        });
       }
-    }),
-  );
+    } finally {
+      await w.terminate();
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, lane));
   return errs;
 }

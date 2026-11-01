@@ -74,8 +74,8 @@
   {
     "name": "review Claude live preflight",
     "file": "packages/cli/src/harness/claude/review.ts",
-    "anchor": "if (!(await opts.preflight(input)).ok)",
-    "replacement": "if (false)"
+    "anchor": "if (!preflight.ok) {",
+    "replacement": "if (false) {"
   },
   {
     "name": "review Claude closed network",
@@ -206,8 +206,8 @@
   {
     "name": "review injected investigation cannot pass",
     "file": "packages/cli/src/review/service.ts",
-    "anchor": "(await reviewDetailed(request)).verdict === \"pass\" ? \"pass\" : \"fail\"",
-    "replacement": "(await reviewDetailed(request)).verdict === \"error\" ? \"fail\" : \"pass\""
+    "anchor": "result.verdict === \"pass\" ? \"pass\" : \"fail\"",
+    "replacement": "\"pass\""
   },
   {
     "name": "review record investigation items",
@@ -364,5 +364,89 @@
     "file": "packages/cli/src/review/service.ts",
     "anchor": ": verdict === \"error\" ? active.find((r) => r.verdict === \"error\")?.error : undefined;",
     "replacement": ": undefined;"
+  },
+  {
+    "name": "review checked requirement dropped",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "checked: z.array(z.enum([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\", \"bug-brief-inputs\"])).max(8)",
+    "replacement": "checked: z.array(z.enum([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\", \"bug-brief-inputs\"])).max(8).optional().default([\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\"])"
+  },
+  {
+    "name": "review unchanged callers no longer required",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "const required = [\"spec-criteria\", \"data-flow\", \"error-paths\", \"unchanged-callers\",",
+    "replacement": "const required = [\"spec-criteria\", \"data-flow\", \"error-paths\","
+  },
+  {
+    "name": "review bug brief inputs no longer required",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "...(options.kind === \"bug\" ? [\"bug-brief-inputs\"] : [])",
+    "replacement": "...[]"
+  },
+  {
+    "name": "review service ignores bug kind",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "evaluateVerdict(output.rawVerdict, material)",
+    "replacement": "evaluateVerdict(output.rawVerdict)"
+  },
+  {
+    "name": "review invalid checks charged as code failure",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "...(!evaluated.valid && !output.usageLimit ? { verdict: \"error\" as const } : {}),",
+    "replacement": ""
+  },
+  {
+    "name": "review prompt omits check names",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "The output must also carry checked, listing spec-criteria (the spec’s criteria for this task), data-flow (the data flow of the change), error-paths (its error paths), unchanged-callers (the callers it did not change), and for a bug task bug-brief-inputs (the two traced inputs of the bug brief). A name may be listed only after you read the relevant code or spec criteria. An output without the required checks is invalid.",
+    "replacement": "Report your findings."
+  },
+  {
+    "name": "fenced verdict never unwrapped",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "try { value = JSON.parse(unfencedJson(raw)); }",
+    "replacement": "try { value = JSON.parse(raw); }"
+  },
+  {
+    "name": "fence unwrapped from inside surrounding prose",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "return m && !m[1]!.includes(\"```\") ? m[1]! : raw;",
+    "replacement": "const n = /```(?:json)?\\n([\\s\\S]*?)\\n```/.exec(raw); return n ? n[1]! : raw;"
+  },
+  {
+    "name": "checked object with an empty entry counts",
+    "file": "packages/cli/src/review/verdict.ts",
+    "anchor": "entries.every(([, read]) => typeof read === \"string\" && read.trim().length > 0)",
+    "replacement": "true"
+  },
+  {
+    "name": "stage3 fixes review runtime limit",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "if (!result.overflowed && (limitedByError || infos.some((r) => r.status === \"rejected\")))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "stage3 fixes review preflight reset",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "if (preflight.usageWaitUntil !== undefined) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "stage3 fixes reviewer tokens",
+    "file": "packages/cli/src/harness/claude/review.ts",
+    "anchor": "sessionUsage: sessionUsage(events)",
+    "replacement": "sessionUsage: sessionUsage([])"
+  },
+  {
+    "name": "stage3 fixes a fail stands over a limited fallback",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "limited && !failed ? \"usage-limited\"",
+    "replacement": "limited ? \"usage-limited\""
+  },
+  {
+    "name": "stage3 fixes no Codex review after a limited Claude review",
+    "file": "packages/cli/src/review/service.ts",
+    "anchor": "if (primary.verdict !== \"usage-limited\" && route.crossModel === \"codex\"",
+    "replacement": "if (route.crossModel === \"codex\""
   }
 ]

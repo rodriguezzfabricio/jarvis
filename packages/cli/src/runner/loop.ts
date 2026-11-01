@@ -7,7 +7,7 @@ import { runGate, verifyEvidence, type GateCheck, type GateInput, type GateResul
 import { ChecksStore } from "../checks/store.ts";
 import { safeGit } from "../eval/git.ts";
 import { atomicWrite, Ledger, type LedgerEntry } from "../ledger/ledger.ts";
-import type { EscalationReason, Harness, TaskInput, TaskOutcome } from "./harness.ts";
+import type { EscalationReason, Harness, TaskInput, TaskOutcome, TaskTier } from "./harness.ts";
 import { captureProcessGroup, cleanupLeftovers, readProcessStartTime, type ProcessStartTimeReader } from "./cleanup.ts";
 import { buildFootprintEntry, createFootprintLog, type FootprintLog } from "./footprint.ts";
 import { ingestSteerNotes, loadInboxCursor, readInbox, saveInboxCursor, type InboxAction } from "./inbox.ts";
@@ -19,7 +19,7 @@ import { loadRouting, routeTask, type RoutingTable } from "./routing.ts";
 import { buildLease, isDone, rebuildState, type EvidenceVerifier, type ProcessGroupRecord, type RunState, type TaskCreatedData, type TaskState } from "./state.ts";
 import { activeUsageWait, waitForUsage, type UsageWaitNotice } from "./usage-wait.ts";
 import { recordSessionUsage } from "./usage-log.ts";
-import { commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
+import { commitCandidate, createWorkspace, deleteCandidateBranches, mergeCandidate, promoteCandidate, readTaskNotes, seedWorkspace, type CandidateRevision, type RunnerGit, type TaskWorkspace } from "./worktrees.ts";
 
 /** The process adapter calls these synchronously at spawn, and only after the entire group exits. */
 export interface LoopTaskInput extends TaskInput {
@@ -47,7 +47,7 @@ export interface ReviewInput {
  * A review function that can fail for infrastructure reasons must return the recorded form: a plain
  * "fail" is a verdict on the code and spends a repair.
  */
-export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true };
+export type ReviewVerdict = "pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error" | "usage-limited"; recorded: true };
 export interface RunLoopOptions {
   projectId: string;
   projectDir: string;
@@ -60,6 +60,8 @@ export interface RunLoopOptions {
   createHarness?: (routing: RoutingTable) => LoopHarness;
   checks: Readonly<Record<string, GateCheck>>;
   review: (input: ReviewInput) => Promise<ReviewVerdict>;
+  /** The plan's triage tier; defaults to 1. */
+  tier?: TaskTier;
   taskTimeoutMs?: number;
   maxTurns?: number;
   maxConcurrent?: number;
@@ -98,6 +100,12 @@ const liveLoops = new Set<string>();
 const short = (value: unknown) => String(value).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 240);
 /** A review that errors (no verdict) gets one retry (decision 100). */
 const REVIEW_TRIES = 2;
+/**
+ * Usage waits for one review of one revision before the run stops, the review checkpointed (decision 160): a
+ * limit never blocks the task or spends a retry, but a reviewer the plan keeps refusing while the live probe
+ * passes would otherwise wait forever. The eval schedule stops at the same count.
+ */
+const REVIEW_USAGE_WAITS = 8;
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
 }
@@ -352,7 +360,10 @@ class Loop {
     this.lease(task.id, attemptId, path);
     const baseRevision = this.git(["rev-parse", "--verify", `refs/heads/${this.opts.runBranch}^{commit}`]);
     this.ledger.append({ kind: "attempt_started", actor: "runner", task_id: task.id, attempt_id: attemptId, data: { runId: this.runId, baseRevision, workspace: path } });
+    const stale = !resuming && task.attemptId !== null && this.records("stale_base", task.id, task.attemptId).length > 0
+      ? "The run branch moved while your previous attempt was being checked, and its changes conflict with work merged since. Redo the task on the current run branch; your workspace starts from it." : "";
     let workspace: TaskWorkspace;
+    let seeded = "";
     try {
       workspace = resuming ? this.workspaceRecord(task)! : createWorkspace({ repoPath: this.opts.repoPath, projectId: this.opts.projectId, taskId: task.id, attemptId, baseRevision,
         worktreeRoot: this.opts.worktreeRoot, ...(this.opts.gitHome ? { home: this.opts.gitHome } : {}), ...(this.opts.git ? { git: this.opts.git } : {}) });
@@ -361,12 +372,22 @@ class Loop {
         mkdirSync(join(workspace.path, ".git/info"), { recursive: true });
         appendFileSync(join(workspace.path, ".git/info/exclude"), "\n/.jarvis/\n");
       }
+      // Decision 160: a repair edits the failed candidate's files instead of starting over. A stale base redoes
+      // the task from the new head, and a failed runner merge repairs from it (decision 100).
+      if (!resuming && repair.kind === "repair" && !stale) seeded = this.seedRepair(task.id, view, workspace);
     } catch (e) { return this.block(this.state().tasks[task.id]!, `workspace refused: ${short(e)}`); }
     const failure: EscalationReason | undefined = repair.kind !== "repair" ? undefined
       : view.evidence.some((e) => e.kind === "review_result" && dataOf(e).revision === view.candidateRevision && dataOf(e).status === "fail") ? "review_fail" : "gate_fail";
-    const stale = !resuming && task.attemptId !== null && this.records("stale_base", task.id, task.attemptId).length > 0
-      ? "The run branch moved while your previous attempt was being checked, and its changes conflict with work merged since. Redo the task on the current run branch; your workspace starts from it." : "";
-    await this.attempt(task, workspace, [repair.kind === "repair" ? repair.prompt : "", stale].filter(Boolean).join("\n\n"), failure);
+    await this.attempt(task, workspace, [repair.kind === "repair" ? repair.prompt : "", seeded, stale].filter(Boolean).join("\n\n"), failure);
+  }
+  /** Checks the failed candidate's files out over the repair's fresh workspace; the prompt line says what it starts from. */
+  private seedRepair(taskId: string, view: TaskState, workspace: TaskWorkspace): string {
+    if (!view.candidateRevision || !view.attemptId) return "";
+    const from = { revision: view.candidateRevision, ref: `refs/heads/jarvis/candidates/${taskId}/${view.attemptId}` };
+    const result = seedWorkspace(workspace, from, this.opts.git ? { git: this.opts.git } : {});
+    this.record("workspace_seeded", { from: from.revision, result }, taskId, workspace.attemptId);
+    if (result === "seeded") return `Your workspace starts from your previous attempt's files (candidate ${from.revision}), with any work merged on the run branch since. \`git diff --cached\` shows what that attempt changed. Fix what failed in them; don't start over.`;
+    return result === "conflict" ? "Your previous attempt's changes conflict with work merged on the run branch since, so your workspace starts from the current run branch; redo the change there." : "";
   }
   private repairView(task: TaskState): TaskState {
     const last = [...task.attempts].reverse().find((a) => a.outcome === "completed" && a.candidateRevision !== null);
@@ -424,7 +445,7 @@ class Loop {
     const result = (outcome: TaskOutcome & { finalMessage?: string }) => {
       if (checkpointError !== undefined) throw checkpointError;
       if (group && !groupExited) throw new Error("process group did not exit; attempt remains recoverable");
-      if (timedOut) outcome = { ...outcome, status: "timeout" };
+      if (timedOut && outcome.status !== "usage-limited") outcome = { ...outcome, status: "timeout" };
       return { outcome, group, identityMissing, endedGroup: group ? { ...group, exited: true } : undefined };
     };
     return { onSpawn, onGroupExit, result, dispose };
@@ -442,14 +463,15 @@ class Loop {
       let outcome: TaskOutcome & { finalMessage?: string };
       try { outcome = await this.harness.runTask({
         workspace: workspace.path, prompt: `${buildTaskPrompt(input)}${repair ? `\n\n${repair}` : ""}${task.definition.mayTouch ? `\nMay touch only: ${task.definition.mayTouch.join(", ")}` : ""}`,
-        runHeaderPath: headerPath, role: "build", tier: 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
+        runHeaderPath: headerPath, role: "build", tier: this.opts.tier ?? 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
         ...(failure ? { failure } : {}),
         onSpawn: observer.onSpawn, onGroupExit: observer.onGroupExit,
       }); } finally { this.footprint?.sessionEnded(); }
-      // A usage-log failure never fails the run (runner/usage-log.ts); a refused session isn't logged.
-      recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: 1,
-        route: routeTask("build", 1, failure, this.routing), ...(failure ? { failure } : {}), outcome });
-      return observer.result(outcome);
+      const observed = observer.result(outcome);
+      // A usage-log failure never fails the run; a preflight that started nothing has no usage.
+      if (observed.group) recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: this.opts.tier ?? 1,
+        route: routeTask("build", this.opts.tier ?? 1, failure, this.routing), ...(failure ? { failure } : {}), outcome: observed.outcome });
+      return observed;
     } finally { observer.dispose(); }
   }
   private async attempt(task: TaskState, workspace: TaskWorkspace, repair: string, failure?: EscalationReason): Promise<void> {
@@ -531,7 +553,7 @@ class Loop {
     task = this.state().tasks[taskId]!;
     for (const reviewer of task.definition.requiredReviews) {
       const old = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
-      if (old) { if (dataOf(old).status === "pass") continue; return; }
+      if (old) { if (dataOf(old).status === "pass") continue; if (dataOf(old).status !== "usage-limited") return; }
       // An "error" is the review's infrastructure failing, not the code (decisions 100, 111): it is retried, and
       // if it persists the task blocks with that reason. Neither spends a repair or sends the builder a fix prompt.
       let status: "pass" | "fail" | "investigate" | "error" | undefined;
@@ -552,19 +574,36 @@ class Loop {
     return typeof reason === "string" && reason.trim() ? short(reason).slice(0, 160) : `review ${reviewer} produced no verdict`;
   }
   private async reviewOnce(taskId: string, attemptId: string, candidate: CandidateRevision, reviewer: string): Promise<"pass" | "fail" | "investigate" | "error" | undefined> {
-    const task = this.state().tasks[taskId]!;
-    await this.pauseUsage();
-    this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
-    const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
-      evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
-    if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
-      const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
-      // The service records its own verdict; trust only what reached the ledger for this revision.
-      return recorded && dataOf(recorded).status === verdict.status && ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
+    let waits = 0;
+    for (;;) {
+      const task = this.state().tasks[taskId]!;
+      const previous = task.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
+      const waited = previous && this.ledger.entries().some((e) => e.actor === "runner" && e.kind === "usage_wait" && e.task_id === taskId && e.attempt_id === attemptId && e.seq > previous.seq);
+      if (previous && dataOf(previous).status === "usage-limited" && !waited) {
+        // The recorded limit is the checkpoint, including when a crash preceded usage_wait; the next run resumes from it.
+        if (waits >= REVIEW_USAGE_WAITS) throw new Error(`review ${reviewer} still usage-limited after ${waits} waits; dispatch remains paused and the review resumes on the next run`);
+        const reset = dataOf(previous).resetAt;
+        await waitForUsage({ ledger: this.ledger, taskId, attemptId, backoffAttempt: waits++, outcome: {
+          status: "usage-limited", resetAt: typeof reset === "number" ? reset : undefined,
+          exitCode: null, durationMs: 0, usage: [], usageWaitUntil: undefined,
+        } }, { now: this.now, sleep: this.sleep, notify: this.opts.notify ?? (async () => {}), reprobe: () => this.probeUsage(),
+          ...(this.opts.usageMarginMs !== undefined ? { marginMs: this.opts.usageMarginMs } : {}) });
+      }
+      await this.pauseUsage();
+      this.record("review_intent", { reviewer, revision: candidate.revision }, taskId, attemptId);
+      const verdict = await this.opts.review({ taskId, attemptId, revision: candidate.revision, reviewer, acceptanceCriteria: task.definition.acceptanceCriteria,
+        evidence: task.evidence.filter((e) => e.kind === "gate_result" && dataOf(e).revision === candidate.revision) });
+      if (typeof verdict === "object" && verdict !== null && verdict.recorded === true) {
+        const recorded = this.state().tasks[taskId]!.evidence.filter((e) => e.kind === "review_result" && dataOf(e).reviewer === reviewer && dataOf(e).revision === candidate.revision).at(-1);
+        // The service records its own verdict; trust only what reached the ledger for this revision.
+        if (!recorded || dataOf(recorded).status !== verdict.status) return undefined;
+        if (verdict.status === "usage-limited") continue;
+        return ["pass", "fail", "investigate", "error"].includes(verdict.status) ? verdict.status : undefined;
+      }
+      if (verdict !== "pass" && verdict !== "fail") return undefined;
+      this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status: verdict } });
+      return verdict;
     }
-    if (verdict !== "pass" && verdict !== "fail") return undefined;
-    this.ledger.append({ kind: "review_result", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { reviewer, revision: candidate.revision, status: verdict } });
-    return verdict;
   }
   /** Every required gate and review passed at the task's current candidate revision. */
   private verdictsPass(task: TaskState): boolean {
@@ -658,7 +697,9 @@ class Loop {
         }
         continue;
       }
-      if (task.evidence.some((e) => dataOf(e).revision === revision && ["fail", "tampered", "error", "investigate"].includes(String(dataOf(e).status)))) continue;
+      const latest = new Map<string, LedgerEntry>();
+      for (const e of task.evidence.filter((e) => dataOf(e).revision === revision)) latest.set(`${e.kind}:${String(dataOf(e).reviewer ?? dataOf(e).check)}`, e);
+      if ([...latest.values()].some((e) => ["fail", "tampered", "error", "investigate"].includes(String(dataOf(e).status)))) continue;
       await this.verifyCandidate(task.id, task.attemptId!, candidate);
     }
   }

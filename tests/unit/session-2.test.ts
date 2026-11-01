@@ -27,7 +27,8 @@ describe("session lifecycle hooks: onSpawn and onGroupExit (stage 3 runner loop)
     chmodSync(leader, 0o755);
     return { leader, marker, pidFile };
   };
-  const busyWait = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end) { /* hold the event loop, as a slow ledger write would */ } };
+  // Holds the thread, and so the event loop, as a slow ledger write would; Atomics.wait blocks without spinning the CPU.
+  const busyWait = (ms: number) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 
   it("calls onSpawn with the group ID before anything in the group runs, then runs the session", async () => {
     const { leader, marker } = writer("accept");

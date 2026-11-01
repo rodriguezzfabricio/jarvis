@@ -41,7 +41,7 @@ describe("general intake principles", () => {
 
   it("preserves the requested outcome and quotes any project rule that forbids it", () => {
     expect(intake()).toContain("Never drop or replace the core of the user's request");
-    expect(intake()).toContain("quote the exact doc line with its path and line number and say the default follows it");
+    expect(intake()).toContain("quote the exact doc line with its path and line number; the question states the conflict and the default keeps the request's outcome");
     expect(intake()).toContain("Keep the conflict visible");
   });
 

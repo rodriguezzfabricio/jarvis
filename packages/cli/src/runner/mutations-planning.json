@@ -140,14 +140,14 @@
   {
     "name": "planning immutable reviewed files",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "return replaceChecks(store, bundle, ledger, verdict);",
-    "replacement": "return replaceChecks(store, { ...bundle, files: { ...bundle.files, ...authored.files } }, ledger, verdict);"
+    "anchor": "return replaceChecks(store, bundle, ledger, verdict, baseline?.hashes ?? {});",
+    "replacement": "return replaceChecks(store, { ...bundle, files: { ...bundle.files, ...authored.files } }, ledger, verdict, baseline?.hashes ?? {});"
   },
   {
     "name": "planning bundle paths no escape",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "if (!relativePath(path) || typeof content !== \"string\")",
-    "replacement": "if (typeof content !== \"string\")"
+    "anchor": "if (!relativePath(path) || protectedCheckPath(path) || typeof content !== \"string\")",
+    "replacement": "if (protectedCheckPath(path) || typeof content !== \"string\")"
   },
   {
     "name": "planning checks spec coverage",
@@ -194,8 +194,8 @@
   {
     "name": "planning concurrent protected changes",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "if (canonical(installedFiles(store)) !== canonical(existing))",
-    "replacement": "if (false)"
+    "anchor": "if (canonical(installedFiles(store)) !== canonical(existing) || canonical(store.hashAll()) !== canonical(baseline?.hashes ?? {})\n    || (baseline && (!verified?.ok || verified.lockHash !== baseline.lockHash))) throw new Error(\"protected checks changed during review; new review required\");\n  return replaceChecks(store, bundle, ledger, verdict, baseline?.hashes ?? {});",
+    "replacement": "if (false) throw new Error(\"protected checks changed during review; new review required\");\n  return replaceChecks(store, bundle, ledger, verdict, store.hashAll());"
   },
   {
     "name": "planning driver stdio isolation",
@@ -502,5 +502,54 @@
     "file": "skills/architect/SKILL.md",
     "anchor": "  \"notes\": [\"Reuse the existing file store; add no dependencies.\"],\n",
     "replacement": ""
+  },
+  {
+    "name": "plan accepts tier 3",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "tier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional()",
+    "replacement": "tier: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional()"
+  },
+  {
+    "name": "build session ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "runHeaderPath: headerPath, role: \"build\", tier: this.opts.tier ?? 1,",
+    "replacement": "runHeaderPath: headerPath, role: \"build\", tier: 1,"
+  },
+  {
+    "name": "build usage ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "attemptId: workspace.attemptId, role: \"build\", tier: this.opts.tier ?? 1,",
+    "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
+  },
+{"name": "stage3 fixes bug handoff requires bug triage", "file": "packages/cli/src/runner/plan.ts", "anchor": "if (classified.type !== \"bug\") throw", "replacement": "if (false) throw"},
+  {
+    "name": "planning protects installer namespaces",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "protectedCheckPath(path) || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning refuses unapproved runtime-only baseline",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!approved && Object.keys(store.hashAll()).length === 0) return undefined;",
+    "replacement": "if (!approved && Object.keys(existing).length === 0) return undefined;"
+  },
+  {
+    "name": "planning retains protected installer artifacts",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "Object.entries(hashes).filter(([file]) => protectedCheckPath(file))",
+    "replacement": "Object.entries(hashes).filter(() => false)"
+  },
+  {
+    "name": "planning refuses non-ASCII authored paths",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!/^[\\x20-\\x7e]+$/.test(path)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "planning refuses reserved check names",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (protectedCheckPath(`${check.name}.check.json`)) throw",
+    "replacement": "if (false) throw"
   }
 ]

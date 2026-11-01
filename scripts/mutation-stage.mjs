@@ -21,13 +21,17 @@ const MAP = [
   [/^packages\/cli\/src\/harness\/claude\/mutations-settings\.json$/, "0-1"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^tests\/unit\/stage2-r3-mutations\.json$/, "2"], // recorded research, plugin contamination, general intake rules (decision 132)
+  [/^tests\/unit\/stage2-r4-mutations\.json$/, "2"], // the stage 2 round 3 defects as intake, spec and design rules (decision 155)
   [/^packages\/cli\/src\/eval\/mutations-jarvis\.json$/, "3"],
   [/^packages\/cli\/src\/eval\/mutations-network\.json$/, "0-1"],
   [/^packages\/cli\/src\/eval\/mutations-hidden\.json$/, "4"], // how hidden checks are installed; found building task 06, the stage 4 proof
+  [/^packages\/cli\/src\/eval\/mutations-design\.json$/, "4"], // the eval arm's design review (decision 162): golden task 06, the stage 4 proof
   [/^packages\/cli\/src\/checks\/mutations-gate-cleanup\.json$/, "0-1"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
+  [/^packages\/cli\/src\/commands\/mutations-run-design\.json$/, "4"], // jarvis run composes the design reviewer (decision 156): golden task 06, the stage 4 proof
+  [/^packages\/cli\/src\/commands\/mutations-checks\.json$/, "3"], // jarvis checks install: the architect's proposals reviewed and installed (decision 147, handoff A3)
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],

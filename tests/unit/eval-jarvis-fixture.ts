@@ -15,6 +15,7 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { buildSessionUsageEntry } from "../../packages/cli/src/runner/usage-log.ts";
 import { createWorkspace } from "../../packages/cli/src/runner/worktrees.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 export const BUGGY = "export function requiresCitizenship(html) {\n  return /US citizen/i.test(html);\n}\n";
 export const FIXED = "// FIXED: read the visible text: strip tags, fold no-break spaces.\nexport function requiresCitizenship(html) {\n  const text = html.replace(/<[^>]*>/g, \" \").replace(/\\u00a0|&nbsp;/g, \" \").replace(/\\s+/g, \" \");\n  return /US citizen/i.test(text);\n}\n";
@@ -96,7 +97,7 @@ export function createEvalFixture(): EvalFixture {
   for (const d of [home, sourceRepo, evalsRepo, jarvisHome, workRoot]) mkdirSync(d, { recursive: true, mode: 0o700 });
 
   put(sourceRepo, { "package.json": "{\"name\":\"jobs\",\"type\":\"module\"}\n", "src/citizen.mjs": BUGGY, "test/citizen.test.mjs": OWN_TEST });
-  git(sourceRepo, home, ["init", "-q", "-b", "main"]);
+  initRepo(sourceRepo); // what `git init -q -b main` leaves, by copy (helpers/git-repo.ts)
   git(sourceRepo, home, ["add", "-A"]);
   git(sourceRepo, home, ["commit", "-q", "-m", "start"]);
   put(sourceRepo, { "src/citizen.mjs": FIXED });
@@ -172,7 +173,7 @@ export function fakeLoop(behavior: LoopBehavior, files: Record<string, string> =
     const blocked: string[] = [];
     for (const t of tasks) {
       const start = (attempt: string) => {
-        ledger.append({ kind: "attempt_started", actor: "runner", task_id: t.id, attempt_id: attempt, data: { runId: "loop-1", baseRevision: g(["rev-parse", "HEAD"]) } });
+        ledger.append({ kind: "attempt_started", actor: "runner", task_id: t.id, attempt_id: attempt, data: { runId: "loop-1", processGroup: 2100000000, baseRevision: g(["rev-parse", "HEAD"]) } });
         ledger.append(buildSessionUsageEntry({ runId: "loop-1", taskId: t.id, attemptId: attempt, role: "debug", tier: 0, route: { model: "claude-sonnet-5-5", modelTier: "fast" }, outcome: {
           status: "finished", exitCode: 0, durationMs: 60_000, usage: [], usageWaitUntil: undefined,
           sessionUsage: { reportedModel: "claude-sonnet-5-5", inputTokens: 120_000, outputTokens: 8_000, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.75, turns: 12, complete: true },
@@ -183,6 +184,7 @@ export function fakeLoop(behavior: LoopBehavior, files: Record<string, string> =
         ledger.append({ kind: "attempt_ended", actor: "runner", task_id: t.id, attempt_id: attempt, data: { status: "completed", candidateRevision: rev } });
         for (const check of t.data.requiredChecks) ledger.append({ kind: "gate_result", actor: "runner", task_id: t.id, attempt_id: attempt, data: { check, revision: rev, status } });
         if (status !== "pass") return false;
+        ledger.append({ kind: "reconciled", actor: "runner", task_id: t.id, attempt_id: attempt, data: { type: "review_process_started", reviewer: "claude", revision: rev } });
         const verdict = await o.review({ taskId: t.id, attemptId: attempt, revision: rev });
         ledger.append({ kind: "review_result", actor: "runner", task_id: t.id, attempt_id: attempt, data: { reviewer: "code", revision: rev, status: verdict, reviews: [{ reviewer: "claude" }] } });
         return verdict === "pass";

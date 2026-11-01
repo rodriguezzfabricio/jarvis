@@ -131,20 +131,27 @@ describe("provider adapters through the broker", () => {
     const { ledger, m, projectConfig } = setup(); const run = async (_spec: SessionSpec) => { throw new Error("must not execute"); };
     writeFileSync(join(m.artifactDir, "index.html"), "changed after approval");
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m, run,
-      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: "/trusted/home", cwd: "/trusted/control" } } });
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: projectConfig.privateRoot, cwd: projectConfig.privateRoot } } });
     let reads = 0;
     const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => { reads++; return TOKEN; } } });
     expect((await broker.handle({ op: "deploy.preview", payload: { ref: releaseRef(m, "preview") } })).status).toBe("failed");
     expect(reads).toBe(0);
   });
   it("does not promote before release-ready even with a bound grant", async () => {
-    const { ledger, m, projectConfig } = setup(); let calls = 0;
+    // Usable private roots and a provider that would answer everything: readiness is the only thing that can refuse.
+    const { ledger, m, projectConfig } = setup(); let calls = 0; let reads = 0;
+    const ok = (stdout: string) => ({ code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout, stderr: "" });
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m,
-      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: "/trusted/home", cwd: "/trusted/control" } },
-      run: async () => { calls++; throw new Error("must not run"); } });
-    const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => TOKEN } });
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: projectConfig.privateRoot, cwd: projectConfig.privateRoot } },
+      run: async (spec) => {
+        calls++;
+        if (spec.args.includes("--version")) return ok("1.2.3");
+        if (spec.args.includes("inspect")) return ok(JSON.stringify({ id: "old-deploy", url: "https://old.vercel.app", projectId: m.siteId }));
+        return ok("https://new.vercel.app\n");
+      } });
+    const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => { reads++; return TOKEN; } } });
     grantRelease(broker, m, "person", false);
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "promote") } })).status).toBe("failed");
-    expect(calls).toBe(0);
+    expect(calls).toBe(0); expect(reads).toBe(0);
   });
 });

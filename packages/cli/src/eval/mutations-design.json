@@ -1,0 +1,44 @@
+[
+  {
+    "name": "eval design service composed from run branch",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const design = designOnBranch(git, \"main\") ?",
+    "replacement": "const design = false ?"
+  },
+  {
+    "name": "eval dispatches recorded design verdict",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (input.reviewer === \"design\" && design)",
+    "replacement": "if (false && design)"
+  },
+  {
+    "name": "eval shared design calibration home",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "workRoot: p.reviewRoot, home: p.home, jarvisHome: p.jarvisHome,",
+    "replacement": "workRoot: p.reviewRoot, home: p.home,"
+  },
+  {
+    "name": "eval excludes generated token definitions",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "scope.files.filter(file => !scope.tokenFiles.includes(file))",
+    "replacement": "scope.files"
+  },
+  {
+    "name": "eval preserves approved design provenance",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "designSource: scope.designSource",
+    "replacement": "designSource: \"new\""
+  },
+  {
+    "name": "eval design plan requires review",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "requiredReviews: [...new Set([...task.requiredReviews, \"design\"])]",
+    "replacement": "requiredReviews: task.requiredReviews"
+  },
+  {
+    "name": "eval design plan requires code checks",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "requiredChecks: [...new Set([...task.requiredChecks, ...DESIGN_CHECKS])]",
+    "replacement": "requiredChecks: task.requiredChecks"
+  }
+]

@@ -254,8 +254,8 @@
   {
     "name": "eval jarvis review errors reach the loop as errors",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "return { status: result.verdict, recorded: true };",
-    "replacement": "return result.verdict === \"pass\" ? \"pass\" : \"fail\";"
+    "anchor": "return { status: (await service.reviewDetailed(request)).verdict, recorded: true };",
+    "replacement": "return (await service.reviewDetailed(request)).verdict === \"pass\" ? \"pass\" : \"fail\";"
   },
   {
     "name": "eval jarvis metrics count only reviewers that ran",

@@ -10,7 +10,8 @@ export default defineConfig({
     hookTimeout: 60_000,
     // Inert context for the existing snapshot workers; process APIs remain native (decision 137).
     globalSetup: ["./tests/setup/real-git-global.ts"],
-    setupFiles: ["./tests/setup/real-git.ts"],
+    // Decision 154: fsyncSync and fdatasyncSync keep native's checks and skip the device flush in test workers.
+    setupFiles: ["./tests/setup/real-git.ts", "./tests/setup/nosync.ts"],
     // Live tests call the real, pinned Claude Code and use a little plan usage.
     // They only run when JARVIS_LIVE=1 (see tests/live/).
   },

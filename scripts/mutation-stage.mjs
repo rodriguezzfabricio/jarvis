@@ -38,6 +38,7 @@ const MAP = [
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-onboard\.json$/, "6"], // onboarding that asks for edits (decision 148): golden task 7, the stage 6 proof
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
+  [/^tests\/unit\/setup-nosync-mutations\.json$/, "0-1"], // the test workers' fsync replacement, tests/setup (decision 154): the gate's own test infrastructure, a stage 0 piece
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
   // jarvis approvals/approve/reject and the broker's pending list: the stage 1 terminal approval surface (backlog 115).
   [/^packages\/cli\/src\/commands\/mutations-approvals-ui\.json$/, "0-1"],

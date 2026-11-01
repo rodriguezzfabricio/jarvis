@@ -13,20 +13,8 @@ import { runSession } from "../../packages/cli/src/proc/session.ts";
 import type { Message } from "../../packages/cli/src/notify/notifier.ts";
 import { createE2EProject, expectTaskDone, lastGreen, seedTasks, sessionCalls, type E2EProject } from "./e2e-helpers.ts";
 
-// The worker's outer sandbox cannot bind sockets or nest the host sandbox runtime. Keep the production
-// composition and gate implementation, with a fake broker listener and a local fake sandbox executor.
-vi.mock("../../packages/cli/src/broker/host.ts", async original => ({
-  ...await original<typeof import("../../packages/cli/src/broker/host.ts")>(),
-  hostBroker: async (_broker: unknown, alias: string) => { writeFileSync(alias, "fake socket"); return { socketPath: alias, alias, reconciled: 0, close: async () => {} }; },
-}));
-vi.mock("../../packages/cli/src/sandbox/srt.ts", async original => ({
-  ...await original<typeof import("../../packages/cli/src/sandbox/srt.ts")>(),
-  runSandboxed: async (r: import("../../packages/cli/src/sandbox/srt.ts").SandboxedRun) => {
-    expect(r.policy.allowedDomains ?? []).toEqual([]);
-    expect(r.policy.allowLocalBinding).not.toBe(true);
-    return runSession({ ...r, bin: "/bin/sh", args: ["-c", r.command] });
-  },
-}));
+// The production composition end to end, as tests/integration/e2e-release.test.ts runs it: the real hosted broker and
+// the real gate sandbox; the fake desktop build is a shell script that leaves a minimal .app tree (no Rust, no Tauri).
 
 const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof register>[0] };
 const projects: E2EProject[] = [];

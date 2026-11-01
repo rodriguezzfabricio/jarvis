@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { join, relative } from "node:path";
 import { runGate } from "../checks/gate.ts";
 import { ChecksStore } from "../checks/store.ts";
+import { pinnedProviderNode } from "../config/pins.ts";
 import { checkTrustedDir } from "../config/private-file.ts";
 import { installDesktopChecks, runDesktop } from "../lanes/desktop.ts";
 import type { DesktopPlan } from "../lanes/desktop-types.ts";
@@ -19,16 +20,25 @@ export const NATIVE_SMOKE_REASON = "input isolation is unavailable (decisions 10
 type Data = Record<string, unknown>;
 const data = (e: LedgerEntry): Data => e.data !== null && typeof e.data === "object" ? e.data as Data : {};
 
-export function desktopReleasePlan(setup: DesktopReleaseSetup, nodeBin = process.execPath): DesktopPlan {
-  // The protected shell command owns tool selection; the build worker verifies its output, offline.
+/**
+ * The plan `jarvis release configure` locks into the store. The build worker and the verifier run under the runner's own
+ * Node by absolute path. The protected shell command owns tool selection (the gate's PATH holds no Rust; the pinned
+ * fixture for the release store is backlog 210), so `tauriBin` is the shell itself: runDesktop's availability check
+ * then asks only for macOS and the shell, and the worker's observation decides whether the build ran or needed network.
+ */
+export function desktopReleasePlan(setup: DesktopReleaseSetup, nodeBin = pinnedProviderNode()): DesktopPlan {
   return { nodeBin, tauriBin: "/bin/sh", build: { bin: "/bin/sh", args: ["-c", setup.build.command] },
     bundle: `${setup.build.output}/${setup.bundle}`, buildTimeoutMs: setup.build.timeoutMs, stayUpMs: 1000, shutdownMs: 1000 };
 }
 
-/** Configure is the explicit approval boundary. Never bless edits to an already approved check store. */
+/**
+ * Configure is the explicit approval boundary: it approves the plan derived from the typed options and the runner's own
+ * build worker and verifier, nothing else. It never blesses edits to an approved store, and never files nobody approved.
+ */
 export function installDesktopRelease(ledger: Ledger, setup: DesktopReleaseSetup): void {
   const store = new ChecksStore(ledger.dir);
   if (existsSync(store.lockPath) && !store.verify(ledger).ok) throw new Error("a protected check changed; restore the approved checks before configuring desktop");
+  if (!existsSync(store.lockPath) && Object.keys(store.hashAll()).length) throw new Error("the project's checks were never approved; review and approve them (jarvis checks install) before configuring desktop");
   const path = join(store.checksDir, "desktop", "plan.json");
   const plan = desktopReleasePlan(setup);
   if (existsSync(path)) {
@@ -113,10 +123,11 @@ export async function runDesktopRelease(i: ReleaseStepInput, setup: DesktopRelea
   const store = new ChecksStore(i.projectDir);
   if (!store.verify(i.ledger).ok) return stop("a protected check changed");
   const planPath = join(store.checksDir, "desktop", "plan.json");
-  if (!existsSync(planPath) || canonical(JSON.parse(readFileSync(planPath, "utf8"))) !== canonical(desktopReleasePlan(setup))) return stop("the desktop setup differs from the approved plan; run jarvis release configure");
-  const root = join(realpathSync(i.projectDir), "artifacts"); mkdirSync(root, { recursive: true, mode: 0o700 }); checkTrustedDir(root);
+  if (!existsSync(planPath) || canonical(JSON.parse(readFileSync(planPath, "utf8"))) !== canonical(desktopReleasePlan(setup))) return stop("the desktop setup differs from the approved desktop plan in the checks store; a changed plan needs review (backlog 243), a missing one jarvis release configure");
   let room: string | undefined; let artifact: LedgerEntry | undefined;
   try {
+    // The deliverable's home: runner-owned project state, a real folder nobody else can write; refused as a stop, not a crash.
+    const root = join(realpathSync(i.projectDir), "artifacts"); mkdirSync(root, { recursive: true, mode: 0o700 }); checkTrustedDir(root);
     const built = await runDesktop({ ledger: i.ledger, store, projectDir: i.projectDir, jarvisHome: i.jarvisHome, workRoot: i.workRoot,
       repoPath: i.repoPath, revision, taskId: null, attemptId: `desktop-release-${runId}` }, {
       ...(i.seams?.desktop?.gate ? { gate: i.seams.desktop.gate } : {}),

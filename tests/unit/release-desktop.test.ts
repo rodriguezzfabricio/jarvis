@@ -42,8 +42,10 @@ it("configure installs a locked desktop plan and reports a build-only destinatio
   await expect(cli.parseAsync(args, { from: "user" })).rejects.toThrow(/protected check|approved|changed/);
 });
 
-async function release(options: { failed?: string; omitted?: string; head?: string; noTasks?: boolean; tamperPlan?: boolean; changedSetup?: boolean; badCopy?: boolean; tamperCapture?: boolean } = {}) {
+async function release(options: { failed?: string; omitted?: string; head?: string; noTasks?: boolean; tamperPlan?: boolean; changedSetup?: boolean; badCopy?: boolean; tamperCapture?: boolean; looseRoot?: boolean } = {}) {
   const projectDir = join(root, `project-${++count}`); mkdirSync(projectDir, { mode: 0o700 });
+  // A pre-existing artifacts folder others can write is not a place for the deliverable.
+  if (options.looseRoot) { const { chmodSync } = await import("node:fs"); mkdirSync(join(projectDir, "artifacts")); chmodSync(join(projectDir, "artifacts"), 0o777); }
   const ledger = Ledger.open(projectDir); const store = new ChecksStore(projectDir); installDesktopChecks(store, plan); store.approve(ledger, "reviewed");
   if (!options.noTasks) doneTask(ledger, "T1", ["unit", "acceptance"]);
   // Release gates use the real approved lock; task fixtures carry their own verified evidence.
@@ -90,14 +92,19 @@ it("exports a built bundle durably with its hash, reruns every check on the rele
   expect(renderReport(rebuildState(r.ledger.entries(), { now: Date.now() }), r.ledger.entries())).toMatch(/Lapsed: built.*artifact/);
 });
 
-it.each([{ failed: "unit" }, { failed: "desktop-build" }, { omitted: "acceptance" }, { head: "b".repeat(40) }, { noTasks: true }, { tamperPlan: true }, { changedSetup: true }, { badCopy: true }, { tamperCapture: true }])("refuses built for incomplete or mismatched evidence: %j", async options => {
+it.each([{ failed: "unit" }, { failed: "desktop-build" }, { omitted: "acceptance" }, { head: "b".repeat(40) }, { noTasks: true }, { tamperPlan: true }, { changedSetup: true }, { badCopy: true }, { tamperCapture: true }, { looseRoot: true }])("refuses built for incomplete or mismatched evidence: %j", async options => {
   const r = await release(options); expect(r.outcome.status).toBe("stopped"); expect(r.status.current).toBeUndefined(); expect(r.provider).not.toHaveBeenCalled();
   if ("failed" in options && options.failed === "desktop-build") expect(r.ledger.entries().some(e => (e.data as { type?: string }).type === "release.desktop-artifact")).toBe(false);
 });
 
 it("a later failed check, edited evidence or an altered executable mode invalidates built at render time", async () => {
-  for (const change of ["check", "evidence", "mode", "task", "promotion"] as const) {
+  for (const change of ["check", "evidence", "mode", "task", "promotion", "link"] as const) {
     const r = await release(); expect(r.status.current?.state).toBe("built");
+    if (change === "link") {
+      // The recorded path must be the bundle's real path: a link anywhere above it could show another tree.
+      const { renameSync, symlinkSync } = await import("node:fs"); const artifacts = join(r.projectDir, "artifacts");
+      renameSync(artifacts, `${artifacts}-moved`); symlinkSync(`${artifacts}-moved`, artifacts);
+    }
     if (change === "task") r.ledger.append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "new work", requiredChecks: ["unit"], requiredReviews: ["code"] } });
     if (change === "promotion") doneTask(r.ledger, "T2", ["unit"], ["code"], "b".repeat(40));
     if (change === "check") gateEntry(r.ledger, "unit", { status: "fail" });
@@ -120,6 +127,15 @@ it("configure refuses to approve an edited existing check when no desktop plan h
   const cli = new Command().exitOverride(); register(cli, { jarvisHome: home, env: { JARVIS_PROJECT: "matches" }, cwd: root, output: () => {} });
   await expect(cli.parseAsync(["release", "configure", "--kind", "desktop", "--app-name", "Matches", "--bundle", "Matches.app"], { from: "user" })).rejects.toThrow(/protected check changed/);
   expect(store.verify(ledger).ok).toBe(false); expect(existsSync(join(store.checksDir, "desktop"))).toBe(false);
+});
+
+it("configure never blesses check files that were never approved: a store without a lock must be empty", async () => {
+  const home = join(root, `unapproved-${++count}`); const dir = join(home, "projects", "matches"); const store = new ChecksStore(dir);
+  mkdirSync(store.checksDir, { recursive: true, mode: 0o700 }); writeFileSync(join(store.checksDir, "sneaked.json"), JSON.stringify({ name: "sneaked", cases: [], verify: "true" }));
+  const cli = new Command().exitOverride(); register(cli, { jarvisHome: home, env: { JARVIS_PROJECT: "matches" }, cwd: root, output: () => {} });
+  await expect(cli.parseAsync(["release", "configure", "--kind", "desktop", "--app-name", "Matches", "--bundle", "Matches.app"], { from: "user" })).rejects.toThrow(/never approved/);
+  expect(existsSync(store.lockPath)).toBe(false); expect(existsSync(join(store.checksDir, "desktop"))).toBe(false);
+  expect(Ledger.open(dir).entries().some(e => e.kind === "checks_approved")).toBe(false);
 });
 
 it("keeps a verified export when a later required check fails, without calling it built", async () => {

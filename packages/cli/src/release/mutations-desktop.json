@@ -6,6 +6,12 @@
     "replacement": "if (false)"
   },
   {
+    "name": "desktop_configure_refuses_unapproved_store",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (!existsSync(store.lockPath) && Object.keys(store.hashAll()).length) throw",
+    "replacement": "if (false) throw"
+  },
+  {
     "name": "desktop_export_requires_passing_build",
     "file": "packages/cli/src/lanes/desktop.ts",
     "anchor": "if (result.status !== \"pass\") {",
@@ -28,6 +34,18 @@
     "file": "packages/cli/src/release/desktop.ts",
     "anchor": "artifactDigest(bundle) !== a.artifactHash || metadataHash(bundle) !== a.metadataHash",
     "replacement": "artifactDigest(bundle) !== a.artifactHash"
+  },
+  {
+    "name": "desktop_artifact_root_is_trusted",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "checkTrustedDir(root);",
+    "replacement": "void root;"
+  },
+  {
+    "name": "desktop_artifact_path_is_real",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "|| realpathSync(bundle) !== bundle) throw",
+    "replacement": "|| false) throw"
   },
   {
     "name": "desktop_checks_revalidated",

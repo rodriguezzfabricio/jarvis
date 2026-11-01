@@ -42,7 +42,7 @@ export function installDesignChecks(store:ChecksStore,input:DesignChecksPlan):Re
   const browser=designBrowserDefinition({nodeBin:input.nodeBin,...input.scanner.browser,axeVersion:input.axeVersion});
   const definitions={...impeccableDefinitions({nodeBin:input.nodeBin,driver:"design-runtime/lanes/impeccable-driver.ts",verifier:"design-runtime/lanes/impeccable-verify.ts",config:"impeccable.json"}),"design-browser":browser};
   const locations=[join(store.checksDir,"fixtures","design-runtime"),join(store.checksDir,"design-runtime")];
-  if(locations.some(existsSync)||existsSync(join(store.checksDir,"design-plan.json"))) throw new Error("design checks already installed; changes require review");
+  if(locations.some(existsSync)||["design-plan.json", "design-checks.json", ...Object.keys(definitions).map(name => `${name}.check.json`)].some(file => existsSync(join(store.checksDir,file)))) throw new Error("design checks already installed; changes require review");
   const source=fileURLToPath(new URL("../",import.meta.url));
   const zod=dirname(realpathSync(createRequire(import.meta.url).resolve("zod/package.json")));
   for(const root of locations) {
@@ -59,5 +59,6 @@ export function installDesignChecks(store:ChecksStore,input:DesignChecksPlan):Re
   writeFileSync(join(fixtures,"impeccable.json"),JSON.stringify({...input.scanner,pin:{bin:copy,version:pin.version,sha256:pin.sha256}}),{flag:"wx",mode:0o600});
   for(const root of [store.checksDir,join(store.checksDir,"fixtures")]) writeFileSync(join(root,"design-plan.json"),JSON.stringify(plan),{flag:"wx",mode:0o600});
   writeFileSync(join(store.checksDir,"design-checks.json"),JSON.stringify(definitions),{flag:"wx",mode:0o600});
+  for (const [name, definition] of Object.entries(definitions)) writeFileSync(join(store.checksDir, `${name}.check.json`), JSON.stringify(definition), {flag:"wx",mode:0o600});
   return definitions;
 }

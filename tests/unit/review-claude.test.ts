@@ -66,10 +66,33 @@ describe("fresh Claude review sessions", () => {
     expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/read-only/);
     expect(existsSync(join(s.input.workspace, "owned"))).toBe(false);
   });
-  it.each([{ steps: [{ hang: true }] }, { steps: [{ result: { text: "garbage" } }] }, { steps: [{ rateLimit: { status: "rejected" } }, { result: { text: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' } }] }])("fails or returns invalid text for fault %j", async ({ steps }) => {
+  it.each([{ steps: [{ hang: true }] }, { steps: [{ result: { text: "garbage" } }] }])("fails or returns invalid text for fault %j", async ({ steps }) => {
     const s = setup(steps); s.input.timeoutMs = 200;
     const r = await createClaudeReviewer(s.options)(s.input);
     expect(r.error || r.rawVerdict === "garbage").toBeTruthy();
+  });
+  it.each([
+    { steps: [{ rateLimit: { status: "rejected", resetsAt: 2000 } }] },
+    { steps: [{ rateLimit: { status: "allowed", resetsAt: 2000 } }, { event: { type: "assistant", error: "rate_limit" } }] },
+  ])("returns a typed usage limit even when shutdown times out: %j", async ({ steps }) => {
+    const s = setup([...steps, { hang: true }]); s.input.timeoutMs = 500;
+    const result = await createClaudeReviewer(s.options)(s.input);
+    expect(result.usageLimit).toEqual({ resetAt: 2000 });
+    expect(result.error).toBeUndefined();
+    expect(result.rawVerdict).toBe("");
+  });
+  it("preserves the preflight reset without starting a reviewer", async () => {
+    const s = setup();
+    const result = await createClaudeReviewer({ ...s.options, preflight: async () => ({ ok: false, usageWaitUntil: 2000 }) })(s.input);
+    expect(result.usageLimit).toEqual({ resetAt: 2000 });
+    expect(s.specs).toHaveLength(0);
+  });
+  it("reports the actual process start and parsed reviewer tokens", async () => {
+    const s = setup([{ event: { type: "result", subtype: "success", result: "{}", usage: { input_tokens: 23, output_tokens: 7 } } }]);
+    const onSpawn = vi.fn(() => {});
+    const result = await createClaudeReviewer(s.options)({ ...s.input, onSpawn });
+    expect(onSpawn).toHaveBeenCalledOnce();
+    expect(result.sessionOutcome?.sessionUsage).toMatchObject({ inputTokens: 23, outputTokens: 7 });
   });
   it("validates the final args after appending effort, before spawning", async () => {
     const s = setup(); s.input.effort = "--resume" as ReviewerInput["effort"];

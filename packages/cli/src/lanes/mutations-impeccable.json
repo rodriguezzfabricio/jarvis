@@ -154,5 +154,11 @@
     "file": "packages/cli/src/lanes/impeccable-install.ts",
     "anchor": "\"review/verdict.ts\", ",
     "replacement": ""
+  },
+  {
+    "name": "Impeccable installs loop-readable definitions",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "for (const [name, definition] of Object.entries(definitions)) writeFileSync",
+    "replacement": "for (const [name, definition] of Object.entries({})) writeFileSync"
   }
 ]

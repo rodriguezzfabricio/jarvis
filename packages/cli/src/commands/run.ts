@@ -17,6 +17,8 @@ export interface RunContext {
   repoPath: string;
   /** `--plan onboard|sweep`: read that session-owned plan instead of .jarvis/plan.json. */
   planKind?: SessionPlanKind;
+  /** A bug report handed to the runner, without an architect plan or approved spec. */
+  request?: string;
   /** `--plan review --report <path>`: the report the review wrote (default REVIEW.md); the run's, never the findings' (decision 126). */
   reviewReport?: string;
   /**
@@ -79,6 +81,7 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
     if (!entrypoint) throw new Error("cannot resolve the CLI entry point");
     const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : []),
       ...(context.reviewFix?.by === "flag" ? ["--fix"] : context.reviewFix?.by === "answer" ? ["--fix-answer", context.reviewFix.ref] : []),
+      ...(context.request !== undefined ? ["--request", context.request] : []),
       ...(context.reviewLimits ?? []).flatMap((limit) => ["--limit", limit])];
     const child = (seams.spawn ?? spawnChild)(process.execPath, args, { cwd: context.repoPath, detached: true, stdio: ["ignore", fd, fd] });
     await new Promise<void>((accept, reject) => {
@@ -112,12 +115,17 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
   program.command("run").description("Run ready tasks through protected checks and independent review")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .option("--plan <kind>", `read a session-owned plan: ${SESSION_PLAN_KINDS.join(" or ")} (.jarvis/<kind>/plan.json)`)
+    .option("--request <text>", "hand a bug report to the runner without an approved spec")
     .option("--report <path>", `with --plan review: the report the review wrote (default ${DEFAULT_REVIEW_REPORT}); a plain .md or .txt file nothing but a person reads`)
     .option("--fix", "with --plan review: the explicit opt-in to fix the review's confirmed findings (decision 126)")
     .option("--fix-answer <ref>", "with --plan review: <answerSeq>:review-fix, the user's recorded \"yes\" to the intake question, as the opt-in")
     .option("--limit <text>", "with the opt-in: a limit every fix task keeps, such as \"make no changes to the public API\" (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option("--detach", "continue in a detached runner")
-    .action(async (options: { project?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean }) => {
+    .action(async (options: { project?: string; request?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean }) => {
+      if (options.request !== undefined) {
+        if (options.plan !== undefined) throw new Error("--request cannot be combined with --plan");
+        if (!options.request.trim() || options.request.length > 16_000) throw new Error("--request needs 1 to 16000 characters");
+      }
       const cwd = resolve(seams.cwd ?? process.cwd());
       const projectId = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd });
       if (options.plan !== undefined && !(SESSION_PLAN_KINDS as readonly string[]).includes(options.plan)) throw new Error(`--plan must be one of: ${SESSION_PLAN_KINDS.join(", ")}`);
@@ -138,6 +146,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       const jarvisHome = seams.jarvisHome ?? join(homedir(), ".jarvis");
       const context: RunContext = {
         projectId, projectDir: runnerProjectDir(projectId, jarvisHome), jarvisHome, repoPath: projectRoot(cwd),
+        ...(options.request !== undefined ? { request: options.request } : {}),
         ...(options.plan ? { planKind: options.plan as SessionPlanKind } : {}),
         ...(options.report !== undefined ? { reviewReport: options.report } : {}),
         ...(options.plan === "review" ? { reviewFix: options.fix ? { by: "flag" as const } : { by: "answer" as const, ref: options.fixAnswer! } } : {}),

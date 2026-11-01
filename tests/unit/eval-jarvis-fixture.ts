@@ -173,7 +173,7 @@ export function fakeLoop(behavior: LoopBehavior, files: Record<string, string> =
     const blocked: string[] = [];
     for (const t of tasks) {
       const start = (attempt: string) => {
-        ledger.append({ kind: "attempt_started", actor: "runner", task_id: t.id, attempt_id: attempt, data: { runId: "loop-1", baseRevision: g(["rev-parse", "HEAD"]) } });
+        ledger.append({ kind: "attempt_started", actor: "runner", task_id: t.id, attempt_id: attempt, data: { runId: "loop-1", processGroup: 2100000000, baseRevision: g(["rev-parse", "HEAD"]) } });
         ledger.append(buildSessionUsageEntry({ runId: "loop-1", taskId: t.id, attemptId: attempt, role: "debug", tier: 0, route: { model: "claude-sonnet-5-5", modelTier: "fast" }, outcome: {
           status: "finished", exitCode: 0, durationMs: 60_000, usage: [], usageWaitUntil: undefined,
           sessionUsage: { reportedModel: "claude-sonnet-5-5", inputTokens: 120_000, outputTokens: 8_000, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.75, turns: 12, complete: true },
@@ -184,6 +184,7 @@ export function fakeLoop(behavior: LoopBehavior, files: Record<string, string> =
         ledger.append({ kind: "attempt_ended", actor: "runner", task_id: t.id, attempt_id: attempt, data: { status: "completed", candidateRevision: rev } });
         for (const check of t.data.requiredChecks) ledger.append({ kind: "gate_result", actor: "runner", task_id: t.id, attempt_id: attempt, data: { check, revision: rev, status } });
         if (status !== "pass") return false;
+        ledger.append({ kind: "reconciled", actor: "runner", task_id: t.id, attempt_id: attempt, data: { type: "review_process_started", reviewer: "claude", revision: rev } });
         const verdict = await o.review({ taskId: t.id, attemptId: attempt, revision: rev });
         ledger.append({ kind: "review_result", actor: "runner", task_id: t.id, attempt_id: attempt, data: { reviewer: "code", revision: rev, status: verdict, reviews: [{ reviewer: "claude" }] } });
         return verdict === "pass";

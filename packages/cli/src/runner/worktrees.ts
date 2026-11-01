@@ -333,6 +333,40 @@ export function deleteCandidateBranches(repoPath: string, options: CandidateBran
   return deleted;
 }
 
+export type SeedResult = "seeded" | "conflict" | "unavailable";
+
+/**
+ * A repair starts from its failed candidate's files (decision 160). Call only on a fresh workspace, before any
+ * session ran in it. The candidate's tree, reconciled onto the workspace's base when the run branch moved since
+ * (a three-way merge from the candidate's own base), is checked out over the base: HEAD stays on the base, so
+ * the next candidate's parent, and the diff its reviewer sees, is still the run branch. "conflict" and
+ * "unavailable" (no such candidate, or a runner merge) leave the workspace exactly at its base.
+ */
+export function seedWorkspace(w: TaskWorkspace, from: CandidateRevision, seams: GitSeams = {}): SeedResult {
+  requireRevision(from.revision);
+  if (!from.ref.startsWith("refs/heads/jarvis/candidates/")) throw new Error("seed candidate ref is not runner-owned");
+  const git = seams.git ?? safeGit;
+  validateWorkspace(w, git);
+  const run = (args: readonly string[]) => command(git, w.path, args, w.home).toString().trim();
+  // The candidate's objects come from the runner's repository; nothing in the workspace names them.
+  try { command(git, w.path, ["-c", "protocol.file.allow=always", "-c", "fetch.fsckObjects=true", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--", w.repoPath, from.ref], w.home); }
+  catch { return "unavailable"; }
+  try { run(["cat-file", "-e", `${from.revision}^{commit}`]); } catch { return "unavailable"; }
+  const parents = run(["rev-list", "--parents", "-n", "1", from.revision]).split(" ").slice(1);
+  if (parents.length !== 1) return "unavailable"; // a runner merge: decision 100 repairs it from the new head
+  let tree: string;
+  if (parents[0] === w.baseRevision) tree = run(["rev-parse", "--verify", `${from.revision}^{tree}`]);
+  else {
+    try { tree = run(["merge-tree", "--write-tree", "--no-messages", "-z", "--merge-base", parents[0]!, w.baseRevision, from.revision]).split("\0")[0]!.trim(); }
+    catch (e) { if ((e as { status?: number }).status === 1) return "conflict"; throw e; }
+  }
+  requireRevision(tree);
+  validateTree(git, w, tree);
+  run(["read-tree", "--reset", "-u", tree]);
+  validateSymlinks(w.path, seams.files ?? {}); // what the session will see, as commitCandidate checks it again
+  return "seeded";
+}
+
 /** The existing gate owns verified checkout creation and protected evidence capture. */
 export function checkCandidate(w: TaskWorkspace, candidate: CandidateRevision, input: CandidateCheckInput, gate: (input: GateInput) => Promise<GateResult> = runGate): Promise<GateResult> {
   requireRevision(candidate.revision);

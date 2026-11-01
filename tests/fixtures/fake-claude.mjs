@@ -69,7 +69,7 @@ if (process.env.FAKE_CLAUDE_SCENARIO) {
 
 const rl = (status, u, at) => out({ type: "rate_limit_event", rate_limit_info: { status, resetsAt: at, rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: u, resetsAt: at }, seven_day: { utilization: 0.2, resetsAt: at + 86400 } } } });
 
-if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy" || mode === "go-env") {
+if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mode === "cache-spy" || mode === "go-env" || mode === "rust-env") {
   writeFileSync("app.txt", `built for: ${prompt}\n`);
   if (mode === "go-env") {
     // What a session's Go sees (decision 123): its variables, and which go its PATH runs.
@@ -79,6 +79,15 @@ if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mo
     let goVersion = go ? `host go at ${go} (not run)` : "no go";
     if (go?.includes("/golang.org/toolchain@")) goVersion = execSync(`"${go}" version`, { env: process.env }).toString().split("\n")[0];
     writeFileSync("app.txt", `${JSON.stringify({ ...Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null])), goVersion }, null, 2)}\n`);
+  }
+  if (mode === "rust-env") {
+    // What a session's Rust sees (decision 163): its variables, and which cargo its PATH runs. A build leaves target/,
+    // which the runner must never commit.
+    const keys = ["PATH", "CARGO_HOME", "CARGO_NET_OFFLINE", "SDKROOT", "DEVELOPER_DIR"];
+    const cargo = (process.env.PATH ?? "").split(":").map((d) => `${d}/cargo`).find((p) => existsSync(p)) ?? null;
+    writeFileSync("app.txt", `${JSON.stringify({ ...Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null])), cargo }, null, 2)}\n`);
+    mkdirSync("target/release", { recursive: true });
+    writeFileSync("target/release/build-output.txt", "a build left this\n");
   }
   if (mode === "cache-spy") {
     // Try to leave a note for the next run in the toolchain cache, and look for one from the last run.

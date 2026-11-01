@@ -20,7 +20,9 @@ afterEach(()=>fixtures.splice(0).forEach(f=>f.cleanup()));
 const sha=(s:string|Buffer)=>createHash("sha256").update(s).digest("hex");
 const outcome={code:0,timedOut:false,overflowed:false,stdout:"",stderr:"",durationMs:1};
 function observation(plan:DesignBrowserPlan):DesignBrowserObservation {
- const flow=plan.flows[0]!, axe={version:"4.10.3",violations:[],incomplete:[]};
+ // The base revision's own serious finding, kept by the candidate: the gate and the review accept it only through the
+ // runner's baseline (decision 125); with strict axe the design review would be an error.
+ const flow=plan.flows[0]!, axe={version:"4.10.3",violations:[{id:"color-contrast",impact:"serious",nodes:[{target:[".inherited"]}]}],incomplete:[]};
  const pages=([375,768,1440] as const).map(width=>({width,url:flow.url,flow:flow.id,screen:flow.screen,visibleText:"Jobs",accessibilityTree:"heading Jobs",screenshot:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="}));
  return {kind:"design-browser",capture:{designId:plan.designId,pages,flows:[{id:flow.id,status:"pass"}]},web:[{kind:"qa-browser",url:flow.url,pages:pages.map(p=>({...p,axe,frameCount:1,frameIds:["top"],frames:[{id:"top",url:flow.url,loaderId:"1",axe}]}))}]};
 }
@@ -68,7 +70,7 @@ it("installs all six checks per eval, captures the base before the fake build, s
    runLoop:async options=>{
      expect(Object.keys(options.checks)).toEqual(expect.arrayContaining(["impeccable-source","impeccable-url","design-browser","ai-tells","token-lint","design-md-lint"]));
      expect(existsSync(join(options.projectDir,"checks/expected/axe-base.json"))).toBe(true);
-     return runLoop({...options,gate,footprint:false,readProcessStartTime:()=>"fake-start",review:input=>input.reviewer==="code"?Promise.resolve("pass"):options.review(input)});
+     return runLoop({...options,gate,footprint:false,review:input=>input.reviewer==="code"?Promise.resolve("pass"):options.review(input)});
    },
  }).catch(error=>{expect.fail(String(error));});
  expect(result.outcome,result.error).toBe("complete");expect(result.grade?.pass).toBe(true);

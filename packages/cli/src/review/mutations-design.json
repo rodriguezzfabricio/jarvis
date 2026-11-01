@@ -310,5 +310,23 @@
     "file": "packages/cli/src/review/design-verdict.ts",
     "anchor": "JSON.parse(unfencedJson(raw))",
     "replacement": "JSON.parse(raw)"
+  },
+  {
+    "name": "Design review holds a passing capture to the runner's baseline",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": ": verifyServedDesign(observation, material.plan, material.axeVersion, material.axeBaseline);",
+    "replacement": ": verifyDesignObservation(observation, material.plan, material.axeVersion);"
+  },
+  {
+    "name": "Design review shows a failed browser gate's capture",
+    "file": "packages/cli/src/review/design-service.ts",
+    "anchor": "? verifyDesignObservation(observation, material.plan, material.axeVersion, {calibration:true})",
+    "replacement": "? verifyServedDesign(observation, material.plan, material.axeVersion, material.axeBaseline)"
+  },
+  {
+    "name": "Design material carries the approved axe baseline",
+    "file": "packages/cli/src/review/design-material.ts",
+    "anchor": "const axeBaseline = readDesignBaseline(input.store.checksDir);",
+    "replacement": "const axeBaseline = undefined as ReturnType<typeof readDesignBaseline>;"
   }
 ]

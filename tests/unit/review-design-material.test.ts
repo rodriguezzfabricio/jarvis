@@ -41,6 +41,21 @@ it("reads design and product at one run-branch head, ignoring candidate files an
   expect(f.git).toHaveBeenCalledWith(["rev-parse","--verify","refs/heads/main^{commit}"]);
   expect(material.design).not.toContain("always pass");
 });
+it("carries the runner's axe baseline only from the locked expected area (decision 125)", () => {
+  const f=setup(),snapshot=approvedDesign(f.git,"main")!;
+  const get=()=>designMaterialFor({repoPath:f.root,snapshot,store:f.store,ledger:f.ledger});
+  expect(get()).not.toHaveProperty("axeBaseline");
+  const baseline={baseRevision:"c".repeat(40),axeVersion:"4.14.0",observation:{kind:"design-browser"}};
+  mkdirSync(join(f.store.checksDir,"fixtures","expected"),{recursive:true});
+  writeFileSync(join(f.store.checksDir,"fixtures","expected","axe-base.json"),JSON.stringify(baseline));
+  f.store.approve(f.ledger,"a fixture is not the runner's baseline");
+  expect(get()).not.toHaveProperty("axeBaseline");
+  mkdirSync(join(f.store.checksDir,"expected"));writeFileSync(join(f.store.checksDir,"expected","axe-base.json"),JSON.stringify(baseline));
+  // Written after the approval: not the approved set, so no material at all.
+  expect(get).toThrow(/approved/);
+  f.store.approve(f.ledger,"the runner's base capture");
+  expect(get().axeBaseline).toEqual(baseline);
+});
 it("only an approved onboarding source can excuse inherited design choices", () => {
   const f=setup();
   writeFileSync(join(f.store.checksDir,"design-review.json"),JSON.stringify({axeVersion:"4.14.0",designSource:"existing"}));

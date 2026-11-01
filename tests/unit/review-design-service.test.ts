@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { createDesignReviewService, DESIGN_POLICY_HASH, saveDesignCalibration } from "../../packages/cli/src/review/design-service.ts";
 import type { ReviewGit } from "../../packages/cli/src/review/workspace.ts";
+import { baselineFromObservation, type StoredAxeBaseline } from "../../packages/cli/src/lanes/design-gate.ts";
 const roots: string[]=[];
 afterEach(()=>{ for(const root of roots.splice(0)) rmSync(root,{recursive:true,force:true}); });
 const sha=(raw:string)=>createHash("sha256").update(raw).digest("hex");
@@ -255,5 +256,39 @@ describe("the latest control for this model and policy decides", () => {
     const again=fixture();
     const result=await createDesignReviewService({...again.options,jarvisHome}).reviewDetailed(again.request);
     expect(result.verdict).toBe("error"); expect(again.reviewer).not.toHaveBeenCalled();
+  });
+});
+
+describe("a passing browser gate is judged against the runner's axe baseline (decision 125)", () => {
+  // The base revision's own serious finding: a gate that passed inherited it, so the review must not call it new.
+  const withViolation=(f:ReturnType<typeof fixture>,target:string)=>{
+    const raw=JSON.parse(readFileSync(f.file,"utf8"));
+    for(const page of raw.web[0].pages){const axe={...page.axe,violations:[{id:"color-contrast",impact:"serious",nodes:[{target:[target]}]}]};page.axe=axe;page.frames=page.frames.map((frame:object)=>({...frame,axe}));}
+    const dir=join(f.options.projectDir,"evidence",`browser-${target.slice(1)}`);mkdirSync(dir);
+    const text=JSON.stringify(raw);writeFileSync(join(dir,"stdout"),text);
+    f.ledger.append({kind:"gate_result",actor:"runner",task_id:"t",attempt_id:"a",data:{check:"design-browser",revision:f.request.revision,...f.defs["design-browser"],status:"pass",evidence:{dir,files:{stdout:sha(text)}}}});
+    return raw;
+  };
+  const review=async(f:ReturnType<typeof fixture>,axeBaseline?:StoredAxeBaseline)=>{
+    const material=await f.options.resolveMaterial();
+    return createDesignReviewService({...f.options,resolveMaterial:async()=>({...material,...(axeBaseline?{axeBaseline}:{})})}).reviewDetailed(f.request,{fixture:"good"});
+  };
+  it("accepts what the base revision already had, and only with the runner's baseline", async () => {
+    const f=fixture(), raw=withViolation(f,".old"), plan=(await f.options.resolveMaterial()).plan;
+    const passed=await review(f,baselineFromObservation(raw,plan,"4.14.0","b".repeat(40)));
+    expect(passed.verdict,passed.error).toBe("pass");
+    // No baseline: today's strict rule, so an inherited finding is never silently a pass.
+    const strict=await review(f);
+    expect(strict.verdict).toBe("error");expect(strict.error).toMatch(/serious/);
+  });
+  it("still refuses a finding the base revision lacks, and a baseline for another axe version", async () => {
+    const f=fixture(), plan=(await f.options.resolveMaterial()).plan;
+    const base=baselineFromObservation(withViolation(f,".old"),plan,"4.14.0","b".repeat(40));
+    withViolation(f,".new");
+    const added=await review(f,base);
+    expect(added.verdict).toBe("error");expect(added.error).toMatch(/new|increased/);
+    const g=fixture(), other=baselineFromObservation(withViolation(g,".old"),plan,"4.14.0","b".repeat(40));
+    const wrong=await review(g,{...other,axeVersion:"4.0.0"});
+    expect(wrong.verdict).toBe("error");expect(wrong.error).toMatch(/version/);
   });
 });

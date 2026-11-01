@@ -48,7 +48,8 @@ async function run(failReleaseCheck = false) {
 
 it("jarvis run retains the fake .app after cleanup and reports built, not distributed; bundle tampering lapses it", { timeout: 600_000 }, async () => {
   const { p, sent, deploy } = await run(); expectTaskDone(p, "T1"); expectTaskDone(p, "T2");
-  expect(sessionCalls(p).map(c => c.session)).toEqual(["T1", "T2"]);
+  // Which sessions ran, not their order: under load the loop has started T2 first (backlog 244); this test proves the release path.
+  expect(sessionCalls(p).map(c => c.session).sort()).toEqual(["T1", "T2"]);
   const entries = p.ledger.entries(); expect(releaseStatus(entries).current?.state).toBe("built");
   const artifact = entries.find(e => (e.data as { type?: string }).type === "release.desktop-artifact")!.data as { bundlePath: string; artifactHash: string; revision: string };
   expect(artifact.revision).toBe(lastGreen(p)); expect(artifact.bundlePath.startsWith(join(p.projectDir, "artifacts") + "/")).toBe(true);

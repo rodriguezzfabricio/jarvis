@@ -115,10 +115,14 @@ describe("eval sessions get the gate's Rust, offline and read-only, in both arms
     const marker = join(fx.root, "session-started");
     await expect(baseline(fx, "b4", evalRustFixture(fx.evalsRepo, "12-rust"), marker)).rejects.toThrow(/refused: the Rust fixture is not the pinned one/);
     expect(existsSync(marker)).toBe(false);
+    // A missing summary fails an assertion, not a read, so a mutation that drops it is caught (decision 146).
+    expect(existsSync(join(fx.jarvisHome, "evals", "12-rust", "b4", "summary.json"))).toBe(true);
     expect(json(join(fx.jarvisHome, "evals", "12-rust", "b4", "summary.json"))).toMatchObject({ started: false, toolchain: { status: "refused", reason: expect.stringMatching(/Rust fixture is not the pinned one/) } });
     let sessions = 0;
     await expect(jarvis(fx, "j4", async () => { sessions++; throw new Error("must not run"); })).rejects.toThrow(/refused: the Rust fixture is not the pinned one/);
     expect(sessions).toBe(0);
+    // A missing summary fails an assertion, not a read, so a mutation that drops it is caught (decision 146).
+    expect(existsSync(join(fx.jarvisHome, "evals", "12-rust", "j4", "summary.json"))).toBe(true);
     expect(json(join(fx.jarvisHome, "evals", "12-rust", "j4", "summary.json"))).toMatchObject({ arm: "jarvis", started: false, toolchain: { status: "refused", reason: expect.stringMatching(/Rust fixture is not the pinned one/) } });
   });
 

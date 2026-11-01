@@ -49,9 +49,8 @@ function normalizedVerdict(value: unknown): unknown {
   }) };
 }
 
-/** Paths and codes are schema-owned; never include messages, unknown keys or received values. */
-function schemaError(issues: readonly z.core.$ZodIssue[]): string {
-  const prefix = "review output does not match the verdict schema: ";
+/** Paths and codes are schema-owned; never include messages, unknown keys or received values. The plan verdict reads its misses the same way. */
+export function schemaError(issues: readonly z.core.$ZodIssue[], prefix = "review output does not match the verdict schema: "): string {
   const shown: string[] = [];
   for (const [index, issue] of issues.entries()) {
     const detail = `${issue.path.join(".") || "$"}:${issue.code}`;

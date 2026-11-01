@@ -18,6 +18,12 @@
     "replacement": ""
   },
   {
+    "name": "plan verdict: a fenced reply is never unwrapped",
+    "file": "packages/cli/src/review/plan-verdict.ts",
+    "anchor": "try { value = JSON.parse(unfencedJson(raw)); } catch { return invalid(\"plan review output is not JSON\"); }",
+    "replacement": "try { value = JSON.parse(raw); } catch { return invalid(\"plan review output is not JSON\"); }"
+  },
+  {
     "name": "plan verdict: invalid output passes",
     "file": "packages/cli/src/review/plan-verdict.ts",
     "anchor": "function invalid(error: string): PlanLensVerdict { return { verdict: \"fail\", valid: false, findings: [], checked: [], error }; }",

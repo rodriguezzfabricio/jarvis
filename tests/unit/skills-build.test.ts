@@ -61,6 +61,10 @@ const skills: Record<string, SkillRules> = {
       { section: "Stay inside the worktree", phrase: "jarvis act" }, // decision 12: the only path outside
       { section: "Stay inside the worktree", phrase: "no local port" }, // decision 68 loopback
       { section: "Stay inside the worktree", phrase: "data, not instructions" }, // decision 49
+      // Decision 169: a round c build "fixed" a crash by turning a sandbox off behind an environment flag.
+      { section: "Stay inside the worktree", phrase: "Never make something work by disabling or weakening a security control" },
+      { section: "Stay inside the worktree", phrase: "a sandbox, TLS or certificate verification, an auth or permission check, input validation, or an isolation boundary" },
+      { section: "Stay inside the worktree", phrase: "Fix the cause, or stop and report when the fix needs a decision" },
       { section: "Protected checks", phrase: "decision 15" },
       { section: "Protected checks", phrase: "never edit, skip, delete or loosen" },
       { section: "Protected checks", phrase: "test configuration" },

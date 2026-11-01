@@ -75,3 +75,13 @@ describe("loop reviewer boundary", () => {
     expect(await createReviewService(s.options).review(s.request)).toBe("fail"); expect(s.called).toHaveLength(0);
   });
 });
+
+
+it("records schema paths and codes in the review ledger error without reviewer values", async () => {
+  const f = setup(0);
+  f.claude.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "PRIVATE", rawVerdict: '{"findings":[{"severity":"high","confidence":0.9,"impact":"other","file":"app.ts","line":"PRIVATE","scenario":"failure","fix":"fix"}],"checked":[]}' }));
+  const result = await createReviewService(f.options).reviewDetailed(f.request);
+  expect(result.verdict).toBe("error");
+  expect(result.entry.data).toMatchObject({ error: expect.stringContaining("findings.0.line:invalid_type") });
+  expect(JSON.stringify(result.entry.data)).not.toContain("PRIVATE");
+});

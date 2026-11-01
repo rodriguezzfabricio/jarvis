@@ -83,3 +83,34 @@ describe("review verdict policy", () => {
     expect(evaluate(finding(patch)).verdict).toBe("fail");
   });
 });
+
+
+describe("review schema diagnostics and lossless normalization", () => {
+  it.each([{ line: "12" }, { confidence: "0.9" }, { severity: "HIGH" }, { severity: "HiGh", line: "0012", confidence: "0.90" }])("normalizes unambiguous finding fields %j without changing the output schema", (patch) => {
+    const result = evaluate(finding(patch));
+    expect(result).toMatchObject({ valid: true, verdict: "fail", findings: [finding()] });
+    expect(VerdictSchema.safeParse({ checked, findings: [finding(patch)] }).success).toBe(false);
+  });
+  it.each([{ line: "12px" }, { line: "1.5" }, { line: "1e2" }, { line: "0" }, { line: "9007199254740993" },
+    { confidence: "90%" }, { confidence: "" }, { confidence: "  " }, { confidence: "0x1" }, { confidence: true },
+    { confidence: "1.1" }, { confidence: "1.00000000000000001" }, { confidence: "-0.1" }, { severity: "WARNING" }])("never guesses ambiguous or invalid fields %j", (patch) => {
+    expect(evaluate(finding(patch))).toMatchObject({ valid: false, verdict: "fail" });
+  });
+  it("reports issue paths and codes without raw values, keys or Zod messages", () => {
+    const result = evaluate(finding({ line: "PRIVATE\nTEXT", severity: "PRIVATE", "PRIVATE\nKEY": "secret" }));
+    expect(result.error).toContain("findings.0.line:invalid_type");
+    expect(result.error).toContain("findings.0.severity:invalid_value");
+    expect(result.error).toContain("findings.0:unrecognized_keys");
+    expect(result.error).not.toMatch(/PRIVATE|secret|[\r\n]/);
+  });
+  it("bounds diagnostics even when every finding is invalid", () => {
+    const result = evaluate(...Array.from({ length: 1000 }, () => finding({ line: "PRIVATE", severity: "PRIVATE" })));
+    expect(result.error).toContain("findings.0.line:invalid_type");
+    expect(result.error).toContain("more");
+    expect(result.error!.length).toBeLessThanOrEqual(160);
+    expect(result.error).not.toMatch(/PRIVATE|[\r\n]/);
+  });
+  it("does not invent checked when an empty verdict omits it", () => {
+    expect(evaluateVerdict('{"findings":[]}')).toMatchObject({ valid: false, error: expect.stringContaining("checked:invalid_type") });
+  });
+});

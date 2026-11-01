@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync, type Stats } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runGate, type GateInput, type GateResult } from "../checks/gate.ts";
@@ -164,37 +164,51 @@ function validateSymlinks(root: string, files: WorkspaceFileChecks = {}): void {
 
 type TreeContext = Pick<TaskWorkspace, "path" | "baseRevision" | "home">;
 
-function rootIgnoresRunnerFiles(git: RunnerGit, w: TreeContext, tree?: string): boolean {
-  if (tree !== undefined) return committedIgnorePolicy(git, w, tree);
-  const path = join(w.path, ".jarvis");
-  const created = !existsSync(path);
-  if (created) mkdirSync(path);
+interface IgnorePolicy { root: boolean; effective: boolean; negated: boolean }
+
+function ignoreMatch(git: RunnerGit, w: TreeContext, scratch: string): { root: boolean; effective: boolean } {
   try {
-    const fields = command(git, w.path, ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0")).toString().split("\0");
-    return fields[0] === ".gitignore" && !!fields[2] && !fields[2].startsWith("!");
+    const fields = command(git, scratch, ["-c", "core.excludesFile=/dev/null", "-c", "core.ignoreCase=true", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0"), w.path).toString().split("\0");
+    const effective = !!fields[2] && !fields[2].startsWith("!");
+    return { effective, root: effective && (fields[0] === ".gitignore" || fields[0] === join(scratch, ".gitignore")) };
   } catch (e) {
-    if ((e as { status?: number }).status === 1) return false;
+    if ((e as { status?: number }).status === 1) return { root: false, effective: false };
     throw e;
-  } finally {
-    if (created) rmdirSync(path);
   }
 }
 
-
-function committedIgnorePolicy(git: RunnerGit, w: TreeContext, tree: string): boolean {
+/** The same immutable-tree check handles the index, repair seeds, merges and promotion. */
+function committedIgnorePolicy(git: RunnerGit, w: TreeContext, tree: string): IgnorePolicy {
   const scratch = mkdtempSync(join(tmpdir(), "jarvis-ignore-"));
   try {
-    let contents: Buffer;
-    try { contents = command(git, w.path, ["show", `${tree}:.gitignore`], w.home); }
-    catch (e) { if ((e as { status?: number }).status === 128) return false; throw e; }
+    const listing = tree === "" ? ["ls-files", "--stage", "-z"] : ["ls-tree", "-z", tree];
+    const entries = command(git, w.path, listing, w.home).toString().split("\0")
+      .map((entry) => ({ name: entry.slice(entry.indexOf("\t") + 1), regular: /^100(?:644|755) /.test(entry) }))
+      .filter((entry) => entry.name.toLowerCase() === ".gitignore");
+    if (entries.length > 1) throw new Error("ambiguous root .gitignore spelling");
+    const entry = entries[0];
+    const contents = entry?.regular ? command(git, w.path, ["show", `${tree}:${entry.name}`], w.home).toString() : "";
     writeFileSync(join(scratch, ".gitignore"), contents);
     mkdirSync(join(scratch, ".jarvis"));
-    const fields = command(git, scratch, ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0"), w.path).toString().split("\0");
-    return (fields[0] === ".gitignore" || fields[0] === join(scratch, ".gitignore")) && !!fields[2] && !fields[2].startsWith("!");
-  } catch (e) {
-    if ((e as { status?: number }).status === 1) return false;
-    throw e;
+    const policy = ignoreMatch(git, w, scratch);
+    // An ignored directory protects every descendant. Also reject negations aimed at that namespace,
+    // even when Git masks them behind an ignored parent or a later rule. Git matches the globs, including
+    // escapes and character classes; case folding models the default APFS volume on every host.
+    const negations = contents.split(/\r?\n/).filter((line) => line.startsWith("!")).map((line) => {
+      const pattern = line.slice(1).replace(/\\\//g, "/").replace(/^\//, "");
+      return `/${pattern.split("/")[0]}${pattern.includes("/") ? "/" : ""}`;
+    });
+    writeFileSync(join(scratch, ".gitignore"), negations.join("\n"));
+    const negated = negations.length > 0 && ignoreMatch(git, w, scratch).root;
+    return { ...policy, negated };
   } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
+function rootIgnoresRunnerFiles(git: RunnerGit, w: TreeContext, tree?: string): boolean {
+  const candidate = committedIgnorePolicy(git, w, tree ?? "");
+  if (!candidate.effective || candidate.negated) return false;
+  const base = committedIgnorePolicy(git, w, w.baseRevision);
+  return !base.root || candidate.root;
 }
 
 function validateRunnerChanges(git: RunnerGit, w: TreeContext, tree?: string): void {

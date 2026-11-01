@@ -388,5 +388,11 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1,",
     "replacement": "worktreeRoot, workRoot, gitHome: home, tier: 1,"
+  },
+  {
+    "name": "run stage3 fixes detached runner keeps the bug request",
+    "file": "packages/cli/src/commands/run.ts",
+    "anchor": "      ...(context.request !== undefined ? [\"--request\", context.request] : []),\n",
+    "replacement": ""
   }
 ]

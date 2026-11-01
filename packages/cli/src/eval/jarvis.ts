@@ -69,6 +69,7 @@ export interface RunLoopOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   usageMarginMs?: number;
+  tier?: TaskTier;
   reprobe?: () => Promise<boolean>;
   notify?: (n: UsageWaitNotice) => Promise<void>;
   gitHome?: string;
@@ -81,7 +82,7 @@ export type RunLoop = (opts: RunLoopOptions) => Promise<RunLoopResult>;
  * The loop's review function (runner/loop.ts's ReviewVerdict): a plain verdict, which the loop records,
  * or one the review service already recorded, whose "error" means no verdict (an infrastructure failure).
  */
-export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promise<"pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error"; recorded: true }>;
+export type LoopReview = (input: ReviewRequest & { reviewer?: string }) => Promise<"pass" | "fail" | { status: "pass" | "fail" | "investigate" | "error" | "usage-limited"; recorded: true }>;
 
 // ---- Options and results ----------------------------------------------------------------------------
 
@@ -280,8 +281,8 @@ const revisionOf = (repo: string, ref: string, home: string): string | null => {
   try { return safeGit(repo, ["rev-parse", "-q", "--verify", `${ref}^{commit}`], { home }).toString().trim(); } catch { return null; }
 };
 
-/** Run metrics from the loop's ledger: tasks, repairs (decision 87's count), sessions, usage waits, usage. */
-export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plannerSessions: number): JarvisMetrics {
+/** Run metrics from the ledger. The legacy planner count is ignored: only recorded process starts count. */
+export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, _plannerSessions = 0): JarvisMetrics {
   const problems: string[] = [];
   let tasks: TaskSummary[] = [];
   try {
@@ -291,14 +292,9 @@ export function jarvisMetrics(entries: readonly LedgerEntry[], now: number, plan
     problems.push(`ledger replay failed: ${e instanceof Error ? e.message : String(e)}`);
   }
   const runner = entries.filter((e) => e.actor === "runner");
-  const build = runner.filter((e) => e.kind === "attempt_started").length;
-  // Reviewer sessions that ran: the service lists them (none when it failed before any reviewer, decision 111);
-  // a plain verdict the loop recorded is one review; the loop's "session" marker for a failed build session is none.
-  const review = runner.filter((e) => e.kind === "review_result").reduce((n, e) => {
-    const data = e.data as { reviews?: unknown; reviewer?: unknown } | null;
-    if (data?.reviewer === "session") return n;
-    return n + (Array.isArray(data?.reviews) ? data.reviews.length : 1);
-  }, 0);
+  const plannerSessions = runner.filter((e) => e.kind === "reconciled" && (e.data as { type?: unknown }).type === "eval_session_started").length;
+  const build = runner.filter((e) => e.kind === "attempt_started" && typeof (e.data as { processGroup?: unknown }).processGroup === "number").length;
+  const review = runner.filter((e) => e.kind === "reconciled" && (e.data as { type?: unknown }).type === "review_process_started").length;
   const waits = runner.filter((e) => e.kind === "usage_wait");
   const waitMs = waits.reduce((n, e) => {
     const ms = (e.data as { waitMs?: unknown } | null)?.waitMs;
@@ -400,7 +396,7 @@ function productionReview(p: Paths, ledger: Ledger, material: (taskId: string, a
     // The Claude reviewer runs under the task-session settings: reads outside its checkout are blocked and the
     // runner-owned folder is denied. Codex's reads are confined now (decision 110), but evals stay Claude-only
     // until a decision adds Codex back to the eval arm (decision 97).
-    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => ({ ok: (await opts.preflight()).ok }), ...(opts.reviewerSeams ?? {}) }),
+    claude: createClaudeReviewer({ jarvisHome: p.jarvisHome, workRoot: p.reviewRoot, cacheRoot: p.cacheRoot, home: p.home, preflight: async () => { const pre = await opts.preflight(); return { ok: pre.ok, ...(pre.waitUntil !== undefined ? { usageWaitUntil: pre.waitUntil } : {}) }; }, ...(opts.reviewerSeams ?? {}) }),
     codex: null,
   });
   return async (input) => {
@@ -485,7 +481,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
   let harness: Harness;
   try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
-  const tier: TaskTier = t.tier ?? 1;
+  let tier: TaskTier = t.tier ?? 1;
   // A review-fix task's fix tasks are bug fixes reviewed against their finding (decisions 114, 126); its report update is not.
   const fixTasks = new Set<string>();
   const material = (taskId: string, attemptId: string) => reviewMaterial(ledger, { repoPath: p.workspace, baseRevision, tier, specText: approved?.text, spec: approved?.spec, request, ...(fixTasks.has(taskId) ? { kind: "bug" as const } : {}), ...(t.type === "bug" ? { kind: "bug" as const } : {}) }, taskId, attemptId);
@@ -508,7 +504,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const loopOptions = (): RunLoopOptions => ({
     projectId: `eval-${task.id}`.slice(0, 64), projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.workspace, runBranch: "main",
     worktreeRoot: p.worktreeRoot, workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), harness, checks: gate.checks, review,
-    taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home,
+    taskTimeoutMs: ms(task.timeoutMinutes), maxTurns: task.maxTurns, gitHome: p.home, tier,
     reprobe: async () => (await opts.preflight()).ok,
     notify: async (n) => log(`${task.id} ${runId}: usage wait for ${Math.round(n.waitMs / 60_000)} min (task ${n.taskId})`),
     ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}),
@@ -556,6 +552,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
       else { outcome = "plan-failed"; error = r.reason; }
     }
     if (plan) {
+      tier = plan.tier ?? tier;
       for (const e of planEntries(plan)) ledger.append(e);
       log(`${task.id} ${runId}: ${plan.tasks.length} task(s) planned; starting the build loop`);
       loop = await opts.runLoop(loopOptions());
@@ -596,7 +593,12 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   return out;
 }
 
-/** `sessions` counts the planner sessions that started (a refused session never started). */
+/** Persist the process start even when capture or parsing fails before a session returns. */
+function recordEvalStart(ledger: Ledger, runId: string, taskId: string, attemptId: string): void {
+  ledger.append({ kind: "reconciled", actor: "runner", task_id: taskId, attempt_id: attemptId, data: { type: "eval_session_started", runId } });
+}
+
+/** `sessions` counts the planner processes that started. */
 type PlannerResult =
   | { kind: "plan"; plan: Plan; sessions: number }
   | { kind: "usage-limited"; until: number | undefined; sessions: number }
@@ -623,9 +625,8 @@ async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: Routin
       const header = join(sessionsDir, `plan-${attemptId}.header.md`);
       writeFileSync(header, `Jarvis eval run: ${i.runId}\nRole: planner (architect). Golden task ${i.task.id}.${n > 1 ? " Corrective attempt: the runner refused the previous plan." : ""}\nPlans are claims, not evidence.\n`, { mode: 0o600 });
       const prompt = refusals.length ? plannerRetryPrompt(promptInput, refusals.at(-1)!) : plannerPrompt(promptInput);
-      const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, `plan-${attemptId}.jsonl`) });
-      recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId, role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
-      if (outcome.status !== "refused") sessions++;
+      const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "architect", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, `plan-${attemptId}.jsonl`), onSpawn: () => { recordEvalStart(i.ledger, i.runId, PLAN_TASK, attemptId); sessions++; return true; } });
+      if (sessions >= n) recordSessionUsage(i.ledger, { runId: i.runId, taskId: PLAN_TASK, attemptId, role: "architect", tier: i.tier, route: routeTask("architect", i.tier, undefined, i.routing), outcome });
       if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
       if (outcome.status !== "finished") return { kind: "failed", reason: [...refusals, `${label}planner session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}`].join("; "), sessions };
       try {
@@ -666,9 +667,9 @@ async function runReviewStep(i: { harness: Harness; ledger: Ledger; routing: Rou
     const header = join(sessionsDir, "review-a1.header.md");
     writeFileSync(header, reviewStepHeader({ runId: i.runId, label: `Golden task ${i.task.id}.`, skills: loadSkills(reviewStepSkills(i.security)) }), { mode: 0o600 });
     const prompt = reviewStepPrompt({ request: i.request, report: i.report, maxTurns: i.task.maxTurns, security: i.security, evidence });
-    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "review", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "review-a1.jsonl") });
-    recordSessionUsage(i.ledger, { runId: i.runId, taskId: REVIEW_TASK, attemptId: "a1", role: "review", tier: i.tier, route: routeTask("review", i.tier, undefined, i.routing), outcome });
-    const sessions = outcome.status === "refused" ? 0 : 1;
+    let sessions = 0;
+    const outcome: TaskOutcome = await i.harness.runTask({ workspace: ws.path, prompt, runHeaderPath: header, role: "review", tier: i.tier, maxTurns: i.task.maxTurns, timeoutMs: ms(i.task.timeoutMinutes), logPath: join(sessionsDir, "review-a1.jsonl"), onSpawn: () => { recordEvalStart(i.ledger, i.runId, REVIEW_TASK, "a1"); sessions++; return true; } });
+    if (sessions) recordSessionUsage(i.ledger, { runId: i.runId, taskId: REVIEW_TASK, attemptId: "a1", role: "review", tier: i.tier, route: routeTask("review", i.tier, undefined, i.routing), outcome });
     if (outcome.status === "usage-limited") return { kind: "usage-limited", until: outcome.resetAt ?? outcome.usageWaitUntil, sessions };
     if (outcome.status !== "finished") return { kind: "failed", reason: `review session ${outcome.status}${"reason" in outcome ? `: ${outcome.reason}` : "message" in outcome ? `: ${outcome.message}` : ""}; no fixes were started`, sessions };
     try {

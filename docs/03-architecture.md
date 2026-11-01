@@ -84,7 +84,7 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 |---|---|
 | `jarvis setup` | One-time: accounts (decision 43), secrets backend, ntfy topics, taste profile, Claude Code version check, installs the plugin |
 | `jarvis doctor` | Preflight (decision 46): versions, sandbox, network allowlist, protected paths, broker reachable, iCloud check, memory-based concurrency, plugin loaded in CLI and desktop |
-| `jarvis run [--detach]` | The runner: works through the plan, hosts the broker and notifier, writes the report |
+| `jarvis run [--detach]` | The runner: works through the plan, hosts the broker and notifier, writes the report. `--request "<bug report>"` hands it one bug without an approved spec: triage must read it as a bug, and the run touches only that task (decision 160) |
 | `jarvis steer "…"` | Adds a note to the runner-owned inbox; the runner reads it between tasks (decisions 40, 87) |
 | `jarvis status [--json]` | Current run state from the ledger, read-only. `--json` prints the verified `steer`, `review_result`, `gate_result`, `blocked` and `reconciled` entries, the rebuilt state and each task's re-verified repair failure output, for compound |
 | `jarvis memory add\|retire\|list` | Global memory (decisions 27, 28): `add --type feedback\|project\|reference --source ledger:<seq>\|<repo path> --why "…" [--same-as <id>] "<learning>"`, `retire <id> --reason "…"`, `list [--json]`. The CLI owns the writes under `~/.jarvis/memory/` and keeps `MEMORY.md` within 200 lines; it refuses learnings that read like instructions or permission changes. `user` notes stay with intake |

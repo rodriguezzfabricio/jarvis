@@ -99,6 +99,21 @@ describe("the beats-the-baseline rule (proposed; decision 47 names rating and fa
     expect(verdict([...two("baseline", { hidden: "fail", falseDone: true }), row("jarvis", { rating: 4, hidden: "fail", claimedDone: false, falseDone: false }), row("jarvis", { rating: 4 })]).verdict).toBe("beats");
   });
 
+  // A stage proof counts runs from one frozen revision (decision 116); a round's label picks them, so an
+  // earlier round's runs in the same folder never count (stage 3 round c, Oct 31).
+  it("reads only the runs carrying exactly the given label", () => {
+    const fx = createEvalFixture();
+    fixtures.push(fx);
+    const evals = join(fx.jarvisHome, "evals");
+    const ids = ["jarvis-2026-10-28T18-09-42-165Z-s3b-r1-a1", "jarvis-2026-10-31T20-48-27-000Z-s3c-r1-a1", "baseline-2026-10-31T21-00-00-000Z-s3c-r2-a2", "jarvis-2026-10-31T22-00-00-000Z-s3c2-r1-a1", "jarvis-2026-10-31T23-00-00-000Z-r1-a1"];
+    for (const run of ids) {
+      mkdirSync(join(evals, TASK, run), { recursive: true });
+      writeFileSync(join(evals, TASK, run, "manifest.json"), JSON.stringify({ variant: run.startsWith("jarvis") ? "jarvis" : "baseline" }));
+    }
+    expect(readRuns(evals, TASK, { label: "s3c" }).map((r) => r.runId)).toEqual([ids[2], ids[1]]);
+    expect(readRuns(evals, TASK).map((r) => r.runId)).toHaveLength(5);
+  });
+
   it("treats a grade without a suite fingerprint (or with a malformed one) as ungraded", () => {
     const fx = createEvalFixture();
     fixtures.push(fx);

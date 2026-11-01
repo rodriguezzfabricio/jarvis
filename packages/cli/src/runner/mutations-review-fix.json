@@ -404,8 +404,8 @@
   {
     "name": "review fix: a detached runner loses the opt-in and its limits",
     "file": "packages/cli/src/commands/run.ts",
-    "anchor": "      ...(context.reviewFix?.by === \"flag\" ? [\"--fix\"] : context.reviewFix?.by === \"answer\" ? [\"--fix-answer\", context.reviewFix.ref] : []),\n      ...(context.reviewLimits ?? []).flatMap((limit) => [\"--limit\", limit])];",
-    "replacement": "];"
+    "anchor": "      ...(context.reviewFix?.by === \"flag\" ? [\"--fix\"] : context.reviewFix?.by === \"answer\" ? [\"--fix-answer\", context.reviewFix.ref] : []),",
+    "replacement": ""
   },
   {
     "name": "review fix: a detached runner loses --report",
@@ -548,7 +548,7 @@
   {
     "name": "review fix: run's review loop may touch any task",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : {}),\n",
+    "anchor": "    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),\n",
     "replacement": ""
   },
   {

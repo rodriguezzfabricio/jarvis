@@ -21,13 +21,15 @@ import { recoverIntakeRounds } from "../intake/round.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
+import { approvedDesign, designMaterialFor, designOnBranch } from "../review/design-material.ts";
+import { createDesignReviewService, type DesignReviewServiceOptions } from "../review/design-service.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import type { TaskTier } from "../runner/harness.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
-import { planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
+import { bugRequestPlan, planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
 import {
   commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordedFixYes, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
   type ReviewFixPlan, type ReviewOutput,
@@ -55,6 +57,8 @@ export interface ComposeOptions {
    * (review/service.ts) with fresh read-only Claude and Codex reviewers; it records its own verdicts.
    */
   createReview?: (deps: ReviewDeps) => RunLoopOptions["review"];
+  /** Design factory seam; production keeps the calibrated, confined Codex design route. */
+  createDesignReview?: (options: DesignReviewServiceOptions) => DesignReviewService;
   /** Test seam for the notifier built from ~/.jarvis/notify.json; production uses the ntfy adapter. */
   createNotifier?: (config: NtfyOptions) => Notifier;
   /** Where the run says a notification wasn't delivered (default stderr: the detached runner's log). */
@@ -75,6 +79,8 @@ export interface ReviewDeps {
   spec: ApprovedSpec | undefined;
   git: (args: readonly string[]) => string;
   preflight: () => Promise<boolean>;
+  /** The runner-generated bug task and its original report. */
+  bugRequest?: { request: string; tasks: ReadonlyMap<string, PlanTask> };
   /** `jarvis run --plan review` (decision 126): the request and the fix tasks, reviewed against their finding with the bug brief. */
   reviewFix?: { request: string; tasks: ReadonlyMap<string, PlanTask>; bugTasks: ReadonlySet<string> };
 }
@@ -88,6 +94,9 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   const task = rebuildState(deps.ledger.entries(), { now: Date.now() }).tasks[taskId];
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
+  const bug = deps.bugRequest?.tasks.get(taskId);
+  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, kind: "bug",
+    spec: `Request, as typed: ${deps.bugRequest!.request}\nGoal: ${bug.goal}\nExit condition: ${bug.exitCondition}`, acceptanceCriteria: [bug.exitCondition] };
   if (deps.reviewFix) {
     const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);
     return {
@@ -178,17 +187,24 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const spec = approvedSpec(git, runBranch);
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
-  const plan = reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
+  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
+  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing)
+    : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  const bugRequest = context.request !== undefined ? { request: context.request, tasks: new Map(plan!.tasks.map((t) => [t.id, t])) } : undefined;
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));
   const reviewFix = reviewRun ? { request: reviewRun.output.request, tasks: new Map((reviewRun.fix.plan?.tasks ?? []).map((t) => [t.id, t])), bugTasks: new Set(reviewRun.fix.taskIds) } : undefined;
-  const review = (options.createReview ?? defaultReview)({ context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}) });
+  const reviewDeps: ReviewDeps = { context, ledger, workRoot, cacheRoot, spec, tier: plan?.tier ?? 1, git, preflight, ...(reviewFix ? { reviewFix } : {}), ...(bugRequest ? { bugRequest } : {}) };
+  const review = options.createReview ? options.createReview(reviewDeps) : defaultReview(reviewDeps, {
+    home, runBranch, ...(options.createDesignReview ? { createDesignReview: options.createDesignReview } : {}),
+  });
   const notifications = runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
   });
-  // A release setup (decision 157) puts the deploy adapters in the broker; a session plan (review, onboard, sweep) never releases.
-  const release = context.planKind === undefined
+  // A release setup (decision 157) puts the deploy adapters in the broker; a session plan (review, onboard, sweep) or a bug request never releases.
+  const release = context.planKind === undefined && context.request === undefined
     ? await prepareRelease({ projectId: context.projectId, projectDir: context.projectDir, workRoot, worktreeRoot, repoPath: context.repoPath, home, ledger }, options.release)
     : undefined;
   const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger, ...(release ? { deploy: release.adapters } : {}) });
@@ -222,7 +238,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
     ...(plan ? { plan: toLoopPlan(plan) } : {}),
     // A review run may touch only the tasks it created (decision 126): never the project's other unfinished work.
-    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : {}),
+    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),
   };
   approvals.start();
   const fix = reviewRun?.fix;
@@ -265,16 +281,30 @@ function toLoopPlan(plan: Plan): LoopPlan {
   return { tasks: planTasks(plan) };
 }
 
-/** The review service: one review_result per review, keyed "code", recorded by the service itself. */
-function defaultReview(deps: ReviewDeps): RunLoopOptions["review"] {
+/**
+ * The review services, each recording its own review_result: "code" always, "design" when the run branch has a
+ * DESIGN.md (decision 156). Its material is read per review from the run branch's committed objects and the
+ * approved store, so a bad DESIGN.md or a missing PRODUCT.md is a recorded design review error, never a run
+ * that refuses to start or a design review that is skipped.
+ */
+function defaultReview(deps: ReviewDeps, designOptions: {home: string; runBranch: string; createDesignReview?: ComposeOptions["createDesignReview"]}): RunLoopOptions["review"] {
   const service = createReviewService({
     ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot, routing: DEFAULT_REVIEW_ROUTING,
     claude: createClaudeReviewer({ jarvisHome: deps.context.jarvisHome, workRoot: deps.workRoot, cacheRoot: deps.cacheRoot, preflight: async () => ({ ok: await deps.preflight() }) }),
     codex: createCodexReviewer(),
     resolveMaterial: async (request) => reviewMaterialFor(deps, request.taskId, request.revision),
   });
-  // No design service yet: `jarvis run` has no runner-owned design material or calibration record (backlog 133).
-  return reviewDispatch(service);
+  const design = designOnBranch(deps.git, designOptions.runBranch)
+    ? (designOptions.createDesignReview ?? createDesignReviewService)({
+      ledger: deps.ledger, projectDir: deps.context.projectDir, workRoot: deps.workRoot,
+      home: designOptions.home, jarvisHome: deps.context.jarvisHome,
+      resolveMaterial: async () => {
+        const snapshot = approvedDesign(deps.git, designOptions.runBranch);
+        if (!snapshot) throw new Error("approved DESIGN.md is missing from the run branch");
+        return designMaterialFor({repoPath:deps.context.repoPath, snapshot, store:new ChecksStore(deps.context.projectDir), ledger:deps.ledger});
+      },
+    }) : undefined;
+  return reviewDispatch(service, design);
 }
 
 /**

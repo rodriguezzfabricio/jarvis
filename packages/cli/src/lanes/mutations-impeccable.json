@@ -148,5 +148,11 @@
     "file": "packages/cli/src/lanes/selection.ts",
     "anchor": "[\"impeccable-url\", \"design-browser\", \"axe\", \"playwright\"]",
     "replacement": "[\"impeccable-url\", \"axe\", \"playwright\"]"
+  },
+  {
+    "name": "Design runtime ships the verdict parser",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "\"review/verdict.ts\", ",
+    "replacement": ""
   }
 ]

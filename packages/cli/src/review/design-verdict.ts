@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { unfencedJson } from "./verdict.ts";
 
 export const DESIGN_RUBRIC = { weights: { quality: .35, originality: .35, craft: .15, functionality: .15 }, minimumAxis: 3, minimumWeighted: 3.5 } as const;
 const text = z.string().trim().min(1).max(2048);
@@ -20,7 +21,8 @@ export interface DesignEvaluation {
 export function evaluateDesignVerdict(raw: string): DesignEvaluation {
   try {
     if (Buffer.byteLength(raw) > 64 * 1024) throw new Error("design verdict exceeds 64 KiB");
-    const value = DesignVerdictSchema.parse(JSON.parse(raw));
+    // Exactly one fenced JSON block reads as its JSON (the live reviewers' habit); prose around it stays an error.
+    const value = DesignVerdictSchema.parse(JSON.parse(unfencedJson(raw)));
     const axes = Object.keys(DESIGN_RUBRIC.weights) as (keyof typeof DESIGN_RUBRIC.weights)[];
     const weightedScore = axes.reduce((sum, axis) => sum + value.scores[axis] * DESIGN_RUBRIC.weights[axis], 0);
     const failed = value.verdict === "fail" || value.findings.some(f => f.severity === "high") || axes.some(axis => value.scores[axis] < DESIGN_RUBRIC.minimumAxis) || weightedScore < DESIGN_RUBRIC.minimumWeighted;

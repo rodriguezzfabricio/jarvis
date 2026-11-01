@@ -195,3 +195,14 @@ describe("session-owned plans (onboarding and sweeps)", () => {
     expect(() => readSessionPlan(sessionPlan("sweep", [{ ...unitTask(), id: "X" }]), "sweep", [{ name: "unit" }])).toThrow();
   });
 });
+
+it("allocates a bug handoff after existing tasks and resumes only the matching bug", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const checks = [{ name: "unit" }];
+  const request = "The citizenship filter is missing jobs.";
+  const existing = [{ id: "T1", goal: "unrelated", exitCondition: "done" }];
+  const plan = bugRequestPlan(request, checks, existing);
+  expect(plan.tasks[0]!.id).toBe("T2");
+  expect(bugRequestPlan(request, checks, [...existing, plan.tasks[0]!]).tasks[0]!.id).toBe("T2");
+  expect(() => bugRequestPlan("Build a new dashboard", checks, existing)).toThrow(/bug.*spec/);
+});

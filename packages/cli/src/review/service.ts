@@ -5,6 +5,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { verifyEvidence } from "../checks/gate.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import type { TaskTier } from "../runner/harness.ts";
+import { latestRunId, recordSessionUsage } from "../runner/usage-log.ts";
 import { routeTask } from "../runner/routing.ts";
 import type { Review, ReviewRequest, Reviewer, ReviewerInput, ReviewerOutput } from "./types.ts";
 import { EVIDENCE_NOTE, gateMaterial, jsonBytes, type VerifiedGate } from "./evidence.ts";
@@ -38,7 +39,7 @@ export interface ReviewServiceOptions {
   timeoutMs?: number;
   maxTurns?: number;
 }
-export type ReviewOutcome = EvaluatedVerdict["verdict"] | "error";
+export type ReviewOutcome = EvaluatedVerdict["verdict"] | "error" | "usage-limited";
 export type ReviewReason = "review_investigation" | "review_error" | "review_failed";
 export interface ReviewDetail extends Omit<EvaluatedVerdict, "verdict"> {
   verdict: ReviewOutcome;
@@ -47,6 +48,7 @@ export interface ReviewDetail extends Omit<EvaluatedVerdict, "verdict"> {
   rawOutputHash: string;
   fallbackReason?: ReviewerOutput["fallbackReason"];
   superseded: boolean;
+  resetAt?: number;
 }
 export interface ReviewResult {
   verdict: ReviewOutcome;
@@ -148,10 +150,10 @@ function redactFinding(finding: EvaluatedVerdict["findings"][number]): Evaluated
   return { ...finding, file: redactReviewText(finding.file), scenario: redactReviewText(finding.scenario), fix: redactReviewText(finding.fix) };
 }
 function detailOf(output: ReviewerOutput, material: ReviewMaterial): ReviewDetail {
-  const evaluated = evaluateVerdict(output.rawVerdict, material);
+  const evaluated = output.usageLimit ? { verdict: "usage-limited" as const, valid: false, findings: [], investigate: [], ...(output.usageLimit.resetAt !== undefined ? { resetAt: output.usageLimit.resetAt } : {}) } : evaluateVerdict(output.rawVerdict, material);
   return {
     ...evaluated,
-    ...(!evaluated.valid ? { verdict: "error" as const } : {}),
+    ...(!evaluated.valid && !output.usageLimit ? { verdict: "error" as const } : {}),
     findings: evaluated.findings.map(redactFinding), investigate: evaluated.investigate.map(redactFinding),
     ...(output.error ? { verdict: output.failureKind === "policy" ? "fail" as const : "error" as const, valid: false, error: redactReviewText(output.error) } : {}),
     reviewer: output.reviewer, model: output.model, rawOutputHash: hash(output.rawOutput),
@@ -163,7 +165,7 @@ async function invoke(reviewer: Reviewer, input: ReviewerInput, engine: "claude"
   try { output = await reviewer(input); }
   catch (error) { output = { reviewer: engine, model: input.model, rawOutput: JSON.stringify({ error: String(error) }), rawVerdict: "", error: String(error) }; }
   if (checkoutHash(input.workspace) !== before) {
-    const { fallbackReason: _fallback, ...rest } = output;
+    const { fallbackReason: _fallback, usageLimit: _limit, ...rest } = output;
     return { ...rest, failureKind: "policy", error: "review checkout changed during a read-only session" };
   }
   return { ...output, reviewer: engine, model: input.model };
@@ -188,13 +190,22 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
       const before = checkoutHash(workspace), prompt = buildPrompt(request, material, diff, evidence);
       const run = async (reviewer: Reviewer, engine: "claude" | "codex", model: string, effort: ReviewerInput["effort"]) => {
         const dir = mkdtempSync(join(outputDir, `${engine}-`));
-        const result = await invoke(reviewer, { workspace, outputDir: dir, prompt, model, effort, timeoutMs: options.timeoutMs ?? 600_000, maxTurns: options.maxTurns ?? 20 }, engine, before);
+        let started = false;
+        const runId = latestRunId(options.ledger.entries()) ?? "review";
+        const onSpawn = () => {
+          options.ledger.append({ kind: "reconciled", actor: "runner", task_id: request.taskId, attempt_id: request.attemptId,
+            data: { type: "review_process_started", runId, reviewer: engine, model, revision: request.revision } });
+          started = true;
+        };
+        const result = await invoke(reviewer, { workspace, outputDir: dir, prompt, model, effort, timeoutMs: options.timeoutMs ?? 600_000, maxTurns: options.maxTurns ?? 20, onSpawn }, engine, before);
+        if (started && result.sessionOutcome) recordSessionUsage(options.ledger, { runId, taskId: request.taskId, attemptId: request.attemptId,
+          role: "review", tier: material.tier, route: { ...routeTask("review", material.tier, undefined, routing), model }, outcome: result.sessionOutcome });
         captures.push(result); const detail = detailOf(result, material); reviews.push(detail); return detail;
       };
       const route = routeTask("review", material.tier, undefined, routing);
-      await run(options.claude, "claude", route.model, route.effort);
+      const primary = await run(options.claude, "claude", route.model, route.effort);
       if (checkoutHash(workspace) !== before) throw new Error("review checkout changed");
-      if (route.crossModel === "codex" && options.codex !== null) {
+      if (primary.verdict !== "usage-limited" && route.crossModel === "codex" && options.codex !== null) {
         const codex = await run(options.codex, "codex", routing.cross_model.codex.model, routing.cross_model.codex.effort);
         if (codex.fallbackReason) {
           codex.superseded = true;
@@ -205,8 +216,12 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
     } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); captures.push({ error }); }
     finally { if (directory) rmSync(directory, { recursive: true, force: true }); }
     const active = reviews.filter((r) => !r.superseded);
-    const verdict: ReviewOutcome = error || !active.length || active.some((r) => r.verdict === "error") ? "error"
-      : active.some((r) => r.verdict === "fail") ? "fail"
+    // A reviewer that hit the plan's limit gave no verdict: the review waits and runs again (decision 160), unless
+    // another reviewer already failed the code, a verdict no later review can overturn.
+    const limited = active.find((r) => r.verdict === "usage-limited"), failed = active.some((r) => r.verdict === "fail");
+    const verdict: ReviewOutcome = error || !active.length ? "error" : limited && !failed ? "usage-limited"
+      : active.some((r) => r.verdict === "error") ? "error"
+      : failed ? "fail"
       : active.some((r) => r.verdict === "investigate") ? "investigate" : "pass";
     const reason: ReviewReason | undefined = verdict === "error" ? "review_error" : verdict === "investigate" ? "review_investigation" : verdict === "fail" ? "review_failed" : undefined;
     const investigate = active.flatMap((r) => r.investigate);
@@ -217,10 +232,14 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
     const failure = error !== undefined ? redactReviewText(error) : verdict === "error" ? active.find((r) => r.verdict === "error")?.error : undefined;
     const entry = options.ledger.append({ kind: "review_result", actor: "runner", task_id: request.taskId, attempt_id: request.attemptId,
       // The models that reviewed; null when the review failed before any reviewer ran (never "", which reads as a model ID).
-      data: { reviewer: "code", model: reviews.length ? reviews.map((r) => r.model).join(" + ") : null, revision: request.revision, status: verdict, verdict, reviews, investigate, summary, ...(reason ? { reason } : {}),
+      data: { reviewer: "code", model: reviews.length ? reviews.map((r) => r.model).join(" + ") : null, revision: request.revision, status: verdict, verdict, reviews, investigate, summary, ...(verdict === "usage-limited" ? { resetAt: limited?.resetAt ?? null } : {}), ...(reason ? { reason } : {}),
         rawOutputHash: hash(raw), evidence: { dir: outputDir, files: { "raw.json": hash(raw) } }, ...(failure ? { error: failure } : {}) },
     });
     return { verdict, entry, rawOutputPath, reviews, ...(reason ? { reason } : {}) };
   };
-  return { reviewDetailed, review: async (request) => (await reviewDetailed(request)).verdict === "pass" ? "pass" : "fail" };
+  return { reviewDetailed, review: async (request) => {
+    const result = await reviewDetailed(request);
+    if (result.verdict === "usage-limited") return { status: "usage-limited", resetAt: result.reviews.find((r) => r.verdict === "usage-limited")?.resetAt };
+    return result.verdict === "pass" ? "pass" : "fail";
+  } };
 }

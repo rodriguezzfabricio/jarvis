@@ -189,8 +189,9 @@ evalCmd
   .description("Both arms of a golden task, run for run: hidden checks, claimed and false done, wall time, sessions, repairs, usage, ratings")
   .argument("<task>", "task id")
   .option("--json", "print JSON")
-  .action((taskId: string, opts: { json?: boolean }) => {
-    const rows = readRuns(evalsHome(), taskId);
+  .option("--label <s>", "only the runs of one labelled round (decision 116: a proof counts one frozen revision)")
+  .action((taskId: string, opts: { json?: boolean; label?: string }) => {
+    const rows = readRuns(evalsHome(), taskId, opts.label === undefined ? {} : { label: opts.label });
     console.log(opts.json ? JSON.stringify(rows, null, 2) : formatCompare(taskId, rows));
   });
 

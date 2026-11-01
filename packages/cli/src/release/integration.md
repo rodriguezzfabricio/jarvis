@@ -1,8 +1,30 @@
 # Ship lane integration
 
-This is a runner library with no new command or `cli.ts` registration. Replace the
-stage-1 deploy outbox adapters with `deployAdapters(...)`; preserve other outbox
-operations for evals. Broker selects the first adapter for each operation.
+## Wired (decisions 157–159)
+
+- `release/run.ts` `prepareRelease` loads the protected setup (`release/config.ts`,
+  `~/.jarvis/projects/<id>/release.json`, written by `jarvis release configure`),
+  verifies the pinned provider CLI (`release/provider-cli.ts`, `PROVIDER_CLI_PINS`),
+  starting it as the adapters do (`providerLaunch` under `pinnedProviderNode()`,
+  decision 161), and builds `deployAdapters(...)` with the checked bin, version and
+  interpreter. `jarvis run` hosts them in place of the outbox for
+  `deploy.preview` and `deploy.promote`; the outbox keeps the other operations, and
+  every operation when there is no release setup (evals).
+- `runReleaseStep` runs after a complete build loop (`commands/run-release.ts`):
+  ship session (`release/ship.ts`), fixed-revision build (`release/build.ts`),
+  manifest acceptance (`release/accepted.ts`), every approved check on the revision
+  (`runGate` with `taskId: null`), preview through the broker, `runSmoke`,
+  `reachState("preview-ready")` with the approved names as `requiredChecks`.
+- Readiness is complete against the plan and the approved names (`releaseScope`);
+  reports and notifications recheck with `releaseStatus`.
+- Tokens: `<PROVIDER>_PREVIEW_TOKEN` and `<PROVIDER>_PRODUCTION_TOKEN`, stored by
+  `jarvis setup` in the house-stack accounts file, which the hosted broker reads after
+  the project's own file.
+- Grants: `jarvis release grant <manifest-hash> [--allow-rollback]` shows the accepted
+  manifest and calls `grantRelease`.
+- Not wired yet: steps 4–7 below (backlog 185).
+
+The notes below are the library's contract.
 
 ## Protected project configuration
 
@@ -30,19 +52,47 @@ separately and rejects sources whose realpath escapes it, including symlink esca
 
 ## Provider execution and rollback
 
-Provider config supplies an absolute pinned CLI path, private empty `home` and
-`cwd`. Credentials come only from `envFileSecrets` via broker adapter child env:
-`VERCEL_PREVIEW_TOKEN`, `VERCEL_PRODUCTION_TOKEN`, `NETLIFY_PREVIEW_TOKEN`,
-`NETLIFY_PRODUCTION_TOKEN`. Candidate build commands never run with these tokens.
+Decision 161. `ProviderConfig` is `{ bin, version, interpreter?, home, cwd }`:
+`bin` the absolute CLI at `pinnedProviderBin(provider)`, `version` its exact
+`x.y.z` from `PROVIDER_CLI_PINS` (required; the table is empty until a CLI is
+installed), `interpreter` the absolute Node that runs it (`pinnedProviderNode()`;
+the npm CLIs' `#!/usr/bin/env node` finds no node under the adapters' PATH, so the
+process is `<interpreter> <bin> <args>`; omit it for a native binary), and
+`home`/`cwd` existing runner-owned folders inside `ledger.dir` (the project
+folder). Every provider process, the version probe included, gets fresh private
+HOME and cwd children there, removed afterwards, and exactly `PATH=/usr/bin:/bin`,
+`HOME`, `CI=1` plus its own variables: one token (`VERCEL_TOKEN` with the project
+and org IDs, or `NETLIFY_AUTH_TOKEN`). Before any credential is read the adapter
+runs `--version` with no token and refuses anything but the pinned version, read
+by the provider's own parser (`providers.ts`). `jarvis doctor` reports
+`deploy.vercel`/`deploy.netlify` the same way (warn, or fail when listed in
+`required`). Providers are reached only through the `PROVIDERS` registry
+(`broker/adapters/providers.ts`) and the deploy-tree table in `artifacts.ts`; a new
+`Provider` doesn't compile until it has both. Credentials come only from `envFileSecrets` via
+broker adapter child env: `VERCEL_PREVIEW_TOKEN`, `VERCEL_PRODUCTION_TOKEN`,
+`NETLIFY_PREVIEW_TOKEN`, `NETLIFY_PRODUCTION_TOKEN`. Candidate build commands never
+run with these tokens.
 
-The adapter copies artifacts from `artifactRoot` into `privateRoot`, hashes that
-copy against the approved hash, then adds runner-controlled metadata. It writes
-`.well-known/jarvis-release` for Netlify or
-`.vercel/output/static/.well-known/jarvis-release` for Vercel. Its contents are the
-manifest hash, avoiding a circular artifact hash by stamping after verification.
-Vercel's linked project metadata is replaced with trusted site/organization IDs.
-The CLI deploys this private copy; the live session directory is never reread by it.
-Copies are removed after completion or failure.
+The artifact is the static publish directory (for example `dist/`), never a
+provider project or a `.vercel/output` tree: record
+`artifacts[revision] = artifactDigest(publishDir)`. The adapter copies it from
+`artifactRoot` into a fresh child of `privateRoot` that it builds itself: Vercel
+gets `.vercel/output/static/<files>` beside a fixed `vercel.json`,
+`.vercel/output/config.json` (`{"version":3}`) and `.vercel/project.json` (trusted
+site/organization IDs); Netlify gets `public/<files>` beside a fixed `netlify.toml`
+(no command, no plugins). The copy refuses, before any provider process or
+credential read and naming the file: symlinks and special files, dot files other
+than `.well-known`, `vercel.*`/`now.*` configuration, `netlify.toml`, `netlify/`,
+`node_modules/`, any `package.json` or `*config.{js,ts,json,toml,yaml}`,
+Netlify's `_redirects` and `_headers`, and files with an extension outside the
+static list (HTML, CSS, browser JS, JSON, images, fonts, media, WASM, PDF).
+Extensionless files (`health`, `CNAME`) and anything under `.well-known/` are
+static. Files are copied without execute bits. The copy is hashed against the
+approved digest, then stamped with `.well-known/jarvis-release` (the manifest
+hash) inside the web root. Functions, middleware, edge functions, redirects and
+headers are not supported; they need a separately reviewed contract. The CLI deploys this private copy; the live
+session directory is never reread by it. Copies are removed after completion or
+failure.
 
 `grantRelease(broker, manifest, by, allowRollback)` remains a trusted host/intake
 operation. Both production and rollback use `deploy.promote` with distinct
@@ -54,6 +104,9 @@ a `decision` with type `release.production-before`, actor `broker`, linked to th
 broker's executing intent. Rollback selects only that recorded ID for a successful
 promotion; manifest rollback IDs/URLs are legacy claims and ignored. If current
 production cannot be established, promotion is refused before a deploy is attempted.
+A rollback succeeds only when the same production readback, run after the rollback
+command exits 0, returns exactly the recorded deployment ID and URL. A mismatch,
+a malformed or failed readback, or a nonzero rollback command is `unknown`.
 
 Automatic recovery requires `allowRollback: true` on the matching manifest grant.
 A person-approved rollback without that permission is manual. The task session

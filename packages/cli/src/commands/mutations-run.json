@@ -32,13 +32,13 @@
   {
     "name": "run broker has no adapters",
     "file": "packages/cli/src/broker/host.ts",
-    "anchor": "adapters: outboxAdapters(join(o.projectDir, \"outbox\")),",
+    "anchor": "adapters: [...deploy, ...outbox],",
     "replacement": "adapters: [],"
   },
   {
     "name": "run broker ignores the secrets file",
     "file": "packages/cli/src/broker/host.ts",
-    "anchor": "    secrets: existsSync(secretsPath) ? envFileSecrets(secretsPath) : { get: () => undefined },",
+    "anchor": "    secrets: layeredSecrets([join(o.jarvisHome, \"secrets\", `${o.project}.env`), join(o.jarvisHome, \"secrets\", ACCOUNTS_SECRETS_FILE)]),",
     "replacement": "    secrets: { get: () => undefined },"
   },
   {

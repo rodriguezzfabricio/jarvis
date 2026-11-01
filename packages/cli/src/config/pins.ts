@@ -64,6 +64,16 @@ export function pinnedImpeccable(home: string = homedir()): ImpeccablePin {
   };
 }
 
+/**
+ * Deploy provider CLIs (decision 157), run only by the broker's deploy adapters, outside the sandbox and with a
+ * token. Empty until Fabricio picks Vercel or Netlify and installs one exact version: the release step refuses a
+ * provider with no pin here, and one whose CLI at pinnedProviderBin doesn't report exactly that version.
+ */
+export const PROVIDER_CLI_PINS: Readonly<Partial<Record<"vercel" | "netlify", { version: string }>>> = {};
+export function pinnedProviderBin(provider: "vercel" | "netlify", home: string = homedir()): string {
+  return join(home, ".npm-global", "bin", provider);
+}
+
 /** Reviewed offline scanner policy; database downloads happen explicitly outside the gate. */
 export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
   return {
@@ -84,4 +94,17 @@ export function pinnedSecurityScanners(osvDatabaseDir?: string): ScannerPins {
       ...(osvDatabaseDir ? { databaseDir: osvDatabaseDir } : {}),
     },
   };
+}
+
+/**
+ * The interpreter the npm provider CLIs (PROVIDER_CLI_PINS) start under (decision 161): the runner's own Node, by
+ * absolute path, never `node` through PATH. The adapters run every provider process with `PATH=/usr/bin:/bin`, where
+ * npm's `#!/usr/bin/env node` launcher finds no node, so they start `<this> <pinned bin> <args>` instead.
+ * Recommended pins once one is installed: Vercel CLI 48.0.0, Netlify CLI 23.0.0 (chosen offline by the s5-adapters
+ * lane; neither installed nor checked against a real account yet, backlog 195). SHA-256 source, when recorded: the exact
+ * npm tarball (https://registry.npmjs.org/vercel/-/vercel-48.0.0.tgz, .../netlify-cli/-/netlify-cli-23.0.0.tgz), its
+ * bytes checked against the registry's `dist.integrity` (backlog 196). None is recorded here yet, and none is invented.
+ */
+export function pinnedProviderNode(): string {
+  return process.execPath;
 }

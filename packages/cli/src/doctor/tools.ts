@@ -1,8 +1,11 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { providerLaunch, providerVersion } from "../broker/adapters/execution.ts";
+import { PROVIDER_NAMES, PROVIDERS } from "../broker/adapters/providers.ts";
 import { ChecksStore } from "../checks/store.ts";
-import { pinnedImpeccable, pinnedMaestroBin, pinnedSecurityScanners } from "../config/pins.ts";
+import { PROVIDER_CLI_PINS, pinnedImpeccable, pinnedMaestroBin, pinnedProviderBin, pinnedProviderNode, pinnedSecurityScanners } from "../config/pins.ts";
+import type { Provider } from "../release/types.ts";
 import type { ImpeccablePin } from "../lanes/impeccable.ts";
 import { fileHash } from "../lanes/materialize.ts";
 import { verifyChecksReadOnly } from "./read-only.ts";
@@ -26,6 +29,8 @@ export interface ToolDoctorDeps {
   /** Discover existing manifests only inside runner-owned project check fixtures. */
   projectsRoot?: string;
   required?: readonly string[];
+  /** Test seam: the deploy provider pins (default config/pins.ts PROVIDER_CLI_PINS). */
+  providerPins?: Readonly<Partial<Record<Provider, { version: string }>>>;
 }
 const version = (text: string): string | undefined => {
   const versions = [...text.matchAll(/(?<![\w.+-])v?(\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![\w.+-])/g)];
@@ -80,6 +85,23 @@ export async function toolDoctorChecks(deps: ToolDoctorDeps): Promise<DoctorChec
     if (found !== `${impeccable.version}+engine`) throw new Error(`expected ${impeccable.version}+engine, found ${found.slice(0, 80)}`);
     add("impeccable", true, `${impeccable.bin}: ${found}; sha256 ${digest}`);
   } catch (error) { add("impeccable", false, `not run: impeccable (${String(error)})`); }
+  // Deploy provider CLIs (decision 161): the PROVIDER_CLI_PINS version of the CLI at pinnedProviderBin, started as the
+  // adapters start it (through pinnedProviderNode, no token, a fresh empty HOME, PATH=/usr/bin:/bin). Never PATH or an install.
+  for (const provider of PROVIDER_NAMES) {
+    const bin = pinnedProviderBin(provider, home); const pinned = (deps.providerPins ?? PROVIDER_CLI_PINS)[provider]?.version;
+    const label = `${PROVIDERS[provider].label}${pinned ? ` ${pinned}` : ""}`;
+    let probeHome: string | undefined;
+    try {
+      if (!pinned) throw new Error("no pinned version in config/pins.ts PROVIDER_CLI_PINS; its deploys are refused");
+      if (!isAbsolute(bin) || !exists(bin)) throw new Error(`missing ${bin}: install ${label} there; until then its deploys are refused (never from PATH)`);
+      probeHome = mkdtempSync(join(tmpdir(), "jarvis-provider-home-"));
+      const launch = providerLaunch({ bin, interpreter: pinnedProviderNode() }, ["--version"]);
+      const found = providerVersion(provider, deps.exec(launch.bin, launch.args, { PATH: "/usr/bin:/bin", HOME: probeHome, CI: "1" }));
+      if (found !== pinned) throw new Error(`${bin} reports ${found ?? "no exact version"}, pinned ${pinned}; its deploys are refused`);
+      add(`deploy.${provider}`, true, `${bin}: ${found}`);
+    } catch (error) { add(`deploy.${provider}`, false, `not run: ${label} (${String(error).slice(0, 400)})`); }
+    finally { if (probeHome) rmSync(probeHome, { recursive: true, force: true }); }
+  }
   let inputs: { root: string; store: ChecksStore }[];
   try { inputs = deps.toolchain ? [deps.toolchain] : discoverToolchains(deps.projectsRoot); }
   catch (error) { add("qa_toolchain", false, `QA manifest discovery unavailable: ${String(error)}`); return checks; }

@@ -44,7 +44,7 @@
   {
     "name": "setup production tokens not broker-only",
     "file": "packages/cli/src/setup/setup.ts",
-    "anchor": "brokerOnly: token.tier === \"production\"",
+    "anchor": "brokerOnly: token.brokerOnly === true || token.tier === \"production\"",
     "replacement": "brokerOnly: false"
   },
   {

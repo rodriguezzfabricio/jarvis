@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { envFileSecretsWriter, isStorableSecret, type SecretsWriter } from "../broker/secrets.ts";
+import { ACCOUNTS_SECRETS_FILE, envFileSecretsWriter, isStorableSecret, type SecretsWriter } from "../broker/secrets.ts";
 import { pinnedClaudeBin, CLAUDE_CODE_VERSION } from "../config/pins.ts";
 import { checkTrustedDir, checkTrustedTree, readNoFollow, refuseSymlink, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import { checkClaudePinned } from "../doctor/doctor.ts";
@@ -40,7 +40,7 @@ export interface SetupOptions { redo?: readonly string[]; sendTest?: boolean }
 export interface SetupResult { ok: boolean; state: SetupState; pending: StepName[] }
 
 /** Where house-stack account tokens go. Not a valid project id, so no project's <id>.env can collide. */
-export const accountsSecretsPath = (jarvisHomeDir: string) => join(jarvisHomeDir, "secrets", "house-stack.accounts.env");
+export const accountsSecretsPath = (jarvisHomeDir: string) => join(jarvisHomeDir, "secrets", ACCOUNTS_SECRETS_FILE);
 export const NTFY_BASE_URL = "https://ntfy.sh";
 const TOPIC_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const TOPIC_RANDOM_LENGTH = 24;
@@ -183,7 +183,7 @@ async function accountStep(spec: AccountSpec, ctx: Context, confirm: boolean): P
     if (value === "") return { status: "skipped", detail: SKIPPED_ACCOUNT, provider: spec.provider };
     values.push(value);
   }
-  const secrets = spec.tokens.map((token) => ({ key: token.key, tier: token.tier, brokerOnly: token.tier === "production" }));
+  const secrets = spec.tokens.map((token) => ({ key: token.key, tier: token.tier, brokerOnly: token.brokerOnly === true || token.tier === "production" }));
   secrets.forEach((meta, i) => {
     ctx.secrets.set(meta.key, values[i] ?? "", { brokerOnly: meta.brokerOnly });
     print(`Stored ${meta.key} in ${ctx.secrets.location}${meta.brokerOnly ? " (broker-only)" : ""}.`);

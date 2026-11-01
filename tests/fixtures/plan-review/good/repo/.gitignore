@@ -1,2 +1,3 @@
 .jarvis/
 node_modules/
+data/items.jsonl

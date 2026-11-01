@@ -1,17 +1,20 @@
 {
   "tier": 1,
   "notes": [
-    "Reuse src/util/retry.mjs (D3) for the save path; add no dependencies.",
-    "Items are JSON lines in data/items.jsonl (D2); src/store.mjs owns the file."
+    "Today src/cli.mjs only prints the usage line and exits 2, and src/store.mjs does not exist: T1 creates it, T2 and T3 extend it. No dependency is added; package.json stays without one.",
+    "Storage (D2, spec A1): data/items.jsonl holds one JSON object per line, {\"name\":\"<trimmed name>\"}, written with appendFileSync. src/store.mjs owns the file: saveItem(name) appends one line; listItems() returns the names in file order, or [] when the file is missing. The path is resolved from the module (new URL(\"../data/items.jsonl\", import.meta.url)), so add and list use the same file whatever the working directory. data/ is committed (data/.gitkeep) and data/items.jsonl is gitignored.",
+    "Errors: saveItem throws new Error(\"item name must not be blank\") before writing when the name is blank under spec A2 (empty after trim(), or containing a line break); a missing argument is the empty string, so it is blank. src/cli.mjs wraps both commands in one try/catch: a thrown error prints its message to stderr and exits 1. The usage error keeps exit code 2.",
+    "Risks: a crash mid-append may leave a torn last line, and two processes appending at once may interleave lines; the spec assumes one process at a time (A3) and makes recovery a non-goal, so nothing is built for either, and a torn line makes list fail with its JSON error (exit 1) rather than print a partial item. A missing data/ folder would fail the append; data/.gitkeep keeps it in every checkout.",
+    "Checks: item-add (AC1), item-blank (AC2) and item-list (AC3) each start by removing data/items.jsonl and run every command as its own process, so each case starts from nothing and list reads from disk in a new process."
   ],
   "tasks": [
     {
       "id": "T1",
-      "title": "Validate item names",
-      "goal": "Reject a blank item name at the CLI boundary",
-      "exitCondition": "AC2 passes: a blank name exits nonzero and persists nothing",
+      "title": "Save an item",
+      "goal": "`add <name>` persists the named item and prints `saved`",
+      "exitCondition": "item-add passes: `add exercise` exits 0, prints `saved`, and data/items.jsonl holds that one item",
       "acceptanceCriteria": [
-        "AC2"
+        "AC1"
       ],
       "storyIds": [
         "S1"
@@ -19,57 +22,62 @@
       "dependencies": [],
       "priority": 9,
       "requiredChecks": [
-        "item-create"
+        "item-add"
       ],
       "requiredReviews": [
         "code"
       ],
       "mayTouch": [
-        "src/cli.mjs",
-        "src/store.mjs"
+        "src/store.mjs",
+        "src/cli.mjs"
       ]
     },
     {
       "id": "T2",
-      "title": "Retry the save",
-      "goal": "Wrap the append in src/store.mjs with retry from src/util/retry.mjs (D3), three attempts",
-      "exitCondition": "A transient append failure is retried; AC1 still passes",
-      "acceptanceCriteria": [],
+      "title": "Reject a blank name",
+      "goal": "`add` with a blank name reports the error on stderr, exits 1 and persists nothing",
+      "exitCondition": "item-blank passes and item-add still passes",
+      "acceptanceCriteria": [
+        "AC2"
+      ],
       "storyIds": [
         "S1"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "T1"
+      ],
       "priority": 8,
       "requiredChecks": [
-        "item-create"
+        "item-blank",
+        "item-add"
       ],
       "requiredReviews": [
         "code"
       ],
       "mayTouch": [
-        "src/store.mjs"
+        "src/store.mjs",
+        "src/cli.mjs"
       ]
     },
     {
       "id": "T3",
-      "title": "Persist and list items",
-      "goal": "Append each saved item as one JSON line to data/items.jsonl (D2) and have list read them back",
-      "exitCondition": "AC1 and AC3 pass",
+      "title": "List saved items",
+      "goal": "`list` prints every saved item, one per line, in the order saved",
+      "exitCondition": "item-list passes, and item-add and item-blank still pass",
       "acceptanceCriteria": [
-        "AC1",
         "AC3"
       ],
       "storyIds": [
-        "S1",
         "S2"
       ],
       "dependencies": [
-        "T1"
+        "T2"
       ],
       "priority": 7,
       "requiredChecks": [
-        "item-create",
-        "item-list"
+        "item-list",
+        "item-add",
+        "item-blank"
       ],
       "requiredReviews": [
         "code"

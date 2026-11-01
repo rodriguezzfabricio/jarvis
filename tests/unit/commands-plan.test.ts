@@ -96,7 +96,10 @@ describe("jarvis plan (decisions 170, 172)", () => {
   it("calibrates on the fixtures (the reviewer sees the fixture repo, plan and checks), then a clean review counts and status accepts the plan", async () => {
     const s = setup();
     await s.calibrate();
-    expect(s.seen.slice(0, 6).every((seen) => seen.includes("retry") && seen.includes("plan") && seen.includes("checks"))).toBe(true);
+    expect(s.seen.slice(0, 6).every((seen) => seen.includes("plan") && seen.includes("checks"))).toBe(true);
+    // The bad fixture's repo holds the util its T2 would duplicate; the good fixture's plan creates nothing that exists, so its repo has no util.
+    expect(s.seen.slice(0, 3).every((seen) => seen.includes("retry"))).toBe(true);
+    expect(s.seen.slice(3, 6).some((seen) => seen.includes("retry"))).toBe(false);
     expect(s.out[0]).toMatch(/^Plan review fail; 3 finding\(s\); control entry [a-f0-9]{64}$/);
     expect(s.out.filter((line) => line.startsWith("Plan review pass; 0 finding(s); control entry"))).toHaveLength(1);
     const r = await s.invoke("review");
@@ -141,6 +144,22 @@ describe("jarvis plan (decisions 170, 172)", () => {
     expect((await s.invoke("review", "--save-calibration", `${controls[1]!.hash}:${controls[0]!.hash}`)).code).toBe(1);
     expect((await s.invoke("review", "--save-calibration", "nope")).errors.join()).toContain("two ledger entry hashes");
     expect((await s.invoke("review", "--calibrate", "ugly")).errors.join()).toContain("bad or good");
+  });
+  it("an error verdict prints each lens's verdict, validity, checks and error, so a lens that returned garbage is diagnosable", async () => {
+    const s = setup(); seedCalibration(s.ledger());
+    s.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: lensOf(input.prompt) === "zoom-out" ? "```json\n{}\n```\nDone." : clean(lensOf(input.prompt)) }));
+    expect((await s.invoke("review")).code).toBe(1);
+    expect(s.out[0]).toBe("Plan review error; 0 finding(s); findings in .jarvis/plan-review/findings.json");
+    expect(s.out.slice(1)).toEqual([
+      "  zoom-out: error, invalid output; checked none; plan review output is not JSON",
+      "  critic: pass; checked alternatives, assumptions, risks, standard-sections",
+      "  readiness: pass; checked zero-decision, target-scope, phasing, test-plan",
+    ]);
+    // A clean review prints no lens lines.
+    s.reviewer.mockImplementation(async (input) => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: clean(lensOf(input.prompt)) }));
+    s.out.length = 0;
+    expect((await s.invoke("review")).code).toBeUndefined();
+    expect(s.out).toEqual(["Plan review pass; 0 finding(s); findings in .jarvis/plan-review/findings.json"]);
   });
   it("refuses a repo without an approved spec or a plan", async () => {
     const s = setup();

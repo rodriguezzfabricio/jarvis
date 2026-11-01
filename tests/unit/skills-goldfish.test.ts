@@ -41,18 +41,32 @@ describe("the Goldfish decision layer in the skills", () => {
     expect(eval13!.expectations.join("\n")).toMatch(/--alternatives/);
     expect(eval13!.expectations.join("\n")).toMatch(/jarvis plan review/);
   });
-  it("the negative-control fixtures plant the three faults the calibration must name", () => {
-    const bad = JSON.parse(read("tests/fixtures/plan-review/bad/plan.json")) as { tasks: { id: string; goal: string }[] };
-    const good = JSON.parse(read("tests/fixtures/plan-review/good/plan.json")) as { tasks: { id: string; goal: string }[] };
+  it("the negative-control fixtures plant the three faults the calibration must name, and nothing else differs", () => {
+    type Task = { id: string; goal: string; acceptanceCriteria: string[]; dependencies: string[]; mayTouch?: string[] };
+    const bad = JSON.parse(read("tests/fixtures/plan-review/bad/plan.json")) as { notes: string[]; tasks: Task[] };
+    const good = JSON.parse(read("tests/fixtures/plan-review/good/plan.json")) as { notes: string[]; tasks: Task[] };
     expect(() => PlanSchema.parse(bad)).not.toThrow(); expect(() => PlanSchema.parse(good)).not.toThrow();
+    // T2 recreates an existing util, T3 leaves the storage format to the builder, D3 is hard with no alternative.
     expect(bad.tasks.find((t) => t.id === "T2")!.goal).toContain("src/retry.mjs");
     expect(existsSync(new URL("tests/fixtures/plan-review/bad/repo/src/util/retry.mjs", root))).toBe(true);
     expect(bad.tasks.find((t) => t.id === "T3")!.goal).toMatch(/pick a storage format/i);
+    expect(bad.tasks.find((t) => t.id === "T3")!.mayTouch).toBeUndefined();
     expect(read("tests/fixtures/plan-review/bad/repo/docs/decisions.md")).toMatch(/\| D3 \|.*\| hard \|.*\| \[\] \|/);
-    expect(good.tasks.find((t) => t.id === "T2")!.goal).toContain("src/util/retry.mjs");
-    expect(good.tasks.find((t) => t.id === "T3")!.goal).toContain("data/items.jsonl");
-    expect(read("tests/fixtures/plan-review/good/repo/docs/decisions.md")).toMatch(/\| D3 \|.*\| hard \|.*rejected because/);
-    for (const fixture of ["bad", "good"]) for (const file of ["spec.md", "checks/item-create.check.json", "checks/item-list.check.json", "repo/docs/spec/v1.md", "repo/.gitignore"]) expect(existsSync(new URL(`tests/fixtures/plan-review/${fixture}/${file}`, root)), `${fixture}/${file}`).toBe(true);
+    // The good plan: every task placed (mayTouch), traceable to a criterion, ordered by dependencies; it creates nothing that exists and cites no decision without alternatives.
+    expect(good.tasks.every((t) => t.mayTouch!.length > 0 && t.acceptanceCriteria.length > 0)).toBe(true);
+    expect(good.tasks.map((t) => t.dependencies)).toEqual([[], ["T1"], ["T2"]]);
+    expect(good.notes.join("\n")).toContain("data/items.jsonl");
+    expect(existsSync(new URL("tests/fixtures/plan-review/good/repo/src/util/retry.mjs", root))).toBe(false);
+    expect(existsSync(new URL("tests/fixtures/plan-review/good/repo/src/store.mjs", root))).toBe(false);
+    const goodRegister = read("tests/fixtures/plan-review/good/repo/docs/decisions.md");
+    expect(goodRegister).not.toContain("| D3 |"); expect(goodRegister).not.toMatch(/\| hard \|/);
+    expect(goodRegister).toMatch(/\| D2 \|.*\| moderate \|.*rejected because/);
+    // Only the plan, the register and the planted util differ: spec, checks and the rest of the repo are the same files.
+    for (const file of ["spec.md", "repo/docs/spec/v1.md", "repo/.gitignore", "repo/package.json", "repo/src/cli.mjs", "checks/item-add.check.json", "checks/item-blank.check.json", "checks/item-list.check.json", "checks/verify-add.sh", "checks/verify-blank.sh", "checks/verify-list.sh"]) {
+      expect(read(`tests/fixtures/plan-review/bad/${file}`), file).toBe(read(`tests/fixtures/plan-review/good/${file}`));
+    }
+    expect(read("tests/fixtures/plan-review/good/spec.md")).toBe(read("tests/fixtures/plan-review/good/repo/docs/spec/v1.md"));
+    expect(read("tests/fixtures/plan-review/good/repo/.gitignore")).toContain("data/items.jsonl");
   });
   it("the docs carry decisions 170 to 172, the harness assumption, the backlog rows and the getting-started commands", () => {
     const decisions = read("docs/01-decisions.md");

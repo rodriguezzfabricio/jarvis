@@ -23,8 +23,9 @@ export const STEP_TYPE = "release.step";
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/, "letters, digits, '.', '_' or '-'");
 const outputPath = z.string().max(500).regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/, "a checkout-relative folder")
   .refine((p) => !p.split("/").some((part) => part === "." || part === ".." || /^\.git$/i.test(part) || /^\.jarvis$/i.test(part)), "no '.', '..', .git or .jarvis parts");
-const schema = z.object({
+const webSchema = z.object({
   version: z.literal(1),
+  kind: z.literal("web").optional(),
   provider: z.enum(["vercel", "netlify", "render"]),
   /** The account's plan, as Fabricio states it. Only the free plan is accepted (the spend policy). */
   plan: z.string().min(1).max(50),
@@ -49,10 +50,22 @@ const schema = z.object({
   if (c.provider === "vercel" && !c.orgId) ctx.addIssue({ code: "custom", path: ["orgId"], message: "Vercel needs the account or team id (orgId)" });
   if (c.provider === "netlify" && c.orgId) ctx.addIssue({ code: "custom", path: ["orgId"], message: "Netlify sites take no orgId" });
 });
-export type ReleaseSetup = z.infer<typeof schema>;
+export type WebReleaseSetup = z.infer<typeof webSchema>;
+const desktopSchema = z.object({
+  version: z.literal(1), kind: z.literal("desktop"),
+  appName: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/),
+  bundle: outputPath.refine(p => p.endsWith(".app"), "a bundle path ending in .app inside the build output"),
+  build: z.object({ command: z.string().trim().min(1).max(2000), output: outputPath,
+    timeoutMs: z.number().int().min(1000).max(3_600_000).default(600_000) }).strict(),
+}).strict();
+export type DesktopReleaseSetup = z.infer<typeof desktopSchema>;
+export type ReleaseSetup = WebReleaseSetup | DesktopReleaseSetup;
 
+export function parseReleaseSetup(value: { kind: "desktop"; [key: string]: unknown }): DesktopReleaseSetup;
+export function parseReleaseSetup(value: { provider: unknown; [key: string]: unknown }): WebReleaseSetup;
+export function parseReleaseSetup(value: unknown): ReleaseSetup;
 export function parseReleaseSetup(value: unknown): ReleaseSetup {
-  return schema.parse(value);
+  return value !== null && typeof value === "object" && "kind" in value && value.kind === "desktop" ? desktopSchema.parse(value) : webSchema.parse(value);
 }
 export const releaseSetupPath = (projectDir: string) => join(projectDir, RELEASE_SETUP_FILE);
 
@@ -67,7 +80,7 @@ export function loadReleaseSetup(projectDir: string, trust: TrustOptions = {}): 
   if ((st.mode & 0o077) !== 0 || (uid !== undefined && st.uid !== uid)) throw new Error(`${path} must be yours and readable only by you (chmod 600)`);
   let raw: unknown;
   try { raw = JSON.parse(readNoFollow(path)); } catch { throw new Error(`${path} is not valid JSON; run jarvis release configure again`); }
-  const parsed = schema.safeParse(raw);
+  const parsed = raw !== null && typeof raw === "object" && "kind" in raw && raw.kind === "desktop" ? desktopSchema.safeParse(raw) : webSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`${path} is refused: ${parsed.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`).join("; ")}`);
   return parsed.data;
 }
@@ -107,7 +120,7 @@ export function releaseRoots(o: { projectDir: string; workRoot: string; project:
  * The ReleaseProjectConfig the adapters, the smoke test and the manifest check read. `artifacts` is a live view of
  * the ledger's build records, so the broker hosted before the build sees the binding the build records.
  */
-export function releaseProjectConfig(setup: ReleaseSetup, o: { projectDir: string; workRoot: string; project: string; ledger: Pick<Ledger, "entries"> }): ReleaseProjectConfig {
+export function releaseProjectConfig(setup: WebReleaseSetup, o: { projectDir: string; workRoot: string; project: string; ledger: Pick<Ledger, "entries"> }): ReleaseProjectConfig {
   const roots = releaseRoots(o);
   for (const dir of [roots.artifactRoot, roots.privateRoot, roots.snapshotRoot, roots.providerHome, roots.providerCwd]) mkdirSync(dir, { recursive: true, mode: 0o700 });
   const ledger = o.ledger;

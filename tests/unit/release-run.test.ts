@@ -8,7 +8,7 @@ import type { GateCheck, GateInput, GateResult } from "../../packages/cli/src/ch
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "../../packages/cli/src/proc/session.ts";
-import { parseReleaseSetup, saveReleaseSetup, type ReleaseSetup } from "../../packages/cli/src/release/config.ts";
+import { parseReleaseSetup, saveReleaseSetup, type WebReleaseSetup } from "../../packages/cli/src/release/config.ts";
 import { prepareRelease, runReleaseStep, type ReleaseSeams } from "../../packages/cli/src/release/run.ts";
 import { releaseStatus } from "../../packages/cli/src/release/states.ts";
 import type { Harness, TaskInput, TaskOutcome } from "../../packages/cli/src/runner/harness.ts";
@@ -27,7 +27,7 @@ const ok = (stdout: string): SessionOutcome => ({ code: 0, timedOut: false, over
 const LOCK = "d".repeat(64);
 const CLAIMS = { smokePaths: ["/", "/health"], rollback: { steps: ["Restore the previous deploy."] }, data: { kind: "none" } };
 
-interface Options { setup?: Partial<ReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; cliVersions?: string[]; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"] }
+interface Options { setup?: Partial<WebReleaseSetup>; claims?: unknown; failGate?: string; failSmoke?: boolean; providerOutput?: string; cliVersion?: string; cliVersions?: string[]; doneAt?: "head" | "older" | "none"; sessionStatus?: TaskOutcome["status"] }
 async function step(o: Options = {}) {
   const dir = join(root, `s${++n}`);
   const repo = join(dir, "repo"); mkdirSync(repo, { recursive: true });
@@ -139,7 +139,7 @@ describe("the release step", () => {
     const s = await step({ setup: {} });
     expect(s.outcome.status).toBe("preview-ready");
     const dir = join(root, `s${n}`, "jarvis", "projects", "habits");
-    const setup = JSON.parse(readFileSync(join(dir, "release.json"), "utf8")) as ReleaseSetup;
+    const setup = JSON.parse(readFileSync(join(dir, "release.json"), "utf8")) as WebReleaseSetup;
     const { runReleaseStep: again } = await import("../../packages/cli/src/release/run.ts");
     const runtime = { setup: { ...setup, plan: "pro" }, config: {} as never, providerConfig: undefined, verifyCli: async () => ({ ok: false as const, reason: "unused" }), adapters: [] };
     const result = await again({ runtime, ledger: s.ledger, broker: { handle: async () => { throw new Error("no request may be made"); } }, projectId: "habits", projectDir: dir, jarvisHome: join(root, `s${n}`, "jarvis"),

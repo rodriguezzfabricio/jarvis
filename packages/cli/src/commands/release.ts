@@ -10,6 +10,7 @@ import type { TrustOptions } from "../config/private-file.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { acceptedManifest, latestAccepted } from "../release/accepted.ts";
 import { FREE_PLANS, loadReleaseSetup, parseReleaseSetup, saveReleaseSetup } from "../release/config.ts";
+import { installDesktopRelease } from "../release/desktop.ts";
 import { grantRelease, hasReleaseGrant } from "../release/grants.ts";
 import { releaseStatus } from "../release/states.ts";
 import type { ReleaseManifest } from "../release/types.ts";
@@ -61,11 +62,14 @@ export function register(program: Command, seams: ReleaseCommandOptions = {}): v
   const release = program.command("release").description("A project's protected release setup, its accepted manifest and production grants");
 
   release.command("configure").description("Write the project's protected release setup: provider, site, live origin, build and data source")
+    .option("--kind <kind>", "web or desktop", "web")
+    .option("--app-name <name>", "desktop app name")
+    .option("--bundle <path>", "desktop .app path inside --output")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
-    .requiredOption("--provider <name>", "render, vercel or netlify")
-    .requiredOption("--site <id>", "the Vercel project id, the Netlify site id, or a label for the Render sites")
+    .option("--provider <name>", "web: render, vercel or netlify")
+    .option("--site <id>", "web: the Vercel project id, the Netlify site id, or a label for the Render sites")
     .option("--org <id>", "the Vercel account or team id")
-    .requiredOption("--url <origin>", "the live production origin, https://… (Render: the production site's https://<name>.onrender.com)")
+    .option("--url <origin>", "web: the live production origin, https://… (Render: the production site's https://<name>.onrender.com)")
     .option("--plan <plan>", "the account's plan; only the free plan is accepted (hobby on Vercel, free on Netlify and Render)")
     .option("--preview-repo <ssh-url>", "Render: the preview deploy repository, git@github.com:<owner>/<repo>.git")
     .option("--production-repo <ssh-url>", "Render: the production deploy repository, a different one")
@@ -77,9 +81,23 @@ export function register(program: Command, seams: ReleaseCommandOptions = {}): v
     .option("--timeout-ms <ms>", "the build's time limit")
     .option("--data-kind <kind>", "sqlite or postgres, when the app keeps data")
     .option("--data-source <path>", "the consistent SQLite export or Postgres dump the runner copies for a rehearsal")
-    .action((o: { project?: string; provider: string; site: string; org?: string; url: string; plan?: string; build: string; output: string; timeoutMs?: string; dataKind?: string; dataSource?: string;
+    .action((o: { project?: string; kind: string; appName?: string; bundle?: string; provider?: string; site?: string; org?: string; url?: string; plan?: string; build: string; output: string; timeoutMs?: string; dataKind?: string; dataSource?: string;
       previewRepo?: string; productionRepo?: string; previewUrl?: string; previewBranch: string; productionBranch: string }) => {
       const id = project(o.project);
+      if (o.kind !== "web" && o.kind !== "desktop") throw new Error("--kind must be web or desktop");
+      if (o.kind === "desktop") {
+        if ([o.provider, o.site, o.org, o.url, o.plan, o.dataKind, o.dataSource, o.previewRepo, o.productionRepo, o.previewUrl].some(v => v !== undefined)) throw new Error("desktop configuration takes no provider, deploy destination, plan or data source");
+        const setup = parseReleaseSetup({ version: 1, kind: "desktop", appName: o.appName, bundle: o.bundle,
+          build: { command: o.build, output: o.output, ...(o.timeoutMs !== undefined ? { timeoutMs: Number(o.timeoutMs) } : {}) } });
+        if (setup.kind !== "desktop") throw new Error("desktop setup required");
+        const dir = dirOf(id); mkdirSync(dir, { recursive: true, mode: 0o700 });
+        installDesktopRelease(Ledger.open(dir), setup);
+        const path = saveReleaseSetup(dir, setup, seams.trust);
+        out(`Wrote ${path}. Desktop ${setup.appName}: built, not distributed. Native smoke: not run (input isolation is unavailable).`);
+        return;
+      }
+      if (!o.provider || !o.site || !o.url) throw new Error("web configuration requires --provider, --site and --url");
+      if (o.appName !== undefined || o.bundle !== undefined) throw new Error("--app-name and --bundle require --kind desktop");
       if ((o.dataKind === undefined) !== (o.dataSource === undefined)) throw new Error("--data-kind and --data-source go together");
       if (o.provider !== "render" && [o.previewRepo, o.productionRepo, o.previewUrl].some((v) => v !== undefined)) throw new Error("--preview-repo, --production-repo and --preview-url are only for --provider render");
       const render = o.provider === "render" ? { render: {
@@ -109,11 +127,19 @@ export function register(program: Command, seams: ReleaseCommandOptions = {}): v
       const entries = verifiedEntries(dir);
       const latest = latestAccepted(entries);
       const status = releaseStatus(entries);
+      if (setup?.kind === "desktop") {
+        const built = status.current?.state === "built" ? status.current : undefined;
+        out([`Setup: desktop ${setup.appName}, build \`${setup.build.command}\` → ${setup.build.output}/${setup.bundle}`,
+          `State: ${built ? "built, not distributed" : "not-reached"}`,
+          ...(built ? [`Bundle: ${built.bundlePath}`, `SHA-256: ${built.artifactHash}`, `Native smoke: not run (${built.nativeSmoke.reason})`] : [])].join("\n"));
+        return;
+      }
+      const current = status.current?.state === "built" ? undefined : status.current;
       out([
         setup ? `Setup: ${setup.provider} site ${setup.siteId} (${setup.plan}), live ${setup.productionUrl}, build \`${setup.build.command}\` → ${setup.build.output}` : "Setup: none (jarvis release configure)",
         latest ? `Latest accepted manifest: ${String((latest.entry.data as { manifestHash: string }).manifestHash)} at revision ${latest.manifest.revision}` : "Latest accepted manifest: none",
-        `State: ${status.current ? `${status.current.state}${status.current.previewUrl ? ` at ${status.current.previewUrl}` : ""}` : "not-reached"}`,
-        ...(status.current ? [`Production: ${status.current.productionGranted ? "granted for this manifest" : `gated; jarvis release grant ${status.current.manifestHash}`}`] : []),
+        `State: ${current ? `${current.state}${current.previewUrl ? ` at ${current.previewUrl}` : ""}` : "not-reached"}`,
+        ...(current ? [`Production: ${current.productionGranted ? "granted for this manifest" : `gated; jarvis release grant ${current.manifestHash}`}`] : []),
       ].join("\n"));
     });
 

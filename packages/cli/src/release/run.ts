@@ -11,7 +11,9 @@ import type { RoutingTable } from "../runner/routing.ts";
 import type { runSandboxed } from "../sandbox/srt.ts";
 import { acceptedManifest, recordAcceptedManifest } from "./accepted.ts";
 import { buildRelease } from "./build.ts";
-import { FREE_PLANS, loadReleaseSetup, releaseProjectConfig, releaseRoots, STEP_TYPE, type ReleaseSetup } from "./config.ts";
+import { FREE_PLANS, loadReleaseSetup, releaseProjectConfig, releaseRoots, STEP_TYPE, type DesktopReleaseSetup, type WebReleaseSetup } from "./config.ts";
+import { runDesktopRelease } from "./desktop.ts";
+import type { DesktopRunDeps } from "../lanes/desktop.ts";
 import { hasReleaseGrant } from "./grants.ts";
 import { checkManifest, manifestHash, releaseRef } from "./manifest.ts";
 import { verifyProviderCli, type ProviderCliCheck, type ProviderCliDeps } from "./provider-cli.ts";
@@ -35,9 +37,11 @@ export interface ReleaseSeams {
   fetch?: typeof globalThis.fetch;
   gate?: (input: GateInput) => Promise<GateResult>;
   sandbox?: typeof runSandboxed;
+  desktop?: Pick<DesktopRunDeps, "gate" | "exists" | "platform">;
 }
-export interface ReleaseRuntime {
-  setup: ReleaseSetup;
+export interface WebReleaseRuntime {
+  kind?: "web";
+  setup: WebReleaseSetup;
   config: ReleaseProjectConfig;
   providerConfig: ProviderConfig | undefined;
   /** Verifies the provider CLI again; the step calls it before anything is spent on a release, and right before the deploy. */
@@ -45,12 +49,15 @@ export interface ReleaseRuntime {
   /** The broker's deploy.preview and deploy.promote adapters, in place of the stage 1 outbox for those operations. */
   adapters: Adapter[];
 }
+export interface DesktopReleaseRuntime { kind: "desktop"; setup: DesktopReleaseSetup; adapters: Adapter[] }
+export type ReleaseRuntime = WebReleaseRuntime | DesktopReleaseRuntime;
 export interface ReleaseHost { projectId: string; projectDir: string; workRoot: string; worktreeRoot: string; repoPath: string; home: string; ledger: Ledger }
 
 /** undefined when the project has no release setup: the run keeps the outbox for every operation (evals, stage 1). */
 export async function prepareRelease(o: ReleaseHost, seams: ReleaseSeams = {}): Promise<ReleaseRuntime | undefined> {
   const setup = loadReleaseSetup(o.projectDir);
   if (!setup) return undefined;
+  if (setup.kind === "desktop") return { kind: "desktop", setup, adapters: [] };
   const config = releaseProjectConfig(setup, { projectDir: o.projectDir, workRoot: o.workRoot, project: o.projectId, ledger: o.ledger });
   const roots = releaseRoots({ projectDir: o.projectDir, workRoot: o.workRoot, project: o.projectId });
   const verifyCli = () => verifyProviderCli({ provider: setup.provider, home: o.home, providerHome: roots.providerHome, providerCwd: roots.providerCwd,
@@ -87,7 +94,7 @@ export interface ReleaseStepInput {
   notify?: (text: string) => Promise<void>;
   seams?: ReleaseSeams;
 }
-export type ReleaseStepOutcome = { status: "preview-ready"; manifestHash: string; url: string } | { status: "stopped"; reason: string };
+export type ReleaseStepOutcome = { status: "preview-ready"; manifestHash: string; url: string } | { status: "built"; bundlePath: string; artifactHash: string } | { status: "stopped"; reason: string };
 
 type Data = Record<string, unknown>;
 const data = (e: LedgerEntry | undefined): Data => e && e.data !== null && typeof e.data === "object" ? e.data as Data : {};
@@ -101,7 +108,6 @@ export function recordReleaseStep(ledger: Ledger, runId: string, outcome: string
 export async function runReleaseStep(i: ReleaseStepInput): Promise<ReleaseStepOutcome> {
   const runId = randomUUID();
   const { runtime, ledger } = i;
-  const setup = runtime.setup;
   const stop = (reason: string, extra: Data = {}): ReleaseStepOutcome => { recordReleaseStep(ledger, runId, `stopped: ${reason}`, extra); return { status: "stopped", reason }; };
 
   // The revision: the run branch head, and it must be the one the runner last promoted with every planned task done.
@@ -109,6 +115,8 @@ export async function runReleaseStep(i: ReleaseStepInput): Promise<ReleaseStepOu
   const scope = releaseScope(ledger.entries());
   if (!scope.done) return stop("not every planned task is done; a release ships only finished, gated and reviewed work");
   if (scope.lastGreen !== revision) return stop(`the run branch head ${revision} is not the revision the runner last promoted (${scope.lastGreen ?? "none"})`);
+  if (runtime.kind === "desktop") return runDesktopRelease(i, runtime.setup, revision, runId);
+  const setup = runtime.setup;
   // The spend policy (decision 157): a preview on the provider's free plan costs nothing; anything else is refused here.
   if (setup.plan !== FREE_PLANS[setup.provider]) return stop(`${setup.provider} plan "${setup.plan}" is not the free plan; nothing that could spend runs without an approval`);
   const early = await runtime.verifyCli();

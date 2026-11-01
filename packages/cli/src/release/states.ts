@@ -5,9 +5,10 @@ import { verifyEvidence } from "../checks/gate.ts";
 import { canonical, type Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import { isDone, rebuildState } from "../runner/state.ts";
 import { acceptedManifest } from "./accepted.ts";
+import { desktopReleaseView, missingDesktopEvidence, type DesktopReleaseView } from "./desktop.ts";
 import { hasReleaseGrant } from "./grants.ts";
 import { manifestHash, parseManifest, releaseUrl } from "./manifest.ts";
-import type { ReachStateInput, ReleaseEvidence, ReleaseManifest, ReleaseState, StateResult } from "./types.ts";
+import type { ReachStateInput, ReleaseEvidence, ReleaseManifest, WebReleaseState, StateResult } from "./types.ts";
 
 type Data = Record<string, unknown>;
 const data = (entry: LedgerEntry): Data => entry.data !== null && typeof entry.data === "object" ? entry.data as Data : {};
@@ -51,7 +52,7 @@ function gate(entry: LedgerEntry | undefined, manifest: ReleaseManifest, check?:
 }
 /** "tasks" has no evidence seq: it is derived from the runner's plan in the ledger (decision 157). */
 type Requirement = keyof ReleaseEvidence | "tasks";
-const required = (state: ReleaseState): Requirement[] => ["tasks", "checks", "previewDeploy", "previewSmoke",
+const required = (state: WebReleaseState): Requirement[] => ["tasks", "checks", "previewDeploy", "previewSmoke",
   ...(state !== "preview-ready" ? ["manifest", "rehearsal", "restore", "rollback"] as const : []),
   ...(state === "deployed" ? ["production", "smoke", "failureSignal"] as const : [])];
 /** Reserved for a concrete protected monitor/alert-delivery check; no writer exists yet. */
@@ -152,7 +153,7 @@ export function isReleaseReady(ledger: Ledger, manifest: ReleaseManifest): boole
 }
 
 export interface ReleaseView {
-  state: ReleaseState;
+  state: WebReleaseState;
   entry: LedgerEntry;
   manifest: ReleaseManifest;
   manifestHash: string;
@@ -163,7 +164,7 @@ export interface ReleaseView {
 }
 export interface ReleaseStatus {
   /** The latest recorded release state whose evidence still holds now, if any. */
-  current: ReleaseView | undefined;
+  current: ReleaseView | DesktopReleaseView | undefined;
   /** Newer recorded states that no longer hold, newest first (at most 3), with what they now lack. */
   lapsed: { state: string; seq: number; missing: string[] }[];
 }
@@ -177,11 +178,17 @@ export function releaseStatus(entries: readonly LedgerEntry[]): ReleaseStatus {
   const ledger = { entries: () => [...entries] };
   const lapsed: ReleaseStatus["lapsed"] = [];
   const states = entries.filter(e => e.kind === "state_reached" && e.actor === "runner"
-    && ["preview-ready", "release-ready", "deployed"].includes(String(data(e).state)));
+    && ["built", "preview-ready", "release-ready", "deployed"].includes(String(data(e).state)));
   // The 20 newest: each recheck replays the ledger, and an older state can't hold once a newer promotion happened.
   for (const entry of states.reverse().slice(0, 20)) {
     const d = data(entry);
-    const state = d.state as ReleaseState;
+    if (d.state === "built") {
+      const view = desktopReleaseView(entries, entry);
+      if (view) return { lapsed, current: view };
+      if (lapsed.length < 3) lapsed.push({ state: "built", seq: entry.seq, missing: missingDesktopEvidence(entries, entry) });
+      continue;
+    }
+    const state = d.state as WebReleaseState;
     const manifest = acceptedManifest(entries, d.manifestHash);
     const evidence = record(d.evidence) as ReleaseEvidence;
     let missing: string[];

@@ -51,8 +51,9 @@ function copyTree(source: string, target: string, path = ""): void {
  * beside them, so no candidate byte sits where the provider's CLI reads configuration. Vercel's is a Build Output API
  * tree for `vercel deploy --prebuilt`; Netlify's a publish folder and its own `netlify.toml`.
  */
-interface DeployTree { webRoot: string; write(dir: string, config: ReleaseProjectConfig): void }
-const DEPLOY_TREES = {
+interface DeployTree { webRoot: string; jsonMarker?: boolean; write(dir: string, config: ReleaseProjectConfig): void }
+const DEPLOY_TREES: Record<Provider, DeployTree> = {
+  render: { webRoot: "", jsonMarker: true, write() {} },
   vercel: { webRoot: ".vercel/output/static", write(dir, config) {
     if (!config.orgId) throw new Error("runner Vercel organization required");
     writeFileSync(join(dir, "vercel.json"), JSON.stringify({ framework: null, buildCommand: "", installCommand: "" }), { mode: 0o600 });
@@ -75,14 +76,16 @@ export function copyDeploymentArtifacts(manifest: ReleaseManifest, config: Relea
   const dir = join(room, "artifact");
   const dispose = () => rmSync(room, { recursive: true, force: true });
   try {
-    mkdirSync(dir, { mode: 0o700 });
     const tree = DEPLOY_TREES[manifest.provider];
     const webRoot = join(dir, tree.webRoot);
     mkdirSync(dirname(webRoot), { recursive: true, mode: 0o700 });
     copyTree(source, webRoot);
     if (artifactDigest(webRoot) !== manifest.artifactHash) throw new Error("artifact copy hash differs from approved revision");
-    mkdirSync(join(webRoot, ".well-known"), { recursive: true, mode: 0o700 });
-    writeFileSync(join(webRoot, ".well-known/jarvis-release"), `${manifestHash(manifest)}\n`, { mode: 0o600 });
+    if (tree.jsonMarker) writeFileSync(join(webRoot, ".jarvis-build.json"), JSON.stringify({ manifestHash: manifestHash(manifest) }), { mode: 0o600, flag: "wx" });
+    else {
+      mkdirSync(join(webRoot, ".well-known"), { recursive: true, mode: 0o700 });
+      writeFileSync(join(webRoot, ".well-known/jarvis-release"), `${manifestHash(manifest)}\n`, { mode: 0o600 });
+    }
     tree.write(dir, config);
     return { dir, dispose };
   } catch (error) { dispose(); throw error; }

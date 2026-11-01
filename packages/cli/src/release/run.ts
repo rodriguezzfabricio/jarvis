@@ -56,10 +56,10 @@ export async function prepareRelease(o: ReleaseHost, seams: ReleaseSeams = {}): 
   const verifyCli = () => verifyProviderCli({ provider: setup.provider, home: o.home, providerHome: roots.providerHome, providerCwd: roots.providerCwd,
     untrusted: [o.repoPath, o.worktreeRoot, o.workRoot] }, seams.cli);
   const cli = await verifyCli();
-  const providerConfig = cli.ok ? { bin: cli.bin, version: cli.version, interpreter: cli.interpreter, home: roots.providerHome, cwd: roots.providerCwd } : undefined;
+  const providerConfig = cli.ok ? { bin: cli.bin, version: cli.version, ...(cli.interpreter ? { interpreter: cli.interpreter } : {}), ...(cli.ssh ? { ssh: cli.ssh } : {}), home: roots.providerHome, cwd: roots.providerCwd } : undefined;
   const adapters = deployAdapters({ ledger: o.ledger, project: o.projectId, projectConfig: config,
     resolveManifest: (hash) => acceptedManifest(o.ledger.entries(), hash),
-    providers: providerConfig ? { [setup.provider]: providerConfig } : {}, ...(seams.run ? { run: seams.run } : {}) });
+    providers: providerConfig ? { [setup.provider]: providerConfig } : {}, ...(seams.run ? { run: seams.run } : {}), ...(seams.fetch ? { fetch: seams.fetch } : {}) });
   return { setup, config, providerConfig, verifyCli, adapters };
 }
 

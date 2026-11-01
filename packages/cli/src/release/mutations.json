@@ -122,7 +122,7 @@
   {
     "name": "release_smoke_manifest_paths",
     "file": "packages/cli/src/release/smoke.ts",
-    "anchor": "new Set([\"/\", ...manifest.smokePaths, \"/.well-known/jarvis-release\"])",
+    "anchor": "new Set([\"/\", ...manifest.smokePaths, markerPath])",
     "replacement": "new Set([\"/\", \"/.well-known/jarvis-release\"])"
   },
   {

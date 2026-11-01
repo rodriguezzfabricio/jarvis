@@ -37,7 +37,7 @@ describe("optional lane tools in doctor", () => {
     const { options } = setup();
     const missing = { ...options, exists: () => false, exec: () => { throw Error("missing"); }, scannerPins: {}, toolchain: undefined };
     const checks = await toolDoctorChecks(missing);
-    expect(checks.map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "xcode_clt", "tauri", "impeccable", "deploy.vercel", "deploy.netlify", "qa_toolchain"]);
+    expect(checks.map(c => c.name)).toEqual(["security.gitleaks", "security.semgrep", "security.osv-scanner", "maestro", "xcode_clt", "tauri", "impeccable", "deploy.vercel", "deploy.netlify", "deploy.render", "qa_toolchain"]);
     expect(checks.filter(c => c.name.startsWith("security.")).every(c => c.level === "fail")).toBe(true);
     expect(checks.filter(c => !c.name.startsWith("security.")).every(c => c.level === "warn")).toBe(true); expect(doctorExitCode(checks)).toBe(1);
     const required = await toolDoctorChecks({ ...missing, required: ["maestro", "security.semgrep", "qa_toolchain"] });
@@ -64,7 +64,7 @@ describe("optional lane tools in doctor", () => {
       return outputs[args[0]!]!;
     });
     const providerPins = { vercel: { version: "48.0.0" }, netlify: { version: "23.0.0" } };
-    const deploy = async (extra: Partial<ToolDoctorDeps> = {}) => (await toolDoctorChecks({ ...options, exec, providerPins, ...extra })).filter(c => c.name.startsWith("deploy."));
+    const deploy = async (extra: Partial<ToolDoctorDeps> = {}) => (await toolDoctorChecks({ ...options, exec, providerPins, ...extra })).filter(c => c.name === "deploy.vercel" || c.name === "deploy.netlify");
     expect(await deploy()).toEqual([
       { name: "deploy.vercel", level: "pass", detail: `${vercel}: 48.0.0` },
       { name: "deploy.netlify", level: "pass", detail: `${netlify}: 23.0.0` }]);

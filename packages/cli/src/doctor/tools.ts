@@ -1,10 +1,12 @@
+import { runSession } from "../proc/session.ts";
+import type { NativeToolPin } from "../release/render-tools.ts";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { providerLaunch, providerVersion } from "../broker/adapters/execution.ts";
 import { PROVIDER_NAMES, PROVIDERS } from "../broker/adapters/providers.ts";
 import { ChecksStore } from "../checks/store.ts";
-import { PROVIDER_CLI_PINS, pinnedImpeccable, pinnedMaestroBin, pinnedProviderBin, pinnedProviderNode, pinnedSecurityScanners } from "../config/pins.ts";
+import { pinnedImpeccable, pinnedMaestroBin, pinnedProviderNode, pinnedSecurityScanners } from "../config/pins.ts";
 import type { Provider } from "../release/types.ts";
 import type { ImpeccablePin } from "../lanes/impeccable.ts";
 import { fileHash } from "../lanes/materialize.ts";
@@ -30,6 +32,8 @@ export interface ToolDoctorDeps {
   projectsRoot?: string;
   required?: readonly string[];
   /** Test seam: the deploy provider pins (default config/pins.ts PROVIDER_CLI_PINS). */
+  providerRun?: typeof runSession;
+  providerTools?: Partial<Record<Provider, readonly NativeToolPin[]>>;
   providerPins?: Readonly<Partial<Record<Provider, { version: string }>>>;
 }
 const version = (text: string): string | undefined => {
@@ -85,10 +89,32 @@ export async function toolDoctorChecks(deps: ToolDoctorDeps): Promise<DoctorChec
     if (found !== `${impeccable.version}+engine`) throw new Error(`expected ${impeccable.version}+engine, found ${found.slice(0, 80)}`);
     add("impeccable", true, `${impeccable.bin}: ${found}; sha256 ${digest}`);
   } catch (error) { add("impeccable", false, `not run: impeccable (${String(error)})`); }
-  // Deploy provider CLIs (decision 161): the PROVIDER_CLI_PINS version of the CLI at pinnedProviderBin, started as the
+  // Deploy provider tools. Render (decision 163): the RENDER_TOOL_PINS Git and SSH, run as its adapter runs them.
+  // CLI providers (decision 161): the PROVIDER_CLI_PINS version of the CLI at its pinned path, started as the
   // adapters start it (through pinnedProviderNode, no token, a fresh empty HOME, PATH=/usr/bin:/bin). Never PATH or an install.
   for (const provider of PROVIDER_NAMES) {
-    const bin = pinnedProviderBin(provider, home); const pinned = (deps.providerPins ?? PROVIDER_CLI_PINS)[provider]?.version;
+    const module = PROVIDERS[provider];
+    if (module.tools) {
+      let nativeHome: string | undefined;
+      try {
+        const tools = deps.providerTools?.[provider] ?? module.tools();
+        if (!tools?.length) throw new Error("no pinned native tools in config/pins.ts RENDER_TOOL_PINS; deploys refused");
+        nativeHome = mkdtempSync(join(tmpdir(), "jarvis-native-home-"));
+        for (const tool of tools) {
+          if (!isAbsolute(tool.bin) || !exists(tool.bin)) throw new Error("native tool unavailable");
+          const cwd = mkdtempSync(join(nativeHome, "cwd-"));
+          try {
+            const result = await (deps.providerRun ?? runSession)({ bin: tool.bin, args: tool.args, cwd,
+              env: { PATH: "/usr/bin:/bin", HOME: nativeHome, CI: "1" }, timeoutMs: 30_000, killGraceMs: 2000, maxOutputBytes: 64 * 1024 });
+            if (result.code !== 0 || result.timedOut || result.overflowed || `${result.stdout}${result.stderr}`.trim() !== tool.version) throw new Error("native tool version differs from pin");
+          } finally { rmSync(cwd, { recursive: true, force: true }); }
+        }
+        add(`deploy.${provider}`, true, tools.map(t => `${t.bin}: ${t.version}`).join("; "));
+      } catch (error) { add(`deploy.${provider}`, false, `not run: ${module.label} (${String(error)})`); }
+      finally { if (nativeHome) rmSync(nativeHome, { recursive: true, force: true }); }
+      continue;
+    }
+    const bin = module.cli!.bin(home); const pinned = (deps.providerPins ? deps.providerPins[provider] : module.cli?.pin())?.version;
     const label = `${PROVIDERS[provider].label}${pinned ? ` ${pinned}` : ""}`;
     let probeHome: string | undefined;
     try {

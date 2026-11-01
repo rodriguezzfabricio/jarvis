@@ -150,3 +150,27 @@ it("the real env-file writer is the default backend", () => {
   const w = envFileSecretsWriter("/nonexistent/x.env");
   expect(w.location).toBe("/nonexistent/x.env");
 });
+
+it("accounts.deploy offers Render and hands it to the key-generating Render step with the runner home and the secrets backend", async () => {
+  const home = makeHome(); const s = fakeSecrets(); const n = fakeNotifier();
+  const lines = ["y", "render", "", "y", "n", "y", "y", ...TASTE];
+  const hidden = ["SENTINEL-github-0123456789", "SENTINEL-cf-0123456789", "SENTINEL-oauth-id-0123", "SENTINEL-oauth-secret-0123"];
+  const t = fakeTty(lines, hidden); const calls: { privateRoot: string; secrets: SecretsWriter }[] = [];
+  const renderSetup = async (o: { privateRoot: string; secrets: SecretsWriter; print(text: string): void }) => {
+    calls.push({ privateRoot: o.privateRoot, secrets: o.secrets }); o.print("Preview public deploy key: ssh-ed25519 DUMMY-public");
+    o.secrets.set("RENDER_PREVIEW_DEPLOY_KEY", "RFVNTVkgcHJldmlldw==", { brokerOnly: true }); o.secrets.set("RENDER_PRODUCTION_DEPLOY_KEY", "RFVNTVkgcHJvZHVjdGlvbg==", { brokerOnly: true });
+    return { status: "done" as const, provider: "render", detail: "generated two broker-only repository deploy keys",
+      secrets: [{ key: "RENDER_PREVIEW_DEPLOY_KEY", tier: "preview" as const, brokerOnly: true }, { key: "RENDER_PRODUCTION_DEPLOY_KEY", tier: "production" as const, brokerOnly: true }] };
+  };
+  const r = deps(home, t.tty, { secrets: s.backend, createNotifier: n.createNotifier, renderSetup });
+  // Rejections become assertions: a run that asked for a pasted Render token instead would run out of answers.
+  const error = await failure(runSetup(r.d, {}));
+  expect(calls).toEqual([{ privateRoot: join(home, ".jarvis"), secrets: s.backend }]);
+  expect(error).toBeUndefined();
+  expect(t.calls.find((c) => c.prompt.startsWith("Deploy host"))?.prompt).toMatch(/render/i);
+  const step = state(home).steps["accounts.deploy"];
+  expect(step).toMatchObject({ status: "done", provider: "render" });
+  expect(step?.secrets).toEqual([{ key: "RENDER_PREVIEW_DEPLOY_KEY", tier: "preview", brokerOnly: true }, { key: "RENDER_PRODUCTION_DEPLOY_KEY", tier: "production", brokerOnly: true }]);
+  expect(s.stored.get("RENDER_PRODUCTION_DEPLOY_KEY")).toEqual({ value: "RFVNTVkgcHJvZHVjdGlvbg==", brokerOnly: true });
+  expect(r.text()).toContain("DUMMY-public");
+});

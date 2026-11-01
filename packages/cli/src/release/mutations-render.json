@@ -1,0 +1,152 @@
+[
+  {
+    "name": "render_promote_unaccepted_refused",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "} catch { return { outcome: \"failed\" as const, detail: { reason: \"current Render production serves no accepted manifest; no promotion attempted\" } }; }",
+    "replacement": "} catch (error) { throw error; }"
+  },
+  {
+    "name": "render_tool_pins_absolute",
+    "file": "packages/cli/src/release/render-tools.ts",
+    "anchor": "if (!pins || !isAbsolute(pins.git.bin) || !isAbsolute(pins.ssh.bin) || !pins.git.version || !pins.ssh.version) return undefined;",
+    "replacement": "if (!pins) return undefined;"
+  },
+  {
+    "name": "render_setup_offers_key_generation",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (spec?.provider === \"render\") return (ctx.deps.renderSetup ?? setupRenderAccount)(",
+    "replacement": "if (false) return (ctx.deps.renderSetup ?? setupRenderAccount)("
+  },
+  {
+    "name": "render_static_allowlist",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "assertStaticName(path, false);",
+    "replacement": "/* mutation: accept arbitrary files */"
+  },
+  {
+    "name": "render_artifact_digest",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "if (artifactDigest(webRoot) !== manifest.artifactHash)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "render_marker_identity",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "JSON.stringify({ manifestHash: manifestHash(manifest) })",
+    "replacement": "JSON.stringify({ manifestHash: \"0\".repeat(64) })"
+  },
+  {
+    "name": "render_separate_repositories",
+    "file": "packages/cli/src/release/render-config.ts",
+    "anchor": "s.preview.repo === s.production.repo || s.preview.url === s.production.url",
+    "replacement": "false"
+  },
+  {
+    "name": "render_tier_key",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "action === \"preview\" ? \"RENDER_PREVIEW_DEPLOY_KEY\" : \"RENDER_PRODUCTION_DEPLOY_KEY\"",
+    "replacement": "action === \"preview\" ? \"RENDER_PRODUCTION_DEPLOY_KEY\" : \"RENDER_PREVIEW_DEPLOY_KEY\""
+  },
+  {
+    "name": "render_child_environment",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "...runnerGitEnv(home),",
+    "replacement": "...process.env, ...runnerGitEnv(home),"
+  },
+  {
+    "name": "render_host_check",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "StrictHostKeyChecking=yes",
+    "replacement": "StrictHostKeyChecking=no"
+  },
+  {
+    "name": "render_no_agent",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "IdentityAgent=none",
+    "replacement": "IdentityAgent=/tmp/agent"
+  },
+  {
+    "name": "render_host_pin",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "IOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+    "replacement": "IOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJm"
+  },
+  {
+    "name": "render_no_force_push",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "[\"push\", \"--porcelain\", target.repo, `HEAD:${ref}`]",
+    "replacement": "[\"push\", \"--force\", \"--porcelain\", target.repo, `HEAD:${ref}`]"
+  },
+  {
+    "name": "render_private_key_mode",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "writeFileSync(keyPath, key, { mode: 0o600, flag: \"wx\" });",
+    "replacement": "writeFileSync(keyPath, key, { mode: 0o644, flag: \"wx\" });"
+  },
+  {
+    "name": "render_remove_key",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "key.fill(0); rmSync(room, { recursive: true, force: true });",
+    "replacement": "key.fill(0);"
+  },
+  {
+    "name": "render_readiness_required",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "if (!confirmed)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "render_marker_bytes",
+    "file": "packages/cli/src/release/render-readiness.ts",
+    "anchor": "if (size > 4096)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "render_https_status",
+    "file": "packages/cli/src/release/render-readiness.ts",
+    "anchor": "response.status !== 200 || !response.body",
+    "replacement": "!response.body"
+  },
+  {
+    "name": "render_request_deadline",
+    "file": "packages/cli/src/release/render-readiness.ts",
+    "anchor": "}, timeoutMs);",
+    "replacement": "}, timeoutMs * 2);"
+  },
+  {
+    "name": "render_rollback_tree",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "treeManifest = parseManifest(options.resolveManifest(target!.id));",
+    "replacement": "treeManifest = manifest;"
+  },
+  {
+    "name": "render_rollback_readback",
+    "file": "packages/cli/src/broker/adapters/render.ts",
+    "anchor": "waitForRender(url, manifestHash(input.treeManifest),",
+    "replacement": "waitForRender(url, manifestHash(manifest),"
+  },
+  {
+    "name": "render_tool_version",
+    "file": "packages/cli/src/release/render-tools.ts",
+    "anchor": "`${result.stdout}${result.stderr}`.trim() !== tool.version",
+    "replacement": "false"
+  },
+  {
+    "name": "render_native_tool_version",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "`${result.stdout}${result.stderr}`.trim() !== tool.version",
+    "replacement": "false"
+  },
+  {
+    "name": "render_keys_broker_only",
+    "file": "packages/cli/src/setup/accounts.ts",
+    "anchor": "o.secrets.set(meta.key, pairs[i]!.privateKey, { brokerOnly: true })",
+    "replacement": "o.secrets.set(meta.key, pairs[i]!.privateKey, { brokerOnly: false })"
+  },
+  {
+    "name": "render_setup_public_output",
+    "file": "packages/cli/src/setup/accounts.ts",
+    "anchor": "public deploy key: ${pair.publicKey}",
+    "replacement": "public deploy key: ${pair.privateKey}"
+  }
+]

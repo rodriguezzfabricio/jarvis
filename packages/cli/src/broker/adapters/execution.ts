@@ -40,6 +40,8 @@ export function providerVersion(provider: Provider, stdout: string): string | un
 
 /** Version probes run before credentials are read; failures cannot become a deployment attempt. */
 export async function verifyProvider(options: DeployAdapterOptions, config: ProviderConfig, provider: Provider): Promise<void> {
+  const native = PROVIDERS[provider].verify;
+  if (native) return native(options, config);
   if (!config.version || !/^\d+\.\d+\.\d+$/.test(config.version)) throw new Error("exact provider version required");
   const result = await runCommand(options, config, { args: ["--version"], env: {}, readUrl: () => "" });
   const version = providerVersion(provider, result.stdout);

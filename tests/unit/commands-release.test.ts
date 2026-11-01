@@ -48,6 +48,25 @@ describe("jarvis release configure", () => {
     const c = cli();
     await expect(c.run("release", "configure", "--provider", "netlify", "--site", "s", "--url", "https://x.netlify.app", "--plan", "pro")).rejects.toThrow(/free plan/);
   });
+
+  it("writes Render's two deploy repositories and sites, and names its deploy keys and native tool pins (decision 163)", async () => {
+    const c = cli();
+    await c.run("release", "configure", "--provider", "render", "--site", "habits", "--url", "https://habits.onrender.com",
+      "--preview-repo", "git@github.com:fab/habits-preview.git", "--production-repo", "git@github.com:fab/habits-production.git",
+      "--preview-url", "https://habits-preview.onrender.com", "--output", "dist");
+    expect(JSON.parse(readFileSync(join(c.projectDir, "release.json"), "utf8"))).toMatchObject({ provider: "render", plan: "free", siteId: "habits",
+      productionUrl: "https://habits.onrender.com", render: {
+        preview: { repo: "git@github.com:fab/habits-preview.git", branch: "main", url: "https://habits-preview.onrender.com" },
+        production: { repo: "git@github.com:fab/habits-production.git", branch: "main", url: "https://habits.onrender.com" } } });
+    expect(c.out.join("\n")).toContain("RENDER_PREVIEW_DEPLOY_KEY and RENDER_PRODUCTION_DEPLOY_KEY");
+    expect(c.out.join("\n")).toContain("RENDER_TOOL_PINS");
+    // One repository for both tiers would let a preview push reach production.
+    await expect(cli().run("release", "configure", "--provider", "render", "--site", "habits", "--url", "https://habits.onrender.com",
+      "--preview-repo", "git@github.com:fab/habits.git", "--production-repo", "git@github.com:fab/habits.git",
+      "--preview-url", "https://habits-preview.onrender.com")).rejects.toThrow(/separate repos/);
+    await expect(cli().run("release", "configure", "--provider", "vercel", "--site", "s", "--org", "o", "--url", "https://x.example.com",
+      "--preview-repo", "git@github.com:fab/a.git")).rejects.toThrow(/only for --provider render/);
+  });
 });
 
 describe("jarvis release grant", () => {

@@ -1,7 +1,12 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import type { SecretsWriter } from "../broker/secrets.ts";
+import { checkTrustedDir } from "../config/private-file.ts";
+import { runSession, type SessionSpec, type SessionOutcome } from "../proc/session.ts";
 import type { StepName } from "./state.ts";
 
 /**
- * The house-stack accounts (decisions 33, 43). Setup only prints what to create and reads the token;
+ * The house-stack accounts (decisions 33, 43). Setup prints what to create and reads tokens (Render generates deploy keys locally);
  * it never calls a provider (validation is a later step). Provider consoles change: if a narrower scope
  * than the one described exists when you create the token, choose it.
  */
@@ -116,7 +121,7 @@ export const OAUTH: AccountSpec = {
   ],
 };
 
-/** The fixed accounts; accounts.deploy asks Vercel or Netlify first. */
+/** The fixed accounts; accounts.deploy selects from DEPLOY. */
 export const ACCOUNTS: Partial<Record<StepName, AccountSpec>> = {
   "accounts.github": GITHUB,
   "accounts.neon": NEON,
@@ -124,4 +129,39 @@ export const ACCOUNTS: Partial<Record<StepName, AccountSpec>> = {
   "accounts.expo": EXPO,
   "accounts.oauth": OAUTH,
 };
-export const DEPLOY: Record<string, AccountSpec> = { vercel: VERCEL, netlify: NETLIFY };
+export const RENDER: AccountSpec = {
+  provider: "render", title: "Render (free static sites)",
+  create: [
+    "Create two separate private repositories on GitHub: one for preview, one for production. Use lowercase repository names without dots.",
+    "For each repository: Settings > Deploy keys > Add deploy key. Paste only that tier's public key below and enable Allow write access.",
+    "In Render, create two Static Sites, each connected to its own repository and branch (main). Use the free plan; do not enable paid services.",
+    "For each site: leave Build Command empty, set Publish Directory to . (the repository root), and enable auto-deploy on commit. No install or build command runs on Render.",
+    "Configure the destinations: jarvis release configure --provider render --site <label> --preview-repo git@github.com:owner/preview.git --production-repo git@github.com:owner/production.git --preview-url https://preview.onrender.com --url https://production.onrender.com --preview-branch main --production-branch main --output dist",
+  ],
+  scope: ["Each generated ed25519 key can write only its own repository. Both private keys stay broker-only. No Render API key is needed."],
+  tokens: [
+    { key: "RENDER_PREVIEW_DEPLOY_KEY", label: "Generated Render preview deploy key", tier: "preview", brokerOnly: true },
+    { key: "RENDER_PRODUCTION_DEPLOY_KEY", label: "Generated Render production deploy key", tier: "production", brokerOnly: true },
+  ],
+};
+export const DEPLOY: Record<string, AccountSpec> = { vercel: VERCEL, netlify: NETLIFY, render: RENDER };
+
+/** Setup only: generate keys locally; the env backend stores base64 OpenSSH bytes, never a key path. */
+export async function setupRenderAccount(o: { privateRoot: string; secrets: SecretsWriter; print(text: string): void; run?: (s: SessionSpec) => Promise<SessionOutcome> }) {
+  checkTrustedDir(o.privateRoot); o.secrets.prepare();
+  const room = mkdtempSync(join(o.privateRoot, "render-keys-"));
+  try {
+    const pairs: { privateKey: string; publicKey: string }[] = [];
+    for (const tier of ["preview", "production"]) {
+      const path = join(room, tier);
+      const result = await (o.run ?? runSession)({ bin: "/usr/bin/ssh-keygen", args: ["-q", "-t", "ed25519", "-N", "", "-C", `jarvis-render-${tier}`, "-f", path],
+        cwd: room, env: { PATH: "/usr/bin:/bin", HOME: room }, timeoutMs: 10_000, maxOutputBytes: 4096 });
+      if (result.code !== 0 || result.timedOut || result.overflowed) throw new Error("Render key generation failed");
+      pairs.push({ privateKey: readFileSync(path).toString("base64"), publicKey: readFileSync(`${path}.pub`, "utf8").trim() });
+    }
+    const secrets = RENDER.tokens.map(t => ({ key: t.key, tier: t.tier, brokerOnly: true }));
+    secrets.forEach((meta, i) => o.secrets.set(meta.key, pairs[i]!.privateKey, { brokerOnly: true }));
+    o.print([...RENDER.create, ...RENDER.scope, ...pairs.map((pair, i) => `${i === 0 ? "Preview" : "Production"} public deploy key: ${pair.publicKey}`)].join("\n"));
+    return { status: "done" as const, provider: "render", detail: "generated two broker-only repository deploy keys", secrets };
+  } finally { rmSync(room, { recursive: true, force: true }); }
+}

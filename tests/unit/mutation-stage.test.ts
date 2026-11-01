@@ -45,6 +45,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/toolchain/mutations.json")).toBe("3"); // the sessions' pinned Go (decision 123)
     for (const lane of ["review", "security", "lanes"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("4");
     for (const lane of ["release", "setup"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("5");
+    expect(stageOf("packages/cli/src/release/mutations-deps.json")).toBe("5"); // the release build's dependency step (decision 173)
     expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");
     expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
     expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");

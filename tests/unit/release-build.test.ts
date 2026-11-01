@@ -85,3 +85,34 @@ describe("the fixed-revision release build", () => {
     expect(p.runs).toEqual([]);
   });
 });
+
+it("stops before the build and records the dependency refusal with its evidence folder", async () => {
+  const p = project({ "package.json": JSON.stringify({ packageManager: "npm@11.19.0" }) });
+  const result = await buildRelease(p.input("mkdir out && echo forbidden > out/index.html"));
+  expect(result).toMatchObject({ status: "fail", reason: expect.stringMatching(/dependencies.*lockfile/) });
+  expect(p.runs).toEqual([]);
+  // One entry for the attempt; the release step's "stopped" line is its caller's (release-run.test.ts shows it in REPORT.md).
+  const entries = p.ledger.entries().filter((e) => (e.data as { type?: string }).type === "release.dependencies");
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ kind: "decision", actor: "runner", data: { status: "fail", project: "habits", revision: p.revision, runId: `r${n}`,
+    reason: expect.stringMatching(/dependencies.*lockfile/), evidence: { dir: expect.stringContaining(join(p.jarvisHome, "projects", "habits", "evidence")) } } });
+  expect(p.ledger.entries().some((e) => (e.data as { type?: string }).type === "release.step")).toBe(false);
+  expect(registeredArtifacts(p.ledger.entries(), "habits")).toEqual({});
+});
+
+it("cannot register an artifact after dependency installation failed", async () => {
+  const p = project({ "package.json": JSON.stringify({ packageManager: "npm@11.19.0" }), "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }) });
+  const base = p.input("mkdir out && echo forbidden > out/index.html");
+  const tools = join(p.dir, "tools"); mkdirSync(tools); const bin = join(tools, "fake.cjs"); writeFileSync(bin, "");
+  let installs = 0;
+  const result = await buildRelease({ ...base,
+    dependencyPins: { node: process.execPath, nodeVersion: process.versions.node, npm: { bin, root: tools, version: "11.19.0" }, pnpm: { bin, root: tools, version: "11.7.0" } },
+    sandbox: async r => {
+      if (r.policy.allowedDomains?.length) { installs++; return { code: 73, timedOut: false, overflowed: false, durationMs: 1, stdout: "", stderr: "" }; }
+      return base.sandbox(r);
+    } });
+  expect(installs).toBe(1);
+  expect(result).toMatchObject({ status: "fail", reason: expect.stringMatching(/dependencies.*size/) });
+  expect(p.runs).toEqual([]);
+  expect(registeredArtifacts(p.ledger.entries(), "habits")).toEqual({});
+});

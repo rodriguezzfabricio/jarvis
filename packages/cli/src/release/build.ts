@@ -8,14 +8,17 @@ import { materializeTree } from "../lanes/materialize.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import { runSandboxed } from "../sandbox/srt.ts";
 import { tempRoots } from "../sandbox/temp.ts";
-import { ARTIFACT_TYPE, type ReleaseSetup } from "./config.ts";
+import { ARTIFACT_TYPE, DEPENDENCIES_TYPE, type ReleaseSetup } from "./config.ts";
+import { installDependencies, type DependencyLimits } from "./deps.ts";
+import type { DependencyPins } from "./dependency-pins.ts";
 import { artifactDigest } from "./manifest.ts";
 import { within } from "./paths.ts";
 
 /**
  * The fixed-revision build (decision 157). The runner builds the checked revision itself, after the sessions end:
  * a fresh clone of the committed objects, the protected setup's build command in the sandbox a gate case gets (no
- * network, no credentials, the runner home unreadable), and the output folder copied out of the checkout into the
+ * network, no credentials, the runner home unreadable). Node dependencies are installed first in that sandbox,
+ * with scripts off and only the npm registry reachable. The output folder is copied out of the checkout into the
  * runner's artifact root, where no session or candidate can write. Its digest is recorded as the only binding of
  * an artifact to a revision; a manifest naming any other artifact is refused (checkManifest).
  */
@@ -32,13 +35,16 @@ export interface ReleaseBuildInput {
   runId: string;
   /** HOME for the runner's git calls. */
   gitHome?: string;
-  /** Test seam: runs the sandboxed build (default runSandboxed), so a test can see its policy. */
+  /** Test seam: runs dependency installation and the offline build (default runSandboxed). */
   sandbox?: typeof runSandboxed;
+  dependencyPins?: DependencyPins;
+  dependencyLimits?: Partial<DependencyLimits>;
 }
 export type ReleaseBuildResult = { status: "pass"; entry: LedgerEntry; artifactDir: string; artifactHash: string } | { status: "fail"; reason: string };
 
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
+const dependencyLogs = (dir: string) => Object.fromEntries(["deps-stdout", "deps-stderr"].filter(name => existsSync(join(dir, name))).map(name => [name, sha(join(dir, name))]));
 
 /** The output folder is a real folder in the checkout at every level: no link can point the copy elsewhere. */
 function outputFolder(checkout: string, output: string): string | undefined {
@@ -70,12 +76,27 @@ export async function buildRelease(i: ReleaseBuildInput): Promise<ReleaseBuildRe
     const real = (p: string) => realpathSync(p);
     const stdoutPath = join(evidenceDir, "stdout");
     const stderrPath = join(evidenceDir, "stderr");
+    const policy = {
+      denyRead: [real(i.jarvisHome), real(homedir()), ...tempRoots()],
+      allowRead: [real(scratch)],
+      allowWrite: [real(checkout), real(buildHome), real(cache)],
+    };
+    try {
+      const dependencies = await installDependencies({ checkout: real(checkout), scratch: real(scratch), evidenceDir, policy,
+        ...(i.dependencyPins ? { pins: i.dependencyPins } : {}), ...(i.dependencyLimits ? { limits: i.dependencyLimits } : {}), ...(i.sandbox ? { sandbox: i.sandbox } : {}) });
+      if (dependencies) i.ledger.append({ kind: "decision", actor: "runner", data: {
+        type: DEPENDENCIES_TYPE, project: i.project, revision: i.revision, runId: i.runId, status: "pass", ...dependencies,
+        lockHash: sha(join(checkout, dependencies.lockfile)), evidence: { dir: evidenceDir, files: dependencyLogs(evidenceDir) },
+      } });
+    } catch (error) {
+      // The failed attempt and its evidence; the release step's own "stopped" line is written by its caller (run.ts).
+      const reason = `the release dependencies failed: ${String(error instanceof Error ? error.message : error).replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 300)}; output: ${evidenceDir}`;
+      i.ledger.append({ kind: "decision", actor: "runner", data: { type: DEPENDENCIES_TYPE, project: i.project, revision: i.revision, runId: i.runId,
+        status: "fail", reason, evidence: { dir: evidenceDir, files: dependencyLogs(evidenceDir) } } });
+      return { status: "fail", reason };
+    }
     const r = await (i.sandbox ?? runSandboxed)({
-      policy: {
-        denyRead: [real(i.jarvisHome), real(homedir()), ...tempRoots()],
-        allowRead: [real(scratch)],
-        allowWrite: [real(checkout), real(buildHome), real(cache)],
-      },
+      policy,
       command: i.build.command,
       cwd: real(checkout),
       env: { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", CI: "1",
@@ -95,7 +116,7 @@ export async function buildRelease(i: ReleaseBuildInput): Promise<ReleaseBuildRe
     const entry = i.ledger.append({ kind: "decision", actor: "runner", data: {
       type: ARTIFACT_TYPE, project: i.project, revision: i.revision, artifactDir, artifactHash, fileCount: Object.keys(files).length,
       build: { command: i.build.command, output: i.build.output, code: r.code, durationMs: r.durationMs },
-      evidence: { dir: evidenceDir, files: Object.fromEntries(Object.entries(logs).filter(([, hash]) => hash !== "")) },
+      evidence: { dir: evidenceDir, files: { ...dependencyLogs(evidenceDir), ...Object.fromEntries(Object.entries(logs).filter(([, hash]) => hash !== "")) } },
     } });
     return { status: "pass", entry, artifactDir, artifactHash };
   } catch (error) {

@@ -22,6 +22,6 @@ supersedes: none
 - A1 [delegated]: items are stored as JSON lines in data/items.jsonl (D2).
 - A2 [delegated]: an item name is trimmed of surrounding whitespace; it is blank when nothing remains, or when a line feed (U+000A) or a carriage return (U+000D) remains inside it; every other character is an ordinary part of the name (an item is one line of text).
 - A3 [delegated]: one process uses the data file at a time.
-- A4 [delegated]: data/items.jsonl in the checkout is working data that the protected checks reset before each case; nothing anyone wants to keep is stored there.
+- A4 [delegated]: the store path can be overridden by the ITEMS_FILE environment variable; the protected checks set it to data/check-items.jsonl and reset that file, so a person's data/items.jsonl is never read or deleted by a check.
 ## Open questions
 None.

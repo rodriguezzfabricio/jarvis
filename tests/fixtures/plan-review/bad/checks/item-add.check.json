@@ -6,15 +6,15 @@
   "cases": [
     {
       "id": "reset",
-      "command": "rm -f data/items.jsonl"
+      "command": "rm -f data/check-items.jsonl"
     },
     {
       "id": "add",
-      "command": "node src/cli.mjs add exercise"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add exercise"
     },
     {
       "id": "file",
-      "command": "cat data/items.jsonl"
+      "command": "cat data/check-items.jsonl"
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-add.sh\"",

@@ -6,23 +6,23 @@
   "cases": [
     {
       "id": "reset",
-      "command": "rm -f data/items.jsonl"
+      "command": "rm -f data/check-items.jsonl"
     },
     {
       "id": "empty",
-      "command": "node src/cli.mjs list"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs list"
     },
     {
       "id": "first",
-      "command": "node src/cli.mjs add exercise"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add exercise"
     },
     {
       "id": "second",
-      "command": "node src/cli.mjs add \"buy milk\""
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"buy milk\""
     },
     {
       "id": "list",
-      "command": "node src/cli.mjs list"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs list"
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-list.sh\"",

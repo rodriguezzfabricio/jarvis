@@ -6,27 +6,27 @@
   "cases": [
     {
       "id": "reset",
-      "command": "rm -f data/items.jsonl"
+      "command": "rm -f data/check-items.jsonl"
     },
     {
       "id": "blank",
-      "command": "node src/cli.mjs add \"  \""
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"  \""
     },
     {
       "id": "missing",
-      "command": "node src/cli.mjs add"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add"
     },
     {
       "id": "newline",
-      "command": "node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
     },
     {
       "id": "cr",
-      "command": "node src/cli.mjs add \"$(printf 'buy\\rmilk')\""
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"$(printf 'buy\\rmilk')\""
     },
     {
       "id": "file",
-      "command": "cat data/items.jsonl 2>/dev/null || true"
+      "command": "cat data/check-items.jsonl 2>/dev/null || true"
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-blank.sh\"",

@@ -24,7 +24,7 @@ function smokePath(path: string): boolean {
 const commands = z.object({ migrate: text, backup: text, restore: text, verify: text }).strict();
 const schema = z.object({
   version: z.literal(1), project: id, revision: z.string().regex(/^[a-f0-9]{40}$/),
-  provider: z.enum(["vercel", "netlify"]), artifactDir: absolute, artifactHash: hash, siteId: id,
+  provider: z.enum(["vercel", "netlify", "render"]), artifactDir: absolute, artifactHash: hash, siteId: id,
   productionUrl: url.refine(v => new URL(v).pathname === "/", "production URL must be an origin"),
   smokePaths: z.array(text.refine(smokePath, "unsafe smoke path")).min(1).max(50),
   migrations: z.array(text).max(200).default([]),

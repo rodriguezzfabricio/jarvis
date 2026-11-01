@@ -3,6 +3,7 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { checkTrustedDir, readNoFollow, writePrivateAtomic, type TrustOptions } from "../config/private-file.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
+import { renderSetupSchema } from "./render-config.ts";
 import { releaseUrl } from "./manifest.ts";
 import type { Provider, ReleaseProjectConfig } from "./types.ts";
 
@@ -14,7 +15,7 @@ import type { Provider, ReleaseProjectConfig } from "./types.ts";
  */
 export const RELEASE_SETUP_FILE = "release.json";
 /** Each provider's free plan (decision 33). The runner deploys only there, so a preview costs nothing. */
-export const FREE_PLANS: Readonly<Record<Provider, string>> = { vercel: "hobby", netlify: "free" };
+export const FREE_PLANS: Readonly<Record<Provider, string>> = { vercel: "hobby", netlify: "free", render: "free" };
 /** Runner ledger entry types the release step writes (`decision` kind, actor runner). */
 export const ARTIFACT_TYPE = "release.artifact";
 export const STEP_TYPE = "release.step";
@@ -24,10 +25,11 @@ const outputPath = z.string().max(500).regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-
   .refine((p) => !p.split("/").some((part) => part === "." || part === ".." || /^\.git$/i.test(part) || /^\.jarvis$/i.test(part)), "no '.', '..', .git or .jarvis parts");
 const schema = z.object({
   version: z.literal(1),
-  provider: z.enum(["vercel", "netlify"]),
+  provider: z.enum(["vercel", "netlify", "render"]),
   /** The account's plan, as Fabricio states it. Only the free plan is accepted (the spend policy). */
   plan: z.string().min(1).max(50),
   siteId: id,
+  render: renderSetupSchema.optional(),
   /** Vercel's account or team id; Netlify has none. */
   orgId: id.optional(),
   productionUrl: z.string().refine((u) => releaseUrl(u) && new URL(u).pathname === "/", "an https origin without credentials, path, query or fragment"),
@@ -42,6 +44,8 @@ const schema = z.object({
 }).strict().superRefine((c, ctx) => {
   if (c.plan !== FREE_PLANS[c.provider]) ctx.addIssue({ code: "custom", path: ["plan"],
     message: `${c.provider} plan "${c.plan}" can bill for deploys or bandwidth; Jarvis deploys only on the free plan (${FREE_PLANS[c.provider]}) unless a new decision says otherwise` });
+  if (c.provider === "render" && (!c.render || c.productionUrl !== c.render.production.url || c.orgId)) ctx.addIssue({ code: "custom", path: ["render"], message: "Render needs two deploy repositories and its matching production URL, without orgId" });
+  if (c.provider !== "render" && c.render) ctx.addIssue({ code: "custom", path: ["render"], message: "Render destinations require the Render provider" });
   if (c.provider === "vercel" && !c.orgId) ctx.addIssue({ code: "custom", path: ["orgId"], message: "Vercel needs the account or team id (orgId)" });
   if (c.provider === "netlify" && c.orgId) ctx.addIssue({ code: "custom", path: ["orgId"], message: "Netlify sites take no orgId" });
 });
@@ -110,6 +114,7 @@ export function releaseProjectConfig(setup: ReleaseSetup, o: { projectDir: strin
   const project = o.project;
   return {
     project, provider: setup.provider, siteId: setup.siteId, ...(setup.orgId ? { orgId: setup.orgId } : {}), productionUrl: setup.productionUrl,
+    ...(setup.render ? { render: setup.render } : {}),
     artifactRoot: roots.artifactRoot, privateRoot: roots.privateRoot, snapshotRoot: roots.snapshotRoot,
     get artifacts() { return registeredArtifacts(ledger.entries(), project); },
     ...(setup.data ? { dataSnapshot: { kind: setup.data.kind, source: setup.data.source } } : {}),

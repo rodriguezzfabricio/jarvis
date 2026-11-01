@@ -36,10 +36,12 @@ export function deployAdapters(options: DeployAdapterOptions): Adapter[] {
     try { prepared = prepare(options, op, payload); }
     catch (error) { return failed(error instanceof ArtifactPolicyError ? error.message : "release policy or provider configuration refused"); }
     if (!prepared) return failed("release policy or provider configuration refused");
-    const { manifest, action, config, staged, target } = prepared;
+    const { manifest, action, config, staged, target, treeManifest } = prepared;
     try {
       try { await verifyProvider(options, config, manifest.provider); }
       catch { return failed("provider version or private execution configuration refused"); }
+      const native = PROVIDERS[manifest.provider].deploy;
+      if (native) return await native({ options, config, manifest, treeManifest, staged: staged!, action, secrets, target });
       const key = `${manifest.provider.toUpperCase()}_${action === "preview" ? "PREVIEW" : "PRODUCTION"}_TOKEN`;
       const token = secrets.get(key);
       if (!token) return failed("release credential unavailable");
@@ -73,12 +75,20 @@ function prepare(options: DeployAdapterOptions, op: "deploy.preview" | "deploy.p
   const manifest = parseManifest(options.resolveManifest(ref.hash));
   if (manifest.project !== options.project || manifestHash(manifest) !== ref.hash) return undefined;
   checkManifest(manifest, options.projectConfig);
+  const provider = PROVIDERS[manifest.provider];
+  provider.validateSetup?.(options.projectConfig);
   if (op === "deploy.promote" && !hasReleaseGrant(options.ledger, manifest, ref.action === "rollback")) return undefined;
   if (ref.action === "promote" && !(options.readyToPromote ?? (m => isReleaseReady(options.ledger, m)))(manifest)) return undefined;
   const config = options.providers[manifest.provider];
   if (!config) return undefined;
   const target: ProductionDeployment | undefined = ref.action === "rollback" ? recordedRollbackTarget(options.ledger, manifest, options.projectConfig) : undefined;
   if (ref.action === "rollback" && !target) return undefined;
-  const staged = ref.action !== "rollback" ? copyDeploymentArtifacts(manifest, options.projectConfig, options.ledger.dir) : undefined;
-  return { manifest, action: ref.action, config, staged, target };
+  let treeManifest = manifest;
+  if (ref.action === "rollback" && provider.rollbackFromManifest) {
+    treeManifest = parseManifest(options.resolveManifest(target!.id));
+    if (manifestHash(treeManifest) !== target!.id || target!.url !== options.projectConfig.productionUrl) return undefined;
+    checkManifest(treeManifest, options.projectConfig);
+  }
+  const staged = ref.action !== "rollback" || provider.rollbackFromManifest ? copyDeploymentArtifacts(treeManifest, options.projectConfig, options.ledger.dir) : undefined;
+  return { manifest, treeManifest, action: ref.action, config, staged, target };
 }

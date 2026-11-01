@@ -1,0 +1,92 @@
+[
+  {
+    "name": "QA source hashes checked before copy",
+    "file": "packages/cli/src/lanes/qa-install.ts",
+    "anchor": "if (canonical(hashes) !== canonical(manifest.files))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "QA clone checked against approved hashes",
+    "file": "packages/cli/src/lanes/qa-install.ts",
+    "anchor": "if (canonical(copied) !== canonical(hashes)) throw new Error(\"QA copy differs from approved hashes\");",
+    "replacement": "manifest.files = copied;"
+  },
+  {
+    "name": "QA installation refuses overlapping roots",
+    "file": "packages/cli/src/lanes/qa-install.ts",
+    "anchor": "if (insideTree(realpathSync(source), root) || insideTree(root, realpathSync(source)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "served app refuses failed builds",
+    "file": "packages/cli/src/lanes/served-app.ts",
+    "anchor": "built.code !== 0 || built.timedOut || built.overflowed",
+    "replacement": "false"
+  },
+  {
+    "name": "served app is stopped after capture",
+    "file": "packages/cli/src/lanes/served-app.ts",
+    "anchor": "finally { await server.stop(); }",
+    "replacement": "finally { /* broken cleanup */ }"
+  },
+  {
+    "name": "axe remains strict without a runner baseline",
+    "file": "packages/cli/src/lanes/design-gate.ts",
+    "anchor": "if (!base) return verifyDesignObservation(raw,plan,axeVersion);",
+    "replacement": "if (!base) return verifyDesignObservation(raw,plan,axeVersion,{calibration:true});"
+  },
+  {
+    "name": "axe rejects new violations against the base",
+    "file": "packages/cli/src/lanes/design-gate.ts",
+    "anchor": "if (!verified.ok) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "axe baseline stays outside fixtures",
+    "file": "packages/cli/src/lanes/design-gate.ts",
+    "anchor": "join(checksDir,\"expected/axe-base.json\")",
+    "replacement": "join(checksDir,\"fixtures/expected/axe-base.json\")"
+  },
+  {
+    "name": "axe baseline version is pinned",
+    "file": "packages/cli/src/lanes/design-gate.ts",
+    "anchor": "if (base.axeVersion !== axeVersion)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "base stdout is bound to gate evidence",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "if(sha(stdout)!==digest)",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "eval QA manifest is pinned",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "if(sha(manifestText)!==declaration.qa.manifestSha256)",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "eval lint and browser share the axe pin",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "if(input.qa.manifest.axe.version!==axeVersion)",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "served capture stays on its app origin",
+    "file": "packages/cli/src/lanes/served-design.ts",
+    "anchor": "if(parsed.origin!==from)",
+    "replacement": "if(false)"
+  },
+  {
+    "name": "URL and browser cases serve their own app",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "  if (app) {",
+    "replacement": "  if (false) {"
+  },
+  {
+    "name": "QA manifest builder checks the approved inventory",
+    "file": "packages/cli/src/lanes/qa-install.ts",
+    "anchor": "if(canonical(files)!==canonical(input.files))",
+    "replacement": "if(false)"
+  }
+]

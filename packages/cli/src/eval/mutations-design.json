@@ -64,5 +64,23 @@
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "...(input.design ? [\"This is a design task",
     "replacement": "...(true ? [\"This is a design task"
+  },
+  {
+    "name": "eval installs design checks per run",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "      installEvalDesignChecks(gateStore, designPlan, designScope.axeVersion);",
+    "replacement": "      // broken: installation omitted"
+  },
+  {
+    "name": "eval captures the base before candidate work",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (designPlan && designScope) await captureDesignBaseline",
+    "replacement": "if (false && designScope) await captureDesignBaseline"
+  },
+  {
+    "name": "eval rechecks installed project checks before trusted runtimes",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  assertHiddenDisjoint(loadHiddenChecks(gateStore.checksDir), grading);",
+    "replacement": "  // broken: installed project suite not checked"
   }
 ]

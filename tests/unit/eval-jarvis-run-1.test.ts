@@ -164,3 +164,13 @@ describe("eval jarvis: the hidden tests never reach a session", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+it("refuses grading files introduced during preflight before installing trusted runtimes",async()=>{
+  const fx=fixture(), calls:RunLoopOptions[]=[];
+  const preflight=async()=>{
+    writeFileSync(join(fx.evalsRepo,"hidden/05-citizenship/gate/copied.test.mjs"),HIDDEN_TEST);
+    return {ok:true};
+  };
+  await expect(runJarvis(loadTask(fx.evalsRepo,"05-citizenship"),options(fx,{runLoop:fakeLoop("fix",undefined,calls),preflight}))).rejects.toThrow(/gate checks hold grading files/);
+  expect(calls).toHaveLength(0);
+});

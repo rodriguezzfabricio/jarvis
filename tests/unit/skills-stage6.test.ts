@@ -84,7 +84,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Hand off the cleanup", phrase: "every old heading stays reachable" }, // golden task 7
       { section: "Hand off the cleanup", phrase: "at most 32 KiB" },
       { section: "Hand off the cleanup", phrase: "write `.jarvis/onboard/plan.json` in the runner's plan shape." },
-      { section: "Hand off the cleanup", phrase: "`jarvis run --detach`" },
+      { section: "Hand off the cleanup", phrase: "`jarvis run --plan onboard --detach`" }, // the runner reads the plan only with --plan onboard
       { section: "Hand off the cleanup", phrase: "start the research skill with the onboarding file's path" },
       { section: "Hand off the cleanup", phrase: "Outside actions never become tasks" },
     ],
@@ -202,7 +202,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Propose small tasks", phrase: "Nothing runs until the user picks." },
       { section: "Propose small tasks", phrase: "the default \"none\"" },
       { section: "Propose small tasks", phrase: "write only the picked tasks to `.jarvis/sweep/plan.json`" },
-      { section: "Propose small tasks", phrase: "`jarvis run --detach`" },
+      { section: "Propose small tasks", phrase: "`jarvis run --plan sweep --detach`" }, // the runner reads the plan only with --plan sweep
       { section: "Output", phrase: "`.jarvis/sweep/<YYYY-MM-DD>.md`" },
     ],
     forbidden: ["fix as you go", "skip it until"],
@@ -476,6 +476,7 @@ describe("golden task 7: onboarding with cleanup connects to triage (decision 89
     expect(t.then?.handoff).toBe("now");
     const handoff = sectionBody(readSkill("onboard"), "Hand off the cleanup");
     expect(handoff).toMatch(/\*\*refactor or bug:\*\* write `\.jarvis\/onboard\/plan\.json`/);
+    // The eval's expected output predates `--plan onboard` and is pinned byte for byte (decision 132); the skill's own words are checked above.
     expect(e!.expected_output).toContain("jarvis run --detach");
   });
 

@@ -208,6 +208,16 @@ const ERROR_LINES: readonly RegExp[] = [
 ];
 
 /**
+ * The report file a request names in words ("put what you find in ONBOARDING.md"), when it is a path a report may
+ * have (decision 126's rules); undefined otherwise. A review reads its report the same way, inside triage; an
+ * onboarding run reads its report with this (decision 148).
+ */
+export function typedReport(text: string): string | undefined {
+  const typed = REPORT_FILE.exec(text)?.[1];
+  return typed !== undefined && reportPathProblem(typed) === undefined ? typed : undefined;
+}
+
+/**
  * `/jarvis fix: the login` → fix (decision 89). Only the first word followed by a colon, with more
  * request after it, is an override: "Build fails on CI" is prose. The request stays as typed.
  */

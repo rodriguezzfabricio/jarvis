@@ -35,6 +35,7 @@ const MAP = [
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
+  [/^packages\/cli\/src\/runner\/mutations-onboard\.json$/, "6"], // onboarding that asks for edits (decision 148): golden task 7, the stage 6 proof
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
   // jarvis approvals/approve/reject and the broker's pending list: the stage 1 terminal approval surface (backlog 115).

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "onboard: any question runs the onboarding pipeline",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (type === \"question\" && question?.onboarding === true && (question.then === \"refactor\" || question.then === \"bug\")) return \"onboard\";",
+    "replacement": "if (type === \"question\") return \"onboard\";"
+  },
+  {
+    "name": "onboard: the report path ignores the request's words",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "typedReport(request) ?? DEFAULT_ONBOARD_REPORT",
+    "replacement": "DEFAULT_ONBOARD_REPORT"
+  },
+  {
+    "name": "onboard: no unit gate check is needed before the preflight",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (pipeline === \"onboard\" && !loopChecks.checks.unit) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "onboard: the report may replace a file the snapshot has",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "const step: OnboardStepResult = target ? {",
+    "replacement": "const step: OnboardStepResult = false ? {"
+  },
+  {
+    "name": "onboard: the plan is judged against more checks than the gate installed",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "readOnboardOutput(ws.path, i.report, i.checks.map((name) => ({ name })))",
+    "replacement": "readOnboardOutput(ws.path, i.report, [...i.checks, \"agents-size\"].map((name) => ({ name })))"
+  },
+  {
+    "name": "onboard: stray edits are dropped silently",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "problems: strayEdits(ws.path, i.report, i.p.home, \"onboarding\")",
+    "replacement": "problems: []"
+  },
+  {
+    "name": "onboard: the plan's tasks never reach the ledger",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "        plan = step.output.plan;\n",
+    "replacement": ""
+  },
+  {
+    "name": "onboard: the report isn't committed before the cleanup",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "        if (reportRevision) baseRevision = reportRevision;\n",
+    "replacement": ""
+  },
+  {
+    "name": "onboard: the step runs as a build session",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "logPath: join(sessionsDir, \"onboard-a1.jsonl\")",
+    "replacement": "logPath: join(sessionsDir, \"onboard-a1.jsonl\"), role: \"build\""
+  },
+  {
+    "name": "onboard: the header leaves out the onboard skill",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "skills: loadSkills([\"onboard\"])",
+    "replacement": "skills: loadSkills([\"build\"])"
+  },
+  {
+    "name": "onboard: an empty report is accepted",
+    "file": "packages/cli/src/runner/onboard-step.ts",
+    "anchor": "  if (!reportText.trim()) throw new OnboardOutputError(\"no-report\"",
+    "replacement": "  if (false) throw new OnboardOutputError(\"no-report\""
+  },
+  {
+    "name": "onboard: a missing plan reads as a refused one",
+    "file": "packages/cli/src/runner/onboard-step.ts",
+    "anchor": "  if (!present(join(root, ONBOARD_PLAN_FILE))) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "onboard: the step prompt lets the session edit",
+    "file": "packages/cli/src/runner/onboard-step.ts",
+    "anchor": " Change no other file: no fixes, no moves, no installs, no commits.",
+    "replacement": ""
+  },
+  {
+    "name": "onboard: the step prompt names no installed check",
+    "file": "packages/cli/src/runner/onboard-step.ts",
+    "anchor": "${i.checks.map((c) => `- ${c}`).join(\"\\n\")}",
+    "replacement": ""
+  },
+  {
+    "name": "onboard: a refused typed report path is used anyway",
+    "file": "packages/cli/src/triage/triage.ts",
+    "anchor": "  return typed !== undefined && reportPathProblem(typed) === undefined ? typed : undefined;",
+    "replacement": "  return typed;"
+  }
+]

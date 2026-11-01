@@ -27,8 +27,8 @@ export interface SessionToolchain {
   readOnlyDirs: string[];
   /**
    * Root-owned system folders the toolchain also uses (decision 163: the Command Line Tools Rust links through).
-   * Sessions can't write them anyway, so they aren't reopened in the settings; PATH entries and variables may
-   * point inside them as well.
+   * The settings reopen them read-only like the toolchain's own folders; PATH entries and variables may point
+   * inside them as well.
    */
   systemDirs?: string[];
   pathPrefix: string[];

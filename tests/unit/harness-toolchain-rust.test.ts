@@ -64,8 +64,10 @@ describe("task sessions get the pinned, offline Rust (decision 163)", () => {
     expect(fs.allowRead).toContain(s.fixture);
     expect(fs.denyWrite).toContain(s.fixture);
     expect(fs.allowWrite.some((w) => s.fixture.startsWith(w) || w.startsWith(s.fixture))).toBe(false);
-    // The system folder is neither reopened nor made writable: sessions only run what is there.
-    expect([...fs.allowRead, ...fs.allowWrite].some((d) => d.startsWith(s.clt))).toBe(false);
+    // The system folder is reopened read-only, so the session's read block can't hide it, and never made writable.
+    expect(fs.allowRead).toContain(s.clt);
+    expect(fs.denyWrite).toContain(s.clt);
+    expect(fs.allowWrite.some((d) => d.startsWith(s.clt) || s.clt.startsWith(d))).toBe(false);
     expect(spec.env.PATH).toBe(`${join(s.fixture, "toolchain", "bin")}:${join(s.clt, "usr", "bin")}:${fixedPath(s.home)}`);
     expect(spec.env).toMatchObject({ CARGO_HOME: join(s.fixture, "cargo-home"), CARGO_NET_OFFLINE: "true", SDKROOT: join(s.clt, "SDKs", "MacOSX26.5.sdk"), DEVELOPER_DIR: s.clt });
   });
@@ -115,6 +117,6 @@ describe("task sessions get the pinned, offline Rust (decision 163)", () => {
     expect(checkSessionToolchain(undefined, [s.cacheRoot])).toEqual({ readOnlyDirs: [], pathPrefix: [], env: {} });
     const t = s.prepared.toolchain!;
     const parts = checkSessionToolchain(t, [s.worktreeRoot, s.cacheRoot, s.jarvisHome]);
-    expect(parts).toEqual({ readOnlyDirs: [s.fixture], pathPrefix: t.pathPrefix, env: t.env });
+    expect(parts).toEqual({ readOnlyDirs: [s.fixture, s.clt], pathPrefix: t.pathPrefix, env: t.env });
   });
 });

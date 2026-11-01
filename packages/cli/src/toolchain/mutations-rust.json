@@ -166,5 +166,11 @@
     "file": "packages/cli/src/eval/baseline.ts",
     "anchor": "\".turbo/\", \"target/\", ",
     "replacement": "\".turbo/\", "
+  },
+  {
+    "name": "session system folder not reopened read-only",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "readOnlyDirs: [...t.readOnlyDirs, ...system]",
+    "replacement": "readOnlyDirs: [...t.readOnlyDirs]"
   }
 ]

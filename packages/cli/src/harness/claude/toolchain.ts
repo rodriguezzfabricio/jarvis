@@ -56,7 +56,8 @@ export function checkSessionToolchain(t: SessionToolchain | undefined, writable:
     if (!TOOLCHAIN_ENV.has(k)) throw new Error(`a toolchain may not set ${k}`);
     if (isAbsolute(v) && !inside(v)) throw new Error(`a toolchain's ${k} must point inside its read-only folders: ${v}`);
   }
-  return { readOnlyDirs: [...t.readOnlyDirs], pathPrefix: [...t.pathPrefix], env: { ...t.env } };
+  // System folders are reopened read-only too, so the session's read block (decision 69) can't hide what it runs.
+  return { readOnlyDirs: [...t.readOnlyDirs, ...system], pathPrefix: [...t.pathPrefix], env: { ...t.env } };
 }
 
 /** The toolchain's variables, and its PATH entries between `head` (the jarvis launcher) and the fixed PATH. */

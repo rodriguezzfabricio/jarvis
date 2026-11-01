@@ -372,7 +372,7 @@
     "replacement": ""
   },
   {
-    "name": "compare counts every round when a label is given",
+    "name": "eval jarvis compare counts every round when a label is given",
     "file": "packages/cli/src/eval/compare.ts",
     "anchor": "    if (opts.label !== undefined && !hasLabel(runId, opts.label)) continue;\n",
     "replacement": ""

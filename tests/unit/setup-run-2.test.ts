@@ -163,9 +163,11 @@ it("accounts.deploy offers Render and hands it to the key-generating Render step
       secrets: [{ key: "RENDER_PREVIEW_DEPLOY_KEY", tier: "preview" as const, brokerOnly: true }, { key: "RENDER_PRODUCTION_DEPLOY_KEY", tier: "production" as const, brokerOnly: true }] };
   };
   const r = deps(home, t.tty, { secrets: s.backend, createNotifier: n.createNotifier, renderSetup });
-  expect((await runSetup(r.d, {})).ok).toBe(true);
-  expect(t.calls.find((c) => c.prompt.startsWith("Deploy host"))?.prompt).toMatch(/render/i);
+  // Rejections become assertions: a run that asked for a pasted Render token instead would run out of answers.
+  const error = await failure(runSetup(r.d, {}));
   expect(calls).toEqual([{ privateRoot: join(home, ".jarvis"), secrets: s.backend }]);
+  expect(error).toBeUndefined();
+  expect(t.calls.find((c) => c.prompt.startsWith("Deploy host"))?.prompt).toMatch(/render/i);
   const step = state(home).steps["accounts.deploy"];
   expect(step).toMatchObject({ status: "done", provider: "render" });
   expect(step?.secrets).toEqual([{ key: "RENDER_PREVIEW_DEPLOY_KEY", tier: "preview", brokerOnly: true }, { key: "RENDER_PRODUCTION_DEPLOY_KEY", tier: "production", brokerOnly: true }]);

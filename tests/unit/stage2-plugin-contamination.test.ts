@@ -115,7 +115,7 @@ const originalEvals: Record<string, string> = {
   "onboard/evals.json": "2770b87ac2df835c57ca002969561f96046709016f0ae42a0f9c61f9b0b58d87",
   "onboard/files/hostile-readme.md": "c7c96edf2d542f56ccca5cbae41492aa8b1ef08e113adab4a6645ab442e05111",
   "intake/evals.json": "dcca8f53313626146cd447230c53e076b15ae7753aee2d5fad0ec89bdb6bf591",
-  "architect/evals.json": "81107a0aa5e913f2f6ec073a49dd2e2fb57924b8d8bbf51dc00217e310829cc4",
+  "architect/evals.json": "4ab43476df27d21545e1268ca1cb30b4fcfb394f00254356339a53bc6f34e5a9", // eval 13 added by decision 170 (the Zero-Decision Rule)
   "review/evals.json": "7081b1b0fad360962801c17f0c2257e2f56005389546efe94701fe5469659ae3",
   "sweep/evals.json": "d486c5277390c9105c087d941191394da33416eedf4126612de246d2346a80ca",
   "sweep/files/sweep-findings.md": "7237b1392928f8551cd2c6212e0ccc4fc9243a2ad01ff95e6863529ebdb833bc",

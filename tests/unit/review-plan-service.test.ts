@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createPlanReviewService, PLAN_POLICY_HASH, PLANTED_SCOPES, readPlanCalibration, savePlanCalibration } from "../../packages/cli/src/review/plan-service.ts";
+import { createPlanReviewService, lensDiagnostics, PLAN_POLICY_HASH, PLANTED_SCOPES, readPlanCalibration, savePlanCalibration } from "../../packages/cli/src/review/plan-service.ts";
 import { planReviewStatus } from "../../packages/cli/src/review/plan-resolve.ts";
 import { PLAN_LENSES } from "../../packages/cli/src/review/plan-verdict.ts";
 import { clean, removePlanFixtureRoots, seedCalibration, setupPlanFixture, withFindings, type PlanFixture } from "./helpers/plan-review-fixture.ts";
@@ -71,6 +71,23 @@ describe("plan review service (decision 170)", () => {
     expect(result.verdict).toBe("error");
     expect(planReviews(f).filter((d) => d.purpose === "review" && d.lens === "critic").at(-1)).toMatchObject({ verdict: "error", valid: false });
     expect(planReviewStatus(f.ledger.entries(), f.material.planHash).ok).toBe(false);
+  });
+  it("lensDiagnostics reads one line per lens from the recorded entries: verdict, validity, the checks reported and the error", async () => {
+    const f = setupPlanFixture((lens) => lens === "critic" ? '{"findings":[],"checked":["alternatives","risks"]}' : lens === "readiness" ? withFindings(lens, [{ severity: "major", scope: "T1" }]) : clean(lens));
+    seedCalibration(f.ledger);
+    const result = await createPlanReviewService(f.options).review(f.material);
+    expect(result.verdict).toBe("error");
+    expect(lensDiagnostics(result.entries)).toEqual([
+      "zoom-out: pass; checked reuse-search, yagni, altitude, dead-ends",
+      "critic: error, invalid output; checked none; plan review did not report checks: assumptions, standard-sections",
+      "readiness: resolve; checked zero-decision, target-scope, phasing, test-plan",
+    ]);
+    // A reviewer session that failed outright is the lens's error line too.
+    f.reviewer.mockImplementation(async (input) => /Skeptical/.test(input.prompt) ? { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: "", error: "Claude review failed or timed out" }
+      : { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: clean(/Critic/.test(input.prompt) ? "critic" : "readiness") });
+    const failed = await createPlanReviewService(f.options).review(f.material);
+    expect(lensDiagnostics(failed.entries)[0]).toBe("zoom-out: error, invalid output; checked none; Claude review failed or timed out");
+    expect(lensDiagnostics(failed.entries)).toHaveLength(3);
   });
   it("a reviewer that writes into its read-only checkout fails the review as an error and records nothing further", async () => {
     const f = setupPlanFixture();

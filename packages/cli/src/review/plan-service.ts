@@ -190,6 +190,19 @@ export function createPlanReviewService(options: PlanReviewServiceOptions): Plan
   } };
 }
 
+/**
+ * One line per lens from a review's recorded entries: its verdict, whether its output was valid, the checks it
+ * reported and its error. What an `error` verdict otherwise hides (the first live control: one lens produced no
+ * findings and the log could not say why).
+ */
+export function lensDiagnostics(entries: readonly LedgerEntry[]): string[] {
+  return entries.filter((e) => e.kind === "plan_review" && (e.data as { lens?: unknown }).lens !== "overall").map((e) => {
+    const d = e.data as { lens: string; verdict: string; valid?: boolean; checked?: string[]; error?: string };
+    const checked = d.checked?.length ? d.checked.join(", ") : "none";
+    return `${d.lens}: ${d.verdict}${d.valid === false ? ", invalid output" : ""}; checked ${checked}${d.error ? `; ${d.error}` : ""}`;
+  });
+}
+
 /** The repo's own copy of the latest findings, for the architect session; the ledger is the truth. */
 export function readPlanFindings(repoPath: string): unknown {
   const path = join(repoPath, PLAN_FINDINGS_FILE);

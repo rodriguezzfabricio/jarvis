@@ -357,8 +357,8 @@ describe("skills folder", () => {
   });
 });
 
-// Decision 85: the flags `jarvis decide` accepts, and the values each one takes.
-const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer"];
+// Decision 85: decide-call grammar. recorded-answer requires the r5 integrator patch before use.
+const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer", "recorded-answer"];
 const DECIDE_BY = ["user", "default-accepted", "default-unconfirmed", "jarvis"];
 const DECIDE_CLASS = ["mechanical", "taste", "challenge"];
 
@@ -415,7 +415,7 @@ describe("jarvis decide calls in every skill (decision 85)", () => {
 });
 
 // Decision 119: `--by user` needs a recorded explicit answer (`--answer <answerSeq>:<questionId>`) and
-// its exact words. A skill showing `--by user` without them teaches a call the CLI refuses, in any skill.
+// its exact words (separate evidence for intake statements; see the r5 integrator snippet). A skill showing `--by user` without them teaches a call the CLI refuses, in any skill.
 describe("user-attributed decide calls in every skill folder (decision 119)", () => {
   const all = readdirSync(skillsDir, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(`${skillsDir}${d.name}/SKILL.md`)).map((d) => d.name);
 
@@ -424,7 +424,13 @@ describe("user-attributed decide calls in every skill folder (decision 119)", ()
       const { flags, positional } = parseDecide(call);
       if (!(flags.get("by") ?? "").split("|").includes("user")) continue;
       expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
-      expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
+      if (name === "intake") {
+        expect(flags.get("recorded-answer"), `${call}: verified answer text`).toBe("<the exact recorded answer>");
+        expect(positional.join(" "), `${call}: the decision text`).toContain("the decision itself, with question ID");
+        expect(positional.join(" "), `${call}: no raw acknowledgement`).not.toContain("the exact recorded answer");
+      } else {
+        expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
+      }
     }
   });
 });

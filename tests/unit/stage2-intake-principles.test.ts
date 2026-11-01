@@ -45,12 +45,12 @@ describe("general intake principles", () => {
     expect(intake()).toContain("Keep the conflict visible");
   });
 
-  it("caps the reader loop without allowing unresolved blockers to pass", () => {
+  it("caps all reader passes and surfaces unresolved gaps at confirmation", () => {
     const text = read("skills/spec/SKILL.md");
-    expect(text).toContain("Stop after 3 passes with no new blocking gap");
+    expect(text).toContain("At most 3 fresh-reader passes in total per spec version");
     expect(text).toContain("A clean pass ends the loop immediately");
-    expect(text).toContain("Do not reset the count for wording or nonblocking suggestions");
-    expect(text).toContain("unresolved blocking gaps leave the spec draft and prevent hand-off");
+    expect(text).toContain("Never reset the count, even for new blockers or revised wording");
+    expect(text).toContain("report every other remaining blocker there as a known gap. Then start confirmation, never another reader.");
     expect(read("plugin/agents/spec-reader.md")).toContain("Separate blocking gaps from nonblocking suggestions");
   });
 

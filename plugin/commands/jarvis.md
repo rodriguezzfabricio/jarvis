@@ -9,6 +9,8 @@ Request: $ARGUMENTS
 
 ## 1. Triage
 
+Never write Claude Code memory files, including its auto-memory folders, through any tool. Put learnings in the project's own notes named by the skills, such as `.jarvis/notes/` or `docs/intake/`.
+
 1. In the project folder, run `jarvis triage --json "$ARGUMENTS"`. The user's override is the first word followed by a colon: `fix:`, `build:`, `feature:` or `ask:`. It always wins. Without the colon the word is prose, so "Build fails on CI" is a bug.
 2. Read the request and the result's `signals`, then run it once more with your judgment added:
    - `--judgment <type>` when you read the type differently from the words (new-product, feature, bug, refactor, question, review, release);

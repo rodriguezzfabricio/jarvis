@@ -1,0 +1,62 @@
+[
+  {
+    "name": "stage2 r5 reader cap resets for new blockers",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "At most 3 fresh-reader passes in total per spec version, including checks after confirmation changes.",
+    "replacement": "Stop after 3 passes with no new blocking gap; reset for new blockers."
+  },
+  {
+    "name": "stage2 r5 oversized skeleton stays whole",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "A walking skeleton over the budget is too thick: thin it to the shortest complete path and move the rest to P2/P3.",
+    "replacement": "If the walking skeleton alone is over the budget, keep it whole."
+  },
+  {
+    "name": "stage2 r5 personal default invents history",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "For a question about the user's own past or situation, use a neutral default stating what the product assumes when unknown; never invent a first-person answer or record an unknown history as fact.",
+    "replacement": "A default may invent a first-person answer about the user's past."
+  },
+  {
+    "name": "stage2 r5 default accepts unexplained failure risk",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "A recommended default must not choose the option its own trade-off names as a product failure risk, unless the question says in one line why that risk is accepted.",
+    "replacement": "Choose the failure-risk option without explaining why."
+  },
+  {
+    "name": "stage2 r5 asks provider instead of need",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Ask the product need, not which storage provider to use; decide the provider as engineering unless the user must hold an account, pay, or would notice the difference.",
+    "replacement": "Ask the user to choose between storage providers."
+  },
+  {
+    "name": "stage2 r5 skips question constraint check",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Before sending, check each question's text, trade-off and default against the fixed constraints and build constraints; remove promises the build cannot keep and surface real conflicts under Request fidelity.",
+    "replacement": "Check only the default against constraints."
+  },
+  {
+    "name": "stage2 r5 silently widens scope",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "A decision after intake that widens who or what the product acts on, or overrides a safeguard research found, is a `[delegated]` assumption labeled \"default unconfirmed\" in the confirmation, never a silent Mechanical or Taste call.",
+    "replacement": "Scope expansion after intake is a silent Taste call."
+  },
+  {
+    "name": "stage2 r5 mockup edits skip visual check",
+    "file": "skills/design/SKILL.md",
+    "anchor": "After any edit to a mockup, re-render it at its phone width and re-render the comparison page; look at both screenshots before the confirmation round.",
+    "replacement": "After a mockup edit, reuse the old screenshot."
+  },
+  {
+    "name": "stage2 r5 records raw acknowledgement as decision",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "An entry states the decision itself, with who gave it and the question ID; never use a bare acknowledgement as decision text. A design direction pick is Taste, whoever gave it.",
+    "replacement": "Record raw acknowledgements as decisions and classify design picks as Mechanical."
+  },
+  {
+    "name": "stage2 r5 writes Claude Code memory",
+    "file": "plugin/commands/jarvis.md",
+    "anchor": "Never write Claude Code memory files, including its auto-memory folders, through any tool. Put learnings in the project's own notes named by the skills, such as `.jarvis/notes/` or `docs/intake/`.",
+    "replacement": "Write learnings to Claude Code memory."
+  }
+]

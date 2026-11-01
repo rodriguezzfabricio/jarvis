@@ -67,7 +67,7 @@ describe("the taste offer never holds the round (decision 86)", () => {
 describe("spec confirmation changes keep the user's exact words (decision 119)", () => {
   const confirm = section(read("skills/spec/SKILL.md"), "Confirm");
   it("records the change answer once, quoting it, with its answer reference", () => {
-    expect(confirm).toContain("record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM`");
+    expect(confirm).toContain("record the answer once with its exact words as evidence, the decision itself as entry text, with `--answer <answerSeq>:CONFIRM`");
     expect(confirm).not.toContain("record each change as the user's decision");
   });
 });

@@ -10,6 +10,7 @@ supersedes: none
 - Editing or deleting items.
 - Any network access, database or other service: items live in a file under data/.
 - Recovering a damaged data file, and two processes writing at once.
+- Durability past the operating system: `saved` means the bytes were handed to the OS (appendFileSync returned); a power loss in the next instant may lose that item, and no fsync or journal is added.
 ## User stories
 - **S1 (P1):** As a user, I want to save an item by name so that I can find it later.
 - **S2 (P1):** As a user, I want to list my saved items so that I can see what I have.

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Broker } from "../../packages/cli/src/broker/broker.ts";
+import { pinnedProviderNode } from "../../packages/cli/src/config/pins.ts";
 import type { GateCheck, GateInput, GateResult } from "../../packages/cli/src/checks/gate.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
@@ -44,12 +45,15 @@ async function step(o: Options = {}) {
     build: { command: "mkdir -p site && cp index.html health site/", output: "site", timeoutMs: 10_000 }, ...o.setup }));
   // A real, trusted file at the pinned path; its --version and its deploys are answered by the fakes below.
   const binDir = join(dir, "bin"); mkdirSync(binDir, { mode: 0o755 });
-  const bin = join(binDir, "netlify"); writeFileSync(bin, "#!/bin/sh\nexit 9\n", { mode: 0o755 });
+  // An npm-style launcher, so it can only start as `<pinned Node> <bin>` (decision 161); the fakes never execute it.
+  const bin = join(binDir, "netlify"); writeFileSync(bin, "#!/usr/bin/env node\nprocess.exit(9);\n", { mode: 0o755 });
   const served = join(dir, "served"); mkdirSync(served);
-  const providerCalls: SessionSpec[] = [];
+  const providerCalls: SessionSpec[] = []; const probes: SessionSpec[] = [];
   const seams: ReleaseSeams = {
-    cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => bin, run: async () => ok(`netlify-cli/${o.cliVersions?.shift() ?? o.cliVersion ?? "99.1.0"}`) },
+    cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => bin, run: async (spec) => { probes.push(spec); return ok(`netlify-cli/${o.cliVersions?.shift() ?? o.cliVersion ?? "99.1.0"}`); } },
     run: async (spec) => {
+      // The adapter's own pin check before it reads a token (decision 161).
+      if (spec.args.includes("--version")) { probes.push(spec); return ok(`netlify-cli/${o.cliVersion ?? "99.1.0"} darwin-arm64 node-v24.21.0`); }
       providerCalls.push(spec);
       cpSync(spec.args[spec.args.indexOf("--dir") + 1]!, join(served, "1"), { recursive: true });
       return ok(o.providerOutput ?? JSON.stringify({ deploy_url: "https://deploy-1--habits.netlify.app" }));
@@ -86,7 +90,7 @@ async function step(o: Options = {}) {
     workRoot: host.workRoot, worktreeRoot: host.worktreeRoot, gitHome: dir, runBranch: "main", git: (args) => safeGit(repo, args, { home: dir }).toString().trim(), checks,
     harness, routing: DEFAULT_ROUTING, tier: 1, maxTurns: 20, timeoutMs: 60_000, seams });
   const steps = ledger.entries().filter((e) => e.kind === "decision" && (e.data as { type?: string }).type === "release.step").map((e) => (e.data as { outcome: string }).outcome);
-  return { outcome, ledger, requests, providerCalls, sessions, steps, head };
+  return { outcome, ledger, requests, providerCalls, probes, bin: realpathSync(bin), sessions, steps, head };
 }
 
 describe("the release step", () => {
@@ -97,6 +101,13 @@ describe("the release step", () => {
     expect(s.providerCalls).toHaveLength(1);
     expect(s.providerCalls[0]!.env.NETLIFY_AUTH_TOKEN).toBe("fake-preview-0001");
     expect(s.providerCalls[0]!.args).not.toContain("--prod");
+    // Every start of the CLI, the release step's checks and the adapter's alike, goes through the pinned Node, and no
+    // version probe carries a token.
+    expect(s.providerCalls[0]!.bin).toBe(pinnedProviderNode()); expect(s.providerCalls[0]!.args[0]).toBe(s.bin);
+    expect(s.probes.length).toBeGreaterThanOrEqual(3);
+    for (const p of s.probes) {
+      expect(p.bin).toBe(pinnedProviderNode()); expect(p.args).toEqual([s.bin, "--version"]); expect(Object.keys(p.env).sort()).toEqual(["CI", "HOME", "PATH"]);
+    }
     expect(s.sessions.map((x) => x.prompt.split("\n")[0])).toEqual(["Task: ship"]);
     expect(readFileSync(s.sessions[0]!.runHeaderPath, "utf8")).toContain('<skill name="ship">');
     expect(releaseStatus(s.ledger.entries()).current?.state).toBe("preview-ready");

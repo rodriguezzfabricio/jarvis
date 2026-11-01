@@ -48,12 +48,16 @@ const BUILD = "mkdir -p site && printf '<!doctype html><title>Habit tracker</tit
 interface Release { p: E2EProject; sent: Message[]; output: string[]; calls: () => { args: string[]; token: string | null }[]; served: string; tokens: { preview: string; production: string }; seams: ReleaseSeams }
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-/** A fake Netlify CLI at an absolute path outside every session-writable folder; it logs only a hash of the token it got. */
+/**
+ * A fake Netlify CLI at an absolute path outside every session-writable folder; it logs only a hash of the token it got.
+ * Its launcher is npm's `#!/usr/bin/env node`, which finds no node under the adapters' PATH, so it runs only when the
+ * release step and the adapters start it through the pinned Node (decision 161).
+ */
 function fakeProvider(root: string): { bin: string; served: string; log: string } {
   const dir = join(root, "provider"); const served = join(dir, "served"); const log = join(dir, "calls.jsonl");
   mkdirSync(served, { recursive: true, mode: 0o755 });
   const bin = join(dir, "netlify");
-  writeFileSync(bin, `#!${process.execPath}
+  writeFileSync(bin, `#!/usr/bin/env node
 const { appendFileSync, cpSync, readdirSync } = require("node:fs"); const { createHash } = require("node:crypto");
 const args = process.argv.slice(2); const token = process.env.NETLIFY_AUTH_TOKEN;
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, token: token ? createHash("sha256").update(token).digest("hex") : null }) + "\\n");
@@ -152,7 +156,11 @@ describe("e2e: golden task 11's release path on a fake provider", { timeout: 600
     // The provider saw one preview deploy of the runner's private, stamped copy, with the preview token only.
     const deploys = r.calls().filter((c) => c.args[0] === "deploy");
     expect(deploys).toHaveLength(1);
-    expect(deploys[0]!.args.filter((a) => !a.startsWith("/"))).toEqual(["deploy", "--no-build", "--dir", "--site", SITE, "--json"]);
+    // The adapters' fixed tree: --dir is its public/ folder and --config the runner's own netlify.toml (decision 161).
+    expect(deploys[0]!.args.filter((a) => !a.startsWith("/"))).toEqual(["deploy", "--no-build", "--dir", "--config", "--site", SITE, "--json"]);
+    expect(deploys[0]!.args[deploys[0]!.args.indexOf("--dir") + 1]).toMatch(/\/public$/);
+    expect(deploys[0]!.args[deploys[0]!.args.indexOf("--config") + 1]).toMatch(/\/netlify\.toml$/);
+    expect(r.calls().filter((c) => c.args[0] === "--version").every((c) => c.token === null)).toBe(true);
     expect(deploys[0]!.token).toBe(sha(r.tokens.preview));
     expect(r.calls().some((c) => c.args.includes("--prod") || c.args.includes("getSite") || c.token === sha(r.tokens.production))).toBe(false);
     expect(readFileSync(join(r.served, "1", ".well-known", "jarvis-release"), "utf8").trim()).toBe(manifestHash(manifest));

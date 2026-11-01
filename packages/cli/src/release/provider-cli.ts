@@ -1,6 +1,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
-import { pinnedProviderBin, PROVIDER_CLI_PINS } from "../config/pins.ts";
+import { pinnedProviderBin, pinnedProviderNode, PROVIDER_CLI_PINS } from "../config/pins.ts";
+import { providerLaunch } from "../broker/adapters/execution.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "../proc/session.ts";
 import { within } from "./paths.ts";
 import type { Provider } from "./types.ts";
@@ -11,7 +12,7 @@ import type { Provider } from "./types.ts";
  * and outside every folder a session or a candidate build can write. The version is read with the same command
  * environment the broker's adapters use, so a CLI that can't start there fails here first.
  */
-export type ProviderCliCheck = { ok: true; bin: string; version: string } | { ok: false; reason: string };
+export type ProviderCliCheck = { ok: true; bin: string; version: string; interpreter: string } | { ok: false; reason: string };
 export interface ProviderCliInput {
   provider: Provider;
   /** The home the pinned path is under. */
@@ -58,12 +59,14 @@ export async function verifyProviderCli(input: ProviderCliInput, deps: ProviderC
   } catch (error) { return { ok: false, reason: `the ${input.provider} CLI could not be checked: ${(error as Error).message}` }; }
   let result: SessionOutcome;
   try {
-    result = await (deps.run ?? runSession)({ bin, args: ["--version"], cwd: input.providerCwd, env: { PATH: "/usr/bin:/bin", HOME: input.providerHome, CI: "1" },
+    // Started as the adapters start it (decision 161): the npm CLIs under the pinned Node, never node through PATH.
+    const launch = providerLaunch({ bin, interpreter: pinnedProviderNode() }, ["--version"]);
+    result = await (deps.run ?? runSession)({ bin: launch.bin, args: launch.args, cwd: input.providerCwd, env: { PATH: "/usr/bin:/bin", HOME: input.providerHome, CI: "1" },
       timeoutMs: 30_000, killGraceMs: 2_000, maxOutputBytes: 64 * 1024 });
   } catch (error) { return { ok: false, reason: `the ${input.provider} CLI did not start: ${(error as Error).message}` }; }
   const output = `${result.stdout}\n${result.stderr}`;
   if (result.code !== 0 || result.timedOut || result.overflowed) return { ok: false, reason: `the ${input.provider} CLI's --version failed (exit ${String(result.code)})` };
   // The exact version as a whole token: "41.2.0" never matches 141.2.0, 41.2.0.1, 41.2.0-beta.1 or 41.2.0+build.
   if (!new RegExp(`(?:^|[^0-9A-Za-z.])v?${escape(pin.version)}(?:$|[^0-9A-Za-z.+-])`, "m").test(output)) return { ok: false, reason: `the ${input.provider} CLI is not the pinned version ${pin.version}` };
-  return { ok: true, bin, version: pin.version };
+  return { ok: true, bin, version: pin.version, interpreter: pinnedProviderNode() };
 }

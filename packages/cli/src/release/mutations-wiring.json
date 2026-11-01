@@ -214,5 +214,17 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "    } : release ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive(",
     "replacement": "    } : false ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive("
+  },
+  {
+    "name": "release_cli_check_starts_under_pinned_node",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "providerLaunch({ bin, interpreter: pinnedProviderNode() }, [\"--version\"])",
+    "replacement": "providerLaunch({ bin }, [\"--version\"])"
+  },
+  {
+    "name": "release_adapters_get_pinned_version_and_node",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "{ bin: cli.bin, version: cli.version, interpreter: cli.interpreter, home: roots.providerHome, cwd: roots.providerCwd }",
+    "replacement": "{ bin: cli.bin, version: cli.version, home: roots.providerHome, cwd: roots.providerCwd }"
   }
 ]

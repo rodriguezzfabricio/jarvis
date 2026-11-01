@@ -4,8 +4,10 @@
 
 - `release/run.ts` `prepareRelease` loads the protected setup (`release/config.ts`,
   `~/.jarvis/projects/<id>/release.json`, written by `jarvis release configure`),
-  verifies the pinned provider CLI (`release/provider-cli.ts`, `PROVIDER_CLI_PINS`)
-  and builds `deployAdapters(...)`. `jarvis run` hosts them in place of the outbox for
+  verifies the pinned provider CLI (`release/provider-cli.ts`, `PROVIDER_CLI_PINS`),
+  starting it as the adapters do (`providerLaunch` under `pinnedProviderNode()`,
+  decision 161), and builds `deployAdapters(...)` with the checked bin, version and
+  interpreter. `jarvis run` hosts them in place of the outbox for
   `deploy.preview` and `deploy.promote`; the outbox keeps the other operations, and
   every operation when there is no release setup (evals).
 - `runReleaseStep` runs after a complete build loop (`commands/run-release.ts`):

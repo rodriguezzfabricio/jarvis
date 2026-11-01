@@ -8,7 +8,7 @@ export function grantRelease(broker: Broker, manifest: ReleaseManifest, by: stri
   const scope = { project: manifest.project, manifestHash: manifestHash(manifest), allowRollback };
   broker.grant("deploy.promote", scope, by);
 }
-export function hasReleaseGrant(ledger: Ledger, manifest: ReleaseManifest, rollback = false): boolean {
+export function hasReleaseGrant(ledger: Pick<Ledger, "entries">, manifest: ReleaseManifest, rollback = false): boolean {
   const hash = manifestHash(manifest);
   return ledger.entries().some(e => {
     const d = e.data as { op?: string; scope?: { project?: string; manifestHash?: string; allowRollback?: boolean } };

@@ -56,7 +56,7 @@ function setup(preflight: () => Promise<{ ok: boolean; waitUntil?: number }>) {
   return { fx, run, reviewerSpecs, reviewerInputs, calls, codexMarker, scenarioPath };
 }
 
-const reviewResults = (projectDir: string) => Ledger.open(projectDir).entries().filter((e) => e.kind === "review_result").map((e) => e.data as { status: string; reviews: { reviewer: string }[]; error?: string });
+const reviewResults = (projectDir: string) => Ledger.open(projectDir).entries().filter((e) => e.kind === "review_result").map((e) => e.data as { status: string; reviews?: { reviewer: string }[]; error?: string });
 
 describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () => {
   it("reviews with Claude only, from the gate's evidence, and no grading output reaches any reviewer input", async () => {
@@ -70,7 +70,7 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     expect(s.reviewerSpecs).toHaveLength(1);
     expect(sessionCalls({ scenarioPath: s.scenarioPath }).map((c) => [c.session, c.envelope, c.tools])).toEqual([["review", [], "Read,Glob,Grep"]]);
     const results = reviewResults(s.calls[0]!.projectDir);
-    expect(results.map((d) => [d.status, d.reviews.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
+    expect(results.map((d) => [d.status, d.reviews?.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
     // Decision 114: a bug task's reviewer checks the fix against the report: every path, new inputs, the layer.
     const reviewPrompt = s.reviewerSpecs[0]!.args[s.reviewerSpecs[0]!.args.indexOf("-p") + 1]!;
     expect(reviewPrompt).toContain("fixes a reported bug");
@@ -100,7 +100,7 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     // The infrastructure error reaches the loop as the service's recorded verdict, never as a code "fail" (decision 111).
     const results = reviewResults(s.calls[0]!.projectDir);
     expect(results.map((d) => d.status)).toEqual(["error"]);
-    expect(results[0]!.reviews.map((x) => x.reviewer)).toEqual(["claude"]);
+    expect(results[0]!.reviews?.map((x) => x.reviewer)).toEqual(["claude"]);
     expect(JSON.stringify(results[0])).toMatch(/live preflight failed/);
     expect(existsSync(s.codexMarker)).toBe(false);
     expect(r.metrics.repairs).toBe(0);
@@ -137,7 +137,7 @@ describe("eval jarvis: the production review wiring", { timeout: 180_000 }, () =
     const prompt = s.reviewerSpecs[0]!.args[s.reviewerSpecs[0]!.args.indexOf("-p") + 1]!;
     expect(Buffer.byteLength(prompt)).toBeLessThan(256 * 1024);
     expect(prompt).toContain("GATE-TAIL-MARKER");
-    expect(reviewResults(s.calls[0]!.projectDir).map((d) => [d.status, d.reviews.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
+    expect(reviewResults(s.calls[0]!.projectDir).map((d) => [d.status, d.reviews?.map((x) => x.reviewer)])).toEqual([["pass", ["claude"]]]);
   });
 });
 

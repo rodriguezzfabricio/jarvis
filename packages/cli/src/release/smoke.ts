@@ -1,3 +1,5 @@
+import { PROVIDERS } from "../broker/adapters/providers.ts";
+import { requestRenderMarker } from "./render-readiness.ts";
 import type { LedgerEntry } from "../ledger/ledger.ts";
 import { hasReleaseGrant } from "./grants.ts";
 import { checkManifest, manifestHash, parseManifest, releaseRef } from "./manifest.ts";
@@ -48,12 +50,15 @@ export async function runSmoke(input: SmokeInput): Promise<LedgerEntry> {
   const retries = input.retries ?? 2;
   const timeoutMs = input.timeoutMs ?? 10_000;
   if (!Number.isInteger(retries) || retries < 0 || retries > 5 || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 60_000) throw new Error("invalid smoke limits");
+  const markerPath = PROVIDERS[manifest.provider].markerPath ?? "/.well-known/jarvis-release";
   const observations: { origin: string; path: string; statuses: number[]; passed: boolean }[] = [];
-  for (const origin of origins) for (const path of new Set(["/", ...manifest.smokePaths, "/.well-known/jarvis-release"])) {
+  for (const origin of origins) for (const path of new Set(["/", ...manifest.smokePaths, markerPath])) {
     const statuses: number[] = []; let passed = false;
     for (let attempt = 0; attempt <= retries; attempt++) {
-      const result = await request(input.fetch ?? globalThis.fetch, new URL(path, origin).href, timeoutMs,
-        path === "/.well-known/jarvis-release" ? manifestHash(manifest) : undefined);
+      const result = path === "/.jarvis-build.json"
+        ? await requestRenderMarker(origin, input.fetch, timeoutMs).then(r => ({ status: r.status, identity: r.hash === manifestHash(manifest) }))
+        : await request(input.fetch ?? globalThis.fetch, new URL(path, origin).href, timeoutMs,
+        path === markerPath ? manifestHash(manifest) : undefined);
       statuses.push(result.status);
       passed = result.status >= 200 && result.status < 300 && result.identity;
       if (passed) break;

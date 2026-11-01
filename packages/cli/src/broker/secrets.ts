@@ -5,6 +5,9 @@ import type { SecretsBackend } from "./broker.ts";
 
 const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
 
+/** The house-stack account tokens `jarvis setup` stores (decision 43), beside the per-project files. Not a valid project id. */
+export const ACCOUNTS_SECRETS_FILE = "house-stack.accounts.env";
+
 /**
  * The default secrets backend (decision 13): an env file at ~/.jarvis/secrets/<project>.env, owner-only.
  * Only the broker reads it; task sessions are denied the whole runner folder (decisions 59, 69).

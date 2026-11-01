@@ -54,7 +54,11 @@ describe("shared-state morning report", () => {
     const ledger = run(); const state = stateOf(ledger);
     expect(isDone(state.tasks.T1!)).toBe(true);
     const report = renderReport(state, ledger.entries(), [], options);
-    for (const text of ["preview-ready", revision, "unit", "code", "security", "Blue buttons", "Needs approved provider", "http://localhost:3000", ledger.entries().at(-1)!.hash]) expect(report).toContain(text);
+    for (const text of [revision, "unit", "code", "security", "Blue buttons", "Needs approved provider", ledger.entries().at(-1)!.hash]) expect(report).toContain(text);
+    // A release state with no accepted manifest or evidence behind it holds nothing (decision 158): it is named, never claimed.
+    expect(report).toContain("State: not-reached");
+    expect(report).toMatch(/Lapsed: preview-ready \(#\d+\) no longer holds; missing manifest/);
+    expect(report).not.toContain("http://localhost:3000");
     expect(report.indexOf("Blue buttons")).toBeLessThan(report.indexOf("## Done"));
     expect(notifierSummary(state, ledger.entries())).toContain("1/2 done");
   });

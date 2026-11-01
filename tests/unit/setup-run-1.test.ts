@@ -31,14 +31,17 @@ it("runs every step once: accounts through the secrets backend, ntfy topics, tas
   expect(st.steps["accounts.deploy"]?.provider).toBe("vercel");
   // Production tokens are broker-only; the development OAuth app is preview-tier.
   expect(s.stored.get("GITHUB_TOKEN")).toEqual({ value: SENTINEL, brokerOnly: true });
-  expect(s.stored.get("VERCEL_TOKEN")).toEqual({ value: `${SENTINEL}-vercel`, brokerOnly: true });
+  // Two deploy tokens, both broker-only: neither provider limits a token to previews (decision 159).
+  expect(s.stored.get("VERCEL_PREVIEW_TOKEN")).toEqual({ value: `${SENTINEL}-vercel-preview`, brokerOnly: true });
+  expect(s.stored.get("VERCEL_PRODUCTION_TOKEN")).toEqual({ value: `${SENTINEL}-vercel-production`, brokerOnly: true });
+  expect(st.steps["accounts.deploy"]?.secrets).toEqual([{ key: "VERCEL_PREVIEW_TOKEN", tier: "preview", brokerOnly: true }, { key: "VERCEL_PRODUCTION_TOKEN", tier: "production", brokerOnly: true }]);
   expect(s.stored.get("CLOUDFLARE_API_TOKEN")).toEqual({ value: `${SENTINEL}-cf`, brokerOnly: true });
   expect(s.stored.get("OAUTH_DEV_CLIENT_SECRET")).toEqual({ value: `${SENTINEL}-oauth-secret`, brokerOnly: false });
-  expect([...s.stored.keys()].sort()).toEqual(["CLOUDFLARE_API_TOKEN", "GITHUB_TOKEN", "OAUTH_DEV_CLIENT_ID", "OAUTH_DEV_CLIENT_SECRET", "VERCEL_TOKEN"]);
+  expect([...s.stored.keys()].sort()).toEqual(["CLOUDFLARE_API_TOKEN", "GITHUB_TOKEN", "OAUTH_DEV_CLIENT_ID", "OAUTH_DEV_CLIENT_SECRET", "VERCEL_PREVIEW_TOKEN", "VERCEL_PRODUCTION_TOKEN"]);
   expect(st.steps["accounts.github"]?.secrets).toEqual([{ key: "GITHUB_TOKEN", tier: "production", brokerOnly: true }]);
   expect(st.steps["accounts.oauth"]?.secrets).toEqual([{ key: "OAUTH_DEV_CLIENT_ID", tier: "preview", brokerOnly: false }, { key: "OAUTH_DEV_CLIENT_SECRET", tier: "preview", brokerOnly: false }]);
   // Every token prompt is hidden, and nothing else is.
-  expect(t.calls.filter((c) => c.kind === "hidden")).toHaveLength(5);
+  expect(t.calls.filter((c) => c.kind === "hidden")).toHaveLength(6);
   for (const c of t.calls.filter((x) => x.kind === "ask")) expect(c.prompt).not.toMatch(/token:|secret:|client id:/i);
   // The minimal scope is printed for each account.
   expect(r.text()).toMatch(/Contents: read and write/); expect(r.text()).toMatch(/Workers Scripts: Edit/);

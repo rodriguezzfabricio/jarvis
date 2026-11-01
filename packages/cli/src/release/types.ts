@@ -2,7 +2,7 @@ import type { BrokerRequest, BrokerResponse } from "../broker/broker.ts";
 import type { Ledger, LedgerEntry } from "../ledger/ledger.ts";
 import type { SessionOutcome } from "../proc/session.ts";
 
-export type Provider = "vercel" | "netlify";
+export type Provider = "vercel" | "netlify" | "render";
 export type ReleaseAction = "preview" | "promote" | "rollback";
 export type ReleaseState = "preview-ready" | "release-ready" | "deployed";
 export interface CopyCommands {
@@ -29,7 +29,10 @@ export interface ReleaseManifest {
   data: { kind: "none" } | { kind: "sqlite" | "postgres"; source: string; commands: CopyCommands };
 }
 /** Loaded from protected runner setup/build state, never from the session's manifest. */
+export interface RenderDestination { repo: string; branch: string; url: string }
+export interface RenderSetup { preview: RenderDestination; production: RenderDestination }
 export interface ReleaseProjectConfig {
+  render?: RenderSetup;
   project: string;
   provider: Provider;
   siteId: string;
@@ -60,6 +63,11 @@ export interface ReachStateInput {
   manifest: ReleaseManifest;
   state: ReleaseState;
   evidence: ReleaseEvidence;
+  /**
+   * Checks the runner requires from protected state (the approved store's names), added to the plan's own required
+   * checks (decision 157). Recorded with the state, so every recheck requires them again.
+   */
+  requiredChecks?: readonly string[];
 }
 export interface StateResult {
   missing: string[];

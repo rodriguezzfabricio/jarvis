@@ -164,7 +164,7 @@
   {
     "name": "stage2 r3 search fixtures rejected",
     "file": "plugin/agents/recorded-researcher.md",
-    "anchor": "a search's is a synthetic `websearch:?q=\u2026` naming the query",
+    "anchor": "a search's is a synthetic `websearch:?q=…` naming the query",
     "replacement": "any other URL is malformed"
   },
   {

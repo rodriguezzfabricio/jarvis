@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Frames the job, checks decisions, lists assumptions, decides engineering and asks at most 7 ranked product questions with defaults, including design. Use after research, before spec.
+description: Frames the job, checks decisions, lists assumptions, decides engineering and asks one ranked round of at most 7 product questions with defaults, including design when needed. Use after research, before spec.
 ---
 
 # Intake
@@ -77,7 +77,7 @@ Every open decision is one or the other (decision 7):
 
 Engineering that protects people outside the project (anyone the product messages, stores data about or acts on) is decided by the session and recorded, never left open or asked. At least: a refusal list checked before every message (anyone who declines gets none again), a retention rule for their data and an idempotency rule (a retry never repeats a message or action).
 
-Never ask what the code, the register, the backlog or research already answers. Never ask the user to pick a library. Ask the product need, not which storage provider to use; decide the provider as engineering unless the user must hold an account, pay, or would notice the difference.
+Never ask what the code, the register, the backlog or research already answers. Never ask the user to pick a library, provider or service: ask the product need it serves and decide the pick as engineering, unless the user must hold an account, pay, or would notice the difference.
 
 ## Write the questions
 
@@ -103,7 +103,7 @@ Never ask what the code, the register, the backlog or research already answers. 
 
 ## Send the round
 
-Before sending, check each question's text, trade-off and default against the fixed constraints and build constraints; remove promises the build cannot keep and surface real conflicts under Request fidelity.
+Before sending, check each question's text, default, trade-off and alternatives against the fixed constraints and build constraints; remove promises the build cannot keep and surface real conflicts under Request fidelity.
 
 **One round, all at once.** First a summary of at most 5 lines (what you understood, the job story, the umbrella verdict), then any register conflicts, the assumptions list, the questions and the mockups. End with: **"Reply 'defaults' to accept all, or answer the ones you care about here; in a submitted reply, omitted questions accept their defaults. If phone delivery succeeded, you can also tap Use defaults."**
 
@@ -143,7 +143,7 @@ Never send questions or mockups through any other channel, and never put code, s
 
 Read `references/decision-examples.md` before recording for attribution, firmness and examples. Ambiguous free text becomes an assumption.
 
-Hard stops still apply: a default can't authorize spending or an outside action; ship requests release, production and spending through the broker.
+Hard stops still apply: no answer or default grants release, production, spending or an outside action; ship requests those through the broker.
 
 An entry states the decision itself, with who gave it and the question ID; never use a bare acknowledgement as decision text. A design direction pick is Taste, whoever gave it. Keep raw answers in the intake record as evidence.
 
@@ -156,7 +156,7 @@ Then, in this order:
 2. **Record every decision** with `jarvis decide`, one call each, with `--why`, a repo-relative `--source`, and `--reversibility` when not easily reversed. **Never edit `docs/decisions.md` directly** (decision 83).
 
    ```
-   jarvis decide --by user --class mechanical|taste --why "<the question's why; who answered questionId>" --alternatives "<the options not taken>" --depends-on "<what depends on it, for Taste>" --answer <answerSeq>:<questionId> --recorded-answer "<the exact recorded answer>" --source docs/intake/<file>.md "<the decision itself, with question ID>"
+   jarvis decide --by user --class mechanical|taste --why "<the question's why>" --alternatives "<the options not taken>" --depends-on "<what depends on it, for Taste>" --answer <answerSeq>:<questionId> --recorded-answer "<the exact recorded answer>" --source docs/intake/<file>.md "<questionId>: <the decision itself>"
    ```
 
    The reference covers defaults, supersessions and Challenges. Revisit Jarvis calls with `--by jarvis` and `--reason`.

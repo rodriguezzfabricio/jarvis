@@ -26,26 +26,32 @@
   {
     "name": "stage2 r5 asks provider instead of need",
     "file": "skills/intake/SKILL.md",
-    "anchor": "Ask the product need, not which storage provider to use; decide the provider as engineering unless the user must hold an account, pay, or would notice the difference.",
-    "replacement": "Ask the user to choose between storage providers."
+    "anchor": "Never ask the user to pick a library, provider or service: ask the product need it serves and decide the pick as engineering, unless the user must hold an account, pay, or would notice the difference.",
+    "replacement": "Never ask the user to pick a library; offer providers as alternatives."
   },
   {
     "name": "stage2 r5 skips question constraint check",
     "file": "skills/intake/SKILL.md",
-    "anchor": "Before sending, check each question's text, trade-off and default against the fixed constraints and build constraints; remove promises the build cannot keep and surface real conflicts under Request fidelity.",
+    "anchor": "Before sending, check each question's text, default, trade-off and alternatives against the fixed constraints and build constraints; remove promises the build cannot keep and surface real conflicts under Request fidelity.",
     "replacement": "Check only the default against constraints."
   },
   {
-    "name": "stage2 r5 silently widens scope",
+    "name": "stage2 r5 widening applies on silence",
     "file": "skills/spec/SKILL.md",
-    "anchor": "A decision after intake that widens who or what the product acts on, or overrides a safeguard research found, is a `[delegated]` assumption labeled \"default unconfirmed\" in the confirmation, never a silent Mechanical or Taste call.",
-    "replacement": "Scope expansion after intake is a silent Taste call."
+    "anchor": "Keep the requested scope and the safeguard, and list the widening first in the confirmation as a `[delegated]` \"default unconfirmed\" assumption that applies only if the user explicitly asks for it.",
+    "replacement": "List the widening in the confirmation as a default that applies unless the user objects."
   },
   {
     "name": "stage2 r5 mockup edits skip visual check",
     "file": "skills/design/SKILL.md",
-    "anchor": "After any edit to a mockup, re-render it at its phone width and re-render the comparison page; look at both screenshots before the confirmation round.",
+    "anchor": "After any edit to a mockup, re-render it at the width it was made for and re-render the comparison page; look at both screenshots and fix any overlap, clipping or broken wrapping before the confirmation round.",
     "replacement": "After a mockup edit, reuse the old screenshot."
+  },
+  {
+    "name": "stage2 r5 mockup confirmation stalls without a renderer",
+    "file": "skills/design/SKILL.md",
+    "anchor": "If rendering is unavailable, attach the revised HTML paths and say the revision wasn't visually checked;",
+    "replacement": "If rendering is unavailable, keep confirmation pending until it is;"
   },
   {
     "name": "stage2 r5 records raw acknowledgement as decision",
@@ -54,9 +60,21 @@
     "replacement": "Record raw acknowledgements as decisions and classify design picks as Mechanical."
   },
   {
+    "name": "stage2 r5 an answer grants release",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Hard stops still apply: no answer or default grants release, production, spending or an outside action;",
+    "replacement": "Hard stops still apply: a default can't authorize spending; an explicit answer can grant release or production;"
+  },
+  {
+    "name": "stage2 r5 reader role keeps the old stop rule",
+    "file": "plugin/agents/spec-reader.md",
+    "anchor": "Identify repeated findings by their concrete failure, so the parent can tell repeats from new blockers.",
+    "replacement": "Identify repeated findings by their concrete failure so the parent can stop after 3 passes with no new blocking gap."
+  },
+  {
     "name": "stage2 r5 writes Claude Code memory",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "Never write Claude Code memory files, including its auto-memory folders, through any tool. Put learnings in the project's own notes named by the skills, such as `.jarvis/notes/` or `docs/intake/`.",
+    "anchor": "Never write Claude Code memory files (auto-memory included), with any tool; keep learnings in the project notes the skills name.",
     "replacement": "Write learnings to Claude Code memory."
   }
 ]

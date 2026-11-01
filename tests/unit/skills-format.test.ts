@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { register as registerDecide } from "../../packages/cli/src/decisions/decide.ts";
 
 // The deterministic half of each Jarvis skill (decision 30, architecture §3.1): Agent Skills
 // frontmatter, the size limits, a gotchas section, at least 3 evals, and the sentences that carry
@@ -132,7 +134,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Take the answers", phrase: "jarvis intake answers" }, // decision 83
       { section: "Take the answers", phrase: "a steer note" }, // decision 50: no typed replies
       { section: "Take the answers", phrase: "never grants or widens anything" }, // the publish box is unauthenticated
-      { section: "Take the answers", phrase: "a default can't authorize spending or an outside action" },
+      { section: "Take the answers", phrase: "no answer or default grants release, production, spending or an outside action" }, // decision 168 restores the answer half
       { section: "Take the answers", phrase: "15 minutes" }, // decision 10
       { section: "Take the answers", phrase: "unconfirmed" },
       { section: "Take the answers", phrase: "Never run your own timer" },
@@ -357,7 +359,7 @@ describe("skills folder", () => {
   });
 });
 
-// Decision 85: decide-call grammar. recorded-answer requires the r5 integrator patch before use.
+// Decision 85: the flags `jarvis decide` accepts, and the values each one takes (recorded-answer: decision 168).
 const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer", "recorded-answer"];
 const DECIDE_BY = ["user", "default-accepted", "default-unconfirmed", "jarvis"];
 const DECIDE_CLASS = ["mechanical", "taste", "challenge"];
@@ -392,6 +394,15 @@ function parseDecide(call: string): { flags: Map<string, string>; positional: st
 describe("jarvis decide calls in every skill (decision 85)", () => {
   const names = Object.keys(skills);
 
+  // A flag a skill teaches but the CLI never registered fails every call that uses it (decision 168).
+  it("teaches only flags the real CLI registers", () => {
+    const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof registerDecide>[0] & { commands: { name(): string; options: { long?: string }[] }[] } };
+    const program = new Command(); registerDecide(program);
+    const decide = program.commands.find((c) => c.name() === "decide")!;
+    const registered = decide.options.map((o) => o.long?.replace(/^--/, ""));
+    for (const flag of DECIDE_FLAGS) expect(registered, `--${flag}`).toContain(flag);
+  });
+
   it.each(names)("%s: every call has valid --by and --class values, --why, a repo-relative --source and a decision", (name) => {
     for (const call of decideCalls(readSkill(name))) {
       const { flags, positional, problems } = parseDecide(call);
@@ -415,23 +426,35 @@ describe("jarvis decide calls in every skill (decision 85)", () => {
 });
 
 // Decision 119: `--by user` needs a recorded explicit answer (`--answer <answerSeq>:<questionId>`) and
-// its exact words (separate evidence for intake statements; see the r5 integrator snippet). A skill showing `--by user` without them teaches a call the CLI refuses, in any skill.
-describe("user-attributed decide calls in every skill folder (decision 119)", () => {
+// its exact words. Decision 168: the words go in `--recorded-answer` and the entry states the decision,
+// led by its question ID; without `--recorded-answer` the entry text must be the words themselves. A
+// skill showing `--by user` without either teaches a call the CLI refuses, in any skill or reference.
+describe("user-attributed decide calls in every skill folder (decisions 119 and 168)", () => {
   const all = readdirSync(skillsDir, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(`${skillsDir}${d.name}/SKILL.md`)).map((d) => d.name);
-
-  it.each(all)("%s: every --by user call cites --answer and quotes the exact recorded answer", (name) => {
-    for (const call of decideCalls(readSkill(name))) {
-      const { flags, positional } = parseDecide(call);
-      if (!(flags.get("by") ?? "").split("|").includes("user")) continue;
-      expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
-      if (name === "intake") {
-        expect(flags.get("recorded-answer"), `${call}: verified answer text`).toBe("<the exact recorded answer>");
-        expect(positional.join(" "), `${call}: the decision text`).toContain("the decision itself, with question ID");
-        expect(positional.join(" "), `${call}: no raw acknowledgement`).not.toContain("the exact recorded answer");
-      } else {
-        expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
-      }
+  const check = (call: string) => {
+    const { flags, positional, problems } = parseDecide(call);
+    expect(problems, call).toEqual([]);
+    if (!(flags.get("by") ?? "").split("|").includes("user")) return;
+    expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
+    if (flags.has("recorded-answer")) {
+      expect(flags.get("recorded-answer"), `${call}: verified answer text`).toBe("<the exact recorded answer>");
+      expect(positional.join(" "), `${call}: the decision text`).toBe('"<questionId>: <the decision itself>"');
+    } else {
+      expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
     }
+  };
+
+  it.each(all)("%s: every --by user call cites --answer and the exact recorded answer", (name) => {
+    for (const call of decideCalls(readSkill(name))) check(call);
+  });
+
+  it("intake states the decision and records the words separately, in the skill and its examples", () => {
+    const examples = readFileSync(`${skillsDir}intake/references/decision-examples.md`, "utf8");
+    const calls = [...decideCalls(readSkill("intake")), ...decideCalls(examples)];
+    const user = calls.filter((call) => parseDecide(call).flags.get("by")?.split("|").includes("user"));
+    expect(user.length).toBeGreaterThanOrEqual(3);
+    for (const call of calls) check(call);
+    for (const call of user) expect(parseDecide(call).flags.has("recorded-answer"), call).toBe(true);
   });
 });
 

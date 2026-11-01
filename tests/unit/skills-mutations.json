@@ -116,7 +116,7 @@
   {
     "name": "skills intake decide call drops why",
     "file": "skills/intake/SKILL.md",
-    "anchor": "jarvis decide --by user --class mechanical|taste --why \"<the question's why; who answered questionId>\" ",
+    "anchor": "jarvis decide --by user --class mechanical|taste --why \"<the question's why>\" ",
     "replacement": "jarvis decide --by user --class mechanical|taste "
   },
   {

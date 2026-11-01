@@ -47,18 +47,20 @@ describe("plan review service (decision 170)", () => {
     for (const call of f.calls) { expect(call.prompt).not.toContain("AUTHOR-REASONING-SECRET"); expect(call.prompt).toContain(f.material.planHash); }
     expect(readFileSync(join(f.calls[0]!.workspace, "..", "..", "..", "repo", "src", "app.mjs"), "utf8")).toBe("DIRTY-WORKSPACE-EDIT");
   });
-  it.each([
+  type F = { severity: "blocker" | "major" | "nit"; scope: string };
+  const precedence: [string, Record<string, F[]>, string][] = [
     ["a blocker in one lens fails", { critic: [{ severity: "blocker", scope: "T1" }] }, "fail"],
     ["a major alone needs resolution", { readiness: [{ severity: "major", scope: "T1" }] }, "resolve"],
     ["nits alone pass", { "zoom-out": [{ severity: "nit", scope: "T1" }] }, "pass"],
     ["a blocker outranks a major in another lens", { critic: [{ severity: "major", scope: "T1" }], readiness: [{ severity: "blocker", scope: "AC1" }] }, "fail"],
-  ] as const)("verdict precedence: %s", async (_name, perLens, expected) => {
-    const f = setupPlanFixture((lens) => (perLens as Record<string, { severity: "blocker" | "major" | "nit"; scope: string }[]>)[lens] ? withFindings(lens, (perLens as Record<string, { severity: "blocker" | "major" | "nit"; scope: string }[]>)[lens]!) : clean(lens));
+  ];
+  it.each(precedence)("verdict precedence: %s", async (_name, perLens, expected) => {
+    const f = setupPlanFixture();
     await calibrate(f);
-    f.reviewer.mockImplementation(async (input) => { const lens = /Skeptical/.test(input.prompt) ? "zoom-out" : /Critic/.test(input.prompt) ? "critic" : "readiness"; const list = (perLens as Record<string, { severity: "blocker" | "major" | "nit"; scope: string }[]>)[lens]; return { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: list ? withFindings(lens, list) : clean(lens) }; });
+    f.reviewer.mockImplementation(async (input) => { const lens = /Skeptical/.test(input.prompt) ? "zoom-out" : /Critic/.test(input.prompt) ? "critic" : "readiness"; const list = perLens[lens]; return { reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: list ? withFindings(lens, list) : clean(lens) }; });
     const result = await createPlanReviewService(f.options).review(f.material);
     expect(result.verdict).toBe(expected);
-    expect(result.findings.map((x) => x.id)).toEqual(Object.entries(perLens).flatMap(([lens, list]) => list.map((_, i) => `${lens}-${i + 1}`)));
+    expect(result.findings.map((x) => x.id)).toEqual(Object.entries(perLens).flatMap(([lens, list]) => list.map((_item, i) => `${lens}-${i + 1}`)));
     expect(planReviews(f).at(-1)).toMatchObject({ lens: "overall", verdict: expected, counts: true });
   });
   it("a lens that did not report its checks, or returned garbage, makes the review an error, never a pass", async () => {

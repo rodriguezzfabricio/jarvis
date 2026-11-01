@@ -1,0 +1,128 @@
+[
+  {
+    "name": "plan verdict: a blocker no longer fails",
+    "file": "packages/cli/src/review/plan-verdict.ts",
+    "anchor": "findings.some((f) => f.severity === \"blocker\") ? \"fail\" :",
+    "replacement": "false ? \"fail\" :"
+  },
+  {
+    "name": "plan verdict: a major no longer needs resolution",
+    "file": "packages/cli/src/review/plan-verdict.ts",
+    "anchor": "findings.some((f) => f.severity === \"major\") ? \"resolve\" : \"pass\"",
+    "replacement": "false ? \"resolve\" : \"pass\""
+  },
+  {
+    "name": "plan verdict: missing required checks are accepted",
+    "file": "packages/cli/src/review/plan-verdict.ts",
+    "anchor": "  if (missing.length) return invalid(`plan review did not report checks: ${missing.join(\", \")}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan verdict: invalid output passes",
+    "file": "packages/cli/src/review/plan-verdict.ts",
+    "anchor": "function invalid(error: string): PlanLensVerdict { return { verdict: \"fail\", valid: false, findings: [], checked: [], error }; }",
+    "replacement": "function invalid(error: string): PlanLensVerdict { return { verdict: \"pass\", valid: true, findings: [], checked: [], error }; }"
+  },
+  {
+    "name": "plan service: an uncalibrated review counts",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "const counts = calibration ? false : calibrated(options, model);",
+    "replacement": "const counts = !calibration;"
+  },
+  {
+    "name": "plan service: a changed checkout is ignored",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "        if (checkoutHash(workspace) !== before) throw new Error(\"read-only plan review checkout changed\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan service: the author's reasoning stays in the checkout",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "  for (const path of AUTHOR_ONLY_PATHS) rmSync(join(workspace, path), { recursive: true, force: true });\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan service: a bad control counts without naming every planted scope",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "return data!.verdict === \"fail\" && Array.isArray(planted) && PLANTED_SCOPES.every((scope) => planted.includes(scope));",
+    "replacement": "return data!.verdict === \"fail\";"
+  },
+  {
+    "name": "plan service: a lens error becomes a pass",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "verdicts.push(evaluated.valid ? evaluated.verdict : \"error\");",
+    "replacement": "verdicts.push(evaluated.valid ? evaluated.verdict : \"pass\");"
+  },
+  {
+    "name": "plan service: a wrong plan hash is accepted",
+    "file": "packages/cli/src/review/plan-service.ts",
+    "anchor": "      if (!/^[a-f0-9]{64}$/.test(material.planHash) || sha(material.plan) !== material.planHash) throw new Error(\"the plan hash does not match the plan\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan resolve: a major may be declined",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "if (finding.severity !== \"nit\" && r.action === \"decline\") throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "plan resolve: a blocker is contested with a file",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "if (finding.severity === \"blocker\" && kind !== \"decision\") throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "plan resolve: an unresolved major is accepted",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (unresolved.length) throw new Error(`every blocker and major needs a resolution; missing: ${unresolved.join(\", \")}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan resolve: a fix needs no plan change",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "    if (current === file.planHash) throw new Error(\"a fix resolution needs a changed .jarvis/plan.json; revise the plan, then run jarvis plan review again\");\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan resolve: contest evidence need not exist",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (!path.startsWith(`${root}/`) || !existsSync(path) || !lstatSync(path).isFile()) throw new Error(`contest evidence names no file in the repo: ${evidence}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan resolve: \"this was intentional\" is evidence",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "if (/intentional|on purpose|by design/i.test(r.evidence) && !/^D[1-9]\\d*$/.test(r.evidence.trim())) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "plan status: a review that does not count passes the gate",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (data.counts !== true) return { ok: false, reason: \"the plan review does not count: its reviewer has no passing negative control for this policy\" };\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan status: open escalations do not block",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (waiting.length) return { ok: false, reason: `escalations wait for the user: ${waiting.join(\", \")}; answer each with jarvis plan accept <id> --answer \"<text>\"` };\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan status: unresolved majors do not block",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (open.length) return { ok: false, reason: `the plan review found blockers or majors without a resolution: ${open.join(\", \")}; run jarvis plan resolve` };\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan status: no review passes the gate",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "if (!review) return { ok: false, reason: `the plan has no Goldfish review at hash ${planHash}: run jarvis plan review` };",
+    "replacement": "if (!review) return { ok: true };"
+  },
+  {
+    "name": "plan accept: an answered escalation is answered again",
+    "file": "packages/cli/src/review/plan-resolve.ts",
+    "anchor": "  if (entries.some((e) => e.seq > open.seq && e.kind === \"plan_review\" && dataOf(e).purpose === \"escalation_answer\" && dataOf(e).id === id)) throw new Error(`escalation ${id} is already answered`);\n",
+    "replacement": ""
+  }
+]

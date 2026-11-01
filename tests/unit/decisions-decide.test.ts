@@ -93,6 +93,35 @@ describe("jarvis decide (decisions 83, 85)", () => {
     expect(read(dir)[1]).toMatchObject({ alternatives: [], dependsOn: [] });
   });
 
+  describe("alternatives on decisions that are hard to undo (decision 171)", () => {
+    const jarvis = ["--by", "jarvis", "--class", "mechanical", "--source", "evidence.md", "--why", "Keep it simple"];
+    it.each(["moderate", "hard", "irreversible"])("refuses a %s jarvis decision with no alternatives and writes nothing", (level) => {
+      const dir = repo();
+      const result = run(dir, [...jarvis, "--reversibility", level, "Use SQLite"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("needs at least one alternative, each as '<option>: rejected because <reason>'");
+      expect(existsSync(join(dir, "docs", "decisions.md"))).toBe(false);
+    });
+    it.each(['["Postgres"]', '["Postgres: rejected because"]', '["Postgres: rejected because no"]', '["Postgres: rejected because it needs a server to run", "Files"]'])("refuses an alternative without a rejection reason: %s", (alternatives) => {
+      const dir = repo();
+      expect(run(dir, [...jarvis, "--reversibility", "hard", "--alternatives", alternatives, "Use SQLite"]).status).not.toBe(0);
+      expect(existsSync(join(dir, "docs", "decisions.md"))).toBe(false);
+    });
+    it("accepts alternatives in the '<option>: rejected because <reason>' form", () => {
+      const dir = repo();
+      const result = run(dir, [...jarvis, "--reversibility", "hard", "--alternatives", '["Postgres: rejected because it needs a server the user would have to run", "JSON files: rejected because concurrent writes corrupt them"]', "Use SQLite"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(read(dir)[0]?.alternatives).toHaveLength(2);
+    });
+    it("reversible and easy decisions, and the user's own answers, need none", () => {
+      const dir = repo();
+      expect(run(dir, [...jarvis, "Use SQLite"]).status).toBe(0);
+      expect(run(dir, [...jarvis, "--reversibility", "easy", "Use SQLite again"]).status).toBe(0);
+      expect(run(dir, [...flags, "--reversibility", "irreversible", "Delete the old table"]).status).toBe(0);
+      expect(read(dir)).toHaveLength(3);
+    });
+  });
+
   it.each(["--by", "--class", "--source", "--why"])("requires %s and never writes on refusal", (flag) => {
     const dir = repo();
     const index = flags.indexOf(flag);

@@ -33,6 +33,7 @@ import { register as registerGate } from "./commands/gate.ts";
 import { register as registerMode } from "./commands/mode.ts";
 import { register as registerMemory } from "./commands/memory.ts";
 import { register as registerChecks } from "./commands/checks.ts";
+import { register as registerPlan } from "./commands/plan.ts";
 import * as intake from "./intake/index.ts";
 import { register as registerSetup } from "./setup/command.ts";
 import * as lanes from "./lanes/index.ts";
@@ -279,6 +280,8 @@ registerGate(program);
 registerMode(program);
 registerMemory(program);
 registerChecks(program);
+// jarvis plan review|resolve|accept|status: the Goldfish plan review before the build loop (decisions 170, 172).
+registerPlan(program);
 intake.register(program);
 registerSetup(program);
 lanes.register(program);

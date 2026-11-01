@@ -49,6 +49,8 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
     expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");
     expect(stageOf("packages/cli/src/runner/mutations-onboard.json")).toBe("6"); // onboarding that asks for edits (decision 148), task 7's stage
+    expect(stageOf("packages/cli/src/review/mutations-plan.json")).toBe("3"); // the Goldfish plan review (decision 170): the stage 3 hand-off, not the stage 4 review folder
+    expect(stageOf("packages/cli/src/decisions/mutations-plan.json")).toBe("3"); // required alternatives (decision 171), checked by the plan review
     expect(stageOf("tests/unit/setup-nosync-mutations.json")).toBe("0-1"); // the test workers' fsync replacement (decision 154)
   });
 

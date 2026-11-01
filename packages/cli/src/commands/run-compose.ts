@@ -25,6 +25,7 @@ import { approvedDesign, designMaterialFor, designOnBranch } from "../review/des
 import { createDesignReviewService, type DesignReviewServiceOptions } from "../review/design-service.ts";
 import { CODEX_API_DOMAINS } from "../review/confine.ts";
 import { createCodexReviewer, createReviewService, DEFAULT_REVIEW_ROUTING, type DesignReviewService, type ReviewMaterial, type ReviewService } from "../review/index.ts";
+import { planFileHash, planReviewStatus } from "../review/plan-resolve.ts";
 import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.ts";
 import type { TaskTier } from "../runner/harness.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
@@ -191,6 +192,12 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
   const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing)
     : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  // The Goldfish gate (decision 170): an architect's plan builds only after a counted plan review at its hash passed, or every
+  // blocker and major it found was resolved with nothing escalated still open. Session plans and bug requests are not plans it judges.
+  if (plan && context.request === undefined && context.planKind === undefined) {
+    const status = planReviewStatus(ledger.entries(), planFileHash(context.repoPath));
+    if (!status.ok) throw new Error(status.reason);
+  }
   const bugRequest = context.request !== undefined ? { request: context.request, tasks: new Map(plan!.tasks.map((t) => [t.id, t])) } : undefined;
   const preflight = options.preflight ?? (async () => doctorExitCode(await runDoctor({ home, repoPath: context.repoPath })) === 0);
   const reprobe = options.reprobe ?? (async () => allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })));

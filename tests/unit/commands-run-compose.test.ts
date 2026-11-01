@@ -9,6 +9,8 @@ import type { SignalHost } from "../../packages/cli/src/broker/host.ts";
 import { prepareProductionRun, reviewDispatch, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
 import type { PreparedRun } from "../../packages/cli/src/commands/run.ts";
 import { approvedDesign } from "../../packages/cli/src/review/design-material.ts";
+import { planFileHash } from "../../packages/cli/src/review/plan-resolve.ts";
+import { PLAN_POLICY_HASH } from "../../packages/cli/src/review/plan-service.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import type { Message, Notifier } from "../../packages/cli/src/notify/notifier.ts";
@@ -40,10 +42,16 @@ async function prepare(p: E2EProject, ctx: object = {}, extra: Partial<ComposeOp
   prepared.push(run);
   return run;
 }
-function writePlan(p: E2EProject, criteria = true, notes?: string[], tier?: 0 | 1 | 2) {
+function writePlan(p: E2EProject, criteria = true, notes?: string[], tier?: 0 | 1 | 2, reviewed = true) {
   mkdirSync(join(p.repoPath, ".jarvis"), { recursive: true });
   const tasks = p.tasks.map((t) => ({ id: t.id, title: t.title, goal: t.goal, exitCondition: t.exitCondition, acceptanceCriteria: criteria ? t.criteria : [], storyIds: [t.story], dependencies: t.dependencies, priority: t.priority, requiredChecks: t.requiredChecks, requiredReviews: t.requiredReviews }));
   writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), ...(tier !== undefined ? { tier } : {}), tasks }));
+  if (reviewed) recordPlanReview(p);
+}
+/** The runner's overall record of a Goldfish review at the current plan's hash (decision 170), as plan-service.ts writes it. */
+function recordPlanReview(p: E2EProject, verdict: "pass" | "resolve" | "fail" = "pass", findings: { id: string; lens: string; severity: "blocker" | "major" | "nit"; scope: string }[] = [], counts = true) {
+  const planHash = planFileHash(p.repoPath);
+  return p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { lens: "overall", revision: p.baseRevision, planHash, policyHash: PLAN_POLICY_HASH, model: "claude-opus-5-5", verdict, counts, planted: [], findings, purpose: "review" } });
 }
 const runDir = (p: E2EProject) => join(p.jarvisHome, "run");
 const socketsIn = (p: E2EProject) => existsSync(runDir(p)) ? readdirSync(runDir(p)).filter((n) => n.endsWith(".sock")) : [];
@@ -318,5 +326,48 @@ describe("production design composition", () => {
     expect(code.reviewDetailed).not.toHaveBeenCalled();
     expect(await dispatch({...request,reviewer:"code"} as never)).toEqual({status:"fail",recorded:true});
     expect(code.reviewDetailed).toHaveBeenCalledOnce(); expect(design.reviewDetailed).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the Goldfish gate on jarvis run (decision 170)", () => {
+  it("refuses an architect plan with no plan review at its hash, and hosts nothing", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false);
+    await expect(prepare(p)).rejects.toThrow(/no Goldfish review at hash [a-f0-9]{64}: run jarvis plan review/);
+    expect(socketsIn(p)).toEqual([]);
+  });
+  it("refuses a review that does not count, a failed review, and a review of another plan", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false); recordPlanReview(p, "pass", [], false);
+    await expect(prepare(p)).rejects.toThrow(/does not count/);
+    const q = project(); writePlan(q, true, undefined, undefined, false); recordPlanReview(q, "fail", [{ id: "critic-1", lens: "critic", severity: "blocker", scope: "T1" }]);
+    await expect(prepare(q)).rejects.toThrow(/critic-1/);
+    const r = project(); writePlan(r); writeFileSync(join(r.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(r.repoPath, ".jarvis", "plan.json"), "utf8")), notes: ["changed after the review"] }));
+    await expect(prepare(r)).rejects.toThrow(/no Goldfish review/);
+  });
+  it("runs a plan whose counted review passed", async () => {
+    const p = project(); writePlan(p);
+    const { loop } = await prepare(p);
+    expect(loop.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
+  });
+  it("a review that needs resolution runs only once every major is resolved and no escalation is open", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false);
+    const planHash = planFileHash(p.repoPath);
+    recordPlanReview(p, "resolve", [{ id: "critic-1", lens: "critic", severity: "major", scope: "T1" }, { id: "readiness-1", lens: "readiness", severity: "major", scope: "T2" }, { id: "zoom-out-1", lens: "zoom-out", severity: "nit", scope: "T1" }]);
+    await expect(prepare(p)).rejects.toThrow(/without a resolution: critic-1, readiness-1/);
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "resolution", planHash, resolutions: [{ id: "critic-1", action: "contest", evidence: "src/index.mjs" }, { id: "readiness-1", action: "escalate", question: "Which store?" }] } });
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "escalation", planHash, id: "readiness-1", question: "Which store?" } });
+    await expect(prepare(p)).rejects.toThrow(/escalations wait for the user: readiness-1/);
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "escalation_answer", planHash, id: "readiness-1", answer: "SQLite", by: "user", source: "terminal" } });
+    const { loop } = await prepare(p);
+    expect(loop.plan?.tasks).toHaveLength(2);
+  });
+  it("session plans, bug requests and ledger-only runs are not gated", async () => {
+    const p = project();
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    try {
+      const { loop } = await prepare(p, { request: "The citizenship filter is missing some jobs that require US citizenship." });
+      expect(loop.plan?.tasks).toHaveLength(1);
+      const q = project();
+      expect((await prepare(q)).loop.plan).toBeUndefined();
+    } finally { hosted.mockRestore(); }
   });
 });

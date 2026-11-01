@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { runGate, type GateInput, type GateResult } from "../checks/gate.ts";
 import type { ChecksStore } from "../checks/store.ts";
@@ -25,11 +25,25 @@ const Plan = z.object({
 export interface EvalDesignPlan { declaration:z.infer<typeof Plan>; qa:QaInstallInput; engine:string; plan:DesignBrowserPlan }
 const sha=(bytes:string|Buffer)=>createHash("sha256").update(bytes).digest("hex");
 
+/** Whether path is folder or below it, by identity: another letter case or a link to it is the same folder on APFS. */
+function within(path:string,folder:string):boolean {
+  const target=statSync(folder,{throwIfNoEntry:false});
+  if(!target||!existsSync(path))return false;
+  for(let p=realpathSync(path);;p=dirname(p)) {
+    const s=statSync(p);
+    if(s.dev===target.dev&&s.ino===target.ino)return true;
+    if(dirname(p)===p)return false;
+  }
+}
+
 /** tasks/<id>/design-checks.json contains only runner-owned plans and relative, hash-pinned inputs. */
 export function readEvalDesignPlan(evalsRepo:string,taskId:string):EvalDesignPlan|undefined {
   const root=realpathSync(evalsRepo), file=`tasks/${taskId}/design-checks.json`;
   if(!existsSync(join(root,file)))return undefined;
   const declaration=Plan.parse(JSON.parse(readPlanningFile(root,file)));
+  // The gate's and the grading's files reach a run only through installHiddenChecks and its disjointness check
+  // (decision 97); a design input from hidden/ would skip it, since the runner's pinned runtimes are exempt.
+  for(const input of [declaration.qa.source,declaration.engine.file]) if(within(join(root,input),join(root,"hidden"))) throw new Error(`eval design inputs may not come from hidden/: ${input}`);
   const manifestText=readPlanningFile(root,`${declaration.qa.source}/manifest.json`);
   if(sha(manifestText)!==declaration.qa.manifestSha256)throw new Error("eval QA manifest differs from its pin");
   const plan={...declaration.plan,flows:declaration.plan.flows.map(flow=>({...flow,url:`${DESIGN_ORIGIN}${page.parse(flow.url)}`,...(flow.finalUrl?{finalUrl:`${DESIGN_ORIGIN}${page.parse(flow.finalUrl)}`}:{})}))};
@@ -76,7 +90,8 @@ export async function captureDesignBaseline(input:GateInput,axeVersion:string,ga
   try {baseline=baselineFromObservation(JSON.parse(stdout.toString()),plan,axeVersion,input.revision);} catch {return false;}
   if(!input.store.verify(input.ledger).ok)throw new Error("checks changed during base capture");
   mkdirSync(join(input.store.checksDir,"expected"),{recursive:true,mode:0o700});
-  writeFileSync(baselineFile,JSON.stringify({...baseline,stdout:stdout.toString()}),{flag:"wx",mode:0o600});
+  // The observation once: a second copy of its stdout could double a large capture past readDesignBaseline's bound.
+  writeFileSync(baselineFile,JSON.stringify(baseline),{flag:"wx",mode:0o600});
   input.store.approve(input.ledger,"runner axe observation of the fresh base revision");
   return true;
 }

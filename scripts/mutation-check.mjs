@@ -232,6 +232,11 @@ const mutations = [
   ["store runtime depth limit", K, "depth > CHECK_RUNTIME_LIMITS.depth", "false"],
   ["store reserved names fold case", K, "inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES])", "inRoots(file, [...RUNTIME_ROOTS, ...PROTECTED_FILES])"],
   ["store reserves below a protected file", K, "inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES])", "inRoots(file.toLowerCase(), RUNTIME_ROOTS) || PROTECTED_FILES.includes(file.toLowerCase())"],
+  // The QA toolchain's reserved root and the bounded hashing of an installer's source (backlog 201, decision 167).
+  ["store reserves QA runtime roots", K, "\"qa-toolchain\", \"fixtures/qa-toolchain\", ", ""],
+  ["store bounds a standalone QA source", K, "runtimeRoot || inRoots(name.toLowerCase(), RUNTIME_ROOTS)", "false || inRoots(name.toLowerCase(), RUNTIME_ROOTS)"],
+  ["store refuses hard linked runtime files at approval", K, "if (!st.isFile() || st.nlink !== 1) throw", "if (st.nlink !== 1) continue; if (!st.isFile()) throw"],
+  ["store runtime roots predicate", K, "export const checkRuntimePath = (file: string): boolean => inRoots(file.toLowerCase(), RUNTIME_ROOTS);", "export const checkRuntimePath = (file: string): boolean => true;"],
   ["gate skips check verification", GT, "  if (!v.ok) return { status: \"tampered\"", "  if (false) return { status: \"tampered\""],
   ["gate runs checks unsandboxed", SR, "  const wrapped = await wrap(r);", "  const wrapped = r.command;"],
   ["gate lets checks read the runner folder", GT, "          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir), ...systemTemp],", "          denyRead: [real(homedir()), real(verifyDir), ...systemTemp],"],

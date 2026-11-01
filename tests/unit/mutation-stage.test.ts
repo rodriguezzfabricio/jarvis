@@ -29,6 +29,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-review-fix.json")).toBe("4"); // a review that asks for fixes (decision 126), task 3's stage
     expect(stageOf("packages/cli/src/review/mutations-design.json")).toBe("4"); // the design reviewer (decision 124)
     expect(stageOf("packages/cli/src/lanes/mutations-impeccable.json")).toBe("4"); // the Impeccable checks (decision 124)
+    expect(stageOf("packages/cli/src/lanes/mutations-eval-design.json")).toBe("4"); // the eval arm's per-run design gate (decision 167)
     expect(stageOf("packages/cli/src/doctor/mutations-doctor.json")).toBe("0-1"); // jarvis doctor is stage 0-1 (backlog 91, 95)
   });
 

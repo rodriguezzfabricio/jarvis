@@ -74,13 +74,49 @@
   {
     "name": "eval captures the base before candidate work",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "if (designPlan && designScope) await captureDesignBaseline",
-    "replacement": "if (false && designScope) await captureDesignBaseline"
+    "anchor": "if (designPlan && designScope) designBaseline = await captureDesignBaseline",
+    "replacement": "if (false && designScope) designBaseline = await captureDesignBaseline"
   },
   {
     "name": "eval rechecks installed project checks before trusted runtimes",
     "file": "packages/cli/src/eval/jarvis.ts",
     "anchor": "  assertHiddenDisjoint(loadHiddenChecks(gateStore.checksDir), grading);",
     "replacement": "  // broken: installed project suite not checked"
+  },
+  {
+    "name": "eval rechecks grading disjointness after the protected installs",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  assertHiddenDisjoint(gate, grading, checkRuntimePath);",
+    "replacement": "  // broken: no recheck after the protected installs"
+  },
+  {
+    "name": "eval exempts only the runner's runtimes from that recheck",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "assertHiddenDisjoint(gate, grading, checkRuntimePath);",
+    "replacement": "assertHiddenDisjoint(gate, grading, () => true);"
+  },
+  {
+    "name": "eval refuses a hidden gate's axe baseline",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "  if (shipsAxeBaseline(gateStore.checksDir)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "eval refuses a hidden gate's axe baseline in any letter case",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "readdirSync(dir).filter((entry) => entry.toLowerCase() === name)",
+    "replacement": "readdirSync(dir).filter((entry) => entry === name)"
+  },
+  {
+    "name": "eval refuses design checks without a design task",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "if (designPlan && !designRequired) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "eval reports a failed base capture",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "? \"recorded\" : \"failed\";",
+    "replacement": "? \"recorded\" : \"recorded\";"
   }
 ]

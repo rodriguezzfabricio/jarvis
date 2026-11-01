@@ -68,3 +68,19 @@ it("reads a baseline only from the protected expected area, and bounds its bytes
  const fd=openSync(join(f.store.checksDir,"expected/axe-base.json"),"r+");ftruncateSync(fd,32*1024*1024+1);closeSync(fd);
  expect(()=>readDesignBaseline(f.store.checksDir)).toThrow(/bound/);
 });
+
+it("approves a passing base capture as one locked record of the observation, with no second copy of its stdout",async()=>{
+ const f=setup(), definitions=installEvalDesignChecks(f.store,readEvalDesignPlan(f.root,"t1")!,"4.10.3");f.store.approve(f.ledger,"reviewed");
+ const url="http://127.0.0.1:1/jobs", axe={version:"4.10.3",violations:[{id:"color-contrast",impact:"serious",nodes:[{target:[".old"]}]}],incomplete:[]};
+ const pages=([375,768,1440] as const).map(width=>({width,url,accessibilityTree:"Jobs",screenshot:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="}));
+ const raw={kind:"design-browser",capture:{designId:"jobs",flows:[{id:"jobs",status:"pass"}],pages:pages.map(p=>({...p,flow:"jobs",screen:"jobs",visibleText:"Jobs"}))},web:[{kind:"qa-browser",url,pages:pages.map(p=>({...p,axe,frameCount:1,frameIds:["top"],frames:[{id:"top",url,loaderId:"1",axe}]}))}]};
+ const gate=async(input:import("../../packages/cli/src/checks/gate.ts").GateInput)=>{
+   const evidenceDir=join(input.projectDir,"evidence/base"),file="cases/capture/stdout",text=JSON.stringify(raw);mkdirSync(join(evidenceDir,"cases/capture"),{recursive:true});writeFileSync(join(evidenceDir,file),text);
+   return {status:"pass" as const,evidenceDir,entry:input.ledger.append({kind:"gate_result",actor:"runner",data:{revision:input.revision,evidence:{dir:evidenceDir,files:{[file]:sha(text)}}}})};
+ };
+ expect(await captureDesignBaseline({store:f.store,ledger:f.ledger,projectDir:f.ledger.dir,jarvisHome:f.root,workRoot:f.root,repoPath:f.root,revision:"a".repeat(40),check:definitions["design-browser"],taskId:"base",attemptId:"base"},"4.10.3",gate)).toBe(true);
+ expect(f.store.verify(f.ledger).ok).toBe(true);
+ const stored=JSON.parse(readFileSync(join(f.store.checksDir,"expected/axe-base.json"),"utf8"));
+ expect(Object.keys(stored).sort()).toEqual(["axeVersion","baseRevision","observation"]);
+ expect(stored.observation).toEqual(raw);
+});

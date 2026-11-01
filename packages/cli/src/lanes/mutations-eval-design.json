@@ -88,5 +88,29 @@
     "file": "packages/cli/src/lanes/qa-install.ts",
     "anchor": "if(canonical(files)!==canonical(input.files))",
     "replacement": "if(false)"
+  },
+  {
+    "name": "eval design inputs never come from hidden/",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "if(within(join(root,input),join(root,\"hidden\"))) throw",
+    "replacement": "if(false) throw"
+  },
+  {
+    "name": "hidden/ is recognized by identity, in any letter case",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "if(s.dev===target.dev&&s.ino===target.ino)return true;",
+    "replacement": "if(p===realpathSync(folder))return true;"
+  },
+  {
+    "name": "axe baseline stores the observation once",
+    "file": "packages/cli/src/lanes/eval-design.ts",
+    "anchor": "writeFileSync(baselineFile,JSON.stringify(baseline),",
+    "replacement": "writeFileSync(baselineFile,JSON.stringify({...baseline,stdout:stdout.toString()}),"
+  },
+  {
+    "name": "served config pins the engine copy, never the evals path",
+    "file": "packages/cli/src/lanes/impeccable-install.ts",
+    "anchor": "scanner:{...input.scanner,pin:{...pin,bin:copy}}",
+    "replacement": "scanner:{...input.scanner,pin}"
   }
 ]

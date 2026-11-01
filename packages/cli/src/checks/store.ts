@@ -18,6 +18,8 @@ const inRoots = (file: string, roots: readonly string[]) => roots.some(root => f
  * is the same folder as `design-runtime` (decision 162). The installers write only lower-case ASCII names.
  */
 export const protectedCheckPath = (file: string): boolean => inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES]);
+/** Inside a protected installer's runtime root, in any letter case: runner-pinned code and libraries, not definitions or plans. */
+export const checkRuntimePath = (file: string): boolean => inRoots(file.toLowerCase(), RUNTIME_ROOTS);
 export const CHECK_RUNTIME_LIMITS = { fileBytes: 256 * 1024 * 1024, totalBytes: 512 * 1024 * 1024, files: 4096, directories: 4096, depth: 32 } as const;
 
 /** Hash bytes in chunks: binary runtimes never become text or a file-sized allocation. */

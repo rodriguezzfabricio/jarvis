@@ -21,7 +21,8 @@ function failedAttempt() {
   return { p, base, candidate: commitCandidate(w1) };
 }
 const second = (p: ReturnType<typeof project>, baseRevision: string) => createWorkspace({ ...p.options, attemptId: "a2", baseRevision });
-const read = (dir: string, file: string) => readFileSync(join(dir, file), "utf8");
+// A missing file is an assertion failure, not a thrown ENOENT, so a dropped reconcile is caught, never an ERROR (decision 146).
+const read = (dir: string, file: string) => { expect(existsSync(join(dir, file)), `${file} exists`).toBe(true); return readFileSync(join(dir, file), "utf8"); };
 
 describe("seeding a repair workspace from its failed candidate", () => {
   it("checks the candidate's files out over an unchanged base, and the next candidate is still the whole change", () => {

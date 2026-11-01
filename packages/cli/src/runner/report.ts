@@ -33,6 +33,12 @@ function releaseLines(entries: readonly LedgerEntry[]): { lines: string[]; summa
   const status = releaseStatus(entries);
   const current = status.current;
   const lines = [`State: ${current ? current.state : "not-reached"}`];
+  if (current?.state === "built") {
+    lines[0] = "State: built, not distributed";
+    lines.push(`Revision: ${line(current.revision)} (#${current.entry.seq})`, `Bundle: ${line(current.bundlePath)}`, `SHA-256: ${current.artifactHash}`,
+      `Native smoke: not run (${line(current.nativeSmoke.reason)})`);
+    return { lines, summary: `built, not distributed; ${current.bundlePath}; SHA-256 ${current.artifactHash}; native smoke: not run (${current.nativeSmoke.reason})` };
+  }
   if (current) {
     const hash = current.manifestHash;
     lines.push(`Revision: ${line(current.manifest.revision)} (#${current.entry.seq})`,

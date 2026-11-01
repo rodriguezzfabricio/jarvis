@@ -4,7 +4,8 @@ import type { SessionOutcome } from "../proc/session.ts";
 
 export type Provider = "vercel" | "netlify" | "render";
 export type ReleaseAction = "preview" | "promote" | "rollback";
-export type ReleaseState = "preview-ready" | "release-ready" | "deployed";
+export type WebReleaseState = "preview-ready" | "release-ready" | "deployed";
+export type ReleaseState = WebReleaseState | "built";
 export interface CopyCommands {
   migrate: string;
   backup: string;
@@ -61,7 +62,7 @@ export interface ReleaseEvidence {
 export interface ReachStateInput {
   ledger: Ledger;
   manifest: ReleaseManifest;
-  state: ReleaseState;
+  state: WebReleaseState;
   evidence: ReleaseEvidence;
   /**
    * Checks the runner requires from protected state (the approved store's names), added to the plan's own required

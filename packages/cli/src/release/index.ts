@@ -8,4 +8,8 @@ export { createDataSnapshot, runRehearsal } from "./rehearsal.ts";
 export { dockerCopyExecutor, type DockerCopyOptions } from "./docker.ts";
 export { recoverFailedSmoke, runSmoke } from "./smoke.ts";
 export type { CopyCommands, CopyCommandSpec, Provider, ReachStateInput, RecoveryInput, RehearsalInput, ReleaseAction,
-  ReleaseEvidence, ReleaseManifest, ReleaseProjectConfig, ReleaseState, SmokeInput, StateResult } from "./types.ts";
+  ReleaseEvidence, ReleaseManifest, ReleaseProjectConfig, ReleaseState, WebReleaseState, SmokeInput, StateResult } from "./types.ts";
+
+export { desktopReleasePlan, installDesktopRelease, missingDesktopEvidence, desktopReleaseView, runDesktopRelease, DESKTOP_ARTIFACT_TYPE, NATIVE_SMOKE_REASON, type DesktopReleaseView } from "./desktop.ts";
+export { prepareRelease, runReleaseStep, type ReleaseRuntime, type ReleaseSeams, type ReleaseStepInput, type ReleaseStepOutcome } from "./run.ts";
+export { loadReleaseSetup, parseReleaseSetup, saveReleaseSetup, type DesktopReleaseSetup, type WebReleaseSetup, type ReleaseSetup } from "./config.ts";

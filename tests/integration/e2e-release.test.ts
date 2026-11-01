@@ -141,6 +141,7 @@ describe("e2e: golden task 11's release path on a fake provider", { timeout: 600
     const entries = p.ledger.entries();
     const status = releaseStatus(entries);
     expect(status.current).toMatchObject({ state: "preview-ready", previewUrl: "https://deploy-1--habits.netlify.app", productionGranted: false });
+    if (status.current?.state === "built") throw new Error("web release expected");
     const manifest = status.current!.manifest;
     expect(manifest.revision).toBe(lastGreen(p));
     // Runner values replaced the session's destination and artifact claims; the claims a session may make were kept.
@@ -179,6 +180,7 @@ describe("e2e: golden task 11's release path on a fake provider", { timeout: 600
     // exact payload doesn't satisfy the adapter, which never reaches the provider. Deployed is never reached.
     const release = (await prepareRelease({ projectId: p.projectId, projectDir: p.projectDir, workRoot: join(p.home, ".jarvis-work"), worktreeRoot: join(p.home, ".jarvis-work", "worktrees"),
       repoPath: p.repoPath, home: p.home, ledger: p.ledger }, r.seams))!;
+    if (release.kind === "desktop") throw new Error("web release expected");
     const broker = projectBroker({ jarvisHome: p.jarvisHome, projectDir: p.projectDir, project: p.projectId, ledger: p.ledger, deploy: release.adapters });
     const promote = { op: "deploy.promote" as const, payload: { ref: releaseRef(manifest, "promote") } };
     const asked = await broker.handle(promote);

@@ -1,0 +1,104 @@
+[
+  {
+    "name": "desktop_configure_preserves_approved_checks",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (existsSync(store.lockPath) && !store.verify(ledger).ok)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "desktop_configure_refuses_unapproved_store",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (!existsSync(store.lockPath) && Object.keys(store.hashAll()).length) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "desktop_export_requires_passing_build",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "if (result.status !== \"pass\") {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "desktop_plan_matches_protected_setup",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (!existsSync(planPath) || canonical(JSON.parse(readFileSync(planPath, \"utf8\"))) !== canonical(desktopReleasePlan(setup)))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "desktop_artifact_content_rechecked",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "artifactDigest(bundle) !== a.artifactHash || metadataHash(bundle) !== a.metadataHash",
+    "replacement": "metadataHash(bundle) !== a.metadataHash"
+  },
+  {
+    "name": "desktop_artifact_modes_rechecked",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "artifactDigest(bundle) !== a.artifactHash || metadataHash(bundle) !== a.metadataHash",
+    "replacement": "artifactDigest(bundle) !== a.artifactHash"
+  },
+  {
+    "name": "desktop_artifact_root_is_trusted",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "checkTrustedDir(root);",
+    "replacement": "void root;"
+  },
+  {
+    "name": "desktop_artifact_path_is_real",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "|| realpathSync(bundle) !== bundle) throw",
+    "replacement": "|| false) throw"
+  },
+  {
+    "name": "desktop_checks_revalidated",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (!checksHold(entries, String(d.revision), d.checks, [...scope.checks, ...required, \"desktop-build\"])) missing.push(\"checks\");",
+    "replacement": "if (false) missing.push(\"checks\");"
+  },
+  {
+    "name": "desktop_checks_evidence_integrity",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "&& data(e).checksLock === data(approved).lockHash && evidenceIntact(e);",
+    "replacement": "&& data(e).checksLock === data(approved).lockHash;"
+  },
+  {
+    "name": "desktop_reruns_every_approved_check",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "for (const check of i.checks) {",
+    "replacement": "for (const check of i.checks.slice(0, 1)) {"
+  },
+  {
+    "name": "desktop_built_requires_done_revision",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "if (!scope.done || scope.lastGreen !== d.revision) missing.push(\"tasks\");",
+    "replacement": "if (false) missing.push(\"tasks\");"
+  },
+  {
+    "name": "desktop_artifact_survives_cleanup",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "room = undefined; // Durable artifact belongs to project state, never to the gate's cleanup.",
+    "replacement": "// Mutant: cleanup also removes the delivered bundle."
+  },
+  {
+    "name": "desktop_never_calls_deploy",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "const checks = [built.result.entry.seq];",
+    "replacement": "await i.broker.handle({ op: \"deploy.preview\", payload: { ref: \"forbidden\" } });\n    const checks = [built.result.entry.seq];"
+  },
+  {
+    "name": "desktop_no_automatic_native_probe",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "exportBundle: (captured, build) => {",
+    "replacement": "probe: async () => ({ kind: \"qa-desktop-native\", status: \"observed\", pid: 123, stayedUpMs: 1000, menuBar: true, shutdown: { code: 0, signal: null } }),\n      exportBundle: (captured, build) => {"
+  },
+  {
+    "name": "desktop_capture_export_hash_binding",
+    "file": "packages/cli/src/release/desktop.ts",
+    "anchor": "!Object.keys(files).length || canonical(files) !== canonical(captured.files)",
+    "replacement": "!Object.keys(files).length"
+  },
+  {
+    "name": "desktop_default_gate_retains_handoff",
+    "file": "packages/cli/src/lanes/desktop.ts",
+    "anchor": "await input.afterCases(join(scratch, \"run\", \"checkout\"));",
+    "replacement": "void scratch;"
+  }
+]

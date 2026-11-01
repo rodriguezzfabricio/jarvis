@@ -41,6 +41,7 @@ const MAP = [
   [/^tests\/unit\/setup-nosync-mutations\.json$/, "0-1"], // the test workers' fsync replacement, tests/setup (decision 154): the gate's own test infrastructure, a stage 0 piece
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
   [/^packages\/cli\/src\/release\/mutations-deps\.json$/, "5"], // the release build's sandboxed dependency step (decision 173): golden task 11, the stage 5 proof
+  [/^packages\/cli\/src\/release\/mutations-desktop\.json$/, "5"], // a desktop project reaches built, not distributed (decision 174): golden task 12, the stage 5 proof
   // jarvis approvals/approve/reject and the broker's pending list: the stage 1 terminal approval surface (backlog 115).
   [/^packages\/cli\/src\/commands\/mutations-approvals-ui\.json$/, "0-1"],
   [/^packages\/cli\/src\/broker\/mutations-approvals-ui\.json$/, "0-1"],

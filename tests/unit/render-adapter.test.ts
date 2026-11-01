@@ -152,6 +152,7 @@ describe("Render broker deploys", () => {
     const runtime = await prepareRelease({ projectId: "p", projectDir: f.ledger.dir, workRoot, worktreeRoot: join(workRoot, "worktrees"), repoPath: f.dir, home: f.dir, ledger: f.ledger }, {
       run: f.options.run!, fetch: f.options.fetch!, cli: { nativeTools: [ { bin: GIT, version: f.pin.version, args: ["--version"] }, { ...f.pin.ssh!, args: ["-V"] } ], run: f.options.run! },
     });
+    if (runtime?.kind === "desktop") throw new Error("web release expected");
     expect(runtime?.providerConfig).toMatchObject({ bin: GIT, ssh: f.pin.ssh }); expect(runtime?.providerConfig).not.toHaveProperty("interpreter");
     const b = new Broker({ ledger: f.ledger, project: "p", adapters: runtime!.adapters, secrets: { get: key => key === "RENDER_PREVIEW_DEPLOY_KEY" ? PREVIEW : undefined } });
     expect((await b.handle(f.request(m))).status).toBe("succeeded"); expect(f.urls).toEqual([`${destinations.preview.url}/.jarvis-build.json`]);

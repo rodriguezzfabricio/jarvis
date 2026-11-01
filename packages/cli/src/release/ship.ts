@@ -7,7 +7,7 @@ import { routeTask, type RoutingTable } from "../runner/routing.ts";
 import { loadSkills } from "../runner/session-skills.ts";
 import { recordSessionUsage } from "../runner/usage-log.ts";
 import { createWorkspace, readTaskNotes } from "../runner/worktrees.ts";
-import type { ReleaseSetup } from "./config.ts";
+import type { WebReleaseSetup } from "./config.ts";
 import { parseManifest } from "./manifest.ts";
 import { createDataSnapshot } from "./rehearsal.ts";
 import type { ReleaseManifest, ReleaseProjectConfig } from "./types.ts";
@@ -29,7 +29,7 @@ export interface ShipClaims {
   rollbackSteps: unknown;
   data: unknown;
 }
-export interface ShipFacts { project: string; revision: string; setup: ReleaseSetup; maxTurns: number }
+export interface ShipFacts { project: string; revision: string; setup: WebReleaseSetup; maxTurns: number }
 
 export function shipPrompt(f: ShipFacts): string {
   return [
@@ -88,7 +88,7 @@ export function readShipClaims(workspace: string): ShipClaims {
  * The accepted manifest: the session's claims, with every destination, revision and artifact value from the runner.
  * A data snapshot is the runner's fresh private copy of the configured source, never a path the session named.
  */
-export function acceptManifest(claims: ShipClaims, r: { project: string; revision: string; setup: ReleaseSetup; config: ReleaseProjectConfig; artifactDir: string; artifactHash: string }): ReleaseManifest {
+export function acceptManifest(claims: ShipClaims, r: { project: string; revision: string; setup: WebReleaseSetup; config: ReleaseProjectConfig; artifactDir: string; artifactHash: string }): ReleaseManifest {
   const data = claims.data !== null && typeof claims.data === "object" ? claims.data as Record<string, unknown> : { kind: claims.data };
   let manifestData: unknown;
   if (data.kind === "none") manifestData = { kind: "none" };

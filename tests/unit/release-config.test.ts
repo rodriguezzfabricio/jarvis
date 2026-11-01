@@ -47,7 +47,8 @@ describe("release setup", () => {
     expect(loadReleaseSetup(dir, { acl: noAcl })).toBeUndefined();
     const path = saveReleaseSetup(dir, parseReleaseSetup(vercel), { acl: noAcl });
     expect(path).toBe(releaseSetupPath(dir));
-    expect(loadReleaseSetup(dir, { acl: noAcl })?.siteId).toBe("prj_habits");
+    const loaded = loadReleaseSetup(dir, { acl: noAcl });
+    expect(loaded?.kind === "desktop" ? undefined : loaded?.siteId).toBe("prj_habits");
     chmodSync(path, 0o644);
     expect(() => loadReleaseSetup(dir, { acl: noAcl })).toThrow(/readable only by you/);
     chmodSync(path, 0o600);

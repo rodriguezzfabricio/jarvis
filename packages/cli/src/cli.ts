@@ -23,6 +23,7 @@ import * as spec from "./spec/index.ts";
 import { register as registerTriage } from "./triage/command.ts";
 import { register as registerSteer } from "./commands/steer.ts";
 import { register as registerApprove } from "./commands/approve.ts";
+import { register as registerRelease } from "./commands/release.ts";
 import { register as registerApprovals } from "./commands/approvals.ts";
 import { register as registerStatus } from "./commands/status.ts";
 import { register as registerRun } from "./commands/run.ts";
@@ -227,6 +228,8 @@ program
 // jarvis approvals / approve / reject: show the exact pending action before answering it (backlog 115).
 registerApprovals(program);
 registerApprove(program);
+// jarvis release configure|show|grant: protected release setup and manifest-bound production grants (decision 157).
+registerRelease(program);
 
 program
   .command("broker")

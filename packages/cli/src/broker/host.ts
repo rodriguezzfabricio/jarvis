@@ -1,23 +1,31 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Ledger } from "../ledger/ledger.ts";
-import { Broker } from "./broker.ts";
+import { Broker, type Adapter, type SecretsBackend } from "./broker.ts";
 import { outboxAdapters } from "./outbox.ts";
-import { envFileSecrets } from "./secrets.ts";
+import { ACCOUNTS_SECRETS_FILE, envFileSecrets } from "./secrets.ts";
 import { startBrokerServer } from "./server.ts";
 
 /**
- * The broker a project's run hosts (architecture §3.4, §3.6): the project's configured adapters (stage 1:
- * the local outbox) and its owner-only secrets file, the same composition `jarvis broker` runs. The secrets
- * are read here, in the runner, and never reach a session's environment, files or settings.
+ * The broker a project's run hosts (architecture §3.4, §3.6): the project's configured adapters and its secrets.
+ * Without a release setup every operation goes to the local outbox (stage 1, and every eval); with one, the deploy
+ * adapters (release/run.ts prepareRelease) take deploy.preview and deploy.promote and the outbox keeps the rest
+ * (decision 157). Secrets: the project's owner-only `<project>.env` first, then the house-stack accounts file that
+ * `jarvis setup` writes (decision 159). Both are read here, in the runner, and never reach a session.
  */
-export function projectBroker(o: { jarvisHome: string; projectDir: string; project: string; ledger: Ledger }): Broker {
-  const secretsPath = join(o.jarvisHome, "secrets", `${o.project}.env`);
+export function projectBroker(o: { jarvisHome: string; projectDir: string; project: string; ledger: Ledger; deploy?: readonly Adapter[] }): Broker {
+  const deploy = o.deploy ?? [];
+  const outbox = outboxAdapters(join(o.projectDir, "outbox")).filter((a) => !deploy.some((d) => d.op === a.op));
   return new Broker({
-    ledger: o.ledger, project: o.project, adapters: outboxAdapters(join(o.projectDir, "outbox")),
-    // A secrets file anyone else can read refuses the broker, and so the run (envFileSecrets).
-    secrets: existsSync(secretsPath) ? envFileSecrets(secretsPath) : { get: () => undefined },
+    ledger: o.ledger, project: o.project, adapters: [...deploy, ...outbox],
+    secrets: layeredSecrets([join(o.jarvisHome, "secrets", `${o.project}.env`), join(o.jarvisHome, "secrets", ACCOUNTS_SECRETS_FILE)]),
   });
+}
+
+/** The first file that has a key wins. A file anyone else can read refuses the broker, and so the run (envFileSecrets). */
+export function layeredSecrets(paths: readonly string[]): SecretsBackend {
+  const layers = paths.filter((p) => existsSync(p)).map((p) => envFileSecrets(p));
+  return { get: (key) => { for (const layer of layers) { const value = layer.get(key); if (value !== undefined) return value; } return undefined; } };
 }
 
 /** The process a broker is hosted in: `process`, or a stand-in in tests. */

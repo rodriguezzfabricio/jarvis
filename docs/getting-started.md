@@ -94,6 +94,8 @@ From `jarvis --help` today:
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approvals [--project <id>] [--json]` | Lists pending approvals, read-only: id, operation, the broker's summary, payload hash prefix, when and which task asked |
 | `jarvis approve <id> [--yes]` / `jarvis reject <id> [--yes]` | Prints the full pending action (secret-looking values redacted, targets shown) and its payload hash, then asks `[y/N]`; without a terminal it needs `--yes`. The project defaults to `JARVIS_PROJECT`, then this repository (`--project <id>` overrides) |
+| `jarvis release configure --provider vercel/netlify --site <id> [--org <id>] --url <origin> [--build <cmd>] [--output <dir>]` | Writes the project's protected release setup. Only the provider's free plan is accepted; with it, `jarvis run` deploys a preview of the finished work and stops at preview-ready (decision 157) |
+| `jarvis release show` / `jarvis release grant <manifest-hash> [--allow-rollback] [--yes]` | Shows the release setup, the latest accepted manifest and the state that holds now; `grant` prints that exact manifest and its rollback scope, then asks `[y/N]` before recording a production grant bound to it |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
 | `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |

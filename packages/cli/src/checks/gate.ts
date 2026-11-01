@@ -53,7 +53,8 @@ export interface GateInput {
   repoPath: string;
   revision: string;
   check: GateCheck;
-  taskId: string;
+  /** null: a release gate on the run's checked revision, bound to no plan task (release/run.ts, decision 157). */
+  taskId: string | null;
   attemptId: string;
   extraEnv?: Record<string, string>;
   /** Test seam: removes the run's scratch folder after the result is recorded. */

@@ -37,8 +37,10 @@ import {
 import { notifierSummary } from "../runner/report.ts";
 import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
+import { prepareRelease, type ReleaseSeams } from "../release/run.ts";
 import { runApprovals } from "./run-approvals.ts";
 import { runNotifications } from "./run-notify.ts";
+import { releaseDrive } from "./run-release.ts";
 import type { PreparedRun, RunContext } from "./run.ts";
 
 export interface ApprovedSpec { version: number; path: string; text: string; spec: Spec }
@@ -65,6 +67,8 @@ export interface ComposeOptions {
   signals?: SignalHost;
   /** Test seams for the task harness (the fake claude): the session runner, the binary check, the parent environment. */
   harness?: Pick<ClaudeHarnessOptions, "session" | "binaryRealpath" | "parentEnv">;
+  /** Test seams for the release step (decision 157): a fake provider CLI and pins, the smoke test's fetch. */
+  release?: ReleaseSeams;
 }
 export interface ReviewDeps {
   tier: TaskTier;
@@ -199,7 +203,11 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
   });
-  const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger });
+  // A release setup (decision 157) puts the deploy adapters in the broker; a session plan (review, onboard, sweep) or a bug request never releases.
+  const release = context.planKind === undefined && context.request === undefined
+    ? await prepareRelease({ projectId: context.projectId, projectDir: context.projectDir, workRoot, worktreeRoot, repoPath: context.repoPath, home, ledger }, options.release)
+    : undefined;
+  const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger, ...(release ? { deploy: release.adapters } : {}) });
   // Before hosting: a notifier host that a session could reach refuses the run (backlog 99).
   const approvals = runApprovals({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId, ledger, broker,
@@ -246,6 +254,10 @@ export async function prepareProductionRun(context: RunContext, options: Compose
         state: () => rebuildState(ledger.entries(), { now: Date.now() }),
         changedFiles: (revision) => git(["diff", "--name-only", "-z", `${revision}^1`, revision]).split("\0").filter(Boolean),
       })).update,
+    } : release ? {
+      // The build loop, then the release step on the revision it last promoted (decision 157).
+      drive: releaseDrive({ loop, release, broker, ledger, context, checks, git, runBranch, home, workRoot, worktreeRoot, tier: plan?.tier ?? 1,
+        notify: (text) => notifications.blocked({ taskId: "release", reason: text }), ...(options.release ? { seams: options.release } : {}) }),
     } : {}),
     // The broker stops taking requests first; then the poller flushes the last ones to the phone and stops.
     close: async () => {

@@ -86,8 +86,8 @@
   {
     "name": "eval rechecks grading disjointness after the protected installs",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "  assertHiddenDisjoint(gate, grading, checkRuntimePath);",
-    "replacement": "  // broken: no recheck after the protected installs"
+    "anchor": "if (designScope) assertHiddenDisjoint(gate, grading, checkRuntimePath);",
+    "replacement": "if (false) assertHiddenDisjoint(gate, grading, checkRuntimePath);"
   },
   {
     "name": "eval exempts only the runner's runtimes from that recheck",

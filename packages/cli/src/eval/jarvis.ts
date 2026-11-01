@@ -566,9 +566,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     }
   }
   const gate = loadHiddenChecks(gateStore.checksDir);
-  // Again after the protected installs: both arms may load the same pinned browser libraries, so only the runner's
-  // runtime roots are left out; every definition, plan and expectation the installers wrote is checked (decision 167).
-  assertHiddenDisjoint(gate, grading, checkRuntimePath);
+  // Again after a design task's protected installs: both arms may load the same pinned browser libraries, so only the
+  // runner's runtime roots are left out; every definition, plan and expectation the installers wrote is checked (decision 167).
+  if (designScope) assertHiddenDisjoint(gate, grading, checkRuntimePath);
   const missingDesign = designRequired ? DESIGN_CHECKS.filter((name) => !Object.hasOwn(gate.checks, name)) : [];
   // Every task would block at dispatch after the planner had spent its session: refuse before any session instead.
   if (missingDesign.length) throw new Error(`${task.id}: a design task needs the protected design checks installed; missing ${missingDesign.join(", ")} (decision 162)`);

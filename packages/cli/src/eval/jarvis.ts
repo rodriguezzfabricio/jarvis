@@ -261,7 +261,7 @@ const PLAN_SKELETON = JSON.stringify({
   }],
 }, null, 2);
 
-export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number }): string {
+export function plannerPrompt(input: { request: string; specPath: string; checks: HiddenChecks; maxTurns: number; design?: boolean }): string {
   const list = Object.keys(input.checks.checks).sort().map((n) => `- ${n}: ${input.checks.criteria[n]!.join(", ") || "no criteria (project tests)"}`);
   return [
     "Plan this approved feature for Jarvis's build loop. You write a plan only: no product code, no checks, no commits.",
@@ -271,7 +271,7 @@ export function plannerPrompt(input: { request: string; specPath: string; checks
     `Only these keys are accepted: "tasks" and the optional "notes" at the top, and the ten keys shown in each task. The runner refuses a plan with any other key, at the top or in a task (a feature name, a summary, comments). Put anything else the build sessions should know in notes: at most ${PLAN_NOTES.count} strings of at most ${PLAN_NOTES.chars} characters each, ${PLAN_NOTES.total} in all. Every build session sees them as your claims, not as evidence.`,
     "Task ids are T1, T2, ...; acceptanceCriteria are AC ids and storyIds are S ids from the spec; dependencies are task ids; priority is a number (higher runs first); requiredChecks are names from the list below; requiredReviews is [\"code\"]. Use small tasks in dependency order with no cycles. Cover every acceptance criterion in the spec, and link each task's criteria to its stories.",
     `Installed protected checks (names, and the criteria each covers; the runner owns them and you cannot read them). A task listing an AC must require a check that covers it:\n${list.join("\n")}`,
-    "When the run branch has DESIGN.md, the runner also requires its six protected design checks and a design review on every task; these requirements cannot be removed by the plan.",
+    ...(input.design ? ["This is a design task: the runner also requires its six protected design checks and a design review on every task; the plan cannot remove them."] : []),
     `Stop after ${input.maxTurns} turns. The runner reads only .jarvis/plan.json.`,
   ].join("\n\n");
 }
@@ -432,14 +432,20 @@ const LintScope = z.object({
   tokenFiles: z.array(z.string().refine(designLintPath, "invalid token file path")).max(256),
 }).strict();
 
-/** Explicit eval-owned scope: inherited design tokens are definitions, not candidate raw-color violations. */
-function installEvalDesignLint(task: GoldenTask, p: Paths, store: ChecksStore, ledger: Ledger, evalsRepo: string): void {
-  const git = (args: readonly string[]) => safeGit(p.workspace, args, { home: p.home }).toString();
-  if (!designOnBranch(git, "main")) return;
+type DesignLintScope = z.infer<typeof LintScope>;
+/**
+ * A golden task is a design task when the evals repo gives it a lint scope, tasks/<id>/design-lint.json
+ * (decision 162). Read before the preflight, like everything else from the evals repo.
+ */
+function designScopeOf(evalsRepo: string, task: GoldenTask): DesignLintScope | undefined {
   const taskDir = join(evalsRepo, "tasks", task.id);
-  // Absence leaves design review unready; the service records the missing protected material as an error.
-  if (!existsSync(join(taskDir, "design-lint.json"))) return;
-  const scope = LintScope.parse(JSON.parse(readPlanningFile(realpathSync(taskDir), "design-lint.json")));
+  if (!existsSync(join(taskDir, "design-lint.json"))) return undefined;
+  return LintScope.parse(JSON.parse(readPlanningFile(realpathSync(taskDir), "design-lint.json")));
+}
+
+/** Explicit eval-owned scope: inherited design tokens are definitions, not candidate raw-color violations. */
+function installEvalDesignLint(task: GoldenTask, p: Paths, store: ChecksStore, ledger: Ledger, scope: DesignLintScope): void {
+  const git = (args: readonly string[]) => safeGit(p.workspace, args, { home: p.home }).toString();
   const files = scope.files.filter(file => !scope.tokenFiles.includes(file));
   const design = git(["show", "refs/heads/main:DESIGN.md"]);
   installDesignLintChecks(store, { nodeBin: process.execPath, axeVersion: scope.axeVersion, designSource: scope.designSource, files, design });
@@ -447,7 +453,7 @@ function installEvalDesignLint(task: GoldenTask, p: Paths, store: ChecksStore, l
 }
 
 const DESIGN_CHECKS = ["impeccable-source", "impeccable-url", "design-browser", "ai-tells", "token-lint", "design-md-lint"];
-/** A design eval cannot silently become code-only because the planner omitted the design gates. */
+/** A design task cannot silently become code-only because the planner omitted the design gates. */
 function requireDesignEvidence(plan: Plan, required: boolean): Plan {
   if (!required) return plan;
   return { ...plan, tasks: plan.tasks.map(task => ({ ...task,
@@ -479,6 +485,8 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
   if (pipeline === "review-fix" && !loopChecks.checks.unit) throw new Error(`${task.id}: a review that asks for fixes needs a gate check named "unit" (its fix tasks' required check)`);
   const goFixture = evalGoFixture(opts.evalsRepo, task.id);
+  const designScope = designScopeOf(opts.evalsRepo, task);
+  const designRequired = designScope !== undefined;
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -510,10 +518,16 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const gateStore = installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
   // The loop runs what was installed and locked, never the copy parsed before the preflight (the evals repo may
   // have changed since): re-parse the installed copy and re-check what the plan needs against it.
-  const designRequired = designOnBranch(args => safeGit(p.workspace, args, { home: p.home }).toString(), "main");
-  installEvalDesignLint(task, p, gateStore, ledger, opts.evalsRepo);
+  if (designScope) {
+    // A design task is judged against its committed reference (decision 162): without one it would finish on code review alone.
+    if (!designOnBranch(args => safeGit(p.workspace, args, { home: p.home }).toString(), "main")) throw new Error(`${task.id}: a design task (tasks/${task.id}/design-lint.json) needs a committed DESIGN.md on the snapshot's main; there is none, so no design review could run (decision 162)`);
+    installEvalDesignLint(task, p, gateStore, ledger, designScope);
+  }
   const gate = loadHiddenChecks(gateStore.checksDir);
   assertHiddenDisjoint(gate, grading);
+  const missingDesign = designRequired ? DESIGN_CHECKS.filter((name) => !Object.hasOwn(gate.checks, name)) : [];
+  // Every task would block at dispatch after the planner had spent its session: refuse before any session instead.
+  if (missingDesign.length) throw new Error(`${task.id}: a design task needs the protected design checks installed; missing ${missingDesign.join(", ")} (decision 162)`);
   if (pipeline === "single-task" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (pipeline === "review-fix" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
@@ -597,7 +611,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
         }
       }
     } else {
-      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log });
+      const r = await runPlanner({ harness, ledger, routing, tier, runId, task, request, specPath, checks: gate, spec: approved!.spec, p, baseRevision, log, design: designRequired });
       plannerSessions = r.sessions;
       if (r.kind === "plan") plan = r.plan;
       else if (r.kind === "usage-limited") { outcome = "usage-limited"; usageWaitUntil = r.until ?? Math.floor(Date.now() / 1000) + 3600; }
@@ -662,12 +676,12 @@ type PlannerResult =
  * the refusal and rewrites .jarvis/plan.json. A session that didn't finish (usage-limited, refused, timed out,
  * crashed) is never retried. Each session has its own header, log and usage record (plan-a1, plan-a2).
  */
-async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string; log: (m: string) => void }): Promise<PlannerResult> {
+async function runPlanner(i: { harness: Harness; ledger: Ledger; routing: RoutingTable; tier: TaskTier; runId: string; task: GoldenTask; request: string; specPath: string; checks: HiddenChecks; spec: Spec; p: Paths; baseRevision: string; log: (m: string) => void; design: boolean }): Promise<PlannerResult> {
   const ws = createWorkspace({ repoPath: i.p.workspace, projectId: "eval", taskId: PLAN_TASK, attemptId: "a1", baseRevision: i.baseRevision, worktreeRoot: i.p.worktreeRoot, home: i.p.home });
   try {
     const sessionsDir = join(i.p.projectDir, "sessions");
     mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
-    const promptInput = { request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns };
+    const promptInput = { request: i.request, specPath: i.specPath, checks: i.checks, maxTurns: i.task.maxTurns, design: i.design };
     const context = { spec: i.spec, checks: Object.keys(i.checks.checks).map((name) => ({ name, criteria: i.checks.criteria[name]! })) };
     const refusals: string[] = [];
     let sessions = 0;

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { ChecksStore } from "../checks/store.ts";
+import { checkRuntimePath, ChecksStore } from "../checks/store.ts";
+import { readEvalDesignPlan, installEvalDesignChecks, captureDesignBaseline } from "../lanes/eval-design.ts";
 import { installDesignLintChecks } from "../lanes/design-protected.ts";
 import { designLintPath } from "../lanes/design-lint-driver.ts";
 import { readPlanningFile } from "../runner/checks-author.ts";
@@ -139,6 +140,8 @@ export interface JarvisEvalOptions {
   createDesignReview?: (options: DesignReviewServiceOptions) => Pick<DesignReviewService, "reviewDetailed">;
   /** Default: Claude code review plus calibrated Codex design review when the run branch has DESIGN.md. */
   review?: LoopReview;
+  /** Base design capture seam; production uses runGate on a fresh checkout before any session. */
+  designGate?: (input: GateInput) => Promise<GateResult>;
   /** Grading seam; production is the protected-check gate. */
   gate?: (input: GateInput) => Promise<GateResult>;
   jarvisHome?: string;
@@ -189,6 +192,10 @@ export interface JarvisRunResult {
   diffStat: string;
   durationMs: number;
   metrics: JarvisMetrics;
+  /** Recorded design verdicts, including infrastructure errors, retained in summary.json. */
+  designReviews: { revision: string; status: string; counts: boolean }[];
+  /** A design task's base capture (decision 125): "failed" means no baseline, so every axe finding fails the gate. */
+  designBaseline?: "recorded" | "failed";
   grade: Grade | null;
   gradeError?: string;
   snapshot: SnapshotManifest;
@@ -467,6 +474,13 @@ function installEvalDesignLint(task: GoldenTask, p: Paths, store: ChecksStore, l
   store.approve(ledger, `golden task ${task.id}: protected design lint from the eval-owned scope and committed design reference`);
 }
 
+/** The runner's axe record of the base revision (decision 125), reserved in the store (decision 162). */
+const AXE_BASELINE = "expected/axe-base.json";
+/** Whether a store holds that file in any letter case (APFS folds case), found by listing two folders, not hashing a gate. */
+function shipsAxeBaseline(checksDir: string): boolean {
+  const named = (dir: string, name: string) => readdirSync(dir).filter((entry) => entry.toLowerCase() === name).map((entry) => join(dir, entry));
+  return named(checksDir, "expected").some((dir) => lstatSync(dir).isDirectory() && named(dir, "axe-base.json").length > 0);
+}
 const DESIGN_CHECKS = ["impeccable-source", "impeccable-url", "design-browser", "ai-tells", "token-lint", "design-md-lint"];
 /** A design task cannot silently become code-only because the planner omitted the design gates. */
 function requireDesignEvidence(plan: Plan, required: boolean): Plan {
@@ -503,6 +517,9 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const goFixture = evalGoFixture(opts.evalsRepo, task.id);
   const designScope = designScopeOf(opts.evalsRepo, task);
   const designRequired = designScope !== undefined;
+  const designPlan = readEvalDesignPlan(opts.evalsRepo, task.id);
+  // Design checks without the declaration that makes a design task would be installed for nothing and judged by nobody.
+  if (designPlan && !designRequired) throw new Error(`${task.id}: tasks/${task.id}/design-checks.json needs tasks/${task.id}/design-lint.json, which declares a design task (decision 162)`);
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -532,15 +549,26 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
 
   const ledger = Ledger.open(p.projectDir);
   const gateStore = installHiddenChecks(p.projectDir, ledger, loopChecks, `golden task ${task.id}: the gate checks from the evals repo`);
+  // Recheck the installed project suite, whole, before adding runner-pinned runtimes (the evals repo may have changed
+  // since the first check): no project check or expectation may come from the grading suite.
+  assertHiddenDisjoint(loadHiddenChecks(gateStore.checksDir), grading);
+  // Only the runner's own base capture makes an axe baseline (decision 125); the evals repo can't ship one.
+  if (shipsAxeBaseline(gateStore.checksDir)) throw new Error(`${task.id}: hidden/${task.id}/gate/ holds ${AXE_BASELINE}, the runner's axe baseline; only the runner's base capture writes it (decision 125)`);
   // The loop runs what was installed and locked, never the copy parsed before the preflight (the evals repo may
   // have changed since): re-parse the installed copy and re-check what the plan needs against it.
   if (designScope) {
     // A design task is judged against its committed reference (decision 162): without one it would finish on code review alone.
     if (!designOnBranch(args => safeGit(p.workspace, args, { home: p.home }).toString(), "main")) throw new Error(`${task.id}: a design task (tasks/${task.id}/design-lint.json) needs a committed DESIGN.md on the snapshot's main; there is none, so no design review could run (decision 162)`);
     installEvalDesignLint(task, p, gateStore, ledger, designScope);
+    if (designPlan) {
+      installEvalDesignChecks(gateStore, designPlan, designScope.axeVersion);
+      gateStore.approve(ledger, `golden task ${task.id}: per-run protected design checks and pinned QA toolchain`);
+    }
   }
   const gate = loadHiddenChecks(gateStore.checksDir);
-  assertHiddenDisjoint(gate, grading);
+  // Again after a design task's protected installs: both arms may load the same pinned browser libraries, so only the
+  // runner's runtime roots are left out; every definition, plan and expectation the installers wrote is checked (decision 167).
+  if (designScope) assertHiddenDisjoint(gate, grading, checkRuntimePath);
   const missingDesign = designRequired ? DESIGN_CHECKS.filter((name) => !Object.hasOwn(gate.checks, name)) : [];
   // Every task would block at dispatch after the planner had spent its session: refuse before any session instead.
   if (missingDesign.length) throw new Error(`${task.id}: a design task needs the protected design checks installed; missing ${missingDesign.join(", ")} (decision 162)`);
@@ -548,6 +576,14 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (pipeline === "review-fix" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (pipeline === "onboard" && !gate.checks.unit) throw new Error(`${task.id}: the installed gate checks have no "unit" check`);
   if (approved && coverageGaps(approved.spec, gate).length) throw new Error(`${task.id}: the installed gate checks no longer cover ${coverageGaps(approved.spec, gate).join(", ")}`);
+  // Last before any session, after every cheap refusal: the base revision is built, served and captured in the gate's
+  // sandbox. A failed capture leaves no baseline, so axe stays strict (decision 125), and the summary says so.
+  let designBaseline: JarvisRunResult["designBaseline"];
+  if (designPlan && designScope) designBaseline = await captureDesignBaseline({
+    ledger, store: gateStore, projectDir: p.projectDir, jarvisHome: p.jarvisHome,
+    workRoot: realpathSync(opts.workRoot ?? join(homedir(), ".jarvis-work")), repoPath: p.workspace,
+    revision: baseRevision, check: gate.checks["design-browser"]!, taskId: "design-base", attemptId: "base",
+  }, designScope.axeVersion, opts.designGate) ? "recorded" : "failed";
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   // Decision 123: the gate's pinned Go for every session, offline and read-only, as the baseline's session gets it.
   let go: PreparedToolchain | undefined;
@@ -688,6 +724,11 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
     outcome, ...(error !== undefined ? { error } : {}), loop,
     claimedDone: outcome === "complete", baseRevision, review: reviewed, onboard: onboarded, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report,
+    designReviews: ledger.entries().filter(entry => entry.kind === "review_result" && (entry.data as {reviewer?:string}).reviewer === "design").map(entry => {
+      const data=entry.data as {revision?:string;status?:string;verdict?:string;counts?:boolean};
+      return {revision:data.revision??"",status:data.status??data.verdict??"error",counts:data.counts===true};
+    }),
+    ...(designBaseline !== undefined ? { designBaseline } : {}),
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
   };

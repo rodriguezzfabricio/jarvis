@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { GateCheck } from "../checks/gate.ts";
 import type { ChecksStore } from "../checks/store.ts";
 import type { Ledger } from "../ledger/ledger.ts";
+import { readDesignBaseline } from "../lanes/design-gate.ts";
 import { readPlanningFile } from "../runner/checks-author.ts";
 import { DesignBrowserPlanSchema } from "./design-browser.ts";
 import type { DesignReviewMaterial } from "./design-service.ts";
@@ -75,9 +76,11 @@ export function designMaterialFor(input: { repoPath: string; snapshot: ApprovedD
   if (!input.store.verify(input.ledger).ok) throw new Error("design material checks are not the approved set");
   const config = DesignReviewConfig.parse(JSON.parse(readPlanningFile(input.store.checksDir, "design-review.json")));
   const plan = DesignBrowserPlanSchema.parse(JSON.parse(readPlanningFile(input.store.checksDir, "design-plan.json")));
+  // Only the runner writes it, from its own base capture (decision 125); its bytes were just checked against the lock.
+  const axeBaseline = readDesignBaseline(input.store.checksDir);
   return {
     repoPath: input.repoPath, baseRevision: input.snapshot.revision, design: input.snapshot.design, product: input.snapshot.product,
     principles: principlesOf(input.snapshot.design), designSource: config.designSource, plan, axeVersion: config.axeVersion,
-    captureFile: "cases/capture/stdout", checks: protectedChecks(input.store),
+    captureFile: "cases/capture/stdout", checks: protectedChecks(input.store), ...(axeBaseline ? { axeBaseline } : {}),
   };
 }

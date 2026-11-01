@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { verifyEvidence, type GateCheck } from "../checks/gate.ts";
 import { canonical, type Ledger, type LedgerEntry } from "../ledger/ledger.ts";
+import { verifyServedDesign, type StoredAxeBaseline } from "../lanes/design-gate.ts";
 import { calibrationEntries, readDesignCalibration, writeDesignCalibration, type DesignCalibration } from "./design-calibration.ts";
 import { verifyDesignObservation, type DesignBrowserPlan } from "./design-browser.ts";
 import { createCodexDesignReviewer, DESIGN_REVIEW_MODEL, type DesignReviewer } from "./design-codex.ts";
@@ -40,6 +41,8 @@ export interface DesignReviewMaterial {
    * alone proves nothing: an architect-authored check can carry it and run candidate code (decision 156).
    */
   checks: Readonly<Record<string, ProtectedDesignCheck>>;
+  /** The runner's axe record of the base revision (`checks/expected/axe-base.json`, decision 125); absent, axe is strict. */
+  axeBaseline?: StoredAxeBaseline;
 }
 export interface DesignReviewServiceOptions {
   ledger: Ledger; projectDir: string; workRoot: string;
@@ -143,7 +146,12 @@ export function createDesignReviewService(options: DesignReviewServiceOptions): 
       const material = await options.resolveMaterial(request), gates = evidenceFor(options, request, material.checks);
       const captured = gates.find(g => g.data.check === "design-browser")?.files[material.captureFile];
       if (!captured) throw new Error("missing runner browser capture");
-      const capture = verifyDesignObservation(JSON.parse(captured.raw.toString("utf8")), material.plan, material.axeVersion, {calibration:gates.some(g => g.data.check === "design-browser" && g.data.status === "fail")});
+      const observation: unknown = JSON.parse(captured.raw.toString("utf8"));
+      // A failed browser gate already fails the review, so its capture is shown as it is. A passing one is held to
+      // what its gate verifier judged: the runner's base-revision baseline when there is one, else the strict rule.
+      const capture = gates.some(g => g.data.check === "design-browser" && g.data.status === "fail")
+        ? verifyDesignObservation(observation, material.plan, material.axeVersion, {calibration:true})
+        : verifyServedDesign(observation, material.plan, material.axeVersion, material.axeBaseline);
       const evidence = designEvidence(capture, material.plan.flows.map(f => f.id));
       directory = mkdtempSync(join(work, "design-"));
       const {workspace} = prepareCheckout(material.repoPath, request.revision, material.baseRevision, directory, options.home ?? homedir(), options.git);

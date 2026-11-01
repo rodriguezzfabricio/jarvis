@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { atomicWrite, canonical, type Ledger } from "../ledger/ledger.ts";
 
 /** Existing installer namespaces stay stable: cases can read fixtures, never the verifier copy. */
-const RUNTIME_ROOTS = ["design-runtime", "fixtures/design-runtime", "design-lint", "fixtures/design-lint", "security", "fixtures/security", "desktop", "fixtures/desktop"];
+const RUNTIME_ROOTS = ["qa-toolchain", "fixtures/qa-toolchain", "design-runtime", "fixtures/design-runtime", "design-lint", "fixtures/design-lint", "security", "fixtures/security", "desktop", "fixtures/desktop"];
 const PROTECTED_FILES = [
   "design-review.json", "design-plan.json", "design-checks.json", "fixtures/design-plan.json", "fixtures/impeccable.json",
   // The runner's axe baseline for the base revision (decision 125); nothing an architect writes may stand in for it.
@@ -18,6 +18,8 @@ const inRoots = (file: string, roots: readonly string[]) => roots.some(root => f
  * is the same folder as `design-runtime` (decision 162). The installers write only lower-case ASCII names.
  */
 export const protectedCheckPath = (file: string): boolean => inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES]);
+/** Inside a protected installer's runtime root, in any letter case: runner-pinned code and libraries, not definitions or plans. */
+export const checkRuntimePath = (file: string): boolean => inRoots(file.toLowerCase(), RUNTIME_ROOTS);
 export const CHECK_RUNTIME_LIMITS = { fileBytes: 256 * 1024 * 1024, totalBytes: 512 * 1024 * 1024, files: 4096, directories: 4096, depth: 32 } as const;
 
 /** Hash bytes in chunks: binary runtimes never become text or a file-sized allocation. */
@@ -42,7 +44,8 @@ function hashFile(path: string, before: Stats): string {
 }
 
 /** Bounded runtime hashing shared by the live store and an installer staging directory. */
-export function hashCheckArtifacts(checksDir: string): Record<string, string> {
+export function hashCheckArtifacts(checksDir: string, runtimeRoot = false): Record<string, string> {
+  const runtimePath = (name: string) => runtimeRoot || inRoots(name.toLowerCase(), RUNTIME_ROOTS);
   // No prototype: a check file named __proto__ must be an ordinary key (Codex stage 0 review 5).
   const out: Record<string, string> = Object.create(null) as Record<string, string>;
   const files: { path: string; name: string; stat: Stats }[] = [];
@@ -51,7 +54,7 @@ export function hashCheckArtifacts(checksDir: string): Record<string, string> {
   const walk = (dir: string, depth: number) => {
     const stat = lstatSync(dir), name = relative(checksDir, dir);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("check directories may not be symlinks");
-    if (inRoots(name.toLowerCase(), RUNTIME_ROOTS) && (++runtimeDirs > CHECK_RUNTIME_LIMITS.directories || depth > CHECK_RUNTIME_LIMITS.depth)) throw new Error("check runtime directory limit exceeded");
+    if (runtimePath(name) && (++runtimeDirs > CHECK_RUNTIME_LIMITS.directories || depth > CHECK_RUNTIME_LIMITS.depth)) throw new Error("check runtime directory limit exceeded");
     directories.push({ path: dir, stat });
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, e.name), name = relative(checksDir, path), st = lstatSync(path);
@@ -59,7 +62,7 @@ export function hashCheckArtifacts(checksDir: string): Record<string, string> {
       if (st.isDirectory()) walk(path, depth + 1);
       else {
         if (!st.isFile() || st.nlink !== 1) throw new Error(`check files must be regular without hard links: ${name}`);
-        if (inRoots(name.toLowerCase(), RUNTIME_ROOTS)) {
+        if (runtimePath(name)) {
           runtimeBytes += st.size;
           if (st.size > CHECK_RUNTIME_LIMITS.fileBytes || runtimeBytes > CHECK_RUNTIME_LIMITS.totalBytes || ++runtimeFiles > CHECK_RUNTIME_LIMITS.files) throw new Error("check runtime byte or file count limit exceeded");
         }

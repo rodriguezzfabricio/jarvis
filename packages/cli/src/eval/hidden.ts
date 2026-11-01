@@ -128,12 +128,20 @@ export function suiteFingerprint(fileHashes: Readonly<Record<string, string>>): 
   return createHash("sha256").update(JSON.stringify(lines)).digest("hex");
 }
 
-/** The gate checks the loop sees must hold no file of the grading suite (decision 97: hidden checks only grade). */
-export function assertHiddenDisjoint(gate: HiddenChecks, grading: HiddenChecks): void {
+/**
+ * The gate checks the loop sees must hold no file of the grading suite (decision 97: hidden checks only grade).
+ * `except` leaves out gate files that may share bytes with grading and are neither read nor hashed here: only the
+ * runner's pinned runtimes, which both arms may load (decision 167), and only after the evals repo's own gate
+ * folder has passed this check whole.
+ */
+export function assertHiddenDisjoint(gate: HiddenChecks, grading: HiddenChecks, except: (file: string) => boolean = () => false): void {
   if (gate.dir === grading.dir) throw new Error("the gate checks and the grading checks must be different folders (decision 97)");
   const graded = new Map<string, string>();
   for (const [f, h] of Object.entries(hashTree(grading.dir))) if (lstatSync(join(grading.dir, f)).size >= MIN_LEAK_BYTES) graded.set(h, f);
-  const shared = Object.entries(hashTree(gate.dir)).flatMap(([f, h]) => (graded.has(h) ? [`${f} (= grading ${graded.get(h)})`] : []));
+  const shared = files(gate.dir).filter((f) => !except(f)).flatMap((f) => {
+    const h = sha(readFileSync(join(gate.dir, f)));
+    return graded.has(h) ? [`${f} (= grading ${graded.get(h)})`] : [];
+  });
   if (shared.length) throw new Error(`refused: the gate checks hold grading files, which would reach the loop and its reviewers: ${shared.join(", ")}`);
 }
 

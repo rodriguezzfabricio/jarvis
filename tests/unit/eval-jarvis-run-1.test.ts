@@ -1,8 +1,8 @@
 // Jarvis eval run tests, part 1 of 4 (bug tasks and hidden tests). The tests are split over four files so they run in parallel;
 // the shared fixture is tests/unit/helpers/eval-jarvis-run-fixture.ts.
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadTask } from "../../packages/cli/src/eval/baseline.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
@@ -163,4 +163,17 @@ describe("eval jarvis: the hidden tests never reach a session", () => {
     await expect(runJarvis(loadTask(fx.evalsRepo, "05-leaky"), options(fx, { runLoop: fakeLoop("fix", undefined, calls) }))).rejects.toThrow(/hidden check files are in the snapshot: hidden\.test\.mjs/);
     expect(calls).toHaveLength(0);
   });
+});
+
+// Also inside a runtime root's name: the check after the protected installs leaves the runner's runtimes out, so only
+// this first check of the whole installed copy sees a grading file the evals repo put there (decision 167).
+it.each(["copied.test.mjs","fixtures/security/copied.test.mjs"])("refuses grading files introduced during preflight before installing trusted runtimes (%s)",async file=>{
+  const fx=fixture(), calls:RunLoopOptions[]=[];
+  const preflight=async()=>{
+    const path=join(fx.evalsRepo,"hidden/05-citizenship/gate",file);
+    mkdirSync(dirname(path),{recursive:true});writeFileSync(path,HIDDEN_TEST);
+    return {ok:true};
+  };
+  await expect(runJarvis(loadTask(fx.evalsRepo,"05-citizenship"),options(fx,{runLoop:fakeLoop("fix",undefined,calls),preflight}))).rejects.toThrow(/gate checks hold grading files/);
+  expect(calls).toHaveLength(0);
 });

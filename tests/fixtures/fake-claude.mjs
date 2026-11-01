@@ -81,7 +81,7 @@ if (mode === "baseline" || mode === "baseline-evil" || mode === "rejected" || mo
     writeFileSync("app.txt", `${JSON.stringify({ ...Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null])), goVersion }, null, 2)}\n`);
   }
   if (mode === "rust-env") {
-    // What a session's Rust sees (decision 163): its variables, and which cargo its PATH runs. A build leaves target/,
+    // What a session's Rust sees (decision 164): its variables, and which cargo its PATH runs. A build leaves target/,
     // which the runner must never commit.
     const keys = ["PATH", "CARGO_HOME", "CARGO_NET_OFFLINE", "SDKROOT", "DEVELOPER_DIR"];
     const cargo = (process.env.PATH ?? "").split(":").map((d) => `${d}/cargo`).find((p) => existsSync(p)) ?? null;

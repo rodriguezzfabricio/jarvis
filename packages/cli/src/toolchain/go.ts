@@ -26,7 +26,7 @@ export interface SessionToolchain {
   version: string;
   readOnlyDirs: string[];
   /**
-   * Root-owned system folders the toolchain also uses (decision 163: the Command Line Tools Rust links through).
+   * Root-owned system folders the toolchain also uses (decision 164: the Command Line Tools Rust links through).
    * The settings reopen them read-only like the toolchain's own folders; PATH entries and variables may point
    * inside them as well.
    */

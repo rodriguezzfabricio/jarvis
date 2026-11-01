@@ -5,7 +5,7 @@ import { RUST_FIXTURES } from "../config/pins.ts";
 import type { SessionToolchain } from "./go.ts";
 
 /**
- * A pinned, offline Rust for task sessions (decision 163, the Rust counterpart of decision 123's Go). Sessions and
+ * A pinned, offline Rust for task sessions (decision 164, the Rust counterpart of decision 123's Go). Sessions and
  * gates run sandboxed with no network, and no Rust is on a session's PATH, so a task that builds a Rust or Tauri
  * app gets the gate's own fixture: Rust, the Tauri CLI and a vendored crate set, read in place and read-only.
  *

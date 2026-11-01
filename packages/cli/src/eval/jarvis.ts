@@ -175,7 +175,7 @@ export interface JarvisRunResult {
   snapshot: SnapshotManifest;
   /** The sessions' Go (decision 123): the gate's pinned toolchain, or why they had the host's. */
   toolchain: ToolchainReport;
-  /** The sessions' Rust (decision 163): the gate's pinned fixture, or not needed. */
+  /** The sessions' Rust (decision 164): the gate's pinned fixture, or not needed. */
   rustToolchain: RustToolchainReport;
   // What the scheduler reads (eval/schedule.ts's ScheduledRun).
   started: boolean;
@@ -476,7 +476,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   let sessionToolchain: SessionToolchain | undefined;
   try {
     go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
-    // Decision 163: the gate's pinned Rust too, read in place, beside any Go.
+    // Decision 164: the gate's pinned Rust too, read in place, beside any Go.
     const preparedRust = prepareRustToolchain({ fixture: rustFixture });
     rust = preparedRust.report;
     sessionToolchain = mergeSessionToolchains(go.toolchain, preparedRust.toolchain);

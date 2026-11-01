@@ -31,7 +31,7 @@ export const GO_TOOLCHAIN_ZIPS: Readonly<Record<string, string>> = {
 };
 
 /**
- * The Rust fixtures sessions may get (decision 163), by `<rust>.<target>`: the SHA-256 of the fixture's file
+ * The Rust fixtures sessions may get (decision 164), by `<rust>.<target>`: the SHA-256 of the fixture's file
  * listing (`find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256` inside it), which jarvis-evals
  * keeps as hidden/rust-fixture.sha256. 1.99.1 aarch64-apple-darwin is Rust 1.99.1 (rustup's minimal profile), the
  * Tauri CLI 2.12.3 release binary and the vendored crates of a Tauri 2.12 menu-bar app template: 12,683 files.

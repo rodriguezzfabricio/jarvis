@@ -33,7 +33,7 @@ function prepared(fixture: string | undefined): ReturnType<typeof prepareRustToo
   return p!;
 }
 
-describe("a pinned, offline Rust for task sessions (decision 163)", () => {
+describe("a pinned, offline Rust for task sessions (decision 164)", () => {
   it("is not needed when the task has no Rust fixture", () => {
     const s = setup();
     expect(prepared(undefined)).toEqual({ report: { status: "not-needed" } });

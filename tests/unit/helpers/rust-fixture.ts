@@ -1,5 +1,5 @@
 /**
- * A pinned-Rust fixture in the eval gate's layout (decision 163), as jarvis-evals' rust-fixture.sh leaves it:
+ * A pinned-Rust fixture in the eval gate's layout (decision 164), as jarvis-evals' rust-fixture.sh leaves it:
  * toolchain/ (rustc, cargo and the Tauri CLI), cargo-home/config.toml (crates only from vendor/), vendor/ and
  * fixture.json. The binaries are shell scripts; no network, no real Rust. Also a stand-in for the Command Line
  * Tools folder, whose real copy is root-owned (tests accept it through the rustHost seam).

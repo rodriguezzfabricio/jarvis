@@ -59,7 +59,7 @@ async function jarvis(fx: EvalFixture, runId: string, session?: (spec: SessionSp
   return { r, seen };
 }
 
-describe("eval sessions get the gate's Rust, offline and read-only, in both arms (decision 163)", () => {
+describe("eval sessions get the gate's Rust, offline and read-only, in both arms (decision 164)", () => {
   it("baseline: the session runs the fixture's cargo, offline, with the SDK named, and the run records it", async () => {
     const { fx, fixture, clt } = rustTask();
     const r = await baseline(fx, "b1", evalRustFixture(fx.evalsRepo, "12-rust"));

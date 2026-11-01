@@ -98,7 +98,7 @@ evalCmd
   .action(async (ids: string[], opts: { evals: string; repeat: string; label: string }) => {
     // Hidden material is loaded (and refused if malformed) before any session, so each run's snapshot gets the same leak check as the Jarvis arm.
     const hidden = new Map<string, string[]>();
-    // Decisions 123 and 163: the session gets the gate's pinned Go and Rust, as the Jarvis arm's sessions do.
+    // Decisions 123 and 164: the session gets the gate's pinned Go and Rust, as the Jarvis arm's sessions do.
     const goFixtures = new Map<string, string>();
     const rustFixtures = new Map<string, string>();
     for (const id of ids) {

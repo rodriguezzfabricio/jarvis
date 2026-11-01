@@ -54,7 +54,7 @@ function setup() {
   return { root, worktreeRoot, workspace, jarvisHome, cacheRoot, home, fixture: realpathSync(fixture), clt, prepared, input, captured, options };
 }
 
-describe("task sessions get the pinned, offline Rust (decision 163)", () => {
+describe("task sessions get the pinned, offline Rust (decision 164)", () => {
   it("reopens the fixture read-only, puts its cargo and the Command Line Tools' clang first, and names the SDK", async () => {
     const s = setup();
     const t = s.prepared.toolchain!;

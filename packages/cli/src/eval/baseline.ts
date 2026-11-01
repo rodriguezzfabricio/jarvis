@@ -99,7 +99,7 @@ export interface BaselineRunResult {
   snapshot: SnapshotManifest;
   /** The session's Go (decision 123): the gate's pinned toolchain, or why it had the host's. */
   toolchain: ToolchainReport;
-  /** The session's Rust (decision 163): the gate's pinned fixture, or not needed. */
+  /** The session's Rust (decision 164): the gate's pinned fixture, or not needed. */
   rustToolchain: RustToolchainReport;
 }
 
@@ -116,7 +116,7 @@ export interface BaselineOptions {
   hiddenDirs?: readonly string[];
   /** The gate's Go module cache (eval/toolchain.ts evalGoFixture): the Jarvis arm's sessions get the same (decision 123). */
   goFixture?: string;
-  /** The gate's Rust fixture (eval/toolchain.ts evalRustFixture): the Jarvis arm's sessions get the same (decision 163). */
+  /** The gate's Rust fixture (eval/toolchain.ts evalRustFixture): the Jarvis arm's sessions get the same (decision 164). */
   rustFixture?: string;
   log?: (m: string) => void;
 }
@@ -151,7 +151,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   if (opts.hiddenDirs?.length) {
     try { assertHiddenAbsent(workspace, opts.hiddenDirs); } catch (e) { rmSync(cacheDir, { recursive: true, force: true }); throw e; }
   }
-  // Decisions 123 and 163: the gate's pinned Go and Rust, offline and read-only, exactly as the Jarvis arm's sessions get them.
+  // Decisions 123 and 164: the gate's pinned Go and Rust, offline and read-only, exactly as the Jarvis arm's sessions get them.
   const { go, rust, tc } = ((): { go: PreparedToolchain; rust: RustToolchainReport; tc: ReturnType<typeof checkSessionToolchain> } => {
     let prepared: PreparedToolchain | undefined;
     try {

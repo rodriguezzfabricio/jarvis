@@ -187,6 +187,8 @@ function validateFiles(input: Record<string, string>): AuthoredChecks {
   for (const path of paths) {
     const content = input[path];
     if (!relativePath(path) || protectedCheckPath(path) || typeof content !== "string") throw new Error("invalid authored check file");
+    // APFS also folds some non-ASCII letters into ASCII ones (U+017F into s), so only ASCII names compare safely with the reserved ones.
+    if (!/^[\x20-\x7e]+$/.test(path)) throw new Error("authored check paths must be printable ASCII");
     if (!(path.startsWith("fixtures/") || path.startsWith("expected/") || /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:check\.json|sh|mjs|js|cjs)$/.test(path))) throw new Error("unexpected check artifact");
     const size = Buffer.byteLength(content);
     bytes += size;
@@ -196,6 +198,8 @@ function validateFiles(input: Record<string, string>): AuthoredChecks {
   }
   const checks = definitions(files);
   for (const check of checks) {
+    // A protected installer's name, in another file, would sit beside its definition in the approved set (decision 162).
+    if (protectedCheckPath(`${check.name}.check.json`)) throw new Error(`check name is reserved for a protected installer: ${check.name}`);
     if (new Set(check.cases.map((c) => c.id)).size !== check.cases.length) throw new Error("duplicate check case ids");
     for (const c of check.cases) {
       if (forbiddenCase.test(c.command) || (check.criteria.length > 0 && (inProcess.test(c.command) || unitRunner.test(c.command)))) throw new Error("acceptance cases must drive a black box without expectations");

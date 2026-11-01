@@ -539,5 +539,17 @@
     "file": "packages/cli/src/runner/checks-author.ts",
     "anchor": "Object.entries(hashes).filter(([file]) => protectedCheckPath(file))",
     "replacement": "Object.entries(hashes).filter(() => false)"
+  },
+  {
+    "name": "planning refuses non-ASCII authored paths",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!/^[\\x20-\\x7e]+$/.test(path)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "planning refuses reserved check names",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (protectedCheckPath(`${check.name}.check.json`)) throw",
+    "replacement": "if (false) throw"
   }
 ]

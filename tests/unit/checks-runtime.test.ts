@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, ftruncateSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -44,10 +45,12 @@ it("loads definitions beside the real protected installers, binary engine and mo
   expect(f.store.hashAll()).toEqual(before);
   expect(f.store.verify(f.ledger).ok).toBe(true);
 });
-it.each(["flip", "extra", "symlink", "hardlink", "oversize", "count"])("doctor and gate refuse runtime %s before spawning", async fault => {
+it.each(["flip", "extra", "symlink", "hardlink", "oversize", "count", "fifo"])("doctor and gate refuse runtime %s before spawning", async fault => {
   const f = setup(), path = f.put("fixtures/design-runtime/engine", Buffer.from([0, 0xff, 4]));
   f.store.approve(f.ledger, "original");
   if (fault === "flip") writeFileSync(path, Buffer.from([0, 0xfe, 4]));
+  // A special file was skipped by the old walk, so it never showed up as an added check.
+  if (fault === "fifo") execFileSync("/usr/bin/mkfifo", [join(dirname(path), "pipe")]);
   if (fault === "extra") f.put("design-runtime/extra", "unapproved");
   if (fault === "symlink") { rmSync(path); symlinkSync(join(f.store.checksDir, "unit.check.json"), path); }
   if (fault === "hardlink") linkSync(path, join(dirname(path), "alias"));
@@ -60,9 +63,12 @@ it.each(["flip", "extra", "symlink", "hardlink", "oversize", "count"])("doctor a
   const checks = await foundationChecks({ jarvisHome: f.root, pluginDir: "/missing-plugin", socketPath: join(f.root, "none.sock") });
   expect(checks.find(c => c.name === "checks.p")?.level).toBe("fail");
 });
-it.each(["oversize", "count", "total", "symlink-root"])("refuses approval of invalid runtime %s", fault => {
+it.each(["oversize", "count", "total", "symlink-root", "directories", "depth"])("refuses approval of invalid runtime %s", fault => {
   const f = setup();
   if (fault === "symlink-root") { mkdirSync(join(f.root, "other")); symlinkSync(join(f.root, "other"), join(f.store.checksDir, "design-runtime")); }
+  // 4,097 runtime folders counting design-runtime itself; then a file 40 folders below the store.
+  else if (fault === "directories") for (let i = 0; i < 4096; i++) mkdirSync(join(f.store.checksDir, "design-runtime", String(i)), { recursive: true });
+  else if (fault === "depth") f.put(`design-runtime/${Array(40).fill("d").join("/")}/engine`, "deep");
   else {
     const count = fault === "count" ? 4097 : fault === "total" ? 3 : 1;
     for (let i = 0; i < count; i++) {
@@ -92,6 +98,30 @@ it.each(["overwrite", "remove", "race"])("architect install cannot %s protected 
   if (fault !== "race") expect(reviewVerdict).not.toHaveBeenCalled();
   else expect(reviewVerdict).toHaveBeenCalledOnce();
   expect(f.ledger.entries().filter(e => e.kind === "checks_approved")).toHaveLength(1);
+});
+// The default APFS volume folds case (and some Unicode), so a reserved name must be refused in every spelling
+// that lands in the same folder, and below a reserved file too. All are refused before any review session.
+it.each([
+  ["fixtures/Design-Runtime/lanes/evil.mjs", "console.log('planted')"],
+  ["Impeccable-Source.check.json", JSON.stringify({ ...unit, name: "scan" })],
+  ["fixtures/design-plan.json/inner.json", "{}"],
+  ["fixtures/SECURITY/rules/semgrep/extra.json", "{}"],
+  ["expected/axe-base.json", "{}"],
+  ["fixtures/deſign-runtime/lanes/evil.mjs", "console.log('planted')"],
+])("architect install refuses the reserved spelling %s before review", async (path, content) => {
+  const f = setup(); f.put("fixtures/design-runtime/engine", Buffer.from([0xff])); f.store.approve(f.ledger, "protected");
+  const bundle = authored(); Object.assign(bundle.files, { [path]: content });
+  const reviewVerdict = vi.fn(options.reviewVerdict);
+  await expect(installChecks(f.store, bundle, f.ledger, { ...options, reviewVerdict })).rejects.toThrow(/invalid authored check file|ASCII/);
+  expect(reviewVerdict).not.toHaveBeenCalled();
+  expect(f.ledger.entries().filter(e => e.kind === "checks_approved")).toHaveLength(1);
+});
+it.each(["token-lint", "design-browser", "impeccable-url"])("architect install refuses a check that takes the protected name %s", async name => {
+  const f = setup(); f.store.approve(f.ledger, "architect");
+  const bundle = authored(); Object.assign(bundle.files, { "shadow.check.json": JSON.stringify({ ...unit, name }) });
+  const reviewVerdict = vi.fn(options.reviewVerdict);
+  await expect(installChecks(f.store, bundle, f.ledger, { ...options, reviewVerdict })).rejects.toThrow(/reserved/);
+  expect(reviewVerdict).not.toHaveBeenCalled();
 });
 it("does not bless an unapproved protected-only store through an architect install", async () => {
   const f = setup(); rmSync(join(f.store.checksDir, "unit.check.json"));

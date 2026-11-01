@@ -120,10 +120,10 @@
     "replacement": "    if (false) throw"
   },
   {
-    "name": "eval Go fixture read from the grading folder",
+    "name": "eval gate fixture (Go or Rust) read from the grading folder",
     "file": "packages/cli/src/eval/toolchain.ts",
-    "anchor": "join(hiddenDir(evalsRepo, taskId, \"gate\"), \"fixtures\", \"gomodcache\")",
-    "replacement": "join(hiddenDir(evalsRepo, taskId, \"checks\"), \"fixtures\", \"gomodcache\")"
+    "anchor": "join(hiddenDir(evalsRepo, taskId, \"gate\"), \"fixtures\", name)",
+    "replacement": "join(hiddenDir(evalsRepo, taskId, \"checks\"), \"fixtures\", name)"
   },
   {
     "name": "eval toolchain may sit where other runs write",
@@ -152,8 +152,8 @@
   {
     "name": "eval baseline toolchain unchecked",
     "file": "packages/cli/src/eval/baseline.ts",
-    "anchor": "tc: checkSessionToolchain(prepared.toolchain, [...evalWritableRoots(workRoot), cacheDir, jarvisHome])",
-    "replacement": "tc: checkSessionToolchain(prepared.toolchain, [])"
+    "anchor": "tc: checkSessionToolchain(both, [...evalWritableRoots(workRoot), cacheDir, jarvisHome])",
+    "replacement": "tc: checkSessionToolchain(both, [])"
   },
   {
     "name": "eval jarvis harness gets no toolchain",
@@ -170,7 +170,7 @@
   {
     "name": "eval jarvis toolchain unchecked across runs",
     "file": "packages/cli/src/eval/jarvis.ts",
-    "anchor": "    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), \".jarvis-work\")), p.jarvisHome]);\n",
+    "anchor": "    checkSessionToolchain(sessionToolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), \".jarvis-work\")), p.jarvisHome]);\n",
     "replacement": ""
   },
   {

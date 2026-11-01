@@ -30,6 +30,16 @@ export const GO_TOOLCHAIN_ZIPS: Readonly<Record<string, string>> = {
   "go1.26.10.darwin-arm64": "afb16ae24c172f008db87119f34cf903a295bbad3fa526f7443914b0240b33c7",
 };
 
+/**
+ * The Rust fixtures sessions may get (decision 164), by `<rust>.<target>`: the SHA-256 of the fixture's file
+ * listing (`find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256` inside it), which jarvis-evals
+ * keeps as hidden/rust-fixture.sha256. 1.99.1 aarch64-apple-darwin is Rust 1.99.1 (rustup's minimal profile), the
+ * Tauri CLI 2.12.3 release binary and the vendored crates of a Tauri 2.12 menu-bar app template: 12,683 files.
+ */
+export const RUST_FIXTURES: Readonly<Record<string, string>> = {
+  "1.99.1.aarch64-apple-darwin": "48d046bbf175d48fd2de34b1c3b6ddd03361dd2017110f16b57f774b9785f226",
+};
+
 /** Full model IDs, never aliases (decision 61). */
 export const MODELS = {
   strong: "claude-opus-5-5",

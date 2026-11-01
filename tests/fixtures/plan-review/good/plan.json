@@ -1,0 +1,83 @@
+{
+  "tier": 1,
+  "notes": [
+    "Reuse src/util/retry.mjs (D3) for the save path; add no dependencies.",
+    "Items are JSON lines in data/items.jsonl (D2); src/store.mjs owns the file."
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Validate item names",
+      "goal": "Reject a blank item name at the CLI boundary",
+      "exitCondition": "AC2 passes: a blank name exits nonzero and persists nothing",
+      "acceptanceCriteria": [
+        "AC2"
+      ],
+      "storyIds": [
+        "S1"
+      ],
+      "dependencies": [],
+      "priority": 9,
+      "requiredChecks": [
+        "item-create"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/cli.mjs",
+        "src/store.mjs"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Retry the save",
+      "goal": "Wrap the append in src/store.mjs with retry from src/util/retry.mjs (D3), three attempts",
+      "exitCondition": "A transient append failure is retried; AC1 still passes",
+      "acceptanceCriteria": [],
+      "storyIds": [
+        "S1"
+      ],
+      "dependencies": [],
+      "priority": 8,
+      "requiredChecks": [
+        "item-create"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/store.mjs"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Persist and list items",
+      "goal": "Append each saved item as one JSON line to data/items.jsonl (D2) and have list read them back",
+      "exitCondition": "AC1 and AC3 pass",
+      "acceptanceCriteria": [
+        "AC1",
+        "AC3"
+      ],
+      "storyIds": [
+        "S1",
+        "S2"
+      ],
+      "dependencies": [
+        "T1"
+      ],
+      "priority": 7,
+      "requiredChecks": [
+        "item-create",
+        "item-list"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/store.mjs",
+        "src/cli.mjs"
+      ]
+    }
+  ]
+}

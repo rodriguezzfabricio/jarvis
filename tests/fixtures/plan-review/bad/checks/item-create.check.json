@@ -1,0 +1,19 @@
+{
+  "name": "item-create",
+  "criteria": [
+    "AC1",
+    "AC2"
+  ],
+  "cases": [
+    {
+      "id": "valid",
+      "command": "node src/cli.mjs add exercise"
+    },
+    {
+      "id": "blank",
+      "command": "node src/cli.mjs add \"  \""
+    }
+  ],
+  "verify": "sh \"$JARVIS_CHECKS/verify-create.sh\"",
+  "timeoutMs": 60000
+}

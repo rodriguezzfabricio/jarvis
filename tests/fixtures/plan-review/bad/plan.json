@@ -1,0 +1,78 @@
+{
+  "tier": 1,
+  "notes": [
+    "Retries follow D3."
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Validate item names",
+      "goal": "Reject a blank item name at the CLI boundary",
+      "exitCondition": "AC2 passes: a blank name exits nonzero and persists nothing",
+      "acceptanceCriteria": [
+        "AC2"
+      ],
+      "storyIds": [
+        "S1"
+      ],
+      "dependencies": [],
+      "priority": 9,
+      "requiredChecks": [
+        "item-create"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/cli.mjs",
+        "src/store.mjs"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Add a retry helper",
+      "goal": "Create src/retry.mjs with an exponential backoff retry for the save path",
+      "exitCondition": "The save path retries three times with backoff",
+      "acceptanceCriteria": [],
+      "storyIds": [
+        "S1"
+      ],
+      "dependencies": [],
+      "priority": 8,
+      "requiredChecks": [
+        "item-create"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/retry.mjs"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Persist items",
+      "goal": "Pick a storage format for items and persist each saved item so that list shows it after a restart",
+      "exitCondition": "AC1 and AC3 pass",
+      "acceptanceCriteria": [
+        "AC1",
+        "AC3"
+      ],
+      "storyIds": [
+        "S1",
+        "S2"
+      ],
+      "dependencies": [
+        "T1"
+      ],
+      "priority": 7,
+      "requiredChecks": [
+        "item-create",
+        "item-list"
+      ],
+      "requiredReviews": [
+        "code"
+      ]
+    }
+  ]
+}

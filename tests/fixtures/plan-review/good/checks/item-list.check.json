@@ -1,0 +1,18 @@
+{
+  "name": "item-list",
+  "criteria": [
+    "AC3"
+  ],
+  "cases": [
+    {
+      "id": "add",
+      "command": "node src/cli.mjs add exercise"
+    },
+    {
+      "id": "list",
+      "command": "node src/cli.mjs list"
+    }
+  ],
+  "verify": "sh \"$JARVIS_CHECKS/verify-list.sh\"",
+  "timeoutMs": 60000
+}

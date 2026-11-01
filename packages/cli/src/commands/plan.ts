@@ -3,7 +3,7 @@
  * session and `jarvis run`. The review composes the production read-only Claude reviewer on the strong tier;
  * resolve and accept are runner-side validation with no model.
  */
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Command } from "commander";
@@ -68,22 +68,32 @@ export async function planReview(repo: string | undefined, deps: PlanCommandOpti
     preflight: async () => ({ ok: allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })) }),
   });
   const service = createPlanReviewService({ ledger, projectDir: context.projectDir, workRoot, routing: DEFAULT_REVIEW_ROUTING, claude: reviewer, home, git: runGit, jarvisHome: context.jarvisHome });
-  if (calibrate) return service.review(calibrationMaterial(calibrate, deps, home, workRoot, store, runGit), { fixture: calibrate });
+  if (calibrate) return service.review(calibrationMaterial(calibrate, deps, home, workRoot, runGit), { fixture: calibrate });
   return service.review(materialFor(context, git, store));
 }
 
-/** The fixture's repo, committed once under the work root, with its own plan, spec and checks. */
-function calibrationMaterial(fixture: PlanFixture, deps: PlanCommandOptions, home: string, workRoot: string, store: ChecksStore, runGit: typeof safeGit): PlanReviewMaterial {
-  const source = deps.fixturesDir ? join(deps.fixturesDir, fixture) : join(realpathSync(FIXTURES), fixture);
-  for (const name of ["repo", "plan.json", "spec.md"]) if (!existsSync(join(source, name))) throw new Error(`calibration fixture ${fixture} lacks ${name} at ${source}`);
-  const dir = join(workRoot, "plan-calibration", `${fixture}-${Date.now()}`), repo = join(dir, "repo");
+/**
+ * A calibration fixture (tests/fixtures/plan-review/<fixture>: repo/, plan.json, spec.md, checks/) as review
+ * material: the repo is copied under `dir` and committed once by the runner, so the review clones a real
+ * revision and the fixture itself is never a nested repository.
+ */
+export function fixtureMaterial(fixture: PlanFixture, source: string, dir: string, home: string, runGit: typeof safeGit = safeGit): PlanReviewMaterial {
+  for (const name of ["repo", "plan.json", "spec.md", "checks"]) if (!existsSync(join(source, name))) throw new Error(`calibration fixture ${fixture} lacks ${name} at ${source}`);
+  const repo = join(dir, "repo");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  runGit(dir, ["-c", "protocol.file.allow=always", "clone", "--quiet", "--no-local", "--", join(source, "repo"), repo], { home });
+  cpSync(join(source, "repo"), repo, { recursive: true, dereference: false, errorOnExist: true, force: false });
+  runGit(repo, ["init", "--quiet", "-b", "main"], { home });
+  runGit(repo, ["add", "-A"], { home });
+  runGit(repo, ["-c", "user.name=jarvis", "-c", "user.email=jarvis@localhost", "commit", "--quiet", "-m", `plan review ${fixture} fixture`], { home });
   const revision = runGit(repo, ["rev-parse", "HEAD"], { home }).toString().trim();
   const planText = readPlanningFile(source, "plan.json"), spec = readPlanningFile(source, "spec.md");
   const decisions = existsSync(join(source, "repo", "docs", "decisions.md")) ? readPlanningFile(source, "repo/docs/decisions.md") : "";
-  const checksSource = existsSync(join(source, "checks")) ? join(source, "checks") : store.checksDir;
-  return { repoPath: repo, revision, plan: canonicalPlan(planText), planHash: planHashOf(planText), spec, decisions, checksSource, checksRoot: ".jarvis/checks", tier: 2 };
+  return { repoPath: repo, revision, plan: canonicalPlan(planText), planHash: planHashOf(planText), spec, decisions, checksSource: join(source, "checks"), checksRoot: ".jarvis/checks", tier: 2 };
+}
+
+function calibrationMaterial(fixture: PlanFixture, deps: PlanCommandOptions, home: string, workRoot: string, runGit: typeof safeGit): PlanReviewMaterial {
+  const source = deps.fixturesDir ? join(deps.fixturesDir, fixture) : join(realpathSync(FIXTURES), fixture);
+  return fixtureMaterial(fixture, source, join(workRoot, "plan-calibration", `${fixture}-${Date.now()}`), home, runGit);
 }
 
 export function register(program: Command, deps: PlanCommandOptions = {}): void {
@@ -105,7 +115,9 @@ export function register(program: Command, deps: PlanCommandOptions = {}): void 
         if (options.calibrate !== undefined && options.calibrate !== "bad" && options.calibrate !== "good") throw new Error("--calibrate takes bad or good");
         const result = await planReview(options.repo, deps, options.calibrate as PlanFixture | undefined);
         const overall = result.entries.at(-1);
-        out(`Plan review ${result.verdict}${result.counts ? "" : " (does not count: no passing negative control)"}; ${result.findings.length} finding(s)${options.calibrate ? `; control entry ${overall?.hash ?? "?"}` : "; findings in .jarvis/plan-review/findings.json"}`);
+        // The recorded verdict, then whether it counts: an uncalibrated pass is still an error for the gate.
+        const recorded = (overall?.data as { verdict?: string } | undefined)?.verdict ?? result.verdict;
+        out(`Plan review ${recorded}${options.calibrate || result.counts ? "" : " (does not count: no passing negative control)"}; ${result.findings.length} finding(s)${options.calibrate ? `; control entry ${overall?.hash ?? "?"}` : "; findings in .jarvis/plan-review/findings.json"}`);
         for (const f of result.findings) out(`  ${f.id} [${f.severity}] ${f.scope}: ${f.finding}`);
         if (result.error) { out(result.error); process.exitCode = 1; }
         else if (result.verdict !== "pass") process.exitCode = 1;

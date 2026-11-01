@@ -134,12 +134,16 @@ describe("skipping only the device flush", () => {
   const median = (values: number[]) => values.sort((a, b) => a - b)[values.length >> 1]!;
 
   // Relative, so no threshold depends on the disk: a device flush costs milliseconds, the replacement microseconds.
+  // Each sample first dirties the target (a write, or a new entry in the folder): a clean folder's native fsync is
+  // microseconds on APFS too, which made the folder case fail on a quiet Mac (Nov 1).
   it.each(["file", "folder"])("does not pay for a flush on a %s", (kind) => {
     const dir = mkdtempSync(join(scratch, "timing-"));
     const fd = openSync(kind === "file" ? join(dir, "f") : dir, kind === "file" ? "w" : "r");
     try {
+      let entry = 0;
       const time = (call: (fd: number) => void) => median(Array.from({ length: 15 }, () => {
         if (kind === "file") writeSync(fd, "x".repeat(4096));
+        else writeFileSync(join(dir, `entry-${entry++}`), "x");
         const started = performance.now();
         call(fd);
         return performance.now() - started;

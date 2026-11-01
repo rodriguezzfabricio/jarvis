@@ -80,8 +80,8 @@
   {
     "name": "usage ledger kind missing",
     "file": "packages/cli/src/ledger/ledger.ts",
-    "anchor": "  \"session_usage\", \"footprint\",\n",
-    "replacement": "  \"footprint\",\n"
+    "anchor": "  \"session_usage\", \"footprint\", \"plan_review\",\n",
+    "replacement": "  \"footprint\", \"plan_review\",\n"
   },
   {
     "name": "usage footprint floor flag missing",

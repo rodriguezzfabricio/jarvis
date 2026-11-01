@@ -17,6 +17,10 @@
       "command": "node src/cli.mjs add"
     },
     {
+      "id": "newline",
+      "command": "node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
+    },
+    {
       "id": "file",
       "command": "cat data/items.jsonl 2>/dev/null || true"
     }

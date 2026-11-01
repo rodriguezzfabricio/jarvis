@@ -6,21 +6,32 @@ import { hiddenDir } from "./hidden.ts";
  * The pinned Go both arms' sessions get (decision 123): the module cache the task's gate reads,
  * hidden/<task>/gate/fixtures/gomodcache, reopened read-only in place, and its toolchain unpacked per run in
  * ~/.jarvis-work/toolchains/<task>/<run>. The gate itself reads its own installed copy, in the runner folder.
- * Both arms read the same fixture, so the comparison stays fair (decision 47).
+ * Both arms read the same fixture, so the comparison stays fair (decision 47). Rust (decision 163) is the same
+ * idea without the unpacking: hidden/<task>/gate/fixtures/rust, read in place.
  */
 
 const under = (p: string, dir: string) => p === dir || p.startsWith(`${dir}/`);
 
-/** The gate's module cache for a task. Refused if it leads into the grading checks, which sessions never see (decision 97). */
-export function evalGoFixture(evalsRepo: string, taskId: string): string {
-  const fixture = join(hiddenDir(evalsRepo, taskId, "gate"), "fixtures", "gomodcache");
+/** A gate fixture sessions read. Refused if it leads into the grading checks, which sessions never see (decision 97). */
+function gateFixture(evalsRepo: string, taskId: string, name: string, what: string): string {
+  const fixture = join(hiddenDir(evalsRepo, taskId, "gate"), "fixtures", name);
   const grading = hiddenDir(evalsRepo, taskId, "checks");
   if (existsSync(fixture) && existsSync(grading)) {
     const f = realpathSync(fixture);
     const g = realpathSync(grading);
-    if (under(f, g) || under(g, f)) throw new Error(`refused: the Go fixture sessions read (${f}) overlaps the grading checks; sessions never see them (decision 97)`);
+    if (under(f, g) || under(g, f)) throw new Error(`refused: the ${what} fixture sessions read (${f}) overlaps the grading checks; sessions never see them (decision 97)`);
   }
   return fixture;
+}
+
+/** The gate's module cache for a task (decision 123). */
+export function evalGoFixture(evalsRepo: string, taskId: string): string {
+  return gateFixture(evalsRepo, taskId, "gomodcache", "Go");
+}
+
+/** The gate's Rust toolchain and vendored crates for a task (decision 163), read in place like the Go fixture. */
+export function evalRustFixture(evalsRepo: string, taskId: string): string {
+  return gateFixture(evalsRepo, taskId, "rust", "Rust");
 }
 
 /**

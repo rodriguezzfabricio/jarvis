@@ -1,0 +1,170 @@
+[
+  {
+    "name": "rust fixture symlink accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (st.isSymbolicLink()) throw new Error(`refused: the Rust fixture is a symlink: ${i.fixture}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "rust fixture behind a linked folder accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (fixture !== resolve(i.fixture)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust fixture may hold links",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "    if (st.isSymbolicLink()) throw new Error(`refused: the Rust fixture holds a symlink: ${join(root, p)}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "rust fixture may hold special files",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "    else throw new Error(`refused: the Rust fixture holds something that is neither a file nor a folder: ${join(root, p)}`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "rust fixture not checked against its pin",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (digest !== pinned) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust fixture digest ignores paths",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": ".digest(\"hex\")}  ${p}\\n`);",
+    "replacement": ".digest(\"hex\")}\\n`);"
+  },
+  {
+    "name": "rust fixture unpinned version accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (pinned === undefined) throw new Error(`refused: no pinned Rust fixture",
+    "replacement": "  if (pinned === undefined) return { report: { status: \"not-needed\" } };\n  if (false) throw new Error(`refused: no pinned Rust fixture"
+  },
+  {
+    "name": "rust fixture for another platform accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (info.target !== target) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust fixture.json versions unchecked",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (typeof i?.rust !== \"string\" || !RUST.test(i.rust) ||",
+    "replacement": "  if (typeof i?.rust !== \"string\" ||"
+  },
+  {
+    "name": "rust fixture without cargo accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "    if (!t?.isFile()) throw new Error(`refused: the Rust fixture lacks toolchain/bin/${tool}`);\n",
+    "replacement": "    if (!t) continue;\n"
+  },
+  {
+    "name": "rust fixture without vendored crates accepted",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (!lstatSync(join(fixture, \"vendor\"), { throwIfNoEntry: false })?.isDirectory()) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust Command Line Tools need not be root-owned",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (!rustHost.systemOwned(clt)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust SDK may lead outside the Command Line Tools",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (!under(sdk, clt) || !lstatSync(sdk).isDirectory()) throw",
+    "replacement": "  if (!lstatSync(sdk).isDirectory()) throw"
+  },
+  {
+    "name": "rust fixture may overlap the Command Line Tools",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  if (under(fixture, clt) || under(clt, fixture)) throw",
+    "replacement": "  if (false) throw"
+  },
+  {
+    "name": "rust network not off",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "CARGO_NET_OFFLINE: \"true\", ",
+    "replacement": ""
+  },
+  {
+    "name": "rust cargo home not the fixture's",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "CARGO_HOME: join(fixture, \"cargo-home\")",
+    "replacement": "CARGO_HOME: join(fixture, \"..\", \"cargo-home\")"
+  },
+  {
+    "name": "rust links through the xcrun shims",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "      pathPrefix: [bin, join(clt, \"usr\", \"bin\")],",
+    "replacement": "      pathPrefix: [bin],"
+  },
+  {
+    "name": "rust SDK not named",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "SDKROOT: sdk, ",
+    "replacement": ""
+  },
+  {
+    "name": "toolchains merged with a variable set twice",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "  for (const k of Object.keys(b.env)) if (Object.hasOwn(a.env, k)) throw",
+    "replacement": "  for (const k of Object.keys(b.env)) if (false) throw"
+  },
+  {
+    "name": "toolchains merged without the second one's folders",
+    "file": "packages/cli/src/toolchain/rust.ts",
+    "anchor": "    readOnlyDirs: [...a.readOnlyDirs, ...b.readOnlyDirs],",
+    "replacement": "    readOnlyDirs: [...a.readOnlyDirs],"
+  },
+  {
+    "name": "session system folder from anywhere",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    const allowed = systemToolchainPolicy.roots().includes(d) && ",
+    "replacement": "    const allowed = "
+  },
+  {
+    "name": "session system folder need not be root-owned",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    if (!systemToolchainPolicy.owned(d)) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "session system folder may overlap a writable folder",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "    if (writable.some((w) => under(d, w) || under(w, d))) throw",
+    "replacement": "    if (false) throw"
+  },
+  {
+    "name": "session toolchain may set RUSTFLAGS",
+    "file": "packages/cli/src/harness/claude/toolchain.ts",
+    "anchor": "  \"CARGO_HOME\", \"CARGO_NET_OFFLINE\", \"SDKROOT\", \"DEVELOPER_DIR\",\n",
+    "replacement": "  \"CARGO_HOME\", \"CARGO_NET_OFFLINE\", \"SDKROOT\", \"DEVELOPER_DIR\", \"RUSTFLAGS\", \"RUSTC_WRAPPER\",\n"
+  },
+  {
+    "name": "eval baseline session gets no pinned Rust",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "      const both = mergeSessionToolchains(prepared.toolchain, rust.toolchain);",
+    "replacement": "      const both = prepared.toolchain;"
+  },
+  {
+    "name": "eval jarvis sessions get no pinned Rust",
+    "file": "packages/cli/src/eval/jarvis.ts",
+    "anchor": "    sessionToolchain = mergeSessionToolchains(go.toolchain, preparedRust.toolchain);",
+    "replacement": "    sessionToolchain = go.toolchain;"
+  },
+  {
+    "name": "eval Rust fixture read from the grading folder",
+    "file": "packages/cli/src/eval/toolchain.ts",
+    "anchor": "  return gateFixture(evalsRepo, taskId, \"rust\", \"Rust\");",
+    "replacement": "  return join(hiddenDir(evalsRepo, taskId, \"checks\"), \"fixtures\", \"rust\");"
+  },
+  {
+    "name": "eval commits a build's target folder",
+    "file": "packages/cli/src/eval/baseline.ts",
+    "anchor": "\".turbo/\", \"target/\", ",
+    "replacement": "\".turbo/\", "
+  }
+]

@@ -28,8 +28,9 @@ import { safeGit } from "./git.ts";
 import { assertHiddenAbsent, assertHiddenDisjoint, gradeRun, hiddenDir, installHiddenChecks, loadHiddenChecks, type Grade, type HiddenChecks } from "./hidden.ts";
 import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
-import { evalGoFixture, evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
+import { evalGoFixture, evalRustFixture, evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
 import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type SessionToolchain, type ToolchainReport } from "../toolchain/go.ts";
+import { mergeSessionToolchains, prepareRustToolchain, type RustToolchainReport } from "../toolchain/rust.ts";
 
 /**
  * The Jarvis arm of `jarvis eval` (decisions 35, 47; architecture §3.10): each golden task runs through
@@ -174,6 +175,8 @@ export interface JarvisRunResult {
   snapshot: SnapshotManifest;
   /** The sessions' Go (decision 123): the gate's pinned toolchain, or why they had the host's. */
   toolchain: ToolchainReport;
+  /** The sessions' Rust (decision 163): the gate's pinned fixture, or not needed. */
+  rustToolchain: RustToolchainReport;
   // What the scheduler reads (eval/schedule.ts's ScheduledRun).
   started: boolean;
   usageLimited: boolean;
@@ -429,6 +432,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   if (pipeline === "single-task" && !loopChecks.checks.unit) throw new Error(`${task.id}: a ${t.type} task needs a gate check named "unit" (singleTaskPlan's required check)`);
   if (pipeline === "review-fix" && !loopChecks.checks.unit) throw new Error(`${task.id}: a review that asks for fixes needs a gate check named "unit" (its fix tasks' required check)`);
   const goFixture = evalGoFixture(opts.evalsRepo, task.id);
+  const rustFixture = evalRustFixture(opts.evalsRepo, task.id);
 
   const pre = await opts.preflight();
   if (!pre.ok) throw new PreflightError("preflight failed (run `jarvis doctor --live`); no session was started", pre.waitUntil);
@@ -468,10 +472,16 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const routing = loadRouting(p.workspace); // once, before any session, on the runner's copy
   // Decision 123: the gate's pinned Go for every session, offline and read-only, as the baseline's session gets it.
   let go: PreparedToolchain | undefined;
+  let rust: RustToolchainReport | undefined;
+  let sessionToolchain: SessionToolchain | undefined;
   try {
     go = prepareGoToolchain({ workspace: p.workspace, fixture: goFixture, dest: evalToolchainDir(opts.workRoot ?? join(homedir(), ".jarvis-work"), task.id, runId) });
+    // Decision 163: the gate's pinned Rust too, read in place, beside any Go.
+    const preparedRust = prepareRustToolchain({ fixture: rustFixture });
+    rust = preparedRust.report;
+    sessionToolchain = mergeSessionToolchains(go.toolchain, preparedRust.toolchain);
     // Never where any run's sessions write: the harness checks only this run's worktrees and caches.
-    checkSessionToolchain(go.toolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), ".jarvis-work")), p.jarvisHome]);
+    checkSessionToolchain(sessionToolchain, [...evalWritableRoots(opts.workRoot ?? join(homedir(), ".jarvis-work")), p.jarvisHome]);
   } catch (e) {
     // Fail closed: a present but refused toolchain stops the run before any session, and summary.json says why.
     if (go?.dir) removeGoToolchain(go.dir);
@@ -480,7 +490,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   }
   if (go.report.status === "unavailable") log(`${task.id} ${runId}: go toolchain unavailable: ${go.report.reason}`);
   let harness: Harness;
-  try { harness = opts.harness ?? productionHarness(task, p, routing, opts, go.toolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
+  try { harness = opts.harness ?? productionHarness(task, p, routing, opts, sessionToolchain); } catch (e) { if (go.dir) removeGoToolchain(go.dir); throw e; }
   let tier: TaskTier = t.tier ?? 1;
   // A review-fix task's fix tasks are bug fixes reviewed against their finding (decisions 114, 126); its report update is not.
   const fixTasks = new Set<string>();
@@ -491,7 +501,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
     ...(t.review ? { review: t.review } : {}),
     checks: Object.keys(gate.checks).sort(), gradingChecks: Object.keys(grading.checks).sort(),
     budget: { maxTurnsPerSession: task.maxTurns, timeoutMinutesPerSession: task.timeoutMinutes }, allowedDomains: task.allowedDomains,
-    workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, toolchain: go.report, startedAt: new Date(started).toISOString(),
+    workspace: p.workspace, worktreeRoot: p.worktreeRoot, baseRevision, snapshot, toolchain: go.report, rustToolchain: rust, startedAt: new Date(started).toISOString(),
   }, null, 2)}\n`);
 
   let outcome: JarvisOutcome = "crashed";
@@ -585,7 +595,7 @@ export async function runJarvis(task: GoldenTask, opts: JarvisEvalOptions): Prom
   const out: JarvisRunResult = {
     arm: "jarvis", task: task.id, runId, resultsDir: p.resultsDir, workspace: p.workspace, pipeline, triage: { type: t.type, tier: t.tier },
     outcome, ...(error !== undefined ? { error } : {}), loop,
-    claimedDone: outcome === "complete", baseRevision, review: reviewed, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report,
+    claimedDone: outcome === "complete", baseRevision, review: reviewed, lastGreen, finalCommit, diffStat, durationMs: Date.now() - started, metrics, grade, ...(gradeError !== undefined ? { gradeError } : {}), snapshot, toolchain: go.report, rustToolchain: rust,
     started: sessionsStarted, usageLimited: outcome === "usage-limited", usageWaitUntil, exitCode: null, timedOut: false, resultSubtype: outcome,
     numTurns: metrics.usage.sessions ? metrics.usage.turns : undefined,
   };

@@ -61,9 +61,21 @@ it("an interruption exits 130 and says how to resume; repeated --redo values are
   expect(Object.keys(steps).sort()).toEqual(["claude", "secrets"]);
 });
 
-it("refuses to run without a terminal", async () => {
+it("refuses to run without a terminal: one printed line, exit 2, no stack trace (decision 175)", async () => {
   const c = cli([], [], false);
-  expect(String(await failure(c.run("setup")))).toMatch(/terminal/i);
+  expect(await failure(c.run("setup"))).toBeUndefined();
+  expect(c.codes).toEqual([2]);
+  expect(c.out).toEqual([expect.stringMatching(/^jarvis setup: .*terminal/i)]);
+  expect(existsSync(join(c.home, ".jarvis"))).toBe(false);
+});
+
+it("an unknown --redo step (a trailing comma, say) is one printed line and exit 2, not a stack trace (decision 175)", async () => {
+  const c = cli([], []);
+  expect(await failure(c.run("setup", "--redo", "accounts.deploy,"))).toBeUndefined();
+  expect(c.codes).toEqual([2]);
+  expect(c.out).toEqual([expect.stringMatching(/^jarvis setup: Unknown setup step "accounts\.deploy,"\. Steps: /)]);
+  expect(c.out[0]).not.toMatch(/\n\s+at /);
+  expect(c.closed).toHaveBeenCalled();
   expect(existsSync(join(c.home, ".jarvis"))).toBe(false);
 });
 

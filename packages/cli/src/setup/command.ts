@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { runSetup, type SetupDeps } from "./setup.ts";
+import { runSetup, SetupUsageError, type SetupDeps } from "./setup.ts";
 import { STEPS } from "./state.ts";
 import { InterruptedError, streamTty, type Tty } from "./tty.ts";
 
@@ -24,9 +24,10 @@ export function register(program: Command, deps: CommandDeps = {}): void {
     .action(async (opts: { redo: string[]; sendTest?: boolean }) => {
       const print = deps.print ?? console.log;
       const setExitCode = deps.setExitCode ?? ((code: number) => { process.exitCode = code; });
+      const usage = (message: string) => { print(`jarvis setup: ${message}`); setExitCode(2); };
       let tty = deps.tty;
       if (!tty) {
-        if (!(deps.stdinIsTTY ?? process.stdin.isTTY === true)) throw new Error("jarvis setup is interactive: run it in a terminal (tokens are never read from a pipe, argv or the environment)");
+        if (!(deps.stdinIsTTY ?? process.stdin.isTTY === true)) { usage("jarvis setup is interactive: run it in a terminal (tokens are never read from a pipe, argv or the environment)"); return; }
         tty = streamTty(process.stdin, process.stdout);
       }
       try {
@@ -40,6 +41,7 @@ export function register(program: Command, deps: CommandDeps = {}): void {
         }, { redo: opts.redo, sendTest: opts.sendTest === true });
         setExitCode(result.ok ? 0 : 1);
       } catch (error) {
+        if (error instanceof SetupUsageError) { usage(error.message); return; }
         if (!(error instanceof InterruptedError)) throw error;
         print("\nInterrupted. Finished steps are saved; run jarvis setup again to continue where you stopped.");
         setExitCode(130);

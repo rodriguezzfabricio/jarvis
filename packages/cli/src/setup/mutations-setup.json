@@ -1,0 +1,32 @@
+[
+  {
+    "name": "setup usage error escapes as a stack trace",
+    "file": "packages/cli/src/setup/command.ts",
+    "anchor": "if (error instanceof SetupUsageError) { usage(error.message); return; }",
+    "replacement": ""
+  },
+  {
+    "name": "setup without a terminal throws instead of a one-line refusal",
+    "file": "packages/cli/src/setup/command.ts",
+    "anchor": "{ usage(\"jarvis setup is interactive: run it in a terminal (tokens are never read from a pipe, argv or the environment)\"); return; }",
+    "replacement": "throw new Error(\"jarvis setup is interactive: run it in a terminal (tokens are never read from a pipe, argv or the environment)\");"
+  },
+  {
+    "name": "setup --redo also runs every never-finished step",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (redo.size > 0 && !redo.has(step)) {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "setup --redo reports a failed named step as ok",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (pending.some((step) => redo.size === 0 || redo.has(step))) ok = false;",
+    "replacement": "if (redo.size === 0) ok = false;"
+  },
+  {
+    "name": "setup --redo fails on steps it did not name",
+    "file": "packages/cli/src/setup/setup.ts",
+    "anchor": "if (pending.some((step) => redo.size === 0 || redo.has(step))) ok = false;",
+    "replacement": "ok = false;"
+  }
+]

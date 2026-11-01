@@ -169,6 +169,21 @@ it("--redo runs a finished step again; 'accounts' means every account; unknown s
   expect(String(await failure(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, { redo: ["acounts"] })))).toMatch(/unknown setup step/i);
 });
 
+it("--redo on a half-finished setup runs only the named steps; the never-finished ones wait for a plain jarvis setup (decision 175)", async () => {
+  const home = makeHome(); const s = fakeSecrets();
+  // Interrupted at the first account question: claude and secrets are recorded, nothing after them.
+  expect(await failure(runSetup(deps(home, fakeTty(["y"], []).tty, { secrets: s.backend }).d, {}))).toBeInstanceOf(InterruptedError);
+  expect(Object.keys(state(home).steps).sort()).toEqual(["claude", "secrets"]);
+  const only = fakeTty([], []);
+  const result = await runSetup(deps(home, only.tty, { secrets: s.backend }).d, { redo: ["claude"] });
+  expect(only.calls).toEqual([]);
+  expect(result.ok).toBe(true);
+  expect(result.pending).toEqual(STEPS.filter((step) => step !== "claude" && step !== "secrets"));
+  expect(Object.keys(state(home).steps).sort()).toEqual(["claude", "secrets"]);
+  // Without --redo the same home resumes at the first unfinished step and the result stays not ok until it is answered.
+  expect(await failure(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, {}))).toBeInstanceOf(InterruptedError);
+});
+
 it("records a skipped account as skipped, stores nothing, and says Jarvis develops locally (decision 43)", async () => {
   const home = makeHome(); const s = fakeSecrets();
   const t = fakeTty(["n", "", "", "", "", "", "n"], []);

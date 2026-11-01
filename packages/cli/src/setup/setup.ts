@@ -47,13 +47,16 @@ export const NTFY_BASE_URL = "https://ntfy.sh";
 const TOPIC_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const TOPIC_RANDOM_LENGTH = 24;
 
+/** A mistake in what the person typed: the command prints its message on one line and exits 2, never a stack trace (decision 175). */
+export class SetupUsageError extends Error {}
+
 /** --redo names; "accounts" means every account step. Unknown names are refused. */
 export function parseRedo(values: readonly string[]): Set<StepName> {
   const out = new Set<StepName>();
   for (const value of values) {
     if (value === "accounts") for (const step of ACCOUNT_STEPS) out.add(step);
     else if ((STEPS as readonly string[]).includes(value)) out.add(value as StepName);
-    else throw new Error(`Unknown setup step "${value}". Steps: ${STEPS.join(", ")}, or accounts for every account`);
+    else throw new SetupUsageError(`Unknown setup step "${value}". Steps: ${STEPS.join(", ")}, or accounts for every account`);
   }
   return out;
 }
@@ -107,6 +110,11 @@ export async function runSetup(deps: SetupDeps, options: SetupOptions = {}): Pro
       print(`- ${step}: ${prior.status} earlier (${prior.at}); skipping. Use --redo ${step} to run it again.`);
       continue;
     }
+    // --redo names the steps to run: a step never finished waits for a plain jarvis setup (decision 175).
+    if (redo.size > 0 && !redo.has(step)) {
+      print(`- ${step}: not finished; run jarvis setup without --redo to continue it.`);
+      continue;
+    }
     print(`\n== ${step} ==`);
     const outcome = await runStep(step, ctx);
     print(`${step}: ${outcome.status}. ${outcome.detail}`);
@@ -118,7 +126,8 @@ export async function runSetup(deps: SetupDeps, options: SetupOptions = {}): Pro
   if (options.sendTest) ok = (await sendTest(ctx)) && ok;
   const pending = STEPS.filter((s) => !isFinished(state.steps[s]));
   if (pending.length) {
-    ok = false;
+    // A --redo run answers for the steps it named; the rest are reported, not failed.
+    if (pending.some((step) => redo.size === 0 || redo.has(step))) ok = false;
     print(`\nNot finished: ${pending.join(", ")}. Fix what is listed above and run jarvis setup again; finished steps are skipped.`);
   } else print("\nSetup is complete. Run jarvis doctor --live before any unattended run.");
   return { ok, state, pending };

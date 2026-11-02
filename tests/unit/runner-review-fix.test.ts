@@ -305,6 +305,14 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
     expect(again.updateTaskId).toBe("T12");
   });
 
+  it("reuses an identical normalized task whose title truncates at whitespace", () => {
+    const output = { ...out, findings: [{ ...out.findings[0]!, title: "x".repeat(115) + " tail" }] };
+    const first = reviewFixPlan(output, [{ name: "unit" }]);
+    const existing = [{ ...first.plan!.tasks[0]!, riskTier: 2 as const, reviewKind: "bug" as const }];
+    const again = reviewFixPlan(output, [{ name: "unit" }], existing);
+    expect(again.taskIds).toEqual(first.taskIds);
+  });
+
   it("needs an installed unit check, and makes no plan when nothing is left to fix", () => {
     expect(() => reviewFixPlan(out, [{ name: "lint" }])).toThrow(/unit/);
     const none = readReviewOutput(reviewed([finding("F1")]), "REVIEW.md", { inCheckout: () => false });

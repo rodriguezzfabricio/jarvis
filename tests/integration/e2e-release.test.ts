@@ -109,7 +109,6 @@ async function runRelease(options: { failSmoke?: string } = {}): Promise<Release
   `);
   const dependencyPins: DependencyPins = { node: process.execPath, nodeVersion: process.versions.node,
     npm: { bin: npm, root: tools, version: "11.19.0" }, pnpm: { bin: npm, root: tools, version: "11.7.0" } };
-  seedTasks(p);
   writeFileSync(join(p.jarvisHome, "notify.json"), JSON.stringify({ baseUrl: "https://example.invalid", topic: "fake-out", replyTopic: "fake-in" }), { mode: 0o600 });
   saveReleaseSetup(p.projectDir, parseReleaseSetup({ version: 1, provider: "netlify", plan: "free", siteId: SITE, productionUrl: "https://habits.example.com",
     build: { command: `test -f node_modules/.jarvis-test-install && ${BUILD}`, output: "site", timeoutMs: 60_000 } }));
@@ -128,7 +127,7 @@ async function runRelease(options: { failSmoke?: string } = {}): Promise<Release
       home: p.home, preflight: async () => true, reprobe: async () => true, createReview: () => async () => "pass", createNotifier: () => notifier, warn: () => {},
       harness: { binaryRealpath: () => p.claudeBin, session: (spec) => runSession({ ...spec, bin: p.claudeBin }), parentEnv: { HOME: p.home, USER: "e2e", LANG: "en_US.UTF-8" } },
       release: seams,
-    }),
+    }).then(prepared => { seedTasks(p, { inputHash: prepared.loop.inputHash, inputMode: prepared.loop.inputMode }); return prepared; }),
   });
   await program.parseAsync(["run"], { from: "user" });
   const calls = () => existsSync(provider.log) ? readFileSync(provider.log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { args: string[]; token: string | null }) : [];

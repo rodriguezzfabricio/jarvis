@@ -64,6 +64,7 @@ describe("jarvis run production composition", () => {
     expect(opts.runBranch).toBe(p.runBranch);
     expect(opts.tier).toBe(1);
     expect(opts.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
+    expect(opts.only).toEqual(["T1", "T2"]);
     expect(opts.worktreeRoot).toBe(join(p.home, ".jarvis-work", "worktrees"));
     expect(typeof opts.createHarness).toBe("function"); expect(typeof opts.recoverIntake).toBe("function");
     expect(opts.plan?.tasks.some((t) => "planNotes" in t)).toBe(false);
@@ -429,4 +430,18 @@ it("binds the loop to approved spec content and protected check hashes, not thei
   store.approve(p.ledger, "test changed approved checks with identical names");
   const third = await prepare(p);
   expect(third.loop.inputHash).not.toBe(changedSpec);
+});
+
+it.each(["Fix the broken item output", "Refactor src/store.mjs without changing behavior"])("resumes a spec-free request beside a confirmed spec: %s", async request => {
+  const { runLoop } = await import("../../packages/cli/src/runner/loop.ts");
+  const p = project(), first = await prepare(p, { request });
+  p.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 1 } });
+  const stop = (loop: PreparedRun["loop"], label: string) => runLoop({ ...loop, pidAlive: () => false, footprint: false,
+    createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }), reprobe: async () => { throw new Error(label); } });
+  await expect(stop(first.loop, "first checkpoint")).rejects.toThrow("first checkpoint");
+  await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
+  let deps: ReviewDeps | undefined;
+  const next = await prepare(p, {}, { createReview: d => { deps = d; return async () => "pass"; } });
+  await expect(stop(next.loop, "resumed checkpoint")).rejects.toThrow("resumed checkpoint");
+  expect(reviewMaterialFor({ ...deps!, git: () => "base" }, first.loop.plan!.tasks[0]!.id, "candidate").spec).toContain(request);
 });

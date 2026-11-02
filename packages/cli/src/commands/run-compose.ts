@@ -98,7 +98,7 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
   if (task?.definition.reviewKind) return {
-    repoPath: deps.context.repoPath, baseRevision, tier: reviewTier,
+    repoPath: deps.context.repoPath, baseRevision, tier: task.definition.reviewKind === "review-report" ? task.definition.riskTier ?? 1 : reviewTier,
     spec: `Goal: ${task.definition.goal}\nExit condition: ${task.definition.exitCondition}`,
     acceptanceCriteria: [task.definition.exitCondition],
     ...(task.definition.reviewKind === "bug" ? { kind: "bug" as const } : {}),
@@ -115,7 +115,7 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
       ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: "bug" as const } : {}),
     };
   }
-  if (!deps.spec && task) return {
+  if ((!deps.spec || task?.definition.inputMode === "free") && task) return {
     repoPath: deps.context.repoPath, baseRevision, tier: reviewTier,
     spec: `Goal: ${task.definition.goal}\nExit condition: ${task.definition.exitCondition}`,
     acceptanceCriteria: task.definition.exitCondition ? [task.definition.exitCondition] : [],
@@ -202,7 +202,10 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const spec = context.request === undefined && context.planKind === undefined ? approvedSpec(git, runBranch) : undefined;
   const verifiedInputs = new ChecksStore(context.projectDir).verify(ledger);
   if (!verifiedInputs.ok || !verifiedInputs.lockHash) throw new Error("protected checks changed during composition");
-  const inputHash = createHash("sha256").update(canonical({ spec: spec?.text ?? null, checks: verifiedInputs.lockHash })).digest("hex");
+  const inputMode = context.request !== undefined || context.planKind !== undefined || !spec ? "free" as const : "spec" as const;
+  const inputHashFor = (mode: "spec" | "free" | undefined): string | undefined => mode === undefined ? undefined
+    : createHash("sha256").update(canonical({ spec: mode === "spec" ? spec?.text ?? null : null, checks: verifiedInputs.lockHash })).digest("hex");
+  const inputHash = inputHashFor(inputMode)!;
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }, inputHash) : undefined;
   if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
@@ -250,7 +253,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   if (hosted.reconciled) (options.warn ?? console.error)(`Marked ${hosted.reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
   const loop: RunLoopOptions = {
     projectId: context.projectId, projectDir: context.projectDir, jarvisHome: context.jarvisHome, repoPath: context.repoPath, runBranch,
-    worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1, inputHash,
+    worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1, inputHash, inputMode, inputHashFor,
     ...(options.git ? { git: options.git } : {}),
     checks: Object.fromEntries(checks.map((check) => [check.name, check])),
     createHarness: (routing) => createClaudeHarness({
@@ -269,7 +272,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
       ...(reviewFix?.bugTasks.has(task.id) || (bugRequest && task.exitCondition === BUG_EXIT_CONDITION) ? { reviewKind: "bug" as const } : {}),
     })) } } : {}),
     // A review run may touch only the tasks it created (decision 126): never the project's other unfinished work.
-    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),
+    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : plan ? { only: plan.tasks.map(task => task.id) } : {}),
   };
   approvals.start();
   const fix = reviewRun?.fix;

@@ -149,7 +149,7 @@ export const RequestHandoffSchema = z.object({
 export type RequestHandoff = z.infer<typeof RequestHandoffSchema>;
 
 /** Runner-owned bug/refactor handoff; session-written architect plans still require an approved spec. */
-export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly (Partial<PlanTask> & { id: string; goal: string; exitCondition: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined })[] = [], handoff?: RequestHandoff, inputHash?: string): Plan {
+export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly (Partial<PlanTask> & { id: string; goal: string; exitCondition: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined; inputMode?: "spec" | "free" | undefined })[] = [], handoff?: RequestHandoff, inputHash?: string): Plan {
   const report = text.parse(request);
   const selected = handoff === undefined ? undefined : RequestHandoffSchema.parse(handoff);
   const override = leadingOverride(report);
@@ -162,7 +162,7 @@ export function bugRequestPlan(request: string, checks: readonly { name: string 
   if (classified.type !== "bug" && classified.type !== "refactor") throw new Error("--request accepts only bug or refactor work; other pipelines keep their spec or explicit session-plan handoff");
   const plan = singleTaskPlan({ ...classified, ...(selected?.touches ? { touches: selected.touches } : {}) }, report, checks);
   const { id: _generatedId, ...definition } = plan.tasks[0]!;
-  const expected = { ...definition, riskTier: classified.tier, ...(classified.type === "bug" ? { reviewKind: "bug" } : {}), ...(inputHash ? { inputHash } : {}) };
+  const expected = { ...definition, riskTier: classified.tier, ...(classified.type === "bug" ? { reviewKind: "bug" } : {}), ...(inputHash ? { inputHash, inputMode: "free" } : {}) };
   const same = existing.find(({ id: _id, ...prior }) => canonical(prior) === canonical(expected));
   const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
   return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });

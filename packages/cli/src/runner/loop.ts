@@ -64,6 +64,8 @@ export interface RunLoopOptions {
   tier?: TaskTier;
   /** Hash of approved requirement bytes and protected check artifacts, supplied by production composition. */
   inputHash?: string;
+  inputMode?: "spec" | "free";
+  inputHashFor?: (mode: "spec" | "free" | undefined) => string | undefined;
   taskTimeoutMs?: number;
   maxTurns?: number;
   maxConcurrent?: number;
@@ -236,6 +238,7 @@ class Loop {
     atomicWrite(this.pidFile, `${process.pid}\n`);
     await this.opts.recoverIntake?.(this.ledger);
     this.seedPlan();
+    this.validateInputs();
     await this.pauseUsage();
     await this.recoverCandidates();
   }
@@ -248,21 +251,25 @@ class Loop {
     appendFileSync(path, `${current && !current.endsWith("\n") ? "\n" : ""}/.jarvis/\n`);
   }
   private seedPlan(): void {
-    if (!this.opts.plan) {
-      if (this.opts.inputHash) for (const task of Object.values(this.state().tasks)) {
-        if (this.mine(task.id) && task.definition.inputHash !== this.opts.inputHash) throw new Error(`Task ${task.id} inputs changed or are unknown: assign a fresh task ID and review the new plan before running`);
-      }
-      return;
-    }
+    if (!this.opts.plan) return;
     this.ledger.transact((entries, add) => {
       const pending = this.opts.plan!.tasks.map(({ id, ...definition }) => {
-        const data = { ...definition, riskTier: Math.max(this.opts.tier ?? 1, definition.riskTier ?? 0), ...(this.opts.inputHash ? { inputHash: this.opts.inputHash } : {}) };
+        const data = { ...definition, riskTier: Math.max(this.opts.tier ?? 1, definition.riskTier ?? 0), ...(this.opts.inputHash ? { inputHash: this.opts.inputHash } : {}), ...(this.opts.inputMode ? { inputMode: this.opts.inputMode } : {}) };
         const previous = entries.find((e) => e.actor === "runner" && e.kind === "task_created" && e.task_id === id);
         if (previous && canonical(previous.data) !== canonical(data)) throw new Error(`Task ${id} changed: assign a fresh task ID and review the new plan before running`);
         return previous ? undefined : { kind: "task_created" as const, actor: "runner" as const, task_id: id, data };
       });
       for (const entry of pending) if (entry) add(entry);
     });
+  }
+  /** Validate every task this run could recover or dispatch, even when omitted from a supplied plan. */
+  private validateInputs(): void {
+    if (!this.opts.inputHash && !this.opts.inputHashFor) return;
+    for (const task of Object.values(this.state().tasks)) {
+      if (!this.mine(task.id)) continue;
+      const expected = this.opts.inputHashFor ? this.opts.inputHashFor(task.definition.inputMode) : this.opts.inputHash;
+      if (!expected || task.definition.inputHash !== expected) throw new Error(`Task ${task.id} inputs changed or are unknown: assign a fresh task ID and review the new plan before running`);
+    }
   }
   private workspaceRecord(task: TaskState): TaskWorkspace | undefined {
     const entry = this.records("workspace_created", task.id, task.attemptId ?? "").at(-1);

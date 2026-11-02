@@ -236,9 +236,9 @@ export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: str
   let next = Math.max(0, ...existing.map((t) => (/^T([1-9]\d*)$/.exec(t.id) ? Number(t.id.slice(1)) : 0)));
   const fresh = () => { do next++; while (used.has(`T${next}`)); used.add(`T${next}`); return `T${next}`; };
   const tasks = output.findings.map((f) => {
-    const body = fixTask(output, f, "T1", limits);
+    const body = PlanSchema.parse({ tasks: [fixTask(output, f, "T1", limits)] }).tasks[0]!;
     const { id: _id, ...definition } = body;
-    const expected = { ...definition, riskTier: 2, reviewKind: "bug", ...(inputHash ? { inputHash } : {}) };
+    const expected = { ...definition, riskTier: 2, reviewKind: "bug", ...(inputHash ? { inputHash, inputMode: "free" } : {}) };
     const same = existing.find(({ id: _priorId, ...prior }) => canonical(prior) === canonical(expected));
     return { ...body, id: same?.id ?? fresh() };
   });
@@ -250,7 +250,7 @@ export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: str
   };
 }
 /** A task the ledger already has, for reviewFixPlan's ids. */
-export type ExistingTask = Partial<PlanTask> & { id: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined };
+export type ExistingTask = Partial<PlanTask> & { id: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined; inputMode?: "spec" | "free" | undefined };
 
 /** A fix task's exit condition: decision 114's, for this one finding, confirmed before anything changes. */
 export function fixExitCondition(f: Pick<ReviewFinding, "id" | "file" | "line">): string {

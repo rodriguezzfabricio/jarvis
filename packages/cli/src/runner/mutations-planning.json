@@ -680,19 +680,37 @@
   {
     "name": "planning composition omits spec identity",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "spec: spec?.text ?? null, checks: verifiedInputs.lockHash",
+    "anchor": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: verifiedInputs.lockHash",
     "replacement": "spec: null, checks: verifiedInputs.lockHash"
   },
   {
     "name": "planning composition omits check identity",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "spec: spec?.text ?? null, checks: verifiedInputs.lockHash",
-    "replacement": "spec: spec?.text ?? null, checks: null"
+    "anchor": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: verifiedInputs.lockHash",
+    "replacement": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: null"
   },
   {
     "name": "planning resume drops bug classification",
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "if (task?.definition.reviewKind) return {",
     "replacement": "if (false) return {"
+  },
+  {
+    "name": "planning skips stale candidate input validation",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    this.validateInputs();",
+    "replacement": ""
+  },
+  {
+    "name": "planning resume loses requirement provenance",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "this.opts.inputHashFor(task.definition.inputMode)",
+    "replacement": "this.opts.inputHash"
+  },
+  {
+    "name": "planning report review inherits fix tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "task.definition.reviewKind === \"review-report\" ? task.definition.riskTier ?? 1 : reviewTier",
+    "replacement": "reviewTier"
   }
 ]

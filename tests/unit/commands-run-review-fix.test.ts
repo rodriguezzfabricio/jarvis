@@ -111,7 +111,7 @@ describe("jarvis run --plan review", () => {
     expect(run.loop.plan?.tasks.map((t) => t.id)).toEqual(["T2"]);
     // As the loop seeds it; then planning the same findings again keeps that task instead of adding T3.
     const { id, ...data } = run.loop.plan!.tasks[0]!;
-    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: id, data: { ...data, riskTier: run.loop.tier, inputHash: run.loop.inputHash } });
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: id, data: { ...data, riskTier: run.loop.tier, inputHash: run.loop.inputHash, inputMode: run.loop.inputMode } });
     await prepared.splice(prepared.indexOf(run), 1)[0]!.close();
     const again = await prepare(p);
     expect(again.loop.plan?.tasks.map((t) => t.id)).toEqual(["T2"]);
@@ -139,6 +139,8 @@ describe("jarvis run --plan review", () => {
       createReview: (deps) => { captured = deps; return async () => "pass"; },
     });
     prepared.push(resumed);
+    await expect(runLoop({ ...resumed.loop, pidAlive: () => false, footprint: false, createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }),
+      reprobe: async () => { throw new Error("resumed after seed"); } })).rejects.toThrow(/resumed after seed/);
     const material = reviewMaterialFor(captured!, "T1", git(p, ["rev-parse", "HEAD"]));
     expect(material).toMatchObject({ tier: 2, kind: "bug" });
     expect(material.spec).toContain("src/add.mjs:1");
@@ -235,9 +237,10 @@ describe("jarvis run --plan review", () => {
     expect(fix.spec).toContain(REQUEST);
     expect(fix.spec).toContain("src/add.mjs:1");
     expect(fix.acceptanceCriteria).toEqual([run.loop.plan!.tasks[0]!.exitCondition]);
-    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "update", goal: "update the report", exitCondition: "the report says it", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["REVIEW.md"] } });
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "update", goal: "update the report", exitCondition: "the report says it", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["REVIEW.md"], reviewKind: "review-report", riskTier: 1 } });
     const update = reviewMaterialFor(captured!, "T2", git(p, ["rev-parse", "HEAD"]));
     expect(update.kind).toBeUndefined();
+    expect(update.tier).toBe(1);
     expect(update.spec).toContain("update the report");
   });
 

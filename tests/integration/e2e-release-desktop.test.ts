@@ -26,7 +26,7 @@ const sessions = [
 const build = "mkdir -p target/Matches.app/Contents/MacOS && printf '<plist>fake</plist>' > target/Matches.app/Contents/Info.plist && printf 'fake executable' > target/Matches.app/Contents/MacOS/Matches && chmod 755 target/Matches.app/Contents/MacOS/Matches";
 
 async function run(failReleaseCheck = false) {
-  const p = createE2EProject({ scenario: { sessions }, projectId: "matches" }); projects.push(p); seedTasks(p);
+  const p = createE2EProject({ scenario: { sessions }, projectId: "matches" }); projects.push(p);
   writeFileSync(join(p.jarvisHome, "notify.json"), JSON.stringify({ baseUrl: "https://example.invalid", topic: "fake-out", replyTopic: "fake-in" }), { mode: 0o600 });
   const configure = new Command().exitOverride(); releaseCommand(configure, { jarvisHome: p.jarvisHome, cwd: p.repoPath, env: { JARVIS_PROJECT: p.projectId }, output: () => {} });
   await configure.parseAsync(["release", "configure", "--kind", "desktop", "--app-name", "Matches", "--bundle", "Matches.app", "--output", "target", "--build", build], { from: "user" });
@@ -40,7 +40,7 @@ async function run(failReleaseCheck = false) {
         const { runGate } = await import("../../packages/cli/src/checks/gate.ts");
         return runGate({ ...g, check: { ...g.check, cases: [{ id: "negative", command: "exit 9" }], verify: "exit 9" } });
       } } : {}) },
-    }); prepared.loop.readProcessStartTime = pid => `fake-process-${pid}`; return prepared; },
+    }); seedTasks(p, { inputHash: prepared.loop.inputHash, inputMode: prepared.loop.inputMode }); prepared.loop.readProcessStartTime = pid => `fake-process-${pid}`; return prepared; },
   });
   await program.parseAsync(["run"], { from: "user" });
   return { p, sent, deploy };

@@ -68,10 +68,20 @@ it("retains a recorded task's risk floor when resuming from the ledger without a
 });
 
 it("binds completed evidence to approved requirements and check bytes", async () => {
-  const f = fixture();
-  const plan = { tasks: [{ id: "T2", goal: "same goal", exitCondition: "same condition", dependencies: ["T1"] }] };
+  const f = fixture(0);
+  const plan = { tasks: [{ id: "T2", goal: "same goal", exitCondition: "same condition", dependencies: [] }] };
   expect((await runLoop({ ...f.options, plan, inputHash: "a".repeat(64) })).status).toBe("complete");
   const count = f.calls.length;
   await expect(runLoop({ ...f.options, plan, inputHash: "b".repeat(64) })).rejects.toThrow(/T2.*fresh task ID/);
   expect(f.calls).toHaveLength(count);
+});
+
+it("refuses stale recovery candidates even when a new plan supplies fresh task IDs", async () => {
+  const f = fixture(0), head = f.git(["rev-parse", "HEAD"]);
+  const plan = { tasks: [{ id: "T1", goal: "first", exitCondition: "verified", requiredChecks: ["unit"], requiredReviews: ["code"] }] };
+  await expect(runLoop({ ...f.options, plan, inputHash: "a".repeat(64), onCheckpoint: name => { if (name === "passed") throw new Error("power loss"); } })).rejects.toThrow("power loss");
+  const next = { tasks: [{ ...plan.tasks[0]!, id: "T2" }] };
+  await expect(runLoop({ ...f.options, plan: next, inputHash: "b".repeat(64), pidAlive: () => false })).rejects.toThrow(/T1.*inputs/);
+  expect(f.git(["rev-parse", "HEAD"])).toBe(head);
+  expect(f.ledger.entries().some(e => e.kind === "state_reached")).toBe(false);
 });

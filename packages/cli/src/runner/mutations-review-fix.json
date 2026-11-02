@@ -548,7 +548,7 @@
   {
     "name": "review fix: run's review loop may touch any task",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),\n",
+    "anchor": "    ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : plan ? { only: plan.tasks.map(task => task.id) } : {}),\n",
     "replacement": ""
   },
   {
@@ -586,5 +586,11 @@
     "file": "packages/cli/src/runner/review-fix.ts",
     "anchor": "canonical(prior) === canonical(expected)",
     "replacement": "prior.goal === expected.goal && prior.exitCondition === expected.exitCondition"
+  },
+  {
+    "name": "review fix: task identity compares unnormalized titles",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "PlanSchema.parse({ tasks: [fixTask(output, f, \"T1\", limits)] }).tasks[0]!",
+    "replacement": "fixTask(output, f, \"T1\", limits)"
   }
 ]

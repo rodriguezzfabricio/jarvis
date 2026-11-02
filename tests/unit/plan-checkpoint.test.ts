@@ -67,3 +67,38 @@ it("never executes a repository clean filter while checkpointing planning docume
   expect(existsSync(marker)).toBe(false);
   expect(p.git(["show", "HEAD:docs/spec/v1.md"])).toBe(spec.trim());
 });
+
+it("refuses a symlinked git marker without changing the other repository", () => {
+  const p = project(), other = project(); checkpointPlan(other.repo, other.root);
+  const head = other.git(["rev-parse", "HEAD"]), index = readFileSync(join(other.repo, ".git/index"));
+  symlinkSync(join(other.repo, ".git"), join(p.repo, ".git"));
+  writeFileSync(join(p.repo, "PRODUCT.md"), "must not enter the other repository");
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/git.*symlink/i);
+  expect(other.git(["rev-parse", "HEAD"])).toBe(head);
+  expect(readFileSync(join(other.repo, ".git/index"))).toEqual(index);
+});
+it("refuses a git file pointing to an unrelated repository, but supports a real linked worktree", () => {
+  const p = project(), other = project(); checkpointPlan(other.repo, other.root);
+  const head = other.git(["rev-parse", "HEAD"]);
+  writeFileSync(join(p.repo, ".git"), `gitdir: ${join(other.repo, ".git")}\n`);
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/git.*worktree/i);
+  expect(other.git(["rev-parse", "HEAD"])).toBe(head);
+  const linked = join(other.root, "linked"); other.git(["worktree", "add", "-b", "planning", linked]);
+  writeFileSync(join(linked, "PRODUCT.md"), "linked planning");
+  expect(checkpointPlan(linked, other.root)).toMatch(/^[a-f0-9]{40}$/);
+  expect(other.git(["rev-parse", "HEAD"])).toBe(head);
+});
+it("bounds spec bytes before parsing them", () => {
+  const p = project(); writeFileSync(join(p.repo, "docs/spec/v1.md"), "x".repeat(256 * 1024 + 1));
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/byte limit/);
+  expect(existsSync(join(p.repo, ".git"))).toBe(false);
+});
+it("still rejects gaps and malformed earlier versions after bounded capture", () => {
+  const p = project();
+  writeFileSync(join(p.repo, "docs/spec/v3.md"), spec.replace("spec: 1", "spec: 3").replace("supersedes: none", "supersedes: 2"));
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/Missing v2/);
+  rmSync(join(p.repo, "docs/spec/v3.md"));
+  writeFileSync(join(p.repo, "docs/spec/v2.md"), spec.replace("spec: 1", "spec: 2").replace("supersedes: none", "supersedes: 1"));
+  writeFileSync(join(p.repo, "docs/spec/v1.md"), "invalid spec");
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/valid spec history/);
+});

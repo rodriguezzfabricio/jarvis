@@ -1,8 +1,8 @@
 import { lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { safeGit } from "../eval/git.ts";
-import { checkRepository, checkSpec } from "../spec/index.ts";
+import { listVersions, checkSpec } from "../spec/index.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
 /** Commit planning inputs before their independent reviews. Never stage product code or .jarvis.
@@ -10,9 +10,21 @@ import { readPlanningFile } from "./checks-author.ts";
  * missing transition from confirmed documents to committed, reviewable planning inputs. */
 export function checkpointPlan(repoPath: string, home: string): string {
   const repo = realpathSync(repoPath);
-  const checked = checkRepository(repo);
-  if (!checked.ok || !checked.versions.length) throw new Error(`planning checkpoint needs a valid spec history: ${checked.problems.map((p) => p.message).join("; ")}`);
-  const paths = checked.versions.map((v) => relative(repo, v.path));
+  const marker = lstatSync(join(repo, ".git"), { throwIfNoEntry: false });
+  if (marker?.isSymbolicLink()) throw new Error("Project .git marker may not be a symlink");
+  if (marker && !marker.isDirectory()) {
+    if (!marker.isFile()) throw new Error("Project .git marker must name a repository or linked worktree");
+    try {
+      const pointer = /^gitdir: ([^\r\n]+)\r?\n?$/.exec(readPlanningFile(repo, ".git", 4096));
+      if (!pointer) throw new Error("invalid pointer");
+      const gitdir = realpathSync(resolve(repo, pointer[1]!));
+      const backlink = readPlanningFile(gitdir, "gitdir", 4096).trim();
+      if (realpathSync(resolve(gitdir, backlink)) !== join(repo, ".git")) throw new Error("foreign pointer");
+    } catch { throw new Error("Project .git file must belong to this linked worktree"); }
+  }
+  const versions = listVersions(repo);
+  if (!versions.length) throw new Error("planning checkpoint needs a valid spec history: no versions");
+  const paths = versions.map((v) => relative(repo, v.path));
   for (const path of ["PRODUCT.md", "DESIGN.md", "docs/decisions.md"]) if (lstatSync(join(repo, path), { throwIfNoEntry: false })) paths.push(path);
   for (const folder of ["docs/research", "docs/intake"]) {
     const st = lstatSync(join(repo, folder), { throwIfNoEntry: false });
@@ -21,11 +33,22 @@ export function checkpointPlan(repoPath: string, home: string): string {
     for (const name of readdirSync(join(repo, folder)).sort()) if (/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.md$/.test(name)) paths.push(`${folder}/${name}`);
   }
   if (paths.length > 256) throw new Error("planning checkpoint exceeds 256 documents");
-  const contents = new Map(paths.map((path) => [path, readPlanningFile(repo, path)]));
-  if ([...contents.values()].reduce((n, text) => n + Buffer.byteLength(text), 0) > 4 * 1024 * 1024) throw new Error("planning checkpoint exceeds 4 MiB");
-  for (const version of checked.versions) {
+  const contents = new Map<string, string>();
+  let bytes = 0;
+  for (const path of paths) {
+    const content = readPlanningFile(repo, path);
+    bytes += Buffer.byteLength(content);
+    if (bytes > 4 * 1024 * 1024) throw new Error("planning checkpoint exceeds 4 MiB");
+    contents.set(path, content);
+  }
+  let previous = 0;
+  for (const version of versions) {
     const path = relative(repo, version.path);
-    if (checkSpec(contents.get(path)!, path).spec?.status === "draft") throw new Error(`${path} is draft; finish confirmation before checkpointing`);
+    if (version.version !== previous + 1) throw new Error(`planning checkpoint needs a valid spec history: Missing v${previous + 1}.md before v${version.version}.md`);
+    previous = version.version;
+    const checked = checkSpec(contents.get(path)!, path);
+    if (!checked.ok) throw new Error(`planning checkpoint needs a valid spec history: ${checked.problems.map((p) => p.message).join("; ")}`);
+    if (checked.spec.status === "draft") throw new Error(`${path} is draft; finish confirmation before checkpointing`);
   }
   const git = (args: readonly string[]) => safeGit(repo, args, { home }).toString().trim();
   let top: string | undefined;

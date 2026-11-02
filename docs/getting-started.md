@@ -12,7 +12,7 @@ Jarvis is experimental and currently targets macOS. Start with a disposable repo
 | Free disk | At least 20 GB; below 40 GB the runner permits one writing task |
 | Optional tools | Native Codex CLI 0.164.0 at `~/.local/share/codex/versions/0.164.0/codex` for review; ntfy for phone notifications |
 
-Jarvis calls its pinned binaries by absolute path. The installer checks them; it does not install the coding agents or sign in for you. Use Claude Code’s installer/version management to provide the pinned version before continuing. The exact versions are also recorded in [`config/pins.ts`](../packages/cli/src/config/pins.ts).
+Jarvis calls its pinned binaries by absolute path. The installer checks them; it does not install the coding agents or sign in for you. Prepare the pinned version before continuing. For Claude, preserve the complete matching signed `claude.app` at the path above; copying just its executable breaks macOS signature validation. Check the bundle with `codesign --verify --deep --strict <bundle-path>` and the pinned executable with `--version`. A link in Claude's mutable `versions/` directory is not a stable installation (decision 180). The exact versions are also recorded in [`config/pins.ts`](../packages/cli/src/config/pins.ts).
 
 Keep the checkout outside iCloud-synced folders. If Desktop & Documents sync is enabled, use a folder such as `~/Developer/jarvis`.
 

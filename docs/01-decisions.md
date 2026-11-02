@@ -2169,3 +2169,9 @@ The resumed good-fixture review found that the previous fixture repairs left T1'
 
 Keep the two fixtures' spec and checks identical. Make their argument and error contract explicit, exercise the default path in a disposable copy of `src/` with its own empty `data/`, and preserve the original checkout's data. The good plan names each task's actual responsibilities and check outputs. The bad plan retains its three planted faults (duplicate retry helper, storage left to the builder, hard decision without alternatives). Do not alter the reviewer policy, severity thresholds, or calibration requirements. A deterministic reference implementation and broken variants test the checks; they are outside the material shown to reviewers.
 *From:* Fabricio's two Nov 1 reports through the release worker's transcript; the integrator.
+
+### 180. Pin Claude directly inside the preserved signed bundle (Nov 2, 2026; local-readiness repair; supersedes 178's symlink)
+
+The next calibration again found `~/.local/share/claude/versions/2.1.309` missing, including the restored symlink. The signed copy at `~/.local/share/claude/pinned-bundles/2.1.309/claude.app` is still intact. The process removing the old entry remains unidentified; assuming that an entry in the native installer's versions directory will persist is no longer supported by the observation.
+
+Use the preserved bundle's `Contents/MacOS/claude` directly as the absolute pin. Installer, runtime, and clean-install tests must agree on that path. Preserve version 2.1.309, the complete signature, and every preflight requirement. Do not recreate the disappearing symlink as a prerequisite, use PATH, or replace it with a newer version. Run the live probe on the direct path before accepting another calibration.

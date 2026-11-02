@@ -8,7 +8,7 @@ Jarvis is experimental and currently targets macOS. Start with a disposable repo
 |---|---|
 | Node.js | Version 24; `brew install node@24` is one option |
 | pnpm | Version 11.7.0, matching `package.json` |
-| Claude Code | Version 2.1.309 at `~/.local/share/claude/versions/2.1.309`, authenticated with your own account |
+| Claude Code | Version 2.1.309 at `~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude`, authenticated with your own account; preserve the entire signed app bundle |
 | Free disk | At least 20 GB; below 40 GB the runner permits one writing task |
 | Optional tools | Native Codex CLI 0.164.0 at `~/.local/share/codex/versions/0.164.0/codex` for review; ntfy for phone notifications |
 
@@ -68,7 +68,7 @@ The intended flow hands an approved plan and protected checks to `jarvis run --d
 The interactive session uses your normal Claude Code permissions. Sandboxed unattended sessions use Jarvis’s generated settings. Installing the plugin adds hooks at user scope; action restrictions apply to Jarvis-marked sessions, while runner-home protection also applies elsewhere. To disable the plugin, use the pinned binary:
 
 ```sh
-~/.local/share/claude/versions/2.1.309 plugin disable jarvis@jarvis
+~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude plugin disable jarvis@jarvis
 ```
 
 ## Inspect and steer a run

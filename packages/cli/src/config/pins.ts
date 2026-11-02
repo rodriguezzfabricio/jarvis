@@ -13,7 +13,7 @@ export const CLAUDE_CODE_VERSION = "2.1.309";
 export const CODEX_VERSION = "0.164.0";
 
 export function pinnedClaudeBin(home: string = homedir()): string {
-  return join(home, ".local", "share", "claude", "versions", CLAUDE_CODE_VERSION);
+  return join(home, ".local", "share", "claude", "pinned-bundles", CLAUDE_CODE_VERSION, "claude.app", "Contents", "MacOS", "claude");
 }
 
 export function pinnedCodexBin(home: string = homedir()): string {

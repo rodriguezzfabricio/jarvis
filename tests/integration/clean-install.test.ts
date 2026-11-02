@@ -98,7 +98,7 @@ beforeAll(() => {
   skipReason = prerequisites();
   // The pinned Claude Code, faked at its pinned path inside the temp HOME. The wrapper drops the
   // variables /bin/sh itself adds, so the fake logs the environment the installer gave it.
-  const pinned = join(home, ".local", "share", "claude", "versions", CLAUDE_CODE_VERSION);
+  const pinned = join(home, ".local", "share", "claude", "pinned-bundles", CLAUDE_CODE_VERSION, "claude.app", "Contents", "MacOS", "claude");
   mkdirSync(dirname(pinned), { recursive: true });
   writeFileSync(pinned, `#!/bin/sh\nexec /usr/bin/env -u PWD -u OLDPWD -u SHLVL '${process.execPath}' '${fakePlugin}' "$@"\n`);
   chmodSync(pinned, 0o755);
@@ -144,7 +144,7 @@ describe("scripts/install.sh, as written", () => {
   it("checks the same pins as packages/cli/src/config/pins.ts", () => {
     expect(text).toContain(`CLAUDE_VERSION="${CLAUDE_CODE_VERSION}"`);
     expect(text).toContain(`CODEX_VERSION="${CODEX_VERSION}"`);
-    expect(text).toContain('CLAUDE_BIN="$HOME/.local/share/claude/versions/$CLAUDE_VERSION"');
+    expect(text).toContain('CLAUDE_BIN="$HOME/.local/share/claude/pinned-bundles/$CLAUDE_VERSION/claude.app/Contents/MacOS/claude"');
     expect(text).toContain('CODEX_BIN="$HOME/.local/share/codex/versions/$CODEX_VERSION/codex"');
   });
 });

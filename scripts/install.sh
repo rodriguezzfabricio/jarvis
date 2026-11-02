@@ -119,7 +119,7 @@ clean_env() {
 claude_clean() { clean_env "$CLAUDE_BIN" "$@"; }
 
 step "Checking pinned Claude Code $CLAUDE_VERSION and codex-cli $CODEX_VERSION"
-CLAUDE_BIN="$HOME/.local/share/claude/versions/$CLAUDE_VERSION"
+CLAUDE_BIN="$HOME/.local/share/claude/pinned-bundles/$CLAUDE_VERSION/claude.app/Contents/MacOS/claude"
 CLAUDE_OK=0
 if [ -x "$CLAUDE_BIN" ]; then
   CLAUDE_REPORTED=$(claude_clean --version 2>/dev/null || true)

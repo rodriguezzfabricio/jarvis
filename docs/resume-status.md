@@ -5,15 +5,15 @@ Continuation branch: `codex/finish-jarvis`. Main was clean at takeover.
 
 ## Current work
 
-Fabricio clarified the immediate target on Nov 2: **usable local Jarvis first**. Full v1 proof gates remain required before declaring v1 complete.
+The earlier planning-only checkpoint below is superseded by Fabricio's explicit request to finish the **local end-to-end harness**, without deployment (decision 183). Work is active on `codex/finish-jarvis`; no stage or v1 completion is claimed.
 
-Fabricio also explicitly chose to **keep the planning-only `/jarvis` stop** (decision 120). This checkpoint prepares local planning and review; it does not enable automatic build launch or mark the later stage proofs complete.
+1. [x] Restore stable exact-version pins and establish the baseline: 4,657 tests passed, 18 skipped; typecheck and live doctor passed at the earlier checkpoint.
+2. [x] Fix the plan review contract and simplify the good control. All three good lenses passed; the bad control found T2, T3 and D3. The production CLI verified and saved the shared calibration for the current policy.
+3. [ ] Prove the real local workflow. `--local`, planning checkpoint, architect dispatch, draft refusal and direct refactor handoff are implemented. The disposable items application is undergoing real protected-check approval, followed by counted plan review and real builds/reviews.
+4. [ ] Exercise interruption/recovery and negative outcomes; review the implementation independently; run final regression evidence.
+5. [ ] Close the formal stage gates. The current exhaustive mutation estimate is about 309 hours (13 days), not 71 hours. No exception has been requested or granted.
 
-1. [x] Recover the handoff and inspect the actual local state.
-2. [x] Restore the reviewer pin and repair the two failing release integration tests (`a51d6ce`, `b1091ec`; 59 pin/install checks and 17 release checks pass).
-3. [x] Restore the missing Claude pin with its signed bundle and pass the live doctor/canary. After the old symlink disappeared again, pin the intact bundle directly; the direct path passes the live canary (decisions 178, 180).
-4. [x] Diagnose calibration and record its blocker. Three fixture revisions still did not clear all reviewers; calibration is deferred for the planning-only checkpoint, and no shared passing pair is saved.
-5. [x] Rerun the complete suite and verify the local launcher/plugin. Final result: 4,657 passed, 18 skipped in 446.93 seconds; 306 files passed, 10 skipped. Typecheck, live doctor/canary, and all five local CLI smoke checks pass. See [the local readiness checkpoint](reviews/local-readiness-2026-11-02.md).
+Current evidence: [local end-to-end work](reviews/local-e2e-2026-11-02.md). The quiet slot is owned by this continuation. Task 10's branch remains unmerged.
 
 ## Facts recovered
 
@@ -25,10 +25,10 @@ Fabricio also explicitly chose to **keep the planning-only `/jarvis` stop** (dec
 
 The first full baseline took 384.55 seconds: 4,632 passed, two release integration failures, 18 skipped. The first failure was the known independent-builder ordering assumption (backlog 244); the second was the fixture's missing dependency declaration and lockfile. Both are repaired without weakening the release dependency policy (decision 177). Evidence is retained outside the public checkout at `~/.jarvis/local-readiness/2026-11-02-codex/`.
 
-Calibration is not an installation failure now: the exact Claude pin and live safety probe pass. The good fixture still receives `resolve`. The latest findings challenge its artificial T1/T2 diagnostic split and a claim about case ordering whose runner contract is absent from the reviewer checkout. Three fixture corrections were attempted, then editing stopped per the local AGENTS instruction. The next calibration work should simplify the good plan and supply a verifiable check-format contract; do not keep adding tiny tasks or rerun unchanged material hoping for a pass. Fabricio asked for the best next step; the recommendation was to finish the planning-only checkpoint and defer this separate proof work.
+The previous calibration blocker is resolved by decisions 184 and 188: simplify artificial task decomposition and supply the reviewer with the trusted runner contract and the approved spec context. Preserve failed historical controls; use the newly saved verified pair.
 
 ## Completion bar
 
-The existing stage reviews are not all approved. Later code already exists, but its presence does not close a stage. Follow the recorded gates, preserve failed historical evidence, and do not substitute subset mutation catches for `--confirm` or a stage-scoped confirmation. Decision 154's last measured estimate for the final full confirmation was approximately 71 machine-hours; the current test baseline must be measured again before scheduling it.
+The existing stage reviews are not all approved. Later code already exists, but its presence does not close a stage. Follow the recorded gates, preserve failed historical evidence, and do not substitute subset mutation catches for `--confirm` or a stage-scoped confirmation. The current inventory and full-suite baseline project about 309 hours for serial full confirmation (decision 183); a planning estimate is not completed evidence.
 
 Deferred beyond this local-readiness checkpoint: task 10's independent review/proof and merge, the frozen golden-task reruns, remaining stage reviews, and full mutation confirmation. None is marked complete by the local repair.

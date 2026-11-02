@@ -558,10 +558,10 @@
     "replacement": "if (false) throw"
   },
   {
-    "name": "planning checkpoint commits staged product code",
+    "name": "planning checkpoint uses the shared index",
     "file": "packages/cli/src/runner/plan-checkpoint.ts",
-    "anchor": "git([\"commit\", \"--only\", \"--quiet\", \"-m\", \"Checkpoint Jarvis planning inputs\", \"--\", ...specs]);",
-    "replacement": "git([\"commit\", \"--quiet\", \"-m\", \"Checkpoint Jarvis planning inputs\"]);"
+    "anchor": "env: { GIT_INDEX_FILE: join(temporary, \"index\") }",
+    "replacement": "env: {}"
   },
   {
     "name": "planning checkpoint accepts draft",
@@ -580,5 +580,29 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "  if (checked.spec.status === \"draft\") throw new Error(`${path} is draft; finish confirmation before running`);\n",
     "replacement": ""
+  },
+  {
+    "name": "planning checkpoint executes repository filters",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "[\"hash-object\", \"-w\", \"--stdin\"]",
+    "replacement": "[\"hash-object\", \"-w\", \"--path\", path, \"--stdin\"]"
+  },
+  {
+    "name": "planning check review loses spec definitions",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "assumptions: spec.assumptions ?? []",
+    "replacement": "assumptions: []"
+  },
+  {
+    "name": "planning direct refactor is rejected",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "classified.type !== \"bug\" && classified.type !== \"refactor\"",
+    "replacement": "classified.type !== \"bug\""
+  },
+  {
+    "name": "planning refactor resume matches bug condition",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "t.exitCondition === plan.tasks[0]!.exitCondition",
+    "replacement": "t.exitCondition === BUG_EXIT_CONDITION"
   }
 ]

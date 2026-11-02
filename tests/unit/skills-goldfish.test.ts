@@ -31,7 +31,7 @@ describe("the Goldfish decision layer in the skills", () => {
   it("/jarvis says the plan is reviewed before the runner (the command stays under its cap, so the skills hold the commands)", () => {
     const body = read("plugin/commands/jarvis.md");
     for (const phrase of ["decision 170", "three fresh read-only lenses", "by evidence, fix or escalation", "refuses a plan without a counted review"]) expect(body, phrase).toContain(phrase);
-    expect(body.indexOf("decision 170")).toBeLessThan(body.indexOf("`jarvis run --detach`"));
+    expect(body.indexOf("decision 170")).toBeLessThan(body.indexOf("`jarvis run --local --detach`"));
     expect(Buffer.byteLength(body)).toBeLessThanOrEqual(4500);
   });
   it("the architect evals include a plan that left a choice to the builder, resolved as a decision with alternatives", () => {

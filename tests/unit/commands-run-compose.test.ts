@@ -102,6 +102,17 @@ describe("jarvis run production composition", () => {
     expect(reviewMaterialFor(deps, "T2", "candidate").kind).toBeUndefined();
     expect(reviewMaterialFor({ ...deps, tier: 2 }, "T2", "candidate").tier).toBe(2);
   });
+  it("reviews direct refactors against preserved behavior instead of bug-reproduction requirements", async () => {
+    const p = project();
+    const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+    const request = "Refactor src/store.mjs into smaller functions without changing behavior.";
+    const plan = bugRequestPlan(request, [{ name: "unit" }]);
+    let deps: ReviewDeps | undefined;
+    await prepare(p, { request }, { createReview: (input) => { deps = input; return async () => "pass"; } });
+    const material = reviewMaterialFor({ ...deps!, git: () => "base" }, plan.tasks[0]!.id, "candidate");
+    expect(material.kind).toBeUndefined();
+    expect(material.acceptanceCriteria).toEqual([plan.tasks[0]!.exitCondition]);
+  });
 
   it.each(["The citizenship filter is missing some jobs that require US citizenship.", "Chromium won't start in the container. Fix it."])("plans a bug request without a spec: %s", async (request) => {
     const p = project();

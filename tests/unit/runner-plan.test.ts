@@ -206,3 +206,10 @@ it("allocates a bug handoff after existing tasks and resumes only the matching b
   expect(bugRequestPlan(request, checks, [...existing, plan.tasks[0]!]).tasks[0]!.id).toBe("T2");
   expect(() => bugRequestPlan("Build a new dashboard", checks, existing)).toThrow(/bug.*spec/);
 });
+it("hands a refactor to the existing behavior-preservation task without inventing a spec", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Refactor src/store.mjs into smaller functions without changing behavior.";
+  const plan = bugRequestPlan(request, [{ name: "unit" }]);
+  expect(plan.tasks[0]).toMatchObject({ id: "T1", acceptanceCriteria: [], requiredChecks: ["unit"], exitCondition: "Pinned behavior remains unchanged and the unit check and code review pass." });
+  expect(bugRequestPlan(request, [{ name: "unit" }], plan.tasks).tasks[0]!.id).toBe("T1");
+});

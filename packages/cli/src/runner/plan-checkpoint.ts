@@ -1,4 +1,5 @@
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import { checkRepository, checkSpec } from "../spec/index.ts";
@@ -45,11 +46,22 @@ export function checkpointPlan(repoPath: string, home: string): string {
       }
     }
   }
-  const specs = paths.map((path) => `:(literal)${path}`);
-  if (head && git(["status", "--porcelain", "--untracked-files=all", "--", ...specs]) === "") return head;
-  // An initial empty commit lets --only preserve unrelated staged work even in an unborn repo.
-  if (!head) git(["commit", "--allow-empty", "--only", "--quiet", "-m", "Initialize Jarvis planning"]);
-  git(["add", "--", ...specs]);
-  git(["commit", "--only", "--quiet", "-m", "Checkpoint Jarvis planning inputs", "--", ...specs]);
-  return git(["rev-parse", "HEAD"]);
+  const branch = git(["symbolic-ref", "--quiet", "HEAD"]);
+  if (!branch.startsWith("refs/heads/")) throw new Error("planning checkpoint needs a checked-out branch");
+  const temporary = mkdtempSync(join(tmpdir(), "jarvis-plan-index-"));
+  try {
+    const index = (args: readonly string[]) => safeGit(repo, args, { home, env: { GIT_INDEX_FILE: join(temporary, "index") } }).toString().trim();
+    index(head ? ["read-tree", head] : ["read-tree", "--empty"]);
+    // Hash exactly the bytes validated above, without git add or repository clean filters.
+    const blobs = paths.map((path) => ({ path, hash: safeGit(repo, ["hash-object", "-w", "--stdin"], { home, input: Buffer.from(contents.get(path)!) }).toString().trim() }));
+    for (const { path, hash } of blobs) index(["update-index", "--add", "--cacheinfo", "100644", hash, path]);
+    const tree = index(["write-tree"]);
+    const unchanged = head !== undefined && tree === git(["rev-parse", `${head}^{tree}`]);
+    const revision = unchanged ? head! : git(["commit-tree", tree, ...(head ? ["-p", head] : []), "-m", "Checkpoint Jarvis planning inputs"]);
+    if (!unchanged) git(["update-ref", branch, revision, head ?? "0".repeat(revision.length)]);
+    // Preserve unrelated staged entries. A failed index write reports an error; a retry repairs these
+    // selected entries without another commit. Worktree bytes changed meanwhile remain dirty.
+    for (const { path, hash } of blobs) git(["update-index", "--add", "--cacheinfo", "100644", hash, path]);
+    return revision;
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
 }

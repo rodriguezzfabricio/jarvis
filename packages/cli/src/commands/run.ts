@@ -118,7 +118,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
   program.command("run").description("Run ready tasks through protected checks and independent review")
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .option("--plan <kind>", `read a session-owned plan: ${SESSION_PLAN_KINDS.join(" or ")} (.jarvis/<kind>/plan.json)`)
-    .option("--request <text>", "hand a bug report to the runner without an approved spec")
+    .option("--request <text>", "hand a bug report or behavior-preserving refactor to the runner without an approved spec")
     .option("--report <path>", `with --plan review: the report the review wrote (default ${DEFAULT_REVIEW_REPORT}); a plain .md or .txt file nothing but a person reads`)
     .option("--fix", "with --plan review: the explicit opt-in to fix the review's confirmed findings (decision 126)")
     .option("--fix-answer <ref>", "with --plan review: <answerSeq>:review-fix, the user's recorded \"yes\" to the intake question, as the opt-in")

@@ -30,7 +30,7 @@ import { readApprovedChecks, type AuthoredCheck } from "../runner/checks-author.
 import type { TaskTier } from "../runner/harness.ts";
 import { createFootprintLog } from "../runner/footprint.ts";
 import type { LoopPlan, RunLoopOptions, RunLoopResult } from "../runner/loop.ts";
-import { bugRequestPlan, planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
+import { BUG_EXIT_CONDITION, bugRequestPlan, planTasks, readPlan, readSessionPlan, type Plan, type PlanTask, type SessionPlanKind } from "../runner/plan.ts";
 import {
   commitReportOnly, DEFAULT_REVIEW_REPORT, readReviewOutput, recordedFixYes, reportTargetProblem, ReviewOutputError, reviewFixPlan, runReviewFixes,
   type ReviewFixPlan, type ReviewOutput,
@@ -96,7 +96,7 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
   const bug = deps.bugRequest?.tasks.get(taskId);
-  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, kind: "bug",
+  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, ...(bug.exitCondition === BUG_EXIT_CONDITION ? { kind: "bug" as const } : {}),
     spec: `Request, as typed: ${deps.bugRequest!.request}\nGoal: ${bug.goal}\nExit condition: ${bug.exitCondition}`, acceptanceCriteria: [bug.exitCondition] };
   if (deps.reviewFix) {
     const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);

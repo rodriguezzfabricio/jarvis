@@ -142,13 +142,13 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
   }] });
 }
 
-/** Runner-owned bug handoff; session-written architect plans still require an approved spec. */
+/** Runner-owned bug/refactor handoff; session-written architect plans still require an approved spec. */
 export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly { id: string; goal: string; exitCondition: string }[] = []): Plan {
   const report = text.parse(request);
   const classified = triage({ request: report, folder: { empty: false, designMd: false } });
-  if (classified.type !== "bug") throw new Error("--request accepts only bug work; other pipelines keep their spec or explicit session-plan handoff");
+  if (classified.type !== "bug" && classified.type !== "refactor") throw new Error("--request accepts only bug or refactor work; other pipelines keep their spec or explicit session-plan handoff");
   const plan = singleTaskPlan(classified, report, checks);
-  const same = existing.find((t) => t.goal === report && t.exitCondition === BUG_EXIT_CONDITION);
+  const same = existing.find((t) => t.goal === report && t.exitCondition === plan.tasks[0]!.exitCondition);
   const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
   return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });
 }

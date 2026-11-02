@@ -10,11 +10,19 @@
     },
     {
       "id": "add",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add exercise"
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"  exercise  \""
+    },
+    {
+      "id": "multiword",
+      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add buy milk"
     },
     {
       "id": "file",
       "command": "cat data/check-items.jsonl"
+    },
+    {
+      "id": "default",
+      "command": "isolated=$(mktemp -d) && cp -R src \"$isolated/src\" && mkdir \"$isolated/data\" && env -u ITEMS_FILE node \"$isolated/src/cli.mjs\" add exercise && ITEMS_FILE= node \"$isolated/src/cli.mjs\" add walk && cat \"$isolated/data/items.jsonl\""
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-add.sh\"",

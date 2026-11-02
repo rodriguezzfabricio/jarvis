@@ -1,9 +1,11 @@
-# AC2: a blank name (spaces only, no argument at all, a line feed or a carriage return inside the name, spec A2) exits nonzero, never
-# prints `saved`, and persists nothing: after all three attempts the file is absent or empty (reset started from nothing).
+# AC2: all four invalid names produce the specified error and leave the store empty or absent.
 set -eu
 test "$(cat "$JARVIS_OUT/reset/code")" = 0
-for c in blank missing newline cr; do test "$(cat "$JARVIS_OUT/$c/code")" != 0; done
-if grep -q saved "$JARVIS_OUT/blank/stdout" "$JARVIS_OUT/missing/stdout" "$JARVIS_OUT/newline/stdout" "$JARVIS_OUT/cr/stdout"; then exit 1; fi
+for c in blank missing newline cr; do
+  test "$(cat "$JARVIS_OUT/$c/code")" = 1
+  test ! -s "$JARVIS_OUT/$c/stdout"
+  printf 'item name must not be blank\n' | cmp -s - "$JARVIS_OUT/$c/stderr"
+done
 test "$(cat "$JARVIS_OUT/file/code")" = 0
 test ! -s "$JARVIS_OUT/file/stdout"
 echo "JARVIS-CHECK-COMPLETE $(cat "$JARVIS_COMPLETION_FILE")"

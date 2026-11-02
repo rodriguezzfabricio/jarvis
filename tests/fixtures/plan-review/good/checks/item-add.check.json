@@ -6,23 +6,43 @@
   "cases": [
     {
       "id": "reset",
-      "command": "rm -f data/check-items.jsonl"
+      "command": "rm -f data/check-add.jsonl data/check-add-relative.jsonl"
     },
     {
       "id": "add",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"  exercise  \""
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add \"  exercise  \""
     },
     {
       "id": "multiword",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add buy milk"
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add buy milk"
+    },
+    {
+      "id": "special",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add 'tea\t\"milk\"\\café later'"
     },
     {
       "id": "file",
-      "command": "cat data/check-items.jsonl"
+      "command": "cat data/check-add.jsonl"
     },
     {
       "id": "default",
       "command": "isolated=$(mktemp -d) && cp -R src \"$isolated/src\" && mkdir \"$isolated/data\" && env -u ITEMS_FILE node \"$isolated/src/cli.mjs\" add exercise && ITEMS_FILE= node \"$isolated/src/cli.mjs\" add walk && cat \"$isolated/data/items.jsonl\""
+    },
+    {
+      "id": "relative",
+      "command": "isolated=$(mktemp -d) && cp -R src \"$isolated/src\" && mkdir \"$isolated/data\" && ITEMS_FILE=data/check-add-relative.jsonl node \"$isolated/src/cli.mjs\" add from-cwd && cat data/check-add-relative.jsonl && test ! -e \"$isolated/data/check-add-relative.jsonl\""
+    },
+    {
+      "id": "missing-command",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs"
+    },
+    {
+      "id": "unknown-command",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs unknown"
+    },
+    {
+      "id": "write-error",
+      "command": "ITEMS_FILE=data node src/cli.mjs add exercise"
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-add.sh\"",

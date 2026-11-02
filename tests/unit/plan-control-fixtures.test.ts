@@ -6,7 +6,7 @@ import { afterEach, expect, it } from "vitest";
 import { shortTmp } from "../helpers.ts";
 
 // This reference implementation is only a test oracle. Reviewers still receive the unimplemented fixture repo.
-const store = `import { appendFileSync, readFileSync } from 'node:fs';
+const store = `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 const file = process.env.ITEMS_FILE || new URL('../data/items.jsonl', import.meta.url);
 export function saveItem(input) {
   const name = input.trim();
@@ -19,7 +19,11 @@ export function listItems() {
   if (!text) return [];
   const lines = text.split('\\n');
   if (lines.at(-1) === '') lines.pop();
-  return lines.map(line => JSON.parse(line).name);
+  return lines.map(line => {
+    const row = JSON.parse(line);
+    if (!row || Array.isArray(row) || typeof row !== 'object' || Object.keys(row).length !== 1 || typeof row.name !== 'string' || !row.name || row.name.trim() !== row.name || /[\\r\\n]/.test(row.name)) throw new Error('invalid item record');
+    return row.name;
+  });
 }
 `;
 const cli = `import { saveItem, listItems } from './store.mjs';
@@ -91,4 +95,34 @@ it("rejects hiding file read failures as an empty list", () => {
 });
 it("rejects accepting extra arguments to list", () => {
   expect(check("item-list", store, cli.replace(" && parts.length === 0", ""))).not.toBe(0);
+});
+it("rejects treating an existing zero-byte store as a parse error", () => {
+  expect(check("item-list", store.replace("if (!text) return [];", "if (!text) throw new Error('empty store');"))).not.toBe(0);
+});
+it("rejects success for an unknown command", () => {
+  expect(check("item-add", store, cli.replace("process.exitCode = 2", "process.exitCode = command === 'unknown' ? 0 : 2"))).not.toBe(0);
+});
+it("rejects success when the command is missing", () => {
+  expect(check("item-add", store, cli.replace("process.exitCode = 2", "process.exitCode = command === undefined ? 0 : 2"))).not.toBe(0);
+});
+it("rejects announcing saved after a failed write", () => {
+  expect(check("item-add", store, cli.replace("console.error(e.message);", "process.stdout.write('saved\\n'); console.error(e.message);"))).not.toBe(0);
+});
+it("rejects dropping the record shape validation", () => {
+  expect(check("item-list", store.replace(/    if \(!row.*throw new Error\('invalid item record'\);/, ""))).not.toBe(0);
+});
+it("rejects emitting partial output before a later malformed record", () => {
+  const streaming = store.replace(/  return lines.map\(line => \{[\s\S]*?  \}\);/, "  return (function* () { for (const line of lines) yield JSON.parse(line).name; })();");
+  expect(check("item-list", streaming)).not.toBe(0);
+});
+it("rejects forbidding a valid interior tab", () => {
+  expect(check("item-add", store.replace("if (!name ||", "if (name.includes('\\t') || !name ||"))).not.toBe(0);
+});
+it("rejects resolving a relative override against the application directory", () => {
+  const wrong = store.replace("process.env.ITEMS_FILE ||", "(process.env.ITEMS_FILE ? new URL('../' + process.env.ITEMS_FILE, import.meta.url) : null) ||");
+  expect(check("item-add", wrong)).not.toBe(0);
+});
+it("rejects deleting existing items when a blank add is refused", () => {
+  const wrong = store.replace("throw new Error('item name must not be blank');", "{ writeFileSync(file, ''); throw new Error('item name must not be blank'); }");
+  expect(check("item-blank", wrong)).not.toBe(0);
 });

@@ -1,4 +1,4 @@
 .jarvis/
 node_modules/
 data/items.jsonl
-data/check-items.jsonl
+data/check-*.jsonl

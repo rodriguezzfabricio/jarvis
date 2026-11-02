@@ -6,27 +6,31 @@
   "cases": [
     {
       "id": "reset",
-      "command": "rm -f data/check-items.jsonl"
+      "command": "rm -f data/check-blank.jsonl"
+    },
+    {
+      "id": "seed",
+      "command": "ITEMS_FILE=data/check-blank.jsonl node src/cli.mjs add keep"
     },
     {
       "id": "blank",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"  \""
+      "command": "ITEMS_FILE=data/check-blank.jsonl node src/cli.mjs add \"  \""
     },
     {
       "id": "missing",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add"
+      "command": "ITEMS_FILE=data/check-blank.jsonl node src/cli.mjs add"
     },
     {
       "id": "newline",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
+      "command": "ITEMS_FILE=data/check-blank.jsonl node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
     },
     {
       "id": "cr",
-      "command": "ITEMS_FILE=data/check-items.jsonl node src/cli.mjs add \"$(printf 'buy\\rmilk')\""
+      "command": "ITEMS_FILE=data/check-blank.jsonl node src/cli.mjs add \"$(printf 'buy\\rmilk')\""
     },
     {
       "id": "file",
-      "command": "cat data/check-items.jsonl 2>/dev/null || true"
+      "command": "cat data/check-blank.jsonl 2>/dev/null || true"
     }
   ],
   "verify": "sh \"$JARVIS_CHECKS/verify-blank.sh\"",

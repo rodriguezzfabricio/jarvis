@@ -65,5 +65,9 @@
 {"name": "run reviewer deps ignore plan tier", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "cacheRoot, spec, tier: plan?.tier ?? 1, git", "replacement": "cacheRoot, spec, tier: 1, git"},
 {"name": "run loop ignores plan tier", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1,", "replacement": "worktreeRoot, workRoot, gitHome: home, tier: 1,"},
 {"name": "run stage3 fixes detached runner keeps the bug request", "file": "packages/cli/src/commands/run.ts", "anchor": "      ...(context.request !== undefined ? [\"--request\", context.request] : []),\n", "replacement": ""},
-{"name": "run skips the Goldfish plan-review gate", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "    if (!status.ok) throw new Error(status.reason);\n", "replacement": ""}
+{"name": "run skips the Goldfish plan-review gate", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "    if (!status.ok) throw new Error(status.reason);\n", "replacement": ""},
+{"name": "local run starts configured release", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "const release = !context.local && context.planKind", "replacement": "const release = context.planKind"},
+{"name": "local run loads phone notifier", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "const notifications: RunNotifications = context.local ?", "replacement": "const notifications: RunNotifications = false ?"},
+{"name": "local run loads phone approvals", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "const approvals = context.local ?", "replacement": "const approvals = false ?"},
+{"name": "local run flag lost on detach", "file": "packages/cli/src/commands/run.ts", "anchor": "      ...(context.local ? [\"--local\"] : []),\n", "replacement": ""}
 ]

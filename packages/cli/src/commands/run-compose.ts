@@ -40,7 +40,7 @@ import { rebuildState } from "../runner/state.ts";
 import { checkSpec, type Spec } from "../spec/index.ts";
 import { prepareRelease, type ReleaseSeams } from "../release/run.ts";
 import { runApprovals } from "./run-approvals.ts";
-import { runNotifications } from "./run-notify.ts";
+import { runNotifications, type RunNotifications } from "./run-notify.ts";
 import { releaseDrive } from "./run-release.ts";
 import type { PreparedRun, RunContext } from "./run.ts";
 
@@ -206,17 +206,22 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const review = options.createReview ? options.createReview(reviewDeps) : defaultReview(reviewDeps, {
     home, runBranch, ...(options.createDesignReview ? { createDesignReview: options.createDesignReview } : {}),
   });
-  const notifications = runNotifications({
+  const localLog = options.warn ?? console.error;
+  const notifications: RunNotifications = context.local ? {
+    blocked: async (n) => { localLog(`${n.taskId} blocked: ${n.reason}. See REPORT.md.`); },
+    usageWait: async (n) => { localLog(`${n.taskId}: usage wait until ${new Date(n.resumeAt).toISOString()}.`); },
+    finished: async (n) => { localLog(`Local run ${n.status}. See REPORT.md.`); },
+  } : runNotifications({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId,
     ...(options.createNotifier ? { createNotifier: options.createNotifier } : {}), ...(options.warn ? { warn: options.warn } : {}),
   });
   // A release setup (decision 157) puts the deploy adapters in the broker; a session plan (review, onboard, sweep) or a bug request never releases.
-  const release = context.planKind === undefined && context.request === undefined
+  const release = !context.local && context.planKind === undefined && context.request === undefined
     ? await prepareRelease({ projectId: context.projectId, projectDir: context.projectDir, workRoot, worktreeRoot, repoPath: context.repoPath, home, ledger }, options.release)
     : undefined;
   const broker = projectBroker({ jarvisHome: context.jarvisHome, projectDir: context.projectDir, project: context.projectId, ledger, ...(release ? { deploy: release.adapters } : {}) });
   // Before hosting: a notifier host that a session could reach refuses the run (backlog 99).
-  const approvals = runApprovals({
+  const approvals = context.local ? { start() {}, close: async () => {} } : runApprovals({
     configPath: join(context.jarvisHome, "notify.json"), project: context.projectId, ledger, broker,
     // Every session's effective network policy: the builder, the Claude reviewer and the Codex reviewer (and their subdomains).
     taskAllowlists: [TASK_DOMAINS, CLAUDE_REVIEW_DOMAINS, CODEX_API_DOMAINS],

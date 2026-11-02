@@ -15,6 +15,8 @@ export interface RunContext {
   projectDir: string;
   jarvisHome: string;
   repoPath: string;
+  /** Build and review locally; skip release preparation and phone notifications/approvals. */
+  local?: boolean;
   /** `--plan onboard|sweep`: read that session-owned plan instead of .jarvis/plan.json. */
   planKind?: SessionPlanKind;
   /** A bug report handed to the runner, without an architect plan or approved spec. */
@@ -82,6 +84,7 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
     const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : []),
       ...(context.reviewFix?.by === "flag" ? ["--fix"] : context.reviewFix?.by === "answer" ? ["--fix-answer", context.reviewFix.ref] : []),
       ...(context.request !== undefined ? ["--request", context.request] : []),
+      ...(context.local ? ["--local"] : []),
       ...(context.reviewLimits ?? []).flatMap((limit) => ["--limit", limit])];
     const child = (seams.spawn ?? spawnChild)(process.execPath, args, { cwd: context.repoPath, detached: true, stdio: ["ignore", fd, fd] });
     await new Promise<void>((accept, reject) => {
@@ -121,7 +124,8 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
     .option("--fix-answer <ref>", "with --plan review: <answerSeq>:review-fix, the user's recorded \"yes\" to the intake question, as the opt-in")
     .option("--limit <text>", "with the opt-in: a limit every fix task keeps, such as \"make no changes to the public API\" (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option("--detach", "continue in a detached runner")
-    .action(async (options: { project?: string; request?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean }) => {
+    .option("--local", "build and review locally; no release step or phone traffic; approvals stay in the terminal")
+    .action(async (options: { project?: string; request?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean; local?: boolean }) => {
       if (options.request !== undefined) {
         if (options.plan !== undefined) throw new Error("--request cannot be combined with --plan");
         if (!options.request.trim() || options.request.length > 16_000) throw new Error("--request needs 1 to 16000 characters");
@@ -147,6 +151,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       const context: RunContext = {
         projectId, projectDir: runnerProjectDir(projectId, jarvisHome), jarvisHome, repoPath: projectRoot(cwd),
         ...(options.request !== undefined ? { request: options.request } : {}),
+        ...(options.local ? { local: true } : {}),
         ...(options.plan ? { planKind: options.plan as SessionPlanKind } : {}),
         ...(options.report !== undefined ? { reviewReport: options.report } : {}),
         ...(options.plan === "review" ? { reviewFix: options.fix ? { by: "flag" as const } : { by: "answer" as const, ref: options.fixAnswer! } } : {}),

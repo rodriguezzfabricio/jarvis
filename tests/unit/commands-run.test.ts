@@ -90,6 +90,17 @@ it("hands a bug request to both foreground and detached production runs", async 
   await g.program.parseAsync(["run", "--request", request, "--detach"], { from: "user" });
   expect((spawn.mock.calls[0]! as unknown as [string, string[]])[1]).toContain(request);
 });
+it("keeps --local in foreground and detached runs, with the live canary still required", async () => {
+  const f = setup(); await f.program.parseAsync(["run", "--local"], { from: "user" });
+  expect(f.run).toHaveBeenCalledWith(expect.objectContaining({ local: true }));
+  expect(f.probe).toHaveBeenCalledOnce();
+  const spawn = fakeSpawn(); const g = setup({ spawn, entrypoint: "/runner/cli.ts" });
+  await g.program.parseAsync(["run", "--local", "--detach"], { from: "user" });
+  expect((spawn.mock.calls[0]! as unknown as [string, string[]])[1]).toContain("--local");
+  const h = setup({ probe: async () => ({ ok: false }) });
+  await expect(h.program.parseAsync(["run", "--local"], { from: "user" })).rejects.toThrow(/canary/);
+  expect(h.run).not.toHaveBeenCalled();
+});
 it("rejects combining a request with a session plan before probing", async () => {
   const f = setup();
   await expect(f.program.parseAsync(["run", "--request", "Fix a bug", "--plan", "onboard"], { from: "user" })).rejects.toThrow(/request.*plan/);

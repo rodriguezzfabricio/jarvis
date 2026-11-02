@@ -127,18 +127,19 @@ describe("jarvis run --plan review", () => {
     expect(resumed.loop.plan!.tasks[0]!.id).toBe("T2");
   });
 
-  it("persists tier-2 bug review policy through production seeding and ledger-only resume", async () => {
+  it("preserves the complete review workflow when resumed with its original selector", async () => {
     const p = project(), run = await prepare(p);
     p.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 1 } });
     // Stop after seedPlan, before any builder or reviewer: retain actual production loop options.
     await expect(runLoop({ ...run.loop, footprint: false, createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }),
       reprobe: async () => { throw new Error("interrupt after seeding"); } })).rejects.toThrow(/interrupt after seeding/);
     await prepared.splice(prepared.indexOf(run), 1)[0]!.close();
-    const resumed = await prepareProductionRun({ projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, local: true }, {
-      home: p.home, preflight: async () => true, reprobe: async () => true, signals: new FakeHost(),
-      createReview: (deps) => { captured = deps; return async () => "pass"; },
-    });
-    prepared.push(resumed);
+    await expect(prepareProductionRun({ projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, local: true }, {
+      home: p.home, preflight: async () => true, reprobe: async () => true, signals: new FakeHost(), createReview: () => async () => "pass",
+    })).rejects.toThrow(/original.*--request.*--plan/);
+    const resumed = await prepare(p);
+    expect(resumed.drive).toBeTypeOf("function");
+
     await expect(runLoop({ ...resumed.loop, pidAlive: () => false, footprint: false, createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }),
       reprobe: async () => { throw new Error("resumed after seed"); } })).rejects.toThrow(/resumed after seed/);
     const material = reviewMaterialFor(captured!, "T1", git(p, ["rev-parse", "HEAD"]));

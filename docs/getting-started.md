@@ -86,6 +86,8 @@ The interactive session uses your normal Claude Code permissions. Sandboxed unat
 | `jarvis why <query>` | Look up recorded decisions and their sources |
 | `jarvis --help` | List available commands; use a command’s `--help` for options |
 
+To resume interrupted bug, refactor or review work, repeat its original command, including `--local`, `--request` or `--plan`, and any review options. A plain `jarvis run` refuses a request ledger without its workflow selector; it cannot infer an unfinished report phase or release policy from tasks alone.
+
 A completed run means its required checks and reviews passed on the accepted revision. Hidden evaluations can still find a defect those checks missed.
 
 ## All commands

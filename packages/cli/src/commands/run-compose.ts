@@ -212,6 +212,9 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, ...t.definition }));
   const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing, context.requestHandoff, inputHash)
     : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
+  if (!plan && context.request === undefined && context.planKind === undefined && existing.some(task => task.inputMode === "free")) {
+    throw new Error("Resume this workflow with the original --request or --plan command, retaining --local and review options; a plain run cannot restore its remaining phases or release policy");
+  }
   // The Goldfish gate (decision 170): an architect's plan builds only after a counted plan review at its hash passed, or every
   // blocker and major it found was resolved with nothing escalated still open. Session plans and bug requests are not plans it judges.
   if (plan && context.request === undefined && context.planKind === undefined) {

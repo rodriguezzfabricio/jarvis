@@ -432,7 +432,7 @@ it("binds the loop to approved spec content and protected check hashes, not thei
   expect(third.loop.inputHash).not.toBe(changedSpec);
 });
 
-it.each(["Fix the broken item output", "Refactor src/store.mjs without changing behavior"])("resumes a spec-free request beside a confirmed spec: %s", async request => {
+it.each(["Fix the broken item output", "Refactor src/store.mjs without changing behavior"])("requires the original command to resume a spec-free request beside a confirmed spec: %s", async request => {
   const { runLoop } = await import("../../packages/cli/src/runner/loop.ts");
   const p = project(), first = await prepare(p, { request });
   p.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 1 } });
@@ -441,7 +441,9 @@ it.each(["Fix the broken item output", "Refactor src/store.mjs without changing 
   await expect(stop(first.loop, "first checkpoint")).rejects.toThrow("first checkpoint");
   await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
   let deps: ReviewDeps | undefined;
-  const next = await prepare(p, {}, { createReview: d => { deps = d; return async () => "pass"; } });
+  await expect(prepare(p)).rejects.toThrow(/original.*--request.*--plan/);
+  expect(socketsIn(p)).toEqual([]);
+  const next = await prepare(p, { request }, { createReview: d => { deps = d; return async () => "pass"; } });
   await expect(stop(next.loop, "resumed checkpoint")).rejects.toThrow("resumed checkpoint");
   expect(reviewMaterialFor({ ...deps!, git: () => "base" }, first.loop.plan!.tasks[0]!.id, "candidate").spec).toContain(request);
 });

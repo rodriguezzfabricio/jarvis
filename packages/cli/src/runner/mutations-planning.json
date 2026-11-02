@@ -712,5 +712,11 @@
     "file": "packages/cli/src/commands/run-compose.ts",
     "anchor": "task.definition.reviewKind === \"review-report\" ? task.definition.riskTier ?? 1 : reviewTier",
     "replacement": "reviewTier"
+  },
+  {
+    "name": "planning plain resume loses workflow phases",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "!plan && context.request === undefined && context.planKind === undefined && existing.some(task => task.inputMode === \"free\")",
+    "replacement": "false"
   }
 ]

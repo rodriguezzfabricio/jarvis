@@ -311,7 +311,7 @@ function copyWorkTree(workTree: string, checkout: string, stage: string, afterSt
     if (st?.isFile() && st.nlink !== 1) throw new Error(`working tree file is hard-linked: ${p}`);
   }
   if (tracked.length) git(["add", "--all", "--force", "--pathspec-from-file=-", "--pathspec-file-nul"], { GIT_LITERAL_PATHSPECS: "1" }, Buffer.from(tracked.join("\0")));
-  git(["add", "--all", "--", ".", ":(exclude,icase).jarvis"]);
+  if (untracked.length) git(["add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul"], { GIT_LITERAL_PATHSPECS: "1" }, Buffer.from(untracked.join("\0")));
   const tree = git(["write-tree"]).trim();
   for (const entry of git(["ls-tree", "-r", "-z", "--full-tree", tree]).split("\0").filter(Boolean)) {
     const tab = entry.indexOf("\t");

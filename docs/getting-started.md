@@ -88,6 +88,8 @@ The interactive session uses your normal Claude Code permissions. Sandboxed unat
 
 To resume interrupted bug, refactor or review work, repeat its original command, including `--local`, `--request` or `--plan`, and any review options. A plain `jarvis run` refuses a request ledger without its workflow selector; it cannot infer an unfinished report phase or release policy from tasks alone.
 
+For local runs, the report’s Done and Left sections describe completed work. Its top-level State describes release readiness, which remains not-reached when release is disabled.
+
 A completed run means its required checks and reviews passed on the accepted revision. Hidden evaluations can still find a defect those checks missed.
 
 ## All commands
@@ -121,7 +123,7 @@ From `jarvis --help` today:
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
 | `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
-| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence |
+| `jarvis gate test` / `jarvis gate done` | Runs the unit check / all installed checks on a working-tree copy: feedback only, never evidence |
 | `jarvis checks install` | Reviews the architect's `.jarvis/checks` proposals in a fresh read-only session and installs them as protected checks only on a pass |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off |
 | `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |

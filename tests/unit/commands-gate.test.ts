@@ -85,6 +85,22 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     expect(readdirSync(join(p.workRoot, "feedback"))).toEqual([]); expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
   });
 
+  it("copies a working tree with ignored runner notes without staging those notes", async () => {
+    const p = project();
+    writeFileSync(join(p.repo, ".gitignore"), "ignored.txt\n.jarvis/\n");
+    mkdirSync(join(p.repo, ".jarvis/notes"), { recursive: true });
+    writeFileSync(join(p.repo, ".jarvis/notes/T1.md"), "runner-private claim");
+    writeFileSync(join(p.repo, "new.txt"), "new working file");
+    install(p, "unit", 'cat value.txt new.txt\nif [ -e .jarvis/notes/T1.md ]; then exit 9; fi\n');
+    p.store.approve(p.ledger, "v1");
+    const index = readFileSync(join(p.repo, ".git/index")), before = snapshot(p.projectDir);
+    const r = await gate(p, ["done", "--json"]);
+    expect(r.codes).toEqual([0]);
+    expect(JSON.parse(r.output).results[0]).toMatchObject({ status: "pass", cases: [{ stdoutTail: "41\nnew working file" }] });
+    expect(readFileSync(join(p.repo, ".git/index"))).toEqual(index);
+    expect(snapshot(p.projectDir)).toEqual(before);
+  });
+
   it("fails with the case output when the working tree fails, and prints JSON on request", async () => {
     const p = project(); install(p, "unit", 'echo "value is $(cat value.txt)"\ntest "$(cat value.txt)" = 42\n'); p.store.approve(p.ledger, "v1");
     const r = await gate(p, ["test", "--json"]);

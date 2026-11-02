@@ -428,14 +428,14 @@
   {
     "name": "review fix: run drops the opt-in's limits",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits)",
-    "replacement": "reviewFixPlan(output, checks, existing, [])"
+    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits, inputHash)",
+    "replacement": "reviewFixPlan(output, checks, existing, [], inputHash)"
   },
   {
     "name": "review fix: run numbers fix tasks over the ledger's own",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits)",
-    "replacement": "reviewFixPlan(output, checks, [], optIn.limits)"
+    "anchor": "reviewFixPlan(output, checks, existing, optIn.limits, inputHash)",
+    "replacement": "reviewFixPlan(output, checks, [], optIn.limits, inputHash)"
   },
   {
     "name": "review fix: run lets a report replace a file the branch has",
@@ -554,8 +554,8 @@
   {
     "name": "review fix: run's update loop may touch any task",
     "file": "packages/cli/src/commands/run-compose.ts",
-    "anchor": "runUpdate: (task) => run({ ...loop, plan: { tasks: [task] }, only: [...fix.taskIds, task.id] }),",
-    "replacement": "runUpdate: (task) => run({ ...loop, plan: { tasks: [task] } }),"
+    "anchor": "runUpdate: (task) => run({ ...loop, tier: 1, plan: { tasks: [{ ...task, reviewKind: \"review-report\" }] }, only: [...fix.taskIds, task.id] }),",
+    "replacement": "runUpdate: (task) => run({ ...loop, tier: 1, plan: { tasks: [{ ...task, reviewKind: \"review-report\" }] } }),"
   },
   {
     "name": "review fix: a review with no findings still runs a fix loop",
@@ -580,5 +580,11 @@
     "file": "packages/cli/src/runner/loop.ts",
     "anchor": "if (!this.mine(t.id)) for (const a of t.attempts) { const p = this.attemptWorkspace(t.id, a.id); if (p) resumable.add(p); }",
     "replacement": "if (false) for (const a of t.attempts) { const p = this.attemptWorkspace(t.id, a.id); if (p) resumable.add(p); }"
+  },
+  {
+    "name": "review fix: legacy identity reuses task IDs",
+    "file": "packages/cli/src/runner/review-fix.ts",
+    "anchor": "canonical(prior) === canonical(expected)",
+    "replacement": "prior.goal === expected.goal && prior.exitCondition === expected.exitCondition"
   }
 ]

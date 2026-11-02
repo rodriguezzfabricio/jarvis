@@ -298,7 +298,7 @@ describe("the fix plan: one bug task per finding (decisions 114, 126)", () => {
   it("numbers its tasks after the ledger's own, and keeps the id of a task it already planned", () => {
     const again = reviewFixPlan(out, [{ name: "unit" }], [
       { id: "T1", goal: "an earlier feature", exitCondition: "done" }, { id: "T4" },
-      { id: "T9", goal: fix.plan!.tasks[1]!.goal, exitCondition: fix.plan!.tasks[1]!.exitCondition },
+      { ...fix.plan!.tasks[1]!, id: "T9", riskTier: 2, reviewKind: "bug" },
     ])!;
     expect(again.plan!.tasks.map((t) => t.id)).toEqual(["T10", "T9", "T11"]);
     expect(again.taskOf).toEqual({ F1: "T10", F2: "T9", F3: "T11" });

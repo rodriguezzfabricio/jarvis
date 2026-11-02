@@ -15,6 +15,7 @@ function assertGitStorage(root: string): void {
       for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
         if (++entries > 100_000) throw new Error("Git storage exceeds entry limit");
         if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new Error("Git storage must contain regular files and directories without symlinks");
+        if (entry.isFile() && lstatSync(join(path, entry.name)).nlink !== 1) throw new Error("Git storage files may not have hard links");
         if (entry.isDirectory()) walk(join(path, entry.name), depth + 1);
       }
     } finally { directory.closeSync(); }

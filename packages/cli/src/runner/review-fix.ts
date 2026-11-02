@@ -1,7 +1,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, writeSync, type Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import type { LedgerEntry } from "../ledger/ledger.ts";
+import { canonical, type LedgerEntry } from "../ledger/ledger.ts";
 import { scanTrifecta, type TrifectaSignal } from "../security/trifecta.ts";
 import { readPlanningFile } from "./checks-author.ts";
 import { BUG_EXIT_CONDITION, PlanSchema, type Plan, type PlanTask } from "./plan.ts";
@@ -228,7 +228,7 @@ export interface ReviewFixPlan {
  * task's own gate, review and promotion. One false or stuck finding blocks only itself. Findings in one
  * file may overlap; the loop merges a candidate onto a moved head and checks it again, or redoes it.
  */
-export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = [], limits: readonly string[] = []): ReviewFixPlan {
+export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: string }[], existing: readonly ExistingTask[] = [], limits: readonly string[] = [], inputHash?: string): ReviewFixPlan {
   if (!checks.some((c) => c.name === "unit")) throw new Error("a review's fix tasks need an installed unit check (decision 114's bug exit condition)");
   // Ids follow the ledger's tasks, because the loop never re-creates an id it already has. A task with this exact
   // definition keeps its id, so planning the same findings again adds nothing.
@@ -237,18 +237,20 @@ export function reviewFixPlan(output: ReviewOutput, checks: readonly { name: str
   const fresh = () => { do next++; while (used.has(`T${next}`)); used.add(`T${next}`); return `T${next}`; };
   const tasks = output.findings.map((f) => {
     const body = fixTask(output, f, "T1", limits);
-    const same = existing.find((t) => t.goal === body.goal && t.exitCondition === body.exitCondition);
+    const { id: _id, ...definition } = body;
+    const expected = { ...definition, riskTier: 2, reviewKind: "bug", ...(inputHash ? { inputHash } : {}) };
+    const same = existing.find(({ id: _priorId, ...prior }) => canonical(prior) === canonical(expected));
     return { ...body, id: same?.id ?? fresh() };
   });
   return {
-    plan: tasks.length ? PlanSchema.parse({ tasks }) : null,
+    plan: tasks.length ? PlanSchema.parse({ tier: 2, tasks }) : null,
     taskIds: tasks.map((t) => t.id),
     taskOf: Object.fromEntries(output.findings.map((f, i) => [f.id, tasks[i]!.id])),
     updateTaskId: fresh(),
   };
 }
 /** A task the ledger already has, for reviewFixPlan's ids. */
-export interface ExistingTask { id: string; goal?: string; exitCondition?: string }
+export type ExistingTask = Partial<PlanTask> & { id: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined };
 
 /** A fix task's exit condition: decision 114's, for this one finding, confirmed before anything changes. */
 export function fixExitCondition(f: Pick<ReviewFinding, "id" | "file" | "line">): string {

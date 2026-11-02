@@ -602,7 +602,7 @@
   {
     "name": "planning refactor resume matches bug condition",
     "file": "packages/cli/src/runner/plan.ts",
-    "anchor": "canonical(prior) === canonical(definition)",
+    "anchor": "canonical(prior) === canonical(expected)",
     "replacement": "prior.exitCondition === BUG_EXIT_CONDITION"
   },
   {
@@ -656,13 +656,43 @@
   {
     "name": "planning direct requests reuse weaker risk evidence",
     "file": "packages/cli/src/runner/plan.ts",
-    "anchor": "riskTier === classified.tier && canonical(prior)",
-    "replacement": "canonical(prior)"
+    "anchor": "canonical(prior) === canonical(expected)",
+    "replacement": "canonical({ ...prior, riskTier: expected.riskTier }) === canonical(expected)"
   },
   {
     "name": "planning resumed task loses recorded risk floor",
     "file": "packages/cli/src/runner/loop.ts",
     "anchor": "Math.max(this.opts.tier ?? 1, task.definition.riskTier ?? 0)",
     "replacement": "(this.opts.tier ?? 1)"
+  },
+  {
+    "name": "planning checkpoint permits hard-linked metadata",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "entry.isFile() && lstatSync(join(path, entry.name)).nlink !== 1",
+    "replacement": "false"
+  },
+  {
+    "name": "planning task identity forgets approved inputs",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "...(this.opts.inputHash ? { inputHash: this.opts.inputHash } : {})",
+    "replacement": "...({})"
+  },
+  {
+    "name": "planning composition omits spec identity",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "spec: spec?.text ?? null, checks: verifiedInputs.lockHash",
+    "replacement": "spec: null, checks: verifiedInputs.lockHash"
+  },
+  {
+    "name": "planning composition omits check identity",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "spec: spec?.text ?? null, checks: verifiedInputs.lockHash",
+    "replacement": "spec: spec?.text ?? null, checks: null"
+  },
+  {
+    "name": "planning resume drops bug classification",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "if (task?.definition.reviewKind) return {",
+    "replacement": "if (false) return {"
   }
 ]

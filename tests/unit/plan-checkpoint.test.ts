@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -144,4 +144,15 @@ it.each(["objects", "refs"])("refuses redirected Git %s storage before writing",
   const head = other.git(["rev-parse", "HEAD"]);
   expect(() => checkpointPlan(p.repo, p.root)).toThrow(/Git storage.*symlink/i);
   expect(other.git(["rev-parse", "HEAD"])).toBe(head);
+});
+
+it("refuses hard-linked reflogs before writing outside the repository", () => {
+  const p = project(); checkpointPlan(p.repo, p.root);
+  const outside = join(p.root, "outside-log");
+  const log = join(p.repo, ".git/logs/refs/heads/main");
+  linkSync(log, outside);
+  const before = readFileSync(outside);
+  writeFileSync(join(p.repo, "PRODUCT.md"), "new planning content");
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/hard link/i);
+  expect(readFileSync(outside)).toEqual(before);
 });

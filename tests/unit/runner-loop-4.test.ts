@@ -66,3 +66,12 @@ it("retains a recorded task's risk floor when resuming from the ledger without a
   await runLoop({ ...f.options, tier: 0 });
   expect(f.calls.find((c) => c.prompt.includes("Task: T2"))?.tier).toBe(2);
 });
+
+it("binds completed evidence to approved requirements and check bytes", async () => {
+  const f = fixture();
+  const plan = { tasks: [{ id: "T2", goal: "same goal", exitCondition: "same condition", dependencies: ["T1"] }] };
+  expect((await runLoop({ ...f.options, plan, inputHash: "a".repeat(64) })).status).toBe("complete");
+  const count = f.calls.length;
+  await expect(runLoop({ ...f.options, plan, inputHash: "b".repeat(64) })).rejects.toThrow(/T2.*fresh task ID/);
+  expect(f.calls).toHaveLength(count);
+});

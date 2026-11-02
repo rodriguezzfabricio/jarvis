@@ -408,3 +408,25 @@ it("reviews spec-free session work against its runner-owned goal and exit condit
   expect(material.tier).toBe(2);
   expect(material.acceptanceCriteria).toEqual(["Existing behavior and unit checks remain unchanged"]);
 });
+
+it("binds the loop to approved spec content and protected check hashes, not their names", async () => {
+  const p = project(); writePlan(p);
+  const first = await prepare(p), original = first.loop.inputHash;
+  expect(original).toMatch(/^[a-f0-9]{64}$/);
+  await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
+  const specPath = join(p.repoPath, "docs/spec/v1.md");
+  const text = readFileSync(specPath, "utf8");
+  writeFileSync(specPath, text.replace("## Goals", "## Goals\n- Changed requirement under the same AC identifiers."));
+  safeGit(p.repoPath, ["add", "docs/spec/v1.md"], { home: p.home });
+  safeGit(p.repoPath, ["commit", "-qm", "changed requirement"], { home: p.home });
+  const second = await prepare(p);
+  expect(second.loop.inputHash).not.toBe(original);
+  const changedSpec = second.loop.inputHash;
+  await prepared.splice(prepared.indexOf(second), 1)[0]!.close();
+  const { ChecksStore } = await import("../../packages/cli/src/checks/store.ts");
+  const store = new ChecksStore(p.projectDir);
+  writeFileSync(join(store.checksDir, "new-check-input.txt"), "new approved bytes");
+  store.approve(p.ledger, "test changed approved checks with identical names");
+  const third = await prepare(p);
+  expect(third.loop.inputHash).not.toBe(changedSpec);
+});

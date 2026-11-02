@@ -5,6 +5,7 @@
  * broker hosted for the run's duration (§3.6), the runner's notifier (decision 50) and phone approvals
  * of the broker's pending requests (backlog 99, decision 117).
  */
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +19,7 @@ import { safeGit } from "../eval/git.ts";
 import { CLAUDE_REVIEW_DOMAINS, createClaudeReviewer } from "../harness/claude/review.ts";
 import { createClaudeHarness, type ClaudeHarnessOptions } from "../harness/claude/task.ts";
 import { recoverIntakeRounds } from "../intake/round.ts";
-import { Ledger } from "../ledger/ledger.ts";
+import { canonical, Ledger } from "../ledger/ledger.ts";
 import type { Notifier } from "../notify/notifier.ts";
 import type { NtfyOptions } from "../notify/ntfy.ts";
 import { approvedDesign, designMaterialFor, designOnBranch } from "../review/design-material.ts";
@@ -96,6 +97,12 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
   const reviewTier = Math.max(deps.tier, task?.definition.riskTier ?? 0) as TaskTier;
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
+  if (task?.definition.reviewKind) return {
+    repoPath: deps.context.repoPath, baseRevision, tier: reviewTier,
+    spec: `Goal: ${task.definition.goal}\nExit condition: ${task.definition.exitCondition}`,
+    acceptanceCriteria: [task.definition.exitCondition],
+    ...(task.definition.reviewKind === "bug" ? { kind: "bug" as const } : {}),
+  };
   const bug = deps.bugRequest?.tasks.get(taskId);
   if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: reviewTier, ...(bug.exitCondition === BUG_EXIT_CONDITION ? { kind: "bug" as const } : {}),
     spec: `Request, as typed: ${deps.bugRequest!.request}\nGoal: ${bug.goal}\nExit condition: ${bug.exitCondition}`, acceptanceCriteria: [bug.exitCondition] };
@@ -124,7 +131,7 @@ export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: st
  * before anything is hosted). The runner commits the report alone on the run branch, since every fix starts
  * from it and promotion needs a clean checkout, and plans one bug task per finding after the ledger's own tasks.
  */
-export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string, optIn: { fix: RunContext["reviewFix"]; limits: readonly string[] }): { output: ReviewOutput; fix: ReviewFixPlan } {
+export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, checks: readonly { name: string }[], git: (args: readonly string[]) => string, optIn: { fix: RunContext["reviewFix"]; limits: readonly string[] }, inputHash?: string): { output: ReviewOutput; fix: ReviewFixPlan } {
   // The explicit opt-in comes first (round 3): the flag, or the user's recorded yes to the review-fix question.
   if (!optIn.fix) throw new Error("a review's fixes start only on an explicit opt-in: --fix, or --fix-answer <answerSeq>:review-fix (decision 126)");
   if (optIn.fix.by === "answer" && !recordedFixYes(ledger.entries(), optIn.fix.ref)) throw new Error(`--fix-answer ${optIn.fix.ref} names no recorded user answer of yes to the review-fix question`);
@@ -139,7 +146,7 @@ export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, c
   commitReportOnly(git, report, `review report ${report} (written by the review session)`);
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, ...t.definition }));
   // The limits come from the opt-in (`--limit`), never from the request's words.
-  return { output, fix: reviewFixPlan(output, checks, existing, optIn.limits) };
+  return { output, fix: reviewFixPlan(output, checks, existing, optIn.limits, inputHash) };
 }
 
 /** The build sessions' network allowlist: none. The same value goes to the harness and the phone approvals' isolation check. */
@@ -193,11 +200,14 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   if (!checks.length) throw new Error("no approved protected checks: approve the checks before running");
   const runBranch = runBranchOf(git);
   const spec = context.request === undefined && context.planKind === undefined ? approvedSpec(git, runBranch) : undefined;
+  const verifiedInputs = new ChecksStore(context.projectDir).verify(ledger);
+  if (!verifiedInputs.ok || !verifiedInputs.lockHash) throw new Error("protected checks changed during composition");
+  const inputHash = createHash("sha256").update(canonical({ spec: spec?.text ?? null, checks: verifiedInputs.lockHash })).digest("hex");
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
-  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
+  const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }, inputHash) : undefined;
   if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, ...t.definition }));
-  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing, context.requestHandoff)
+  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing, context.requestHandoff, inputHash)
     : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
   // The Goldfish gate (decision 170): an architect's plan builds only after a counted plan review at its hash passed, or every
   // blocker and major it found was resolved with nothing escalated still open. Session plans and bug requests are not plans it judges.
@@ -240,7 +250,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   if (hosted.reconciled) (options.warn ?? console.error)(`Marked ${hosted.reconciled} interrupted action(s) as unknown; they need a person (decision 41).`);
   const loop: RunLoopOptions = {
     projectId: context.projectId, projectDir: context.projectDir, jarvisHome: context.jarvisHome, repoPath: context.repoPath, runBranch,
-    worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1,
+    worktreeRoot, workRoot, gitHome: home, tier: plan?.tier ?? 1, inputHash,
     ...(options.git ? { git: options.git } : {}),
     checks: Object.fromEntries(checks.map((check) => [check.name, check])),
     createHarness: (routing) => createClaudeHarness({
@@ -255,7 +265,9 @@ export async function prepareProductionRun(context: RunContext, options: Compose
     notify: notifications.usageWait, notifyBlocked: notifications.blocked,
     footprint: createFootprintLog({ worktrees: worktreeRoot, caches: [cacheRoot], evidence: join(context.projectDir, "evidence") }),
     recoverIntake: (l) => { recoverIntakeRounds({ ledger: l, repoDir: context.repoPath, broker }); },
-    ...(plan ? { plan: toLoopPlan(plan) } : {}),
+    ...(plan ? { plan: { tasks: toLoopPlan(plan).tasks.map((task) => ({ ...task,
+      ...(reviewFix?.bugTasks.has(task.id) || (bugRequest && task.exitCondition === BUG_EXIT_CONDITION) ? { reviewKind: "bug" as const } : {}),
+    })) } } : {}),
     // A review run may touch only the tasks it created (decision 126): never the project's other unfinished work.
     ...(reviewRun ? { only: [...reviewRun.fix.taskIds] } : bugRequest ? { only: [...bugRequest.tasks.keys()] } : {}),
   };
@@ -269,7 +281,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
         output: reviewRun.output, fix,
         runFixes: () => run(loop),
         // The whole review's ids: its fix tasks are done or blocked by now, so only the update can run, and the result covers the review.
-        runUpdate: (task) => run({ ...loop, plan: { tasks: [task] }, only: [...fix.taskIds, task.id] }),
+        runUpdate: (task) => run({ ...loop, tier: 1, plan: { tasks: [{ ...task, reviewKind: "review-report" }] }, only: [...fix.taskIds, task.id] }),
         state: () => rebuildState(ledger.entries(), { now: Date.now() }),
         changedFiles: (revision) => git(["diff", "--name-only", "-z", `${revision}^1`, revision]).split("\0").filter(Boolean),
       })).update,

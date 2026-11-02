@@ -56,7 +56,7 @@ const GB = 1024 ** 3;
 /** Pinned Claude Code, by absolute path (decision 57). Shared with jarvis setup. */
 export function checkClaudePinned(home: string, exec: (bin: string, args: string[]) => string = execWithEnv(buildChildEnv({ ...process.env, HOME: process.env.HOME ?? home })), exists: (p: string) => boolean = existsSync): DoctorCheck {
   const claude = pinnedClaudeBin(home);
-  if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude} (install with: claude install ${CLAUDE_CODE_VERSION})` };
+  if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude}; prepare the complete signed Claude Code ${CLAUDE_CODE_VERSION} app bundle as described in docs/getting-started.md` };
   try {
     const v = exec(claude, ["--version"]).trim();
     return { name: "claude_pinned", level: v.startsWith(`${CLAUDE_CODE_VERSION} `) ? "pass" : "fail", detail: `${claude} reports "${v}"` };

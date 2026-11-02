@@ -2176,6 +2176,8 @@ The next calibration again found `~/.local/share/claude/versions/2.1.309` missin
 
 Use the preserved bundle's `Contents/MacOS/claude` directly as the absolute pin. Installer, runtime, and clean-install tests must agree on that path. Preserve version 2.1.309, the complete signature, and every preflight requirement. Do not recreate the disappearing symlink as a prerequisite, use PATH, or replace it with a newer version. Run the live probe on the direct path before accepting another calibration.
 
+The missing-pin diagnostic must point to preparation of the complete signed bundle described in getting-started, not suggest that the native installer's mutable versions entry is sufficient. The doctor unit mock selects the exact pin function's path; its old filename-suffix match caused the lone Nov 2 follow-up full-suite failure (4,656 passed, one failed, 18 skipped), while the actual live doctor passed.
+
 ### 181. Calibration must exercise empty stores and observable failure behavior (Nov 2, 2026; local-readiness repair; follows 179)
 
 The live good-fixture reviewers found more real gaps: a missing file was mislabeled as an empty-file case, usage checks omitted missing and unknown commands, malformed data started on line one and could not expose partial stdout, and no case exercised a failed append or a parseable record with the wrong shape. The tests also omitted valid special characters and a relative override invoked outside the application's directory. Add executable negative examples before changing these checks. Rejection of a blank add must preserve an existing item, not merely leave an initially missing store empty.

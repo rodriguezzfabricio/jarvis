@@ -130,5 +130,17 @@
     "file": "packages/cli/src/review/plan-resolve.ts",
     "anchor": "  if (entries.some((e) => e.seq > open.seq && e.kind === \"plan_review\" && dataOf(e).purpose === \"escalation_answer\" && dataOf(e).id === id)) throw new Error(`escalation ${id} is already answered`);\n",
     "replacement": ""
+  },
+  {
+    "name": "plan prompt omits runner execution contract",
+    "file": "packages/cli/src/review/plan-lenses.ts",
+    "anchor": "  CHECK_EXECUTION_CONTRACT,\n",
+    "replacement": ""
+  },
+  {
+    "name": "plan contract: gate reverses case order",
+    "file": "packages/cli/src/checks/gate.ts",
+    "anchor": "    let overCap = false;\n    for (const k of g.check.cases) {",
+    "replacement": "    let overCap = false;\n    for (const k of [...g.check.cases].reverse()) {"
   }
 ]

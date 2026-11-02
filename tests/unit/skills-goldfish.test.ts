@@ -42,7 +42,7 @@ describe("the Goldfish decision layer in the skills", () => {
     expect(eval13!.expectations.join("\n")).toMatch(/jarvis plan review/);
   });
   it("the negative-control fixtures plant the three faults the calibration must name, and nothing else differs", () => {
-    type Task = { id: string; goal: string; acceptanceCriteria: string[]; dependencies: string[]; mayTouch?: string[] };
+    type Task = { id: string; goal: string; acceptanceCriteria: string[]; dependencies: string[]; requiredChecks: string[]; mayTouch?: string[] };
     const bad = JSON.parse(read("tests/fixtures/plan-review/bad/plan.json")) as { notes: string[]; tasks: Task[] };
     const good = JSON.parse(read("tests/fixtures/plan-review/good/plan.json")) as { notes: string[]; tasks: Task[] };
     expect(() => PlanSchema.parse(bad)).not.toThrow(); expect(() => PlanSchema.parse(good)).not.toThrow();
@@ -54,7 +54,9 @@ describe("the Goldfish decision layer in the skills", () => {
     expect(read("tests/fixtures/plan-review/bad/repo/docs/decisions.md")).toMatch(/\| D3 \|.*\| hard \|.*\| \[\] \|/);
     // The good plan: every task placed (mayTouch), traceable to a criterion, ordered by dependencies; it creates nothing that exists and cites no decision without alternatives.
     expect(good.tasks.every((t) => t.mayTouch!.length > 0 && t.acceptanceCriteria.length > 0)).toBe(true);
-    expect(good.tasks.map((t) => t.dependencies)).toEqual([[], ["T1"], ["T2"]]);
+    expect(good.tasks.map((t) => t.dependencies)).toEqual([[], ["T1"]]);
+    expect(good.tasks[0]!.acceptanceCriteria).toEqual(["AC1", "AC2"]);
+    expect(good.tasks[0]!.requiredChecks).toEqual(["item-add", "item-blank"]);
     expect(good.notes.join("\n")).toContain("data/items.jsonl");
     expect(existsSync(new URL("tests/fixtures/plan-review/good/repo/src/util/retry.mjs", root))).toBe(false);
     expect(existsSync(new URL("tests/fixtures/plan-review/good/repo/src/store.mjs", root))).toBe(false);

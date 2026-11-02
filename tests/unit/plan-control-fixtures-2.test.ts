@@ -31,10 +31,10 @@ it("rejects deleting existing items when a blank add is refused", () => {
   const wrong = store.replace("throw new Error('item name must not be blank');", "{ writeFileSync(file, ''); throw new Error('item name must not be blank'); }");
   expect(check("item-blank", wrong)).not.toBe(0);
 });
-it("rejects the first task saving invalid records before the diagnostic task", () => {
+it("rejects saving invalid records", () => {
   expect(check("item-add", store.replace("if (!name || /[\\r\\n]/.test(name))", "if (false)"))).not.toBe(0);
 });
-it("allows the first task's safe generic refusal but requires the second task's exact diagnostic", () => {
+it("requires the exact diagnostic across the saving task's combined add and blank checks", () => {
   const intermediate = store.replace("item name must not be blank", "invalid item name");
   expect(check("item-add", intermediate)).toBe(0);
   expect(check("item-blank", intermediate)).not.toBe(0);

@@ -20,6 +20,11 @@ saved
 printf '%s' 'saved
 {"name":"from-cwd"}
 ' | cmp -s - "$JARVIS_OUT/relative/stdout"
+for c in refuse-blank refuse-missing refuse-newline refuse-cr; do
+  test "$(cat "$JARVIS_OUT/$c/code")" = 1
+  test ! -s "$JARVIS_OUT/$c/stdout"
+  test -s "$JARVIS_OUT/$c/stderr"
+done
 for c in missing-command unknown-command; do
   test "$(cat "$JARVIS_OUT/$c/code")" = 2
   test ! -s "$JARVIS_OUT/$c/stdout"

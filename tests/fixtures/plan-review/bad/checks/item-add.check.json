@@ -21,6 +21,22 @@
       "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add 'tea\t\"milk\"\\café later'"
     },
     {
+      "id": "refuse-blank",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add \"  \""
+    },
+    {
+      "id": "refuse-missing",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add"
+    },
+    {
+      "id": "refuse-newline",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add \"$(printf 'buy\\nmilk')\""
+    },
+    {
+      "id": "refuse-cr",
+      "command": "ITEMS_FILE=data/check-add.jsonl node src/cli.mjs add \"$(printf 'buy\\rmilk')\""
+    },
+    {
       "id": "file",
       "command": "cat data/check-add.jsonl"
     },

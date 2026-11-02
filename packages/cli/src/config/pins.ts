@@ -17,7 +17,7 @@ export function pinnedClaudeBin(home: string = homedir()): string {
 }
 
 export function pinnedCodexBin(home: string = homedir()): string {
-  return join(home, ".npm-global", "bin", "codex");
+  return join(home, ".local", "share", "codex", "versions", CODEX_VERSION, "codex");
 }
 
 /**

@@ -2144,4 +2144,10 @@ Fabricio ran `jarvis setup --redo accounts.deploy,` (trailing comma) and got a N
 - **Usage errors print one line.** `parseRedo` throws `SetupUsageError`; the command prints `jarvis setup: <message>` and sets exit code 2, the same for running without a terminal. Other errors still propagate (they are bugs, and a trace is right for them).
 - **`--redo` is a selection.** With `--redo`, a step that was never finished is listed as "not finished; run jarvis setup without --redo to continue it" and skipped. The run is ok when every named step finished (done or skipped); a named step that failed still fails the run. Without `--redo`, nothing changes: setup resumes at the first unfinished step and is not ok while any step is pending.
 - **Tests and mutations:** `tests/unit/setup-command.test.ts` (one line, exit 2, no runner folder created), `tests/unit/setup-run-1.test.ts` (half-finished home, `--redo claude` asks nothing and leaves the pending steps), `packages/cli/src/setup/mutations-setup.json` (5 definitions, stage 5 by the existing map).
+
+### 176. Keep the reviewed Codex version in its own installation (Nov 2, 2026; takeover integrator; refines 58 and 66)
+
+The Nov 2 preflight reproduced Fable's handoff: the configured global npm launcher reports codex-cli 0.166.0, while Jarvis requires 0.164.0. A mutable global launcher is not a stable version pin. Keep 0.164.0 and select the native executable at `~/.local/share/codex/versions/0.164.0/codex`, with the version directory derived from `CODEX_VERSION`. The installer and runtime use the same path. The ordinary global Codex installation remains unchanged; no fallback to it or PATH is allowed.
+
+The native executable comes from the exact `@openai/codex@0.164.0` npm distribution, installed into a separate runner cache with lifecycle scripts disabled. npm verifies registry integrity during installation. The runtime's exact version refusal and reviewer confinement remain required. This repairs the prerequisite; it does not approve any unfinished stage or replace a live confined review.
 *From:* Fabricio's two Nov 1 reports through the release worker's transcript; the integrator.

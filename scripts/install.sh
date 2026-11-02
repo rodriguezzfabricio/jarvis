@@ -131,7 +131,7 @@ else
   warn "pinned Claude Code not found at $CLAUDE_BIN"
   warn "install it yourself (the README says how: 'claude install $CLAUDE_VERSION'), then run this installer again"
 fi
-CODEX_BIN="$HOME/.npm-global/bin/codex"
+CODEX_BIN="$HOME/.local/share/codex/versions/$CODEX_VERSION/codex"
 if [ -x "$CODEX_BIN" ]; then
   CODEX_REPORTED=$(clean_env "$CODEX_BIN" --version 2>/dev/null || true)
   case "$CODEX_REPORTED" in

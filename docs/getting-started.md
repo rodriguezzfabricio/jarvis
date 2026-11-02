@@ -10,11 +10,22 @@ Jarvis is experimental and currently targets macOS. Start with a disposable repo
 | pnpm | Version 11.7.0, matching `package.json` |
 | Claude Code | Version 2.1.309 at `~/.local/share/claude/versions/2.1.309`, authenticated with your own account |
 | Free disk | At least 20 GB; below 40 GB the runner permits one writing task |
-| Optional tools | Codex CLI 0.164.0 at `~/.npm-global/bin/codex` for review; ntfy for phone notifications |
+| Optional tools | Native Codex CLI 0.164.0 at `~/.local/share/codex/versions/0.164.0/codex` for review; ntfy for phone notifications |
 
 Jarvis calls its pinned binaries by absolute path. The installer checks them; it does not install the coding agents or sign in for you. Use Claude Code’s installer/version management to provide the pinned version before continuing. The exact versions are also recorded in [`config/pins.ts`](../packages/cli/src/config/pins.ts).
 
 Keep the checkout outside iCloud-synced folders. If Desktop & Documents sync is enabled, use a folder such as `~/Developer/jarvis`.
+
+The Codex reviewer uses its own versioned executable (decision 176), so updating your ordinary Codex installation cannot change the reviewer. On Apple Silicon, prepare it from the exact npm package:
+
+```sh
+npm install --prefix "$HOME/.jarvis-work/cache/codex/0.164.0" --ignore-scripts --no-audit --no-fund --save-exact @openai/codex@0.164.0
+mkdir -p "$HOME/.local/share/codex/versions/0.164.0"
+cp -n "$HOME/.jarvis-work/cache/codex/0.164.0/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex" "$HOME/.local/share/codex/versions/0.164.0/codex"
+"$HOME/.local/share/codex/versions/0.164.0/codex" --version
+```
+
+On Intel Macs, the source package and target directory are `codex-darwin-x64` and `x86_64-apple-darwin`. The final command must print exactly `codex-cli 0.164.0`; keep any mismatching installation for diagnosis instead of using it for reviews.
 
 ## Install
 

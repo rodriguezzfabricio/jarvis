@@ -9,7 +9,7 @@ The earlier planning-only checkpoint below is superseded by Fabricio's explicit 
 
 1. [x] Restore stable exact-version pins and establish the baseline: 4,657 tests passed, 18 skipped; typecheck and live doctor passed at the earlier checkpoint.
 2. [x] Fix the plan review contract and simplify the good control. All three good lenses passed; the bad control found T2, T3 and D3. The production CLI verified and saved the shared calibration for the current policy.
-3. [ ] Prove the real local workflow. `--local`, planning checkpoint, architect dispatch, draft refusal and direct refactor handoff are implemented. The disposable items application is undergoing real protected-check approval, followed by counted plan review and real builds/reviews.
+3. [ ] Prove the real local workflow. `--local`, planning checkpoint, architect dispatch, draft refusal and direct refactor handoff are implemented. The first disposable items application proved crash recovery but uncovered an invalid temporary-directory fixture. Its evidence is preserved. A fresh `~/.jarvis-work/local-e2e-20261102/items-local-final` is undergoing protected-check approval, counted plan review and real builds. Interactive plugin 0.1.1 is installed and byte-verified.
 4. [ ] Exercise interruption/recovery and negative outcomes; review the implementation independently; run final regression evidence.
 5. [ ] Close the formal stage gates. The current exhaustive mutation estimate is about 309 hours (13 days), not 71 hours. No exception has been requested or granted.
 

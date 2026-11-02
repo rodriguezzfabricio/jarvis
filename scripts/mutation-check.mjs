@@ -333,6 +333,7 @@ if (process.env.JARVIS_MUTATION_PLAN === "1") {
   console.log(definedLine(mutations));
   console.log(planLine(plan, mode));
   for (const [name] of selected) console.log(`run ${name}`);
+  await new Promise((resolve) => process.stdout.write("", resolve)); // drain the complete inventory before exiting a piped run
   process.exit(5); // a plan is no evidence: never 0
 }
 const started = Date.now();

@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { ChecksStore } from "../checks/store.ts";
 import { projectRoot, resolveProject } from "../config/project.ts";
@@ -30,8 +30,8 @@ function contextFor(repo: string | undefined, home: string): RunContext {
 
 function below(path: string, root: string): boolean { return path.startsWith(`${root}/`); }
 
-/** The prompt already contains the captured bundle and its approved baseline; no repo files are needed. */
-function reviewVerdict(context: RunContext, home: string, injected?: Reviewer): (prompt: string) => Promise<unknown> {
+/** Read-only review copies come from the captured bundle; no mutable repository files or planner notes are read. */
+function reviewVerdict(context: RunContext, home: string, injected?: Reviewer): (prompt: string, files: Readonly<Record<string, string>>) => Promise<unknown> {
   const workRoot = join(home, ".jarvis-work"), cacheRoot = join(workRoot, "caches", context.projectId);
   for (const dir of [workRoot, cacheRoot]) mkdirSync(dir, { recursive: true, mode: 0o700 });
   const evidenceRoot = join(context.projectDir, "evidence");
@@ -41,18 +41,26 @@ function reviewVerdict(context: RunContext, home: string, injected?: Reviewer): 
     jarvisHome: context.jarvisHome, home, workRoot, cacheRoot,
     preflight: async () => ({ ok: allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })) }),
   });
-  return async (prompt) => {
+  return async (prompt, files) => {
     const workspace = mkdtempSync(join(workRoot, "checks-review-"));
     try {
+      const capturedRoot = join(workspace, "checks");
+      for (const [path, content] of Object.entries(files)) {
+        const target = resolve(capturedRoot, path);
+        if (!below(target, capturedRoot)) throw new Error("captured check path escapes review workspace");
+        mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+        writeFileSync(target, content, { flag: "wx", mode: 0o400 });
+      }
       const outputDir = mkdtempSync(join(evidenceRoot, "checks-review-"));
-      const input: ReviewerInput = { workspace, outputDir, prompt, ...DEFAULT_ROUTING.tiers.strong, maxTurns: 20, timeoutMs: 600000 };
+      const input: ReviewerInput = { workspace, outputDir, prompt: "The runner completed strict JSON parsing and schema validation before this review. Exact captured file bytes are under checks/ for read-only inspection. The JSON payload encodes those files as strings; distinguish its escaping from source-file escaping. Do not execute checks. Behavioral coverage still requires your independent review.\n" + prompt, ...DEFAULT_ROUTING.tiers.strong, maxTurns: 20, timeoutMs: 600000 };
       const result = await reviewer(input);
       writeFileSync(join(outputDir, "raw.json"), JSON.stringify(result), { flag: "wx", mode: 0o600 });
       if (result.error !== undefined || result.fallbackReason !== undefined || result.failureKind !== undefined) {
         throw new Error(`protected checks reviewer failed: ${result.error ?? result.fallbackReason ?? result.failureKind}`);
       }
       // installChecks applies its own strict Verdict schema, including every required change justification.
-      return JSON.parse(result.rawVerdict) as unknown;
+      try { return JSON.parse(result.rawVerdict) as unknown; }
+      catch { throw new Error(`protected checks reviewer returned invalid JSON; no checks installed; evidence: ${outputDir}`); }
     } finally { rmSync(workspace, { recursive: true, force: true }); }
   };
 }

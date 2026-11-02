@@ -103,9 +103,9 @@ describe("/jarvis command", () => {
     for (const word of ["after-spec", "now", "none", "confirmed", "unconfirmed"]) expect(tail, word).toContain(word);
   });
 
-  it("calls only the jarvis CLI, and only triage and run itself (the skills own the rest)", () => {
+  it("calls only the jarvis CLI, and triage, repository init and run itself (the skills own the rest)", () => {
     const subs = new Set([...body.matchAll(/`jarvis ([a-z-]+)/g)].map((m) => m[1]));
-    expect(subs).toEqual(new Set(["triage", "run"]));
+    expect(subs).toEqual(new Set(["triage", "plan", "run"]));
     expect(body).not.toMatch(/`(?:claude|codex)\b/);
   });
 });

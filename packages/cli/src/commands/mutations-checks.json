@@ -20,8 +20,8 @@
   {
     "name": "checks install exposes the repo to its reviewer",
     "file": "packages/cli/src/commands/checks.ts",
-    "anchor": "const input: ReviewerInput = { workspace, outputDir, prompt,",
-    "replacement": "const input: ReviewerInput = { workspace: context.repoPath, outputDir, prompt,"
+    "anchor": "const input: ReviewerInput = { workspace, outputDir, prompt:",
+    "replacement": "const input: ReviewerInput = { workspace: context.repoPath, outputDir, prompt:"
   },
   {
     "name": "checks install skips the live reviewer preflight",

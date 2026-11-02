@@ -26,7 +26,7 @@ export interface InstallChecksOptions {
   /** Omitted files are retained; removals must be explicit and reviewed. */
   removeFiles?: readonly string[];
   /** The loop starts a fresh read-only review session. Never reuse the planner's session. */
-  reviewVerdict: (prompt: string) => Promise<unknown>;
+  reviewVerdict: (prompt: string, files: Readonly<Record<string, string>>) => Promise<unknown>;
 }
 const justification = z.string().trim().min(1).max(4000);
 const Verdict = z.object({
@@ -394,7 +394,7 @@ export async function installChecks(store: ChecksStore, authored: AuthoredChecks
   const baseline = approvedBaseline(store, ledger, existing);
   const bundle = mergedFiles(existing, proposed.files, options.removeFiles ?? []);
   const prompt = buildChecksReviewPrompt(options.spec, bundle, baseline);
-  const verdict = Verdict.parse(await options.reviewVerdict(prompt));
+  const verdict = Verdict.parse(await options.reviewVerdict(prompt, Object.freeze({ ...bundle.files })));
   if (verdict.status !== "pass") throw new Error(`protected checks review failed: ${verdict.reason ?? "no pass verdict"}`);
   requireJustifications(verdict, reviewChanges(existing, bundle));
   // No mutable workspace is read after review. Detect a competing installer before replacing files.

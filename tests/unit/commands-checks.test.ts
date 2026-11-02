@@ -125,10 +125,12 @@ describe("jarvis checks install", () => {
     s.reviewer.mockResolvedValue(output('{"status":"fail","reason":"coverage lost"}')); await invoke(s);
     expect(process.exitCode).toBe(1); expect(s.store.hashAll()).toEqual(hashes); expect(readFileSync(s.store.lockPath, "utf8")).toBe(lock); expect(s.ledger().entries()).toHaveLength(1);
   });
-  it("uses a fresh empty workspace, strong routing and runner-owned evidence; cleans each workspace", async () => {
+  it("uses a fresh captured-check workspace, strong routing and runner-owned evidence; cleans each workspace", async () => {
     const s = setup(); const inputs: ReviewerInput[] = [];
     s.reviewer.mockImplementation(async (input) => {
-      inputs.push(input); expect(readdirSync(input.workspace)).toEqual([]); expect(input.workspace.startsWith(join(s.home, ".jarvis-work") + "/")).toBe(true);
+      inputs.push(input); expect(readdirSync(input.workspace)).toEqual(["checks"]);
+      expect(readFileSync(join(input.workspace, "checks/ac1.check.json"), "utf8")).toBe(readFileSync(join(s.proposals, "ac1.check.json"), "utf8"));
+      expect(input.prompt).toContain("strict JSON parsing and schema validation"); expect(input.workspace.startsWith(join(s.home, ".jarvis-work") + "/")).toBe(true);
       expect(input.outputDir.startsWith(join(s.project, "evidence") + "/")).toBe(true); expect(existsSync(input.outputDir)).toBe(true);
       expect(input).toMatchObject({ ...DEFAULT_ROUTING.tiers.strong, maxTurns: 20, timeoutMs: 600000 });
       expect(input.prompt).toContain("WHEN asked THE SYSTEM SHALL return the result."); expect(input.prompt).toContain('Return only JSON: {"status":"pass"');
@@ -175,4 +177,17 @@ describe("jarvis checks install", () => {
     expect(await opts.preflight(input)).toEqual({ ok: false }); expect(runDoctor).toHaveBeenCalledWith({ home: s.home, repoPath: s.repo, live: true });
     vi.mocked(allowsUnattended).mockReturnValue(true); expect(await opts.preflight(input)).toEqual({ ok: true });
   });
+});
+
+it("gives the reviewer exact captured JSON bytes without reinterpreting escaped tab/newline content", async () => {
+  const s = setup(); const proposal = check(); proposal.cases[0]!.command = "printf 'a\tb\nc'";
+  const raw = JSON.stringify(proposal); writeFileSync(join(s.proposals, "ac1.check.json"), raw);
+  s.reviewer.mockImplementation(async (input) => {
+    const captured = readFileSync(join(input.workspace, "checks/ac1.check.json"), "utf8");
+    expect(captured).toBe(raw); expect(JSON.parse(captured)).toEqual(proposal);
+    writeFileSync(join(s.proposals, "ac1.check.json"), "changed after capture");
+    return output();
+  });
+  await invoke(s); expect(process.exitCode).toBe(0);
+  expect(readFileSync(join(s.store.checksDir, "ac1.check.json"), "utf8")).toBe(raw);
 });

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { globSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -318,6 +318,20 @@ describe("mutation check plan (decision 129)", () => {
     expect(confirm.runs.length).toBeGreaterThan(fileNames().length); // plus the inline list
     for (const n of fileNames()) expect(confirm.runs, n).toContain(n);
     expect(confirm.stdout).not.toContain("other stages' mutations not run");
+  });
+
+  it("flushes the complete inventory when the pipe reader is delayed", async () => {
+    const child = spawn(process.execPath, ["scripts/mutation-check.mjs", "--confirm"], { cwd: repo, env: { PATH: process.env.PATH, JARVIS_MUTATION_PLAN: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.resume(); child.stdout.pause();
+    const resume = setTimeout(() => child.stdout.resume(), 250);
+    try {
+      const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
+      expect(code).toBe(5);
+      const runs = stdout.split("\n").filter((line) => line.startsWith("run ")).map((line) => line.slice(4));
+      for (const name of fileNames()) expect(runs).toContain(name);
+    } finally { clearTimeout(resume); }
   });
 
   it("keeps a JARVIS_MUTATIONS subset inside the stage", () => {

@@ -1,5 +1,5 @@
 ---
-description: Start any Jarvis request. Triage picks the pipeline (new product, feature, bug, refactor, question, review, release), its first skill starts and chains on, then the build goes to the runner.
+description: Start a Jarvis task. Triage selects the pipeline, skills prepare it, and reviewed local builds go to the runner.
 argument-hint: "[fix:|build:|feature:|ask:] <request>"
 ---
 
@@ -11,10 +11,10 @@ Never write Claude Code memory files (auto-memory included), with any tool; keep
 
 ## 1. Triage
 
-1. In the project folder, run `jarvis triage --json "$ARGUMENTS"`. The user's override is the first word followed by a colon: `fix:`, `build:`, `feature:` or `ask:`. It always wins. Without the colon the word is prose, so "Build fails on CI" is a bug.
-2. Read the request and the result's `signals`, then run it once more with your judgment added:
-   - `--judgment <type>` when you read the type differently from the words (new-product, feature, bug, refactor, question, review, release);
-   - `--missing-behavior` when a "bug" is behavior nobody ever specified, with `--questions <n>` for the product questions it raises;
+1. In the project folder, run `jarvis triage --json "$ARGUMENTS"`. Overrides are the first word plus a colon: `fix:`, `build:`, `feature:` or `ask:`. They win. Without a colon, "Build fails on CI" is a bug.
+2. Read the request and `signals`; rerun with your judgment:
+   - `--judgment <type>` to correct the type (new-product, feature, bug, refactor, question, review, release);
+   - `--missing-behavior` for unspecified behavior, with `--questions <n>` for product questions;
    - `--new-screen` when a feature needs a kind of screen the product doesn't have; `--new-platform` and `--platform <name>` when it targets a platform or client with no UI yet, even if DESIGN.md covers another;
    - `--then <type>` for the edits a question also asks for (feature, refactor, bug, or none);
    - `--attached-error` for an attached error, stack trace or issue; `--touches <path>` for each file a quick search says the change touches;
@@ -32,6 +32,7 @@ Only after displaying the triage headline, start the steps whose `dispatch` is t
 - `decision-archaeology`: the `onboard` skill. When triage's `onboarding` is true, start it at `read-only-research`: it reads, answers and does the archaeology.
 - `review`: the `review` skill: read-only findings with fixes, no edits.
 - `review-report`: its report mode, written to triage's `review.report`.
+- `architecture`: the `architect` skill, only after spec is confirmed or unconfirmed; a draft stops. It checkpoints planning documents, installs checks and obtains a counted plan review.
 
 When `then` is set, do the steps above first, then treat `then` as the pipeline: its `steps`, `never` and `handoff`. Steps whose `by` is `runner` happen after the hand-off; don't do them here.
 
@@ -41,6 +42,6 @@ When `then` is set, do the steps above first, then treat `then` as the pipeline:
 - `handoff: "now"`: once the session steps, if any, are done.
 - `handoff: "none"`: stop after the answer or the review.
 
-**Plan review before the runner** (decision 170): three fresh read-only lenses judge the architecture step's plan; it resolves each blocker or major by evidence, fix or escalation; the runner refuses a plan without a counted review.
+**Local build hand-off** (decision 186): after the architect reports approved checks and a counted plan review, run `jarvis run --local --detach`. For a bug, pass the original report with `jarvis run --local --request "$ARGUMENTS" --detach`; it requires an installed unit check. Other session plans keep their explicit `--plan` selector. Release requests stop: deployment is outside this local workflow.
 
-**Stage 2 hand-off: Say what's ready and stop.** Name the spec and its status, the design and any unconfirmed assumptions. Do not invoke `jarvis run`, even with `--help`, or inspect runner options. Say only: "When the build runner is available, start it from the project folder with `jarvis run --detach`." Do not claim a run has started or that it is safe to close Claude Code.
+Stop on any refusal; never bypass a failed gate. Report the pid and log path. Launch is not completion: inspect the log and runner status/report before claiming success. Never say it is safe to close Claude Code until the detached launch succeeds.

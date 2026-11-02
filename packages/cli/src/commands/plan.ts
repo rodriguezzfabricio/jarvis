@@ -16,6 +16,7 @@ import { createClaudeReviewer } from "../harness/claude/review.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { readPlanningFile } from "../runner/checks-author.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
+import { checkpointPlan } from "../runner/plan-checkpoint.ts";
 import { acceptEscalation, canonicalPlan, planHashOf, planReviewStatus, resolvePlanReview } from "../review/plan-resolve.ts";
 import { createPlanReviewService, lensDiagnostics, savePlanCalibration, type PlanFixture, type PlanReviewMaterial, type PlanReviewResult } from "../review/plan-service.ts";
 import { DEFAULT_REVIEW_ROUTING } from "../review/routing.ts";
@@ -99,6 +100,13 @@ function calibrationMaterial(fixture: PlanFixture, deps: PlanCommandOptions, hom
 export function register(program: Command, deps: PlanCommandOptions = {}): void {
   const out = deps.out ?? ((text: string) => console.log(text));
   const plan = program.command("plan").description("The Goldfish plan review between the architect and the build loop (decision 170)");
+  plan.command("checkpoint").description("Commit confirmed planning documents only, before checks and plan review")
+    .option("--repo <dir>", "project repository (default: current directory)")
+    .action((options: { repo?: string }) => {
+      const home = deps.home ?? homedir();
+      try { (deps.out ?? console.log)(`Planning checkpoint ${checkpointPlan(resolve(options.repo ?? process.cwd()), home)}`); }
+      catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+    });
   plan.command("review").description("Review .jarvis/plan.json with three fresh read-only lenses; writes .jarvis/plan-review/findings.json")
     .option("--repo <dir>", "project repository (default: current directory)")
     .option("--calibrate <fixture>", "run the negative control on the bad or good fixture instead of the project's plan")

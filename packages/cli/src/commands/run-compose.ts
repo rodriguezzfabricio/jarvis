@@ -154,6 +154,7 @@ export function approvedSpec(git: (args: readonly string[]) => string, branch: s
   const text = git(["show", `refs/heads/${branch}:${path}`]);
   const checked = checkSpec(text, path);
   if (!checked.ok) throw new Error(`the approved spec ${path} does not check: ${checked.problems.map((p) => `line ${p.line} ${p.code}`).join("; ")}`);
+  if (checked.spec.status === "draft") throw new Error(`${path} is draft; finish confirmation before running`);
   return { version, path, text, spec: checked.spec };
 }
 

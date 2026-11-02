@@ -238,7 +238,7 @@ describe("triage: features", () => {
     const t = run(TASK1);
     expect(t.type).toBe("feature");
     expect(t.tier).toBe(2);
-    expect(ids(t)).toEqual(["register-check", "spike", "intake", "spec", "build-loop", "lanes", "report"]);
+    expect(ids(t)).toEqual(["register-check", "spike", "intake", "spec", "architecture", "build-loop", "lanes", "report"]);
     expect(t.never).toEqual(["mockups", "design direction"]);
     expect(t.mockups).toBe(false);
     expect(t.handoff).toBe("after-spec");
@@ -257,7 +257,7 @@ describe("triage: features", () => {
 
   it("a new kind of screen with no DESIGN.md runs design and mockups; with a DESIGN.md it never does", () => {
     const fresh = run("Add a weekly report screen", { judgment: { type: "feature", newScreen: true } });
-    expect(ids(fresh)).toEqual(["register-check", "spike", "intake", "spec", "design", "build-loop", "lanes", "report"]);
+    expect(ids(fresh)).toEqual(["register-check", "spike", "intake", "spec", "design", "architecture", "build-loop", "lanes", "report"]);
     expect(fresh.never).toEqual([]);
     expect(fresh.mockups).toBe(true);
     const designed = triage({ request: "Add a weekly report screen", folder: { empty: false, designMd: true }, judgment: { type: "feature", newScreen: true } });

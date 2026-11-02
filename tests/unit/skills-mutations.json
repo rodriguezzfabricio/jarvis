@@ -240,10 +240,10 @@
     "replacement": "Start with progress; optionally show the headline later"
   },
   {
-    "name": "skills intake handoff invokes runner help",
+    "name": "skills local handoff bypasses failed gate",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "Do not invoke `jarvis run`, even with `--help`, or inspect runner options.",
-    "replacement": "Invoke `jarvis run --help` before handing off."
+    "anchor": "Stop on any refusal; never bypass a failed gate.",
+    "replacement": "Ignore any refusal and start the build anyway."
   },
   {
     "name": "skills spec explicit yes becomes empty defaults",

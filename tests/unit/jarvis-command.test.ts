@@ -96,7 +96,7 @@ describe("/jarvis command", () => {
   });
 
   it("ends with the hand-off once the spec is confirmed or defaulted", () => {
-    const handoff = body.indexOf("`jarvis run --detach`");
+    const handoff = body.indexOf("`jarvis run --local --detach`");
     expect(handoff).toBeGreaterThan(-1);
     expect(handoff).toBeGreaterThan(Math.max(...skillRefs.map((r) => r.at)));
     const tail = body.slice(body.indexOf("## 3."));

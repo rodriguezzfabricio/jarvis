@@ -128,7 +128,7 @@
   {
     "name": "planning fresh review on change",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "const verdict = Verdict.parse(await options.reviewVerdict(prompt));",
+    "anchor": "const verdict = Verdict.parse(await options.reviewVerdict(prompt, Object.freeze({ ...bundle.files })));",
     "replacement": "const verdict = ledger.entries().some((e) => e.kind === \"checks_approved\") ? { status: \"pass\" } : Verdict.parse(await options.reviewVerdict(prompt));"
   },
   {
@@ -512,13 +512,13 @@
   {
     "name": "build session ignores plan tier",
     "file": "packages/cli/src/runner/loop.ts",
-    "anchor": "runHeaderPath: headerPath, role: \"build\", tier: this.opts.tier ?? 1,",
+    "anchor": "runHeaderPath: headerPath, role: \"build\", tier,",
     "replacement": "runHeaderPath: headerPath, role: \"build\", tier: 1,"
   },
   {
     "name": "build usage ignores plan tier",
     "file": "packages/cli/src/runner/loop.ts",
-    "anchor": "attemptId: workspace.attemptId, role: \"build\", tier: this.opts.tier ?? 1,",
+    "anchor": "attemptId: workspace.attemptId, role: \"build\", tier,",
     "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
   },
   {
@@ -602,8 +602,8 @@
   {
     "name": "planning refactor resume matches bug condition",
     "file": "packages/cli/src/runner/plan.ts",
-    "anchor": "t.exitCondition === plan.tasks[0]!.exitCondition",
-    "replacement": "t.exitCondition === BUG_EXIT_CONDITION"
+    "anchor": "canonical(prior) === canonical(definition)",
+    "replacement": "prior.exitCondition === BUG_EXIT_CONDITION"
   },
   {
     "name": "planning checkpoint follows Git symlinks",
@@ -628,5 +628,41 @@
     "file": "packages/cli/src/runner/plan.ts",
     "anchor": "const classified = result.then ?? result;",
     "replacement": "const classified = { ...result, type: \"question\" as const };"
+  },
+  {
+    "name": "planning checkpoint allows commondir redirection",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (marker?.isDirectory() && lstatSync(join(repo, \".git/commondir\"), { throwIfNoEntry: false }))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning checkpoint skips Git storage validation",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "function assertGitStorage(root: string): void {",
+    "replacement": "function assertGitStorage(root: string): void { return;"
+  },
+  {
+    "name": "planning checkpoint reads oversized committed specs",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "      if (!Number.isSafeInteger(size) || size < 0 || size > 256 * 1024 || (historicalBytes += size) > 4 * 1024 * 1024) throw new Error(\"committed planning history exceeds byte limit\");\n      const old = safeGit(repo, [\"show\", `${head}:${path}`], { home, maxBuffer: 256 * 1024 }).toString();",
+    "replacement": "      if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || (historicalBytes += size) > 4 * 1024 * 1024) throw new Error(\"committed planning history exceeds byte limit\");\n      const old = safeGit(repo, [\"show\", `${head}:${path}`], { home, maxBuffer: 1024 ** 3 }).toString();"
+  },
+  {
+    "name": "planning mixed handoff ignores no-edit question",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "type: primary.type === \"question\" ? \"question\" : selected.type",
+    "replacement": "type: selected.type"
+  },
+  {
+    "name": "planning direct requests reuse weaker risk evidence",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "riskTier === classified.tier && canonical(prior)",
+    "replacement": "canonical(prior)"
+  },
+  {
+    "name": "planning resumed task loses recorded risk floor",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "Math.max(this.opts.tier ?? 1, task.definition.riskTier ?? 0)",
+    "replacement": "(this.opts.tier ?? 1)"
   }
 ]

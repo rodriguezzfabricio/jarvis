@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -114,4 +114,34 @@ it("bootstraps an empty project before intake without committing or requiring a 
   const nested = join(p.repo, "nested"); mkdirSync(nested);
   expect(() => initializePlanningRepository(nested, p.root)).toThrow(/repository root/);
   expect(existsSync(join(nested, ".git"))).toBe(false);
+});
+
+it("refuses a directory-style Git commondir redirect without changing the foreign branch", () => {
+  const p = project(), other = project(); checkpointPlan(other.repo, other.root);
+  const head = other.git(["rev-parse", "HEAD"]);
+  mkdirSync(join(p.repo, ".git"));
+  writeFileSync(join(p.repo, ".git/HEAD"), "ref: refs/heads/main\n");
+  writeFileSync(join(p.repo, ".git/commondir"), join(other.repo, ".git") + "\n");
+  writeFileSync(join(p.repo, "PRODUCT.md"), "must stay local");
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/common|redirect/i);
+  expect(other.git(["rev-parse", "HEAD"])).toBe(head);
+});
+it("bounds committed spec blobs before reading or parsing approved history", () => {
+  const p = project(); p.git(["init", "-q", "-b", "main"]);
+  writeFileSync(join(p.repo, "docs/spec/v1.md"), "x".repeat(256 * 1024 + 1));
+  p.git(["add", "docs/spec/v1.md"]); p.git(["commit", "-qm", "oversized history"]);
+  const head = p.git(["rev-parse", "HEAD"]);
+  writeFileSync(join(p.repo, "docs/spec/v1.md"), spec);
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/byte limit/);
+  expect(p.git(["rev-parse", "HEAD"])).toBe(head);
+});
+
+it.each(["objects", "refs"])("refuses redirected Git %s storage before writing", (folder) => {
+  const p = project(), other = project(); checkpointPlan(other.repo, other.root);
+  p.git(["init", "-q", "-b", "main"]);
+  renameSync(join(p.repo, ".git", folder), join(p.repo, ".git", folder + "-original"));
+  symlinkSync(join(other.repo, ".git", folder), join(p.repo, ".git", folder));
+  const head = other.git(["rev-parse", "HEAD"]);
+  expect(() => checkpointPlan(p.repo, p.root)).toThrow(/Git storage.*symlink/i);
+  expect(other.git(["rev-parse", "HEAD"])).toBe(head);
 });

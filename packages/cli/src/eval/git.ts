@@ -27,6 +27,6 @@ export function runnerGitEnv(home: string): Record<string, string> {
   };
 }
 
-export function safeGit(cwd: string, args: readonly string[], opts: { home: string; input?: Buffer; env?: Record<string, string> } ): Buffer {
-  return execFileSync("git", [...SAFE_CONFIG, ...args], { cwd, input: opts.input, env: { ...runnerGitEnv(opts.home), ...(opts.env ?? {}) }, maxBuffer: 1024 ** 3 });
+export function safeGit(cwd: string, args: readonly string[], opts: { home: string; input?: Buffer; maxBuffer?: number; env?: Record<string, string> } ): Buffer {
+  return execFileSync("git", [...SAFE_CONFIG, ...args], { cwd, input: opts.input, env: { ...runnerGitEnv(opts.home), ...(opts.env ?? {}) }, maxBuffer: opts.maxBuffer ?? 1024 ** 3 });
 }

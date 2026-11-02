@@ -93,21 +93,27 @@ export interface ReviewDeps {
  */
 export function reviewMaterialFor(deps: ReviewDeps, taskId: string, revision: string): ReviewMaterial {
   const task = rebuildState(deps.ledger.entries(), { now: Date.now() }).tasks[taskId];
+  const reviewTier = Math.max(deps.tier, task?.definition.riskTier ?? 0) as TaskTier;
   // The diff is against the candidate's first parent: its workspace base, or the head a runner merge was made on.
   const baseRevision = deps.git(["rev-parse", "--verify", `${revision}^1`]);
   const bug = deps.bugRequest?.tasks.get(taskId);
-  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, ...(bug.exitCondition === BUG_EXIT_CONDITION ? { kind: "bug" as const } : {}),
+  if (bug) return { repoPath: deps.context.repoPath, baseRevision, tier: reviewTier, ...(bug.exitCondition === BUG_EXIT_CONDITION ? { kind: "bug" as const } : {}),
     spec: `Request, as typed: ${deps.bugRequest!.request}\nGoal: ${bug.goal}\nExit condition: ${bug.exitCondition}`, acceptanceCriteria: [bug.exitCondition] };
   if (deps.reviewFix) {
     const def = task?.definition ?? deps.reviewFix.tasks.get(taskId);
     return {
-      repoPath: deps.context.repoPath, baseRevision, tier: deps.reviewFix.bugTasks.has(taskId) ? 2 : deps.tier,
+      repoPath: deps.context.repoPath, baseRevision, tier: deps.reviewFix.bugTasks.has(taskId) ? 2 : reviewTier,
       spec: `Request, as typed: ${deps.reviewFix.request}\nGoal: ${def?.goal ?? "-"}\nExit condition: ${def?.exitCondition ?? "-"}`,
       acceptanceCriteria: def?.exitCondition ? [def.exitCondition] : [],
       ...(deps.reviewFix.bugTasks.has(taskId) ? { kind: "bug" as const } : {}),
     };
   }
-  return { repoPath: deps.context.repoPath, baseRevision, tier: deps.tier, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
+  if (!deps.spec && task) return {
+    repoPath: deps.context.repoPath, baseRevision, tier: reviewTier,
+    spec: `Goal: ${task.definition.goal}\nExit condition: ${task.definition.exitCondition}`,
+    acceptanceCriteria: task.definition.exitCondition ? [task.definition.exitCondition] : [],
+  };
+  return { repoPath: deps.context.repoPath, baseRevision, tier: reviewTier, spec: deps.spec?.text ?? "", acceptanceCriteria: task?.definition.acceptanceCriteria ?? [] };
 }
 
 /**
@@ -131,7 +137,7 @@ export function reviewRunFor(repoPath: string, report: string, ledger: Ledger, c
   const target = changes ? reportTargetProblem(report, inHead(report)) : undefined;
   if (target) throw new ReviewOutputError("report-refused", target);
   commitReportOnly(git, report, `review report ${report} (written by the review session)`);
-  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
+  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, ...t.definition }));
   // The limits come from the opt-in (`--limit`), never from the request's words.
   return { output, fix: reviewFixPlan(output, checks, existing, optIn.limits) };
 }
@@ -190,7 +196,7 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
   if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
-  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
+  const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, ...t.definition }));
   const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing, context.requestHandoff)
     : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
   // The Goldfish gate (decision 170): an architect's plan builds only after a counted plan review at its hash passed, or every

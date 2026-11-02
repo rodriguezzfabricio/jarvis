@@ -50,3 +50,19 @@ it("refuses changed task IDs on a second run instead of reusing old completion e
   expect(f.git(["rev-parse", "HEAD"])).toBe(head);
   expect(f.ledger.entries().filter((e) => e.kind === "task_created" && e.task_id === "T1")).toHaveLength(1);
 });
+
+it("refuses old completed evidence when the same plan is rerun at a higher risk tier", async () => {
+  const f = fixture();
+  const plan = { tasks: [{ id: "T2", goal: "risk-sensitive work", exitCondition: "verified", dependencies: ["T1"] }] };
+  expect((await runLoop({ ...f.options, plan, tier: 0 })).done).toEqual(["T1", "T2"]);
+  const count = f.calls.length;
+  await expect(runLoop({ ...f.options, plan, tier: 2 })).rejects.toThrow(/T2.*fresh task ID/);
+  expect(f.calls).toHaveLength(count);
+});
+
+it("retains a recorded task's risk floor when resuming from the ledger without a plan", async () => {
+  const f = fixture();
+  f.ledger.append({ kind: "task_created", actor: "runner", task_id: "T2", data: { goal: "high risk task", exitCondition: "verified", riskTier: 2, dependencies: ["T1"] } });
+  await runLoop({ ...f.options, tier: 0 });
+  expect(f.calls.find((c) => c.prompt.includes("Task: T2"))?.tier).toBe(2);
+});

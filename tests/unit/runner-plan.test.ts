@@ -203,7 +203,7 @@ it("allocates a bug handoff after existing tasks and resumes only the matching b
   const existing = [{ id: "T1", goal: "unrelated", exitCondition: "done" }];
   const plan = bugRequestPlan(request, checks, existing);
   expect(plan.tasks[0]!.id).toBe("T2");
-  expect(bugRequestPlan(request, checks, [...existing, plan.tasks[0]!]).tasks[0]!.id).toBe("T2");
+  expect(bugRequestPlan(request, checks, [...existing, { ...plan.tasks[0]!, riskTier: plan.tier! }]).tasks[0]!.id).toBe("T2");
   expect(() => bugRequestPlan("Build a new dashboard", checks, existing)).toThrow(/bug.*spec/);
 });
 it("hands a refactor to the existing behavior-preservation task without inventing a spec", async () => {
@@ -211,7 +211,7 @@ it("hands a refactor to the existing behavior-preservation task without inventin
   const request = "Refactor src/store.mjs into smaller functions without changing behavior.";
   const plan = bugRequestPlan(request, [{ name: "unit" }]);
   expect(plan.tasks[0]).toMatchObject({ id: "T1", acceptanceCriteria: [], requiredChecks: ["unit"], exitCondition: "Pinned behavior remains unchanged and the unit check and code review pass." });
-  expect(bugRequestPlan(request, [{ name: "unit" }], plan.tasks).tasks[0]!.id).toBe("T1");
+  expect(bugRequestPlan(request, [{ name: "unit" }], plan.tasks.map((t) => ({ ...t, riskTier: plan.tier! }))).tasks[0]!.id).toBe("T1");
 });
 
 it("preserves final mixed-request triage, risk floor and exact file boundaries", async () => {
@@ -224,4 +224,26 @@ it("preserves final mixed-request triage, risk floor and exact file boundaries",
   expect(() => bugRequestPlan("feature: add a page", [{ name: "unit" }], [], { type: "bug", tier: 0 })).toThrow(/spec/);
   expect(() => bugRequestPlan("ask: explain it, do not edit", [{ name: "unit" }], [], { type: "refactor", tier: 1 })).toThrow(/spec/);
   expect(() => bugRequestPlan(request, [{ name: "unit" }], [], { type: "refactor", tier: 1, touches: ["../outside"] })).toThrow();
+});
+
+it("retains the no-edit veto on an unprefixed mixed request with supplied triage", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  expect(() => bugRequestPlan("Explain the store and refactor it; do not edit any files", [{ name: "unit" }], [], { type: "refactor", tier: 1 })).toThrow(/spec/);
+});
+it("allocates a fresh task for a raised risk tier instead of reusing weaker evidence", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Fix the typo in the item output";
+  const low = bugRequestPlan(request, [{ name: "unit" }], [], { type: "bug", tier: 0 });
+  const existing = [{ ...low.tasks[0]!, riskTier: low.tier! }];
+  const high = bugRequestPlan(request, [{ name: "unit" }], existing, { type: "bug", tier: 2 });
+  expect(high.tasks[0]!.id).toBe("T2"); expect(high.tier).toBe(2);
+  expect(bugRequestPlan(request, [{ name: "unit" }], existing, { type: "bug", tier: 0 }).tasks[0]!.id).toBe("T1");
+});
+
+it("allocates a new direct task when its exact file boundary changes", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Fix the item typo", checks = [{ name: "unit" }];
+  const old = bugRequestPlan(request, checks, [], { type: "bug", tier: 1, touches: ["src/store.mjs"] });
+  const next = bugRequestPlan(request, checks, [{ ...old.tasks[0]!, riskTier: old.tier! }], { type: "bug", tier: 1, touches: ["src/store.mjs", "src/cli.mjs"] });
+  expect(next.tasks[0]!.id).toBe("T2");
 });

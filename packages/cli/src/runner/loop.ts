@@ -248,7 +248,8 @@ class Loop {
   private seedPlan(): void {
     if (!this.opts.plan) return;
     this.ledger.transact((entries, add) => {
-      const pending = this.opts.plan!.tasks.map(({ id, ...data }) => {
+      const pending = this.opts.plan!.tasks.map(({ id, ...definition }) => {
+        const data = { ...definition, riskTier: this.opts.tier ?? 1 };
         const previous = entries.find((e) => e.actor === "runner" && e.kind === "task_created" && e.task_id === id);
         if (previous && canonical(previous.data) !== canonical(data)) throw new Error(`Task ${id} changed: assign a fresh task ID and review the new plan before running`);
         return previous ? undefined : { kind: "task_created" as const, actor: "runner" as const, task_id: id, data };
@@ -454,6 +455,7 @@ class Loop {
     return { onSpawn, onGroupExit, result, dispose };
   }
   private async session(task: TaskState, workspace: TaskWorkspace, repair: string, failure: EscalationReason | undefined) {
+    const tier = Math.max(this.opts.tier ?? 1, task.definition.riskTier ?? 0) as TaskTier;
     const input = this.prompt(task, workspace.path);
     const sessionDir = join(this.opts.projectDir, "sessions", randomUUID());
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
@@ -466,14 +468,14 @@ class Loop {
       let outcome: TaskOutcome & { finalMessage?: string };
       try { outcome = await this.harness.runTask({
         workspace: workspace.path, prompt: `${buildTaskPrompt(input)}${repair ? `\n\n${repair}` : ""}${task.definition.mayTouch ? `\nMay touch only: ${task.definition.mayTouch.join(", ")}` : ""}`,
-        runHeaderPath: headerPath, role: "build", tier: this.opts.tier ?? 1, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
+        runHeaderPath: headerPath, role: "build", tier, maxTurns: this.turns, timeoutMs: this.timeout, logPath: join(sessionDir, "stream.jsonl"),
         ...(failure ? { failure } : {}),
         onSpawn: observer.onSpawn, onGroupExit: observer.onGroupExit,
       }); } finally { this.footprint?.sessionEnded(); }
       const observed = observer.result(outcome);
       // A usage-log failure never fails the run; a preflight that started nothing has no usage.
-      if (observed.group) recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier: this.opts.tier ?? 1,
-        route: routeTask("build", this.opts.tier ?? 1, failure, this.routing), ...(failure ? { failure } : {}), outcome: observed.outcome });
+      if (observed.group) recordSessionUsage(this.ledger, { runId: this.runId, taskId: task.id, attemptId: workspace.attemptId, role: "build", tier,
+        route: routeTask("build", tier, failure, this.routing), ...(failure ? { failure } : {}), outcome: observed.outcome });
       return observed;
     } finally { observer.dispose(); }
   }

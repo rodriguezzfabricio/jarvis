@@ -397,3 +397,14 @@ it("spec-free bug and refactor runs ignore an unrelated committed draft", async 
   }
   await expect(prepare(p)).rejects.toThrow(/draft/);
 });
+
+it("reviews spec-free session work against its runner-owned goal and exit condition", async () => {
+  const p = project();
+  p.ledger.append({ kind: "task_created", actor: "runner", task_id: "T99", data: { goal: "Split the store without changing its public API", exitCondition: "Existing behavior and unit checks remain unchanged", riskTier: 2, requiredChecks: ["unit"], requiredReviews: ["code"] } });
+  const deps: ReviewDeps = { context: context(p), ledger: p.ledger, workRoot: p.home, cacheRoot: p.home, spec: undefined, tier: 1, git: (args) => safeGit(p.repoPath, args, { home: p.home }).toString().trim(), preflight: async () => true };
+  const revision = safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim();
+  const material = reviewMaterialFor({ ...deps, git: () => revision }, "T99", revision);
+  expect(material.spec).toContain("Split the store without changing its public API");
+  expect(material.tier).toBe(2);
+  expect(material.acceptanceCriteria).toEqual(["Existing behavior and unit checks remain unchanged"]);
+});

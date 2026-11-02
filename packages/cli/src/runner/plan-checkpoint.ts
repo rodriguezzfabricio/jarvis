@@ -1,21 +1,43 @@
-import { lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, mkdtempSync, opendirSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { safeGit } from "../eval/git.ts";
 import { listVersions, checkSpec } from "../spec/index.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
+/** Git may write objects, refs, logs and indexes below its metadata root. None may redirect. */
+function assertGitStorage(root: string): void {
+  let entries = 0;
+  const walk = (path: string, depth: number): void => {
+    if (depth > 40) throw new Error("Git storage exceeds directory depth limit");
+    const directory = opendirSync(path);
+    try {
+      for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
+        if (++entries > 100_000) throw new Error("Git storage exceeds entry limit");
+        if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new Error("Git storage must contain regular files and directories without symlinks");
+        if (entry.isDirectory()) walk(join(path, entry.name), depth + 1);
+      }
+    } finally { directory.closeSync(); }
+  };
+  walk(root, 0);
+}
+
 function assertGitMarker(repo: string): void {
   const marker = lstatSync(join(repo, ".git"), { throwIfNoEntry: false });
   if (marker?.isSymbolicLink()) throw new Error("Project .git marker may not be a symlink");
+  if (marker?.isDirectory() && lstatSync(join(repo, ".git/commondir"), { throwIfNoEntry: false })) throw new Error("Directory .git may not redirect common storage");
+  if (marker?.isDirectory()) assertGitStorage(join(repo, ".git"));
   if (marker && !marker.isDirectory()) {
     if (!marker.isFile()) throw new Error("Project .git marker must name a repository or linked worktree");
     try {
       const pointer = /^gitdir: ([^\r\n]+)\r?\n?$/.exec(readPlanningFile(repo, ".git", 4096));
       if (!pointer) throw new Error("invalid pointer");
       const gitdir = realpathSync(resolve(repo, pointer[1]!));
+      const common = realpathSync(resolve(gitdir, readPlanningFile(gitdir, "commondir", 4096).trim()));
+      if (dirname(gitdir) !== join(common, "worktrees") || !basename(gitdir) || lstatSync(join(common, "commondir"), { throwIfNoEntry: false })) throw new Error("unregistered common storage");
       const backlink = readPlanningFile(gitdir, "gitdir", 4096).trim();
       if (realpathSync(resolve(gitdir, backlink)) !== join(repo, ".git")) throw new Error("foreign pointer");
+      assertGitStorage(common);
     } catch { throw new Error("Project .git file must belong to this linked worktree"); }
   }
 }
@@ -71,9 +93,13 @@ export function checkpointPlan(repoPath: string, home: string): string {
   let head: string | undefined;
   try { head = git(["rev-parse", "--verify", "HEAD^{commit}"]); } catch { /* Unborn repository. */ }
   if (head) {
-    const previous = git(["ls-tree", "-r", "--name-only", head, "--", "docs/spec"]).split("\n").filter((path) => /^docs\/spec\/v[1-9]\d*\.md$/.test(path));
+    const previous = safeGit(repo, ["ls-tree", "-r", "--name-only", head, "--", "docs/spec"], { home, maxBuffer: 256 * 1024 }).toString().trim().split("\n").filter((path) => /^docs\/spec\/v[1-9]\d*\.md$/.test(path));
+    if (previous.length > 256) throw new Error("committed planning history exceeds 256 documents");
+    let historicalBytes = 0;
     for (const path of previous) {
-      const old = safeGit(repo, ["show", `${head}:${path}`], { home }).toString();
+      const size = Number(git(["cat-file", "-s", `${head}:${path}`]));
+      if (!Number.isSafeInteger(size) || size < 0 || size > 256 * 1024 || (historicalBytes += size) > 4 * 1024 * 1024) throw new Error("committed planning history exceeds byte limit");
+      const old = safeGit(repo, ["show", `${head}:${path}`], { home, maxBuffer: 256 * 1024 }).toString();
       const oldStatus = checkSpec(old, path).spec?.status;
       if (oldStatus !== "confirmed" && oldStatus !== "unconfirmed") continue;
       const current = contents.get(path);

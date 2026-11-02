@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AppendInput } from "../ledger/ledger.ts";
+import { canonical, type AppendInput } from "../ledger/ledger.ts";
 import type { Spec } from "../spec/index.ts";
 import { leadingOverride, triage, type Triage } from "../triage/triage.ts";
 import { readPlanningFile } from "./checks-author.ts";
@@ -149,18 +149,20 @@ export const RequestHandoffSchema = z.object({
 export type RequestHandoff = z.infer<typeof RequestHandoffSchema>;
 
 /** Runner-owned bug/refactor handoff; session-written architect plans still require an approved spec. */
-export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly { id: string; goal: string; exitCondition: string }[] = [], handoff?: RequestHandoff): Plan {
+export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly (Partial<PlanTask> & { id: string; goal: string; exitCondition: string; riskTier?: 0 | 1 | 2 | undefined })[] = [], handoff?: RequestHandoff): Plan {
   const report = text.parse(request);
   const selected = handoff === undefined ? undefined : RequestHandoffSchema.parse(handoff);
   const override = leadingOverride(report);
+  const primary = triage({ request: report, folder: { empty: false, designMd: false }, ...(override ? { override } : {}) });
   const result = triage({ request: report, folder: { empty: false, designMd: false },
     ...(override ? { override } : {}),
-    ...(selected ? { judgment: { type: selected.type, then: selected.type, tier: selected.tier }, ...(selected.touches ? { touches: selected.touches } : {}) } : {}),
+    ...(selected ? { judgment: { type: primary.type === "question" ? "question" : selected.type, then: selected.type, tier: selected.tier }, ...(selected.touches ? { touches: selected.touches } : {}) } : {}),
   });
   const classified = result.then ?? result;
   if (classified.type !== "bug" && classified.type !== "refactor") throw new Error("--request accepts only bug or refactor work; other pipelines keep their spec or explicit session-plan handoff");
   const plan = singleTaskPlan({ ...classified, ...(selected?.touches ? { touches: selected.touches } : {}) }, report, checks);
-  const same = existing.find((t) => t.goal === report && t.exitCondition === plan.tasks[0]!.exitCondition);
+  const { id: _generatedId, ...definition } = plan.tasks[0]!;
+  const same = existing.find(({ id: _id, riskTier, ...prior }) => riskTier === classified.tier && canonical(prior) === canonical(definition));
   const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
   return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });
 }

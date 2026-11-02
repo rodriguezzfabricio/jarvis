@@ -4,12 +4,14 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { projectBroker } from "../../packages/cli/src/broker/host.ts";
+import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { prepareProductionRun } from "../../packages/cli/src/commands/run-compose.ts";
 import { register } from "../../packages/cli/src/commands/run.ts";
 import type { Message, Notifier } from "../../packages/cli/src/notify/notifier.ts";
 import { runSession } from "../../packages/cli/src/proc/session.ts";
 import { latestAccepted } from "../../packages/cli/src/release/accepted.ts";
 import { parseReleaseSetup, saveReleaseSetup } from "../../packages/cli/src/release/config.ts";
+import type { DependencyPins } from "../../packages/cli/src/release/dependency-pins.ts";
 import { manifestHash, releaseRef } from "../../packages/cli/src/release/manifest.ts";
 import { prepareRelease, type ReleaseSeams } from "../../packages/cli/src/release/run.ts";
 import { runSmoke } from "../../packages/cli/src/release/smoke.ts";
@@ -88,15 +90,35 @@ function fakeFetch(served: string, fail?: string): typeof globalThis.fetch {
 
 async function runRelease(options: { failSmoke?: string } = {}): Promise<Release> {
   const p = createE2EProject({ scenario: { description: "task 11 shape: the plan's tasks, then the ship session", sessions: SESSIONS }, projectId: "habits" }); projects.push(p);
+  // Decision 173: exercise the dependency worker inside the real sandbox, with an inert package manager.
+  // The build requires its marker, so omitting the install or failing to forward these pins cannot pass.
+  const manifestPath = join(p.repoPath, "package.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+  writeFileSync(manifestPath, JSON.stringify({ ...manifest, packageManager: "npm@11.19.0" }));
+  writeFileSync(join(p.repoPath, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }));
+  safeGit(p.repoPath, ["add", "package.json", "package-lock.json"], { home: p.gitHome });
+  safeGit(p.repoPath, ["commit", "-qm", "pin the release fixture dependencies"], { home: p.gitHome });
+  p.baseRevision = safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.gitHome }).toString().trim();
+  const tools = join(p.root, "dependency-tools"); mkdirSync(tools);
+  const npm = join(tools, "npm.cjs");
+  writeFileSync(npm, `const fs = require('node:fs');
+    if (process.argv.includes('--version')) { console.log('11.19.0'); process.exit(0); }
+    if (!process.argv.includes('ci') || !process.argv.includes('--ignore-scripts')) process.exit(5);
+    fs.mkdirSync('node_modules', { recursive: true });
+    fs.writeFileSync('node_modules/.jarvis-test-install', 'installed');
+  `);
+  const dependencyPins: DependencyPins = { node: process.execPath, nodeVersion: process.versions.node,
+    npm: { bin: npm, root: tools, version: "11.19.0" }, pnpm: { bin: npm, root: tools, version: "11.7.0" } };
   seedTasks(p);
   writeFileSync(join(p.jarvisHome, "notify.json"), JSON.stringify({ baseUrl: "https://example.invalid", topic: "fake-out", replyTopic: "fake-in" }), { mode: 0o600 });
   saveReleaseSetup(p.projectDir, parseReleaseSetup({ version: 1, provider: "netlify", plan: "free", siteId: SITE, productionUrl: "https://habits.example.com",
-    build: { command: BUILD, output: "site", timeoutMs: 60_000 } }));
+    build: { command: `test -f node_modules/.jarvis-test-install && ${BUILD}`, output: "site", timeoutMs: 60_000 } }));
   const tokens = { preview: `fake-preview-${randomUUID()}`, production: `fake-production-${randomUUID()}` };
   mkdirSync(join(p.jarvisHome, "secrets"), { recursive: true, mode: 0o700 });
   writeFileSync(join(p.jarvisHome, "secrets", "house-stack.accounts.env"), `NETLIFY_PREVIEW_TOKEN=${tokens.preview}\nNETLIFY_PRODUCTION_TOKEN=${tokens.production}\n`, { mode: 0o600 });
   const provider = fakeProvider(p.root);
-  const seams: ReleaseSeams = { cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => provider.bin }, fetch: fakeFetch(provider.served, options.failSmoke) };
+  const seams: ReleaseSeams & { dependencyPins: DependencyPins } = { dependencyPins,
+    cli: { pins: { netlify: { version: "99.1.0" } }, bin: () => provider.bin }, fetch: fakeFetch(provider.served, options.failSmoke) };
   const sent: Message[] = []; const output: string[] = [];
   const notifier: Notifier = { send: async (m) => { sent.push(m); }, poll: async () => [] };
   const program = new Command().exitOverride();
@@ -133,12 +155,15 @@ describe("e2e: golden task 11's release path on a fake provider", { timeout: 600
     expect(r.output).toEqual(["Run complete: 2 done, 0 blocked"]);
     expectTaskDone(p, "T1"); expectTaskDone(p, "T2");
     expectRunSound(p);
-    expect(sessionCalls(p).map((c) => c.session)).toEqual(["T1-good", "T2-good", "ship"]);
+    const sessionNames = sessionCalls(p).map((c) => c.session);
+    expect(sessionNames.slice(0, 2).sort()).toEqual(["T1-good", "T2-good"]);
+    expect(sessionNames.slice(2)).toEqual(["ship"]);
     const ship = sessionCalls(p).find((c) => c.session === "ship")!;
     expect(ship.envelope).toEqual([]);
 
     // The release state holds now, on the revision the runner last promoted, with the broker's preview URL.
     const entries = p.ledger.entries();
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ type: "release.dependencies", status: "pass" }) })]));
     const status = releaseStatus(entries);
     expect(status.current).toMatchObject({ state: "preview-ready", previewUrl: "https://deploy-1--habits.netlify.app", productionGranted: false });
     if (status.current?.state === "built") throw new Error("web release expected");

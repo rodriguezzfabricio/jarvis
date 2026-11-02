@@ -148,5 +148,11 @@
     "file": "packages/cli/src/release/deps-lock.ts",
     "anchor": "if (name.startsWith(\"@jsr/\"))",
     "replacement": "if (false)"
+  },
+  {
+    "name": "release_run_dependency_pins",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "    ...(i.seams?.dependencyPins ? { dependencyPins: i.seams.dependencyPins } : {}) });",
+    "replacement": "    });"
   }
 ]

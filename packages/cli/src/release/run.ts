@@ -11,6 +11,7 @@ import type { RoutingTable } from "../runner/routing.ts";
 import type { runSandboxed } from "../sandbox/srt.ts";
 import { acceptedManifest, recordAcceptedManifest } from "./accepted.ts";
 import { buildRelease } from "./build.ts";
+import type { DependencyPins } from "./dependency-pins.ts";
 import { FREE_PLANS, loadReleaseSetup, releaseProjectConfig, releaseRoots, STEP_TYPE, type DesktopReleaseSetup, type WebReleaseSetup } from "./config.ts";
 import { runDesktopRelease } from "./desktop.ts";
 import type { DesktopRunDeps } from "../lanes/desktop.ts";
@@ -37,6 +38,8 @@ export interface ReleaseSeams {
   fetch?: typeof globalThis.fetch;
   gate?: (input: GateInput) => Promise<GateResult>;
   sandbox?: typeof runSandboxed;
+  /** Test-only package-manager pins; production uses config/pins.ts. */
+  dependencyPins?: DependencyPins;
   desktop?: Pick<DesktopRunDeps, "gate" | "exists" | "platform">;
 }
 export interface WebReleaseRuntime {
@@ -132,7 +135,8 @@ export async function runReleaseStep(i: ReleaseStepInput): Promise<ReleaseStepOu
 
   // 2. The runner's own build of the checked revision, registered by its digest.
   const built = await buildRelease({ ledger, project: i.projectId, projectDir: i.projectDir, jarvisHome: i.jarvisHome, workRoot: i.workRoot, repoPath: i.repoPath,
-    revision, build: setup.build, artifactRoot: runtime.config.artifactRoot, runId, gitHome: i.gitHome, ...(i.seams?.sandbox ? { sandbox: i.seams.sandbox } : {}) });
+    revision, build: setup.build, artifactRoot: runtime.config.artifactRoot, runId, gitHome: i.gitHome, ...(i.seams?.sandbox ? { sandbox: i.seams.sandbox } : {}),
+    ...(i.seams?.dependencyPins ? { dependencyPins: i.seams.dependencyPins } : {}) });
   if (built.status === "fail") return stop(built.reason);
 
   // 3. Acceptance: runner values everywhere a destination, revision or artifact is named; checked against setup.

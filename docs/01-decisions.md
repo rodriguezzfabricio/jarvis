@@ -2150,4 +2150,10 @@ Fabricio ran `jarvis setup --redo accounts.deploy,` (trailing comma) and got a N
 The Nov 2 preflight reproduced Fable's handoff: the configured global npm launcher reports codex-cli 0.166.0, while Jarvis requires 0.164.0. A mutable global launcher is not a stable version pin. Keep 0.164.0 and select the native executable at `~/.local/share/codex/versions/0.164.0/codex`, with the version directory derived from `CODEX_VERSION`. The installer and runtime use the same path. The ordinary global Codex installation remains unchanged; no fallback to it or PATH is allowed.
 
 The native executable comes from the exact `@openai/codex@0.164.0` npm distribution, installed into a separate runner cache with lifecycle scripts disabled. npm verifies registry integrity during installation. The runtime's exact version refusal and reviewer confinement remain required. This repairs the prerequisite; it does not approve any unfinished stage or replace a live confined review.
+
+### 177. The release composition test must exercise the dependency step (Nov 2, 2026; takeover integrator; follows 173; settles backlog 244)
+
+The first Nov 2 full suite on `c14075d` passed 4,632 tests and failed both web release integration cases. One hit backlog 244's unsupported ordering assumption; the other stopped at decision 173's dependency check because the older fixture had neither `packageManager` nor a lockfile. The fixture's shell build needs no external packages, but its Node manifest still requires the release dependency policy.
+
+Give that fixture a committed exact package-manager declaration and lockfile. Forward test-only dependency pins through the existing release seams, so an inert package manager runs under the real dependency worker and sandbox. The build requires a marker produced by that process; a skipped install cannot satisfy the test. Production retains its default pins and all dependency refusals. Assert that both independent build sessions finish before the ship session, without imposing an order between the two builders.
 *From:* Fabricio's two Nov 1 reports through the release worker's transcript; the integrator.

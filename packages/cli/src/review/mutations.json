@@ -398,7 +398,7 @@
   {
     "name": "review prompt omits check names",
     "file": "packages/cli/src/review/service.ts",
-    "anchor": "The output must also carry checked, listing spec-criteria (the spec’s criteria for this task), data-flow (the data flow of the change), error-paths (its error paths), unchanged-callers (the callers it did not change), and for a bug task bug-brief-inputs (the two traced inputs of the bug brief). A name may be listed only after you read the relevant code or spec criteria. An output without the required checks is invalid.",
+    "anchor": "The output must also carry checked, listing spec-criteria (the spec\u2019s criteria for this task), data-flow (the data flow of the change), error-paths (its error paths), unchanged-callers (the callers it did not change), and for a bug task bug-brief-inputs (the two traced inputs of the bug brief). A name may be listed only after you read the relevant code or spec criteria. An output without the required checks is invalid.",
     "replacement": "Report your findings."
   },
   {
@@ -502,5 +502,11 @@
     "file": "packages/cli/src/review/verdict.ts",
     "anchor": "/^(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)$/",
     "replacement": "/^(?:0|1)(?:\\.[0-9]+)?$/"
+  },
+  {
+    "name": "Codex runtime tool error counts as completed review",
+    "file": "packages/cli/src/review/codex.ts",
+    "anchor": " || e.item?.type === \"error\"",
+    "replacement": ""
   }
 ]

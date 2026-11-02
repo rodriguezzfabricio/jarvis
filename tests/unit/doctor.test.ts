@@ -23,6 +23,11 @@ function deps(over: Partial<DoctorDeps> = {}): DoctorDeps {
 }
 const level = (cs: Awaited<ReturnType<typeof runDoctor>>, n: string) => cs.find((c) => c.name === n)?.level;
 
+it("warns when the pinned Codex tool host is absent even if --version works", async () => {
+  const checks = await runDoctor(deps({ exists: (path) => !path.endsWith("codex-code-mode-host") }));
+  expect(level(checks, "codex_tool_host")).toBe("warn");
+});
+
 describe("jarvis doctor", () => {
   it("passes on a healthy machine and allows unattended runs", async () => {
     const cs = await runDoctor(deps());

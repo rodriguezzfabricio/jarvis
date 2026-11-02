@@ -35,7 +35,7 @@ const mode=${JSON.stringify(mode)};
 if(mode==='timeout') { process.on('SIGTERM',()=>{ writeFileSync(val('-o'),JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]})); console.log(JSON.stringify({type:'turn.completed'})); process.exit(0); }); setInterval(()=>{},1000); }
 else if(mode==='limit') { console.log(JSON.stringify({type:'error',message:"You've hit your usage limit"})); console.log(JSON.stringify({type:'turn.failed'})); process.exit(1); }
 else if(mode==='unrelated') { console.log("You've hit your usage limit"); process.exit(2); }
-else { writeFileSync(val('-o'), mode==='garbage'?'not-json':JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]})); console.log(JSON.stringify({type:mode==='failed'?'turn.failed':'turn.completed'})); }
+else { writeFileSync(val('-o'), mode==='garbage'?'not-json':JSON.stringify({findings:[],checked:["spec-criteria","data-flow","error-paths","unchanged-callers"]})); if(mode==='tool-error') console.log(JSON.stringify({type:'item.completed',item:{type:'error',message:'Code Mode host unavailable'}})); console.log(JSON.stringify({type:mode==='failed'?'turn.failed':'turn.completed'})); }
 `, { mode: 0o700 });
   }
   const input: ReviewerInput = { workspace, outputDir, prompt: "review candidate", model: "gpt-6.1-sol", effort: "high", maxTurns: 10, timeoutMs: mode === "timeout" ? 1500 : 20_000 };
@@ -72,7 +72,7 @@ describe("isolated Codex reviewer", () => {
     const s = setup("limit");
     expect((await s.reviewer(s.input)).fallbackReason).toBe("usage_limit");
   });
-  it.skipIf(!darwin).each(["garbage", "failed", "unrelated", "timeout"])("never offers fallback for %s", async (mode) => {
+  it.skipIf(!darwin).each(["garbage", "failed", "unrelated", "timeout", "tool-error"])("never offers fallback for %s", async (mode) => {
     const s = setup(mode); const r = await s.reviewer(s.input);
     expect(r.fallbackReason).toBeUndefined();
     if (mode !== "garbage") expect(r.error).toBeTruthy();

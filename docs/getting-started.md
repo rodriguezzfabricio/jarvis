@@ -22,10 +22,13 @@ The Codex reviewer uses its own versioned executable (decision 176), so updating
 npm install --prefix "$HOME/.jarvis-work/cache/codex/0.164.0" --ignore-scripts --no-audit --no-fund --save-exact @openai/codex@0.164.0
 mkdir -p "$HOME/.local/share/codex/versions/0.164.0"
 cp -n "$HOME/.jarvis-work/cache/codex/0.164.0/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex" "$HOME/.local/share/codex/versions/0.164.0/codex"
+cp -n "$HOME/.jarvis-work/cache/codex/0.164.0/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex-code-mode-host" "$HOME/.local/share/codex/versions/0.164.0/codex-code-mode-host"
 "$HOME/.local/share/codex/versions/0.164.0/codex" --version
 ```
 
 On Intel Macs, the source package and target directory are `codex-darwin-x64` and `x86_64-apple-darwin`. The final command must print exactly `codex-cli 0.164.0`; keep any mismatching installation for diagnosis instead of using it for reviews.
+
+The companion host is required for review tools. A working version banner alone does not prove that the reviewer can read source files; `jarvis doctor` checks the host's presence, and runtime tool errors refuse the review (decision 189).
 
 ## Install
 
@@ -63,7 +66,9 @@ Open your project in Claude Code. Restart Claude Code after installing the plugi
 
 `fix:`, `build:`, `feature:` and `ask:` explicitly select a request type. Without a prefix, Jarvis classifies the request. New products and ambiguous features go through intake; straightforward bugs can skip it.
 
-The intended flow hands an approved plan and protected checks to `jarvis run --detach`. An architect's plan (`.jarvis/plan.json`) also needs a counted Goldfish review at its hash (`jarvis plan review`, decision 170); until the live negative control has passed on this Mac and its pair is saved, that review does not count and the run is refused. A detached run continues after the interactive Claude Code session closes, while the Mac stays awake. Some handoff paths are still being evaluated. If the runner reports missing approved checks or a spec, the project is not ready; setup does not create those project-specific inputs.
+The local flow runs the architect after spec/design, checkpoints validated planning documents with `jarvis plan checkpoint`, obtains check and plan reviews, and hands off with `jarvis run --local --detach`. An architect's plan (`.jarvis/plan.json`) needs a counted Goldfish review at its hash (`jarvis plan review`, decision 170); until both live controls pass and their pair is saved, that review does not count. Draft specs and failed gates stop the handoff. Setup does not create project-specific planning inputs.
+
+`--local` skips release preparation even when deployment is configured, keeps broker actions in the local outbox, and disables phone traffic for the run. Model sessions still use their confined service connections. After a successful detached launch, the run can continue when Claude Code closes; a printed pid/log means started, not completed. Use status and report to inspect the actual outcome. Local end-to-end validation and formal stage proofs remain recorded separately in [the current verification report](reviews/local-e2e-2026-11-02.md).
 
 The interactive session uses your normal Claude Code permissions. Sandboxed unattended sessions use Jarvis’s generated settings. Installing the plugin adds hooks at user scope; action restrictions apply to Jarvis-marked sessions, while runner-home protection also applies elsewhere. To disable the plugin, use the pinned binary:
 
@@ -100,9 +105,10 @@ From `jarvis --help` today:
 | `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register; `--by user` needs `--answer <answerSeq>:<questionId>` from a recorded intake answer, quoted exactly |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
+| `jarvis plan checkpoint [--repo <dir>]` | Commits only validated planning documents; preserves unrelated staged work and refuses edits to approved spec content |
 | `jarvis plan review [--calibrate bad\|good] [--save-calibration <bad>:<good>]` | The Goldfish plan review (decision 170): three fresh read-only reviewers on the strong tier judge `.jarvis/plan.json` against the spec, the register and the approved checks; findings land in `.jarvis/plan-review/findings.json`. A review counts only after the negative control passed for this policy and model; until then `jarvis run` refuses architect plans |
 | `jarvis plan resolve` / `jarvis plan accept <id> --answer <text>` / `jarvis plan status` | Records the architect's resolution of each finding (contest with evidence, fix, escalate, decline; decision 172); answers an escalated question as the user; says whether `jarvis run` will accept the plan |
-| `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
+| `jarvis run --local [--detach] [--request <bug-or-refactor>] [--plan onboard\|sweep]` | Local build loop: live canary, protected checks, independent review and promotion of what passed. No release or phone traffic; detached launch is not completion |
 | `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approvals [--project <id>] [--json]` | Lists pending approvals, read-only: id, operation, the broker's summary, payload hash prefix, when and which task asked |
@@ -119,7 +125,7 @@ From `jarvis --help` today:
 
 ## Notifications
 
-Setup can create ntfy topics for questions and replies. Subscribe using the ntfy app, then run `jarvis setup --send-test`. Treat topic names as secrets: anyone who knows an unprotected topic can read or publish to it. Without notifications, answer intake in the interactive session. Phone approvals during unattended builds are still being implemented.
+Setup can create ntfy topics for questions and replies. Subscribe using the ntfy app, then run `jarvis setup --send-test`. Treat topic names as secrets: anyone who knows an unprotected topic can read or publish to it. Without notifications, answer intake in the interactive session. During `run --local`, approvals stay in the terminal through `jarvis approvals`, `jarvis approve` and `jarvis reject`.
 
 ## Troubleshooting
 

@@ -62,7 +62,7 @@
   {
     "name": "Design review must complete",
     "file": "packages/cli/src/review/design-codex.ts",
-    "anchor": "if (!events.some(e => e.type === \"turn.completed\") || events.some(e => e.type === \"turn.failed\"))",
+    "anchor": "if (!codexTurnCompleted(result.stdout))",
     "replacement": "if (false)"
   },
   {

@@ -522,9 +522,9 @@
     "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
   },
   {
-    "name": "stage3 fixes bug handoff requires bug triage",
+    "name": "direct handoff requires bug or refactor triage",
     "file": "packages/cli/src/runner/plan.ts",
-    "anchor": "if (classified.type !== \"bug\") throw",
+    "anchor": "if (classified.type !== \"bug\" && classified.type !== \"refactor\") throw",
     "replacement": "if (false) throw"
   },
   {

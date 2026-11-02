@@ -41,7 +41,7 @@ describe("confined design Codex", () => {
     expect((await f.review(f.input)).error).toContain("canary readable");
     expect(f.session).not.toHaveBeenCalled();
   });
-  it.each(["wrong-version", "timeout", "overflow", "crash", "incomplete", "failed-event", "invalid-verdict", "symlink-verdict", "modified-checkout"]) ("fails closed: %s", async fault => {
+  it.each(["wrong-version", "timeout", "overflow", "crash", "incomplete", "failed-event", "tool-error", "invalid-verdict", "symlink-verdict", "modified-checkout"]) ("fails closed: %s", async fault => {
     const f = setup();
     f.session.mockImplementation(async spec => {
       if (spec.args.includes("--version")) return done(fault === "wrong-version" ? "codex-cli 0.1.0" : "codex-cli 0.164.0");
@@ -49,7 +49,7 @@ describe("confined design Codex", () => {
       if (fault === "modified-checkout") writeFileSync(join(f.input.workspace, "changed"), "oops");
       if (fault === "symlink-verdict") { writeFileSync(join(root, "target"), good); symlinkSync(join(root, "target"), join(f.input.outputDir, "verdict.json")); }
       else writeFileSync(join(f.input.outputDir, "verdict.json"), fault === "invalid-verdict" ? "{}" : good);
-      return { ...done(fault === "incomplete" ? "{}" : fault === "failed-event" ? '{"type":"turn.failed"}\n{"type":"turn.completed"}' : '{"type":"turn.completed"}'), timedOut: fault === "timeout", overflowed: fault === "overflow" };
+      return { ...done(fault === "incomplete" ? "{}" : fault === "failed-event" ? '{"type":"turn.failed"}\n{"type":"turn.completed"}' : fault === "tool-error" ? '{"type":"item.completed","item":{"type":"error","message":"Code Mode host unavailable"}}\n{"type":"turn.completed"}' : '{"type":"turn.completed"}'), timedOut: fault === "timeout", overflowed: fault === "overflow" };
     });
     expect((await f.review(f.input)).error).toBeTruthy();
     expect(f.close).toHaveBeenCalledOnce();

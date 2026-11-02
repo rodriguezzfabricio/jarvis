@@ -9,6 +9,7 @@ import {
   DISK_SINGLE_WRITER_BYTES,
   pinnedClaudeBin,
   pinnedCodexBin,
+  pinnedCodexToolHost,
 } from "../config/pins.ts";
 import { buildChildEnv, findForbiddenEnv, runCanaryProbe, type ProbeOptions } from "../harness/claude/index.ts";
 import { toolDoctorChecks, type ToolDoctorDeps } from "./tools.ts";
@@ -79,6 +80,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
 
   // Pinned Codex for cross-model review; the Claude reviewer is the fallback (decision 66).
   const codex = pinnedCodexBin(home);
+  const codexHost = pinnedCodexToolHost(home);
+  add("codex_tool_host", exists(codexHost) ? "pass" : "warn", exists(codexHost) ? `present ${codexHost}` : `missing ${codexHost}; install the matching ${CODEX_VERSION} companion host before cross-model review`);
   if (!exists(codex)) add("codex_pinned", "warn", `missing ${codex}; reviews fall back to the strong Claude reviewer`);
   else {
     try {

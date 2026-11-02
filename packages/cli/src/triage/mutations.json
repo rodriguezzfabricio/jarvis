@@ -158,8 +158,8 @@
   {
     "name": "jarvis command skips the hand-off",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "Give this as a future user instruction only: \"When the build runner is available, start it from the project folder with `jarvis run --detach`.\"",
-    "replacement": ""
+    "anchor": "`jarvis run --local --detach`",
+    "replacement": "`jarvis not-a-command`"
   },
   {
     "name": "jarvis command hides the upgrade",
@@ -170,8 +170,8 @@
   {
     "name": "jarvis command starts chained skills again",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "It runs any spike and chains to intake, intake to spec, and spec hands back here",
-    "replacement": "It runs any spike. Then start the `intake` skill, then the `spec` skill, which hands back here"
+    "anchor": "It chains through spike, intake and spec, returning the spec status.",
+    "replacement": "It runs any spike. Then start the `intake` skill, then the `spec` skill again."
   },
   {
     "name": "jarvis command bare-word override",

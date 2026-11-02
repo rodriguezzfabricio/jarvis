@@ -20,6 +20,10 @@ export function pinnedCodexBin(home: string = homedir()): string {
   return join(home, ".local", "share", "codex", "versions", CODEX_VERSION, "codex");
 }
 
+export function pinnedCodexToolHost(home: string = homedir()): string {
+  return join(home, ".local", "share", "codex", "versions", CODEX_VERSION, "codex-code-mode-host");
+}
+
 /**
  * The Go toolchain zips sessions may get (decision 123), by `<version>.<os>-<arch>`: the SHA-256 of the module
  * zip as proxy.golang.org serves it (golang.org/toolchain@v0.0.1-<key>.zip). The runner unpacks one only if its

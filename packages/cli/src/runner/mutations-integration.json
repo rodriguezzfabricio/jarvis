@@ -37,5 +37,5 @@
 {"name":"integration session plan checks installed","file":"packages/cli/src/runner/plan.ts","anchor":"    for (const name of task.requiredChecks) if (!installed.has(name)) throw","replacement":"    for (const name of task.requiredChecks) if (false) throw"},
 {"name":"integration compose plan judged against the committed spec","file":"packages/cli/src/commands/run-compose.ts","anchor":"  const text = git([\"show\", `refs/heads/${branch}:${path}`]);","replacement":"  const text = readFileSync(join(git([\"rev-parse\", \"--show-toplevel\"]), path), \"utf8\");"},
 {"name":"integration compose refuses a detached checkout","file":"packages/cli/src/commands/run-compose.ts","anchor":"  try { branch = git([\"symbolic-ref\", \"--quiet\", \"--short\", \"HEAD\"]); } catch {","replacement":"  try { branch = git([\"rev-parse\", \"--abbrev-ref\", \"HEAD\"]); } catch {"},
-{"name": "integration stage3 fixes bug review brief", "file": "packages/cli/src/commands/run-compose.ts", "anchor": "tier: deps.tier, kind: \"bug\",", "replacement": "tier: deps.tier,"}
+{"name":"integration stage3 fixes bug review brief","file":"packages/cli/src/commands/run-compose.ts","anchor":"...(bug.exitCondition === BUG_EXIT_CONDITION ? { kind: \"bug\" as const } : {})","replacement":"...{}"}
 ]

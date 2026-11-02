@@ -7,7 +7,7 @@ import { projectRoot, resolveProject } from "../config/project.ts";
 import { allowsUnattended, runDoctor } from "../doctor/doctor.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
 import { runLoop, type RunLoopOptions, type RunLoopResult } from "../runner/loop.ts";
-import { SESSION_PLAN_KINDS, type SessionPlanKind } from "../runner/plan.ts";
+import { RequestHandoffSchema, SESSION_PLAN_KINDS, type RequestHandoff, type SessionPlanKind } from "../runner/plan.ts";
 import { DEFAULT_REVIEW_REPORT, reportPathProblem } from "../runner/review-path.ts";
 
 export interface RunContext {
@@ -21,6 +21,7 @@ export interface RunContext {
   planKind?: SessionPlanKind;
   /** A bug report handed to the runner, without an architect plan or approved spec. */
   request?: string;
+  requestHandoff?: RequestHandoff;
   /** `--plan review --report <path>`: the report the review wrote (default REVIEW.md); the run's, never the findings' (decision 126). */
   reviewReport?: string;
   /**
@@ -84,6 +85,7 @@ async function detach(context: RunContext, seams: RunCommandOptions): Promise<vo
     const args = [resolve(entrypoint), "run", "--project", context.projectId, ...(context.planKind ? ["--plan", context.planKind] : []), ...(context.reviewReport ? ["--report", context.reviewReport] : []),
       ...(context.reviewFix?.by === "flag" ? ["--fix"] : context.reviewFix?.by === "answer" ? ["--fix-answer", context.reviewFix.ref] : []),
       ...(context.request !== undefined ? ["--request", context.request] : []),
+      ...(context.requestHandoff ? ["--request-type", context.requestHandoff.type, "--request-tier", String(context.requestHandoff.tier), ...(context.requestHandoff.touches ?? []).flatMap((path) => ["--touches", path])] : []),
       ...(context.local ? ["--local"] : []),
       ...(context.reviewLimits ?? []).flatMap((limit) => ["--limit", limit])];
     const child = (seams.spawn ?? spawnChild)(process.execPath, args, { cwd: context.repoPath, detached: true, stdio: ["ignore", fd, fd] });
@@ -119,16 +121,25 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
     .option("--project <id>", "project id (default: JARVIS_PROJECT, then derived from this repo)")
     .option("--plan <kind>", `read a session-owned plan: ${SESSION_PLAN_KINDS.join(" or ")} (.jarvis/<kind>/plan.json)`)
     .option("--request <text>", "hand a bug report or behavior-preserving refactor to the runner without an approved spec")
+    .option("--request-type <type>", "with --request: final triage's bug or refactor edit pipeline")
+    .option("--request-tier <n>", "with --request-type: final risk floor (0, 1 or 2)")
+    .option("--touches <path>", "with --request-type: exact repo-relative file boundary (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option("--report <path>", `with --plan review: the report the review wrote (default ${DEFAULT_REVIEW_REPORT}); a plain .md or .txt file nothing but a person reads`)
     .option("--fix", "with --plan review: the explicit opt-in to fix the review's confirmed findings (decision 126)")
     .option("--fix-answer <ref>", "with --plan review: <answerSeq>:review-fix, the user's recorded \"yes\" to the intake question, as the opt-in")
     .option("--limit <text>", "with the opt-in: a limit every fix task keeps, such as \"make no changes to the public API\" (repeatable)", (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option("--detach", "continue in a detached runner")
     .option("--local", "build and review locally; no release step or phone traffic; approvals stay in the terminal")
-    .action(async (options: { project?: string; request?: string; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean; local?: boolean }) => {
+    .action(async (options: { project?: string; request?: string; requestType?: string; requestTier?: string; touches: string[]; plan?: string; report?: string; fix?: boolean; fixAnswer?: string; limit: string[]; detach?: boolean; local?: boolean }) => {
       if (options.request !== undefined) {
         if (options.plan !== undefined) throw new Error("--request cannot be combined with --plan");
         if (!options.request.trim() || options.request.length > 16_000) throw new Error("--request needs 1 to 16000 characters");
+      }
+      let requestHandoff: RequestHandoff | undefined;
+      if (options.requestType !== undefined || options.requestTier !== undefined || options.touches?.length) {
+        if (options.request === undefined) throw new Error("triage handoff flags require --request");
+        if (!/^[012]$/.test(options.requestTier ?? "")) throw new Error("--request-tier requires 0, 1 or 2 with --request-type");
+        requestHandoff = RequestHandoffSchema.parse({ type: options.requestType, tier: Number(options.requestTier), ...(options.touches?.length ? { touches: options.touches } : {}) });
       }
       const cwd = resolve(seams.cwd ?? process.cwd());
       const projectId = resolveProject({ ...(options.project !== undefined ? { option: options.project } : {}), env: seams.env ?? process.env, cwd });
@@ -151,6 +162,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       const context: RunContext = {
         projectId, projectDir: runnerProjectDir(projectId, jarvisHome), jarvisHome, repoPath: projectRoot(cwd),
         ...(options.request !== undefined ? { request: options.request } : {}),
+        ...(requestHandoff ? { requestHandoff } : {}),
         ...(options.local ? { local: true } : {}),
         ...(options.plan ? { planKind: options.plan as SessionPlanKind } : {}),
         ...(options.report !== undefined ? { reviewReport: options.report } : {}),
@@ -165,6 +177,7 @@ export function register(program: Command, seams: RunCommandOptions = {}): void 
       if (options.detach) return detach(context, seams);
       (seams.keepAwake ?? ((pid) => caffeinate(pid)))(process.pid);
       const result = seams.run ? await seams.run(context) : await hosted(await seams.prepareRun!(context), seams.runLoop ?? runLoop);
+      if (result.status !== "complete") process.exitCode = 1;
       (seams.output ?? console.log)(`Run ${result.status}: ${result.done.length} done, ${result.blocked.length} blocked${result.leftAlone?.length ? `; left alone: ${result.leftAlone.join(", ")}` : ""}`);
     });
 }

@@ -213,3 +213,15 @@ it("hands a refactor to the existing behavior-preservation task without inventin
   expect(plan.tasks[0]).toMatchObject({ id: "T1", acceptanceCriteria: [], requiredChecks: ["unit"], exitCondition: "Pinned behavior remains unchanged and the unit check and code review pass." });
   expect(bugRequestPlan(request, [{ name: "unit" }], plan.tasks).tasks[0]!.id).toBe("T1");
 });
+
+it("preserves final mixed-request triage, risk floor and exact file boundaries", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Explain this repo and refactor src/store.mjs into smaller functions";
+  const plan = bugRequestPlan(request, [{ name: "unit" }], [], { type: "refactor", tier: 2, touches: ["src/store.mjs"] });
+  expect(plan.tier).toBe(2); expect(plan.tasks[0]!.mayTouch).toEqual(["src/store.mjs"]);
+  expect(plan.tasks[0]!.exitCondition).toContain("Pinned behavior");
+  expect(bugRequestPlan("Fix authentication", [{ name: "unit" }], [], { type: "bug", tier: 0, touches: ["src/auth.ts"] }).tier).toBe(2);
+  expect(() => bugRequestPlan("feature: add a page", [{ name: "unit" }], [], { type: "bug", tier: 0 })).toThrow(/spec/);
+  expect(() => bugRequestPlan("ask: explain it, do not edit", [{ name: "unit" }], [], { type: "refactor", tier: 1 })).toThrow(/spec/);
+  expect(() => bugRequestPlan(request, [{ name: "unit" }], [], { type: "refactor", tier: 1, touches: ["../outside"] })).toThrow();
+});

@@ -39,3 +39,14 @@ it("excludes notes even when the base checkout has no .jarvis ignore rule", asyn
   f.setBody(async (input) => { const path = join(input.workspace, ".jarvis/notes/T1.md"); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, "claim"); return finished(); });
   expect((await runLoop(f.options)).done).toEqual(["T1"]); expect(f.git(["ls-tree", "-r", "--name-only", "last-green"])).not.toContain(".jarvis/");
 });
+
+it("refuses changed task IDs on a second run instead of reusing old completion evidence", async () => {
+  const f = fixture();
+  expect((await runLoop(f.options)).done).toEqual(["T1"]);
+  const calls = f.calls.length, head = f.git(["rev-parse", "HEAD"]);
+  const plan = { tasks: [{ id: "T1", goal: "a different feature", exitCondition: "new feature proven", dependencies: [] }] };
+  await expect(runLoop({ ...f.options, plan })).rejects.toThrow(/T1.*changed.*fresh task ID/);
+  expect(f.calls).toHaveLength(calls);
+  expect(f.git(["rev-parse", "HEAD"])).toBe(head);
+  expect(f.ledger.entries().filter((e) => e.kind === "task_created" && e.task_id === "T1")).toHaveLength(1);
+});

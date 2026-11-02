@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AppendInput } from "../ledger/ledger.ts";
 import type { Spec } from "../spec/index.ts";
-import { triage, type Triage } from "../triage/triage.ts";
+import { leadingOverride, triage, type Triage } from "../triage/triage.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
 const text = z.string().trim().min(1).max(16_000);
@@ -142,12 +142,24 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
   }] });
 }
 
+export const RequestHandoffSchema = z.object({
+  type: z.enum(["bug", "refactor"]), tier: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  touches: z.array(boundary).max(1000).optional(),
+}).strict();
+export type RequestHandoff = z.infer<typeof RequestHandoffSchema>;
+
 /** Runner-owned bug/refactor handoff; session-written architect plans still require an approved spec. */
-export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly { id: string; goal: string; exitCondition: string }[] = []): Plan {
+export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly { id: string; goal: string; exitCondition: string }[] = [], handoff?: RequestHandoff): Plan {
   const report = text.parse(request);
-  const classified = triage({ request: report, folder: { empty: false, designMd: false } });
+  const selected = handoff === undefined ? undefined : RequestHandoffSchema.parse(handoff);
+  const override = leadingOverride(report);
+  const result = triage({ request: report, folder: { empty: false, designMd: false },
+    ...(override ? { override } : {}),
+    ...(selected ? { judgment: { type: selected.type, then: selected.type, tier: selected.tier }, ...(selected.touches ? { touches: selected.touches } : {}) } : {}),
+  });
+  const classified = result.then ?? result;
   if (classified.type !== "bug" && classified.type !== "refactor") throw new Error("--request accepts only bug or refactor work; other pipelines keep their spec or explicit session-plan handoff");
-  const plan = singleTaskPlan(classified, report, checks);
+  const plan = singleTaskPlan({ ...classified, ...(selected?.touches ? { touches: selected.touches } : {}) }, report, checks);
   const same = existing.find((t) => t.goal === report && t.exitCondition === plan.tasks[0]!.exitCondition);
   const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
   return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });

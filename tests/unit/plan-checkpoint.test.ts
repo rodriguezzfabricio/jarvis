@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { checkpointPlan } from "../../packages/cli/src/runner/plan-checkpoint.ts";
+import { checkpointPlan, initializePlanningRepository } from "../../packages/cli/src/runner/plan-checkpoint.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { approvedSpec } from "../../packages/cli/src/commands/run-compose.ts";
 const roots: string[] = [];
@@ -101,4 +101,17 @@ it("still rejects gaps and malformed earlier versions after bounded capture", ()
   writeFileSync(join(p.repo, "docs/spec/v2.md"), spec.replace("spec: 1", "spec: 2").replace("supersedes: none", "supersedes: 1"));
   writeFileSync(join(p.repo, "docs/spec/v1.md"), "invalid spec");
   expect(() => checkpointPlan(p.repo, p.root)).toThrow(/valid spec history/);
+});
+
+it("bootstraps an empty project before intake without committing or requiring a spec", () => {
+  const p = project(); rmSync(join(p.repo, "docs"), { recursive: true });
+  writeFileSync(join(p.repo, "user.txt"), "preserve me");
+  expect(initializePlanningRepository(p.repo, p.root)).toBe(p.repo);
+  expect(p.git(["symbolic-ref", "--short", "HEAD"])).toBe("main");
+  expect(() => p.git(["rev-parse", "--verify", "HEAD"])).toThrow();
+  expect(p.git(["ls-files"])).toBe("");
+  expect(initializePlanningRepository(p.repo, p.root)).toBe(p.repo);
+  const nested = join(p.repo, "nested"); mkdirSync(nested);
+  expect(() => initializePlanningRepository(nested, p.root)).toThrow(/repository root/);
+  expect(existsSync(join(nested, ".git"))).toBe(false);
 });

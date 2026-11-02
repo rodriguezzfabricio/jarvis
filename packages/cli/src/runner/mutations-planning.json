@@ -566,7 +566,7 @@
   {
     "name": "planning checkpoint accepts draft",
     "file": "packages/cli/src/runner/plan-checkpoint.ts",
-    "anchor": "if (checkSpec(contents.get(path)!, path).spec?.status === \"draft\")",
+    "anchor": "if (checked.spec.status === \"draft\")",
     "replacement": "if (false)"
   },
   {
@@ -604,5 +604,29 @@
     "file": "packages/cli/src/runner/plan.ts",
     "anchor": "t.exitCondition === plan.tasks[0]!.exitCondition",
     "replacement": "t.exitCondition === BUG_EXIT_CONDITION"
+  },
+  {
+    "name": "planning checkpoint follows Git symlinks",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "function assertGitMarker(repo: string): void {",
+    "replacement": "function assertGitMarker(repo: string): void { return;"
+  },
+  {
+    "name": "planning checkpoint accepts foreign gitdir files",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (marker && !marker.isDirectory()) {",
+    "replacement": "if (false && marker) {"
+  },
+  {
+    "name": "planning task IDs reuse completion for changed work",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (previous && canonical(previous.data) !== canonical(data))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning request drops selected edit pipeline",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "const classified = result.then ?? result;",
+    "replacement": "const classified = { ...result, type: \"question\" as const };"
   }
 ]

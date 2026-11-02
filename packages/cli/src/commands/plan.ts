@@ -16,7 +16,7 @@ import { createClaudeReviewer } from "../harness/claude/review.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { readPlanningFile } from "../runner/checks-author.ts";
 import { runnerProjectDir } from "../runner/inbox.ts";
-import { checkpointPlan } from "../runner/plan-checkpoint.ts";
+import { checkpointPlan, initializePlanningRepository } from "../runner/plan-checkpoint.ts";
 import { acceptEscalation, canonicalPlan, planHashOf, planReviewStatus, resolvePlanReview } from "../review/plan-resolve.ts";
 import { createPlanReviewService, lensDiagnostics, savePlanCalibration, type PlanFixture, type PlanReviewMaterial, type PlanReviewResult } from "../review/plan-service.ts";
 import { DEFAULT_REVIEW_ROUTING } from "../review/routing.ts";
@@ -100,6 +100,12 @@ function calibrationMaterial(fixture: PlanFixture, deps: PlanCommandOptions, hom
 export function register(program: Command, deps: PlanCommandOptions = {}): void {
   const out = deps.out ?? ((text: string) => console.log(text));
   const plan = program.command("plan").description("The Goldfish plan review between the architect and the build loop (decision 170)");
+  plan.command("init").description("Initialize a local project before intake; never stage or commit files")
+    .option("--repo <dir>", "project directory (default: current directory)")
+    .action((options: { repo?: string }) => {
+      try { out(`Planning repository ${initializePlanningRepository(resolve(options.repo ?? process.cwd()), deps.home ?? homedir())}`); }
+      catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+    });
   plan.command("checkpoint").description("Commit confirmed planning documents only, before checks and plan review")
     .option("--repo <dir>", "project repository (default: current directory)")
     .action((options: { repo?: string }) => {

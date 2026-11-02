@@ -126,3 +126,21 @@ it("saves taste through the registered top-level taste command", async () => {
   writeFileSync(join(s.repo, "taste.json"), JSON.stringify(profile)); await s.run("taste", "save", "taste.json");
   expect(JSON.parse(readFileSync(join(s.root, ".jarvis/memory/user/taste.json"), "utf8"))).toEqual(profile);
 });
+
+it("starts intake from an empty directory through runner-owned plan init", async () => {
+  const { register: registerPlan } = await import("../../packages/cli/src/commands/plan.ts");
+  const root = mkdtempSync(join(tmpdir(), "jarvis-empty-intake-")); dirs.push(root);
+  const repo = join(root, "repo"); mkdirSync(repo);
+  const program = new Command().exitOverride(), print = vi.fn();
+  registerPlan(program, { home: root, out: print });
+  register(program, { home: root, cwd: repo, env: {}, print });
+  await program.parseAsync(["plan", "init", "--repo", repo], { from: "user" });
+  mkdirSync(join(repo, ".jarvis/intake"), { recursive: true });
+  writeFileSync(join(repo, ".jarvis/intake/round-1.json"), JSON.stringify({ round: 1, spec: "docs/spec/v1.md", summary: "Local tool", questions: [{ id: "Q1", topic: "scope", question: "Scope?", why: "Focus", default: { answer: "small", reason: "safe" }, alternatives: ["medium", "large"] }], mockups: [] }));
+  await program.parseAsync(["intake", "send", ".jarvis/intake/round-1.json"], { from: "user" });
+  expect(print).toHaveBeenCalledWith(expect.stringContaining("answers must be typed in the session"));
+  writeFileSync(join(repo, "answer.json"), '"defaults"');
+  await program.parseAsync(["intake", "answer", "1", "answer.json"], { from: "user" });
+  await program.parseAsync(["intake", "answers", "1"], { from: "user" });
+  expect(JSON.parse(print.mock.calls.at(-1)![0])).toMatchObject({ state: "closed", status: "defaults (accepted)" });
+});

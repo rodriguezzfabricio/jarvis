@@ -382,3 +382,18 @@ describe("the Goldfish gate on jarvis run (decision 170)", () => {
     } finally { hosted.mockRestore(); }
   });
 });
+
+it("spec-free bug and refactor runs ignore an unrelated committed draft", async () => {
+  const p = project(); const path = join(p.repoPath, "docs/spec/v1.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("status: confirmed", "status: draft"));
+  safeGit(p.repoPath, ["add", "docs/spec/v1.md"], { home: p.home });
+  safeGit(p.repoPath, ["commit", "-qm", "unrelated draft"], { home: p.home });
+  for (const request of ["Fix the item name bug", "Refactor the store without changing behavior"]) {
+    const run = await prepare(p, { request, local: true, requestHandoff: { type: request.startsWith("Fix") ? "bug" : "refactor", tier: 2, touches: ["src/store.mjs"] } });
+    expect(run.loop.plan?.tasks[0]?.goal).toBe(request);
+    expect(run.loop.plan?.tasks[0]?.mayTouch).toEqual(["src/store.mjs"]);
+    expect(run.loop.tier).toBe(2);
+    await run.close();
+  }
+  await expect(prepare(p)).rejects.toThrow(/draft/);
+});

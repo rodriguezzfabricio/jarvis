@@ -5,11 +5,7 @@ import { safeGit } from "../eval/git.ts";
 import { listVersions, checkSpec } from "../spec/index.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
-/** Commit planning inputs before their independent reviews. Never stage product code or .jarvis.
- * Interactive sessions cannot make a candidate commit; this narrow runner command supplies the
- * missing transition from confirmed documents to committed, reviewable planning inputs. */
-export function checkpointPlan(repoPath: string, home: string): string {
-  const repo = realpathSync(repoPath);
+function assertGitMarker(repo: string): void {
   const marker = lstatSync(join(repo, ".git"), { throwIfNoEntry: false });
   if (marker?.isSymbolicLink()) throw new Error("Project .git marker may not be a symlink");
   if (marker && !marker.isDirectory()) {
@@ -22,6 +18,26 @@ export function checkpointPlan(repoPath: string, home: string): string {
       if (realpathSync(resolve(gitdir, backlink)) !== join(repo, ".git")) throw new Error("foreign pointer");
     } catch { throw new Error("Project .git file must belong to this linked worktree"); }
   }
+}
+
+/** Supply project identity before intake. This command never stages or commits a file. */
+export function initializePlanningRepository(repoPath: string, home: string): string {
+  const repo = realpathSync(repoPath);
+  assertGitMarker(repo);
+  let top: string | undefined;
+  try { top = safeGit(repo, ["rev-parse", "--show-toplevel"], { home }).toString().trim(); }
+  catch (error) { if (lstatSync(join(repo, ".git"), { throwIfNoEntry: false })) throw error; }
+  if (top !== undefined && realpathSync(top) !== repo) throw new Error("planning initialization must run at the project repository root");
+  if (top === undefined) safeGit(repo, ["init", "--quiet", "-b", "main"], { home });
+  return repo;
+}
+
+/** Commit planning inputs before their independent reviews. Never stage product code or .jarvis.
+ * Interactive sessions cannot make a candidate commit; this narrow runner command supplies the
+ * missing transition from confirmed documents to committed, reviewable planning inputs. */
+export function checkpointPlan(repoPath: string, home: string): string {
+  const repo = realpathSync(repoPath);
+  assertGitMarker(repo);
   const versions = listVersions(repo);
   if (!versions.length) throw new Error("planning checkpoint needs a valid spec history: no versions");
   const paths = versions.map((v) => relative(repo, v.path));
@@ -51,10 +67,7 @@ export function checkpointPlan(repoPath: string, home: string): string {
     if (checked.spec.status === "draft") throw new Error(`${path} is draft; finish confirmation before checkpointing`);
   }
   const git = (args: readonly string[]) => safeGit(repo, args, { home }).toString().trim();
-  let top: string | undefined;
-  try { top = git(["rev-parse", "--show-toplevel"]); } catch { /* A new product may not have a repository yet. */ }
-  if (top !== undefined && realpathSync(top) !== repo) throw new Error("planning checkpoint must run at the project repository root");
-  if (top === undefined) git(["init", "--quiet", "-b", "main"]);
+  initializePlanningRepository(repo, home);
   let head: string | undefined;
   try { head = git(["rev-parse", "--verify", "HEAD^{commit}"]); } catch { /* Unborn repository. */ }
   if (head) {

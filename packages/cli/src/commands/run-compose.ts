@@ -186,12 +186,12 @@ export async function prepareProductionRun(context: RunContext, options: Compose
   const checks = readApprovedChecks(new ChecksStore(context.projectDir), ledger);
   if (!checks.length) throw new Error("no approved protected checks: approve the checks before running");
   const runBranch = runBranchOf(git);
-  const spec = approvedSpec(git, runBranch);
+  const spec = context.request === undefined && context.planKind === undefined ? approvedSpec(git, runBranch) : undefined;
   // A review's fixes (decision 126): read and committed before anything is hosted, so a refusal hosts nothing.
   const reviewRun = context.planKind === "review" ? reviewRunFor(context.repoPath, context.reviewReport ?? DEFAULT_REVIEW_REPORT, ledger, checks, git, { fix: context.reviewFix, limits: context.reviewLimits ?? [] }) : undefined;
   if (context.request !== undefined && context.planKind !== undefined) throw new Error("--request cannot be combined with --plan");
   const existing = Object.values(rebuildState(ledger.entries(), { now: Date.now() }).tasks).map((t) => ({ id: t.id, goal: t.definition.goal, exitCondition: t.definition.exitCondition }));
-  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing)
+  const plan = context.request !== undefined ? bugRequestPlan(context.request, checks, existing, context.requestHandoff)
     : reviewRun ? reviewRun.fix.plan ?? undefined : planFor(context.repoPath, context.planKind, spec, checks);
   // The Goldfish gate (decision 170): an architect's plan builds only after a counted plan review at its hash passed, or every
   // blocker and major it found was resolved with nothing escalated still open. Session plans and bug requests are not plans it judges.

@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { runGate, verifyEvidence, type GateCheck, type GateInput, type GateResult } from "../checks/gate.ts";
 import { ChecksStore } from "../checks/store.ts";
 import { safeGit } from "../eval/git.ts";
-import { atomicWrite, Ledger, type LedgerEntry } from "../ledger/ledger.ts";
+import { atomicWrite, canonical, Ledger, type LedgerEntry } from "../ledger/ledger.ts";
 import type { EscalationReason, Harness, TaskInput, TaskOutcome, TaskTier } from "./harness.ts";
 import { captureProcessGroup, cleanupLeftovers, readProcessStartTime, type ProcessStartTimeReader } from "./cleanup.ts";
 import { buildFootprintEntry, createFootprintLog, type FootprintLog } from "./footprint.ts";
@@ -248,9 +248,12 @@ class Loop {
   private seedPlan(): void {
     if (!this.opts.plan) return;
     this.ledger.transact((entries, add) => {
-      for (const { id, ...data } of this.opts.plan!.tasks) {
-        if (!entries.some((e) => e.actor === "runner" && e.kind === "task_created" && e.task_id === id)) add({ kind: "task_created", actor: "runner", task_id: id, data });
-      }
+      const pending = this.opts.plan!.tasks.map(({ id, ...data }) => {
+        const previous = entries.find((e) => e.actor === "runner" && e.kind === "task_created" && e.task_id === id);
+        if (previous && canonical(previous.data) !== canonical(data)) throw new Error(`Task ${id} changed: assign a fresh task ID and review the new plan before running`);
+        return previous ? undefined : { kind: "task_created" as const, actor: "runner" as const, task_id: id, data };
+      });
+      for (const entry of pending) if (entry) add(entry);
     });
   }
   private workspaceRecord(task: TaskState): TaskWorkspace | undefined {

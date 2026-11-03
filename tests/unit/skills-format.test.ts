@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { register as registerDecide } from "../../packages/cli/src/decisions/decide.ts";
 
 // The deterministic half of each Jarvis skill (decision 30, architecture §3.1): Agent Skills
 // frontmatter, the size limits, a gotchas section, at least 3 evals, and the sentences that carry
@@ -89,7 +91,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Check the decision register", phrase: "An explicit new request beats an older decision" }, // decision 48
       { section: "Check the decision register", phrase: "Silence never overrides an old decision" },
       { section: "Check the decision register", phrase: "Jarvis's own ideas never override the user's" },
-      { section: "Check the decision register", phrase: "Default: keep the old decision" },
+      { section: "Check the decision register", phrase: "its default follows Request fidelity" }, // decision 155 (was "keep")
       { section: "Check the decision register", phrase: "names the very behavior the old decision rules out" },
       { section: "Check the decision register", phrase: "Confirm it with the user once" }, // decision 48 firmness
       { section: "Check the decision register", phrase: "Revisit it without a question" },
@@ -99,7 +101,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Frame the job", phrase: "top 3 reasons it could fail" },
       { section: "Frame the job", phrase: "story map" },
       { section: "Frame the job", phrase: "walking skeleton" },
-      { section: "Frame the job", phrase: "Activities a fixed constraint rules out don't appear on the map" }, // decision 38
+      { section: "Frame the job", phrase: "Apply fixed product constraints, not build-action limits, to the map" }, // decisions 38 and 155
       { section: "Frame the job", phrase: "the first-value budget" }, // decision 55
       { section: "Frame the job", phrase: "draft `PRODUCT.md`" }, // decision 51: grounding for the design skill
       { section: "List assumptions first", phrase: "confidence level" }, // decision 8, assumptions mode
@@ -117,7 +119,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Write the questions", phrase: "why it matters" },
       { section: "Write the questions", phrase: "recommended default" },
       { section: "Write the questions", phrase: "2–3 **alternatives**" },
-      { section: "Write the questions", phrase: "A default never spends money, never messages a real person without approval" },
+      { section: "Write the questions", phrase: "accepting a default never authorizes the build to spend money, message a real person or bypass a build constraint" },
       { section: "Write the questions", phrase: "made-up sample data" },
       { section: "Send the round", phrase: "One round, all at once" },
       { section: "Send the round", phrase: "Reply 'defaults' to accept all" },
@@ -132,7 +134,7 @@ const skills: Record<string, SkillRules> = {
       { section: "Take the answers", phrase: "jarvis intake answers" }, // decision 83
       { section: "Take the answers", phrase: "a steer note" }, // decision 50: no typed replies
       { section: "Take the answers", phrase: "never grants or widens anything" }, // the publish box is unauthenticated
-      { section: "Take the answers", phrase: "a default can't authorize spending or an outside action" },
+      { section: "Take the answers", phrase: "no answer or default grants release, production, spending or an outside action" }, // decision 168 restores the answer half
       { section: "Take the answers", phrase: "15 minutes" }, // decision 10
       { section: "Take the answers", phrase: "unconfirmed" },
       { section: "Take the answers", phrase: "Never run your own timer" },
@@ -209,10 +211,10 @@ const skills: Record<string, SkillRules> = {
       { section: "Confirm", phrase: "as **plain text**" },
       { section: "Hand off", phrase: "the design skill" },
       { section: "Gotchas", phrase: "`docs/spec/`" },
-      // Decision 86: one confirmation, at the initial hand-off; bounded waiting.
-      { section: "When to use", phrase: "never another confirmation round" },
+      // Decision 86: no confirmation round mid-run; bounded waiting. Decision 155: a "changes" answer is confirmed again.
+      { section: "When to use", phrase: "a mid-run version never gets its own confirmation round" },
       { section: "When to use", phrase: "blocked state" }, // decision 40
-      { section: "Confirm", phrase: "Confirmation happens once, at the initial hand-off" },
+      { section: "Confirm", phrase: "Confirmation covers exactly the artifacts handed off" },
       { section: "Confirm", phrase: "`jarvis intake answers <n> --wait 540`" },
       { section: "Confirm", phrase: "at most twice" },
     ],
@@ -357,8 +359,8 @@ describe("skills folder", () => {
   });
 });
 
-// Decision 85: the flags `jarvis decide` accepts, and the values each one takes.
-const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer"];
+// Decision 85: the flags `jarvis decide` accepts, and the values each one takes (recorded-answer: decision 168).
+const DECIDE_FLAGS = ["by", "class", "source", "why", "alternatives", "depends-on", "reversibility", "supersedes", "reason", "answer", "recorded-answer"];
 const DECIDE_BY = ["user", "default-accepted", "default-unconfirmed", "jarvis"];
 const DECIDE_CLASS = ["mechanical", "taste", "challenge"];
 
@@ -392,6 +394,15 @@ function parseDecide(call: string): { flags: Map<string, string>; positional: st
 describe("jarvis decide calls in every skill (decision 85)", () => {
   const names = Object.keys(skills);
 
+  // A flag a skill teaches but the CLI never registered fails every call that uses it (decision 168).
+  it("teaches only flags the real CLI registers", () => {
+    const { Command } = createRequire(new URL("../../packages/cli/package.json", import.meta.url))("commander") as { Command: new () => Parameters<typeof registerDecide>[0] & { commands: { name(): string; options: { long?: string }[] }[] } };
+    const program = new Command(); registerDecide(program);
+    const decide = program.commands.find((c) => c.name() === "decide")!;
+    const registered = decide.options.map((o) => o.long?.replace(/^--/, ""));
+    for (const flag of DECIDE_FLAGS) expect(registered, `--${flag}`).toContain(flag);
+  });
+
   it.each(names)("%s: every call has valid --by and --class values, --why, a repo-relative --source and a decision", (name) => {
     for (const call of decideCalls(readSkill(name))) {
       const { flags, positional, problems } = parseDecide(call);
@@ -415,17 +426,35 @@ describe("jarvis decide calls in every skill (decision 85)", () => {
 });
 
 // Decision 119: `--by user` needs a recorded explicit answer (`--answer <answerSeq>:<questionId>`) and
-// its exact words. A skill showing `--by user` without them teaches a call the CLI refuses, in any skill.
-describe("user-attributed decide calls in every skill folder (decision 119)", () => {
+// its exact words. Decision 168: the words go in `--recorded-answer` and the entry states the decision,
+// led by its question ID; without `--recorded-answer` the entry text must be the words themselves. A
+// skill showing `--by user` without either teaches a call the CLI refuses, in any skill or reference.
+describe("user-attributed decide calls in every skill folder (decisions 119 and 168)", () => {
   const all = readdirSync(skillsDir, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(`${skillsDir}${d.name}/SKILL.md`)).map((d) => d.name);
-
-  it.each(all)("%s: every --by user call cites --answer and quotes the exact recorded answer", (name) => {
-    for (const call of decideCalls(readSkill(name))) {
-      const { flags, positional } = parseDecide(call);
-      if (!(flags.get("by") ?? "").split("|").includes("user")) continue;
-      expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
+  const check = (call: string) => {
+    const { flags, positional, problems } = parseDecide(call);
+    expect(problems, call).toEqual([]);
+    if (!(flags.get("by") ?? "").split("|").includes("user")) return;
+    expect(flags.get("answer"), `${call}: --answer`).toBe("<answerSeq>:<questionId>");
+    if (flags.has("recorded-answer")) {
+      expect(flags.get("recorded-answer"), `${call}: verified answer text`).toBe("<the exact recorded answer>");
+      expect(positional.join(" "), `${call}: the decision text`).toBe('"<questionId>: <the decision itself>"');
+    } else {
       expect(positional.join(" "), `${call}: the decision text`).toContain("the exact recorded answer");
     }
+  };
+
+  it.each(all)("%s: every --by user call cites --answer and the exact recorded answer", (name) => {
+    for (const call of decideCalls(readSkill(name))) check(call);
+  });
+
+  it("intake states the decision and records the words separately, in the skill and its examples", () => {
+    const examples = readFileSync(`${skillsDir}intake/references/decision-examples.md`, "utf8");
+    const calls = [...decideCalls(readSkill("intake")), ...decideCalls(examples)];
+    const user = calls.filter((call) => parseDecide(call).flags.get("by")?.split("|").includes("user"));
+    expect(user.length).toBeGreaterThanOrEqual(3);
+    for (const call of calls) check(call);
+    for (const call of user) expect(parseDecide(call).flags.has("recorded-answer"), call).toBe(true);
   });
 });
 

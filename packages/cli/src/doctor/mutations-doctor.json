@@ -58,5 +58,11 @@
     "file": "packages/cli/src/doctor/foundation.ts",
     "anchor": "v.ok ? \"pass\" : \"fail\", v.ok ?",
     "replacement": "v.ok ? \"pass\" : \"warn\", v.ok ?"
+  },
+  {
+    "name": "doctor misses absent Codex tool host",
+    "file": "packages/cli/src/doctor/doctor.ts",
+    "anchor": "exists(codexHost) ? \"pass\" : \"warn\"",
+    "replacement": "true ? \"pass\" : \"warn\""
   }
 ]

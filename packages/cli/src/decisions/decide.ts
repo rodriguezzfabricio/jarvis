@@ -25,10 +25,28 @@ function decisionId(value: string): number {
 }
 interface Options {
   by: string; class: string; source: string; why: string; repo: string;
-  reversibility: string; alternatives: string; dependsOn: string; supersedes?: string; reason?: string; answer?: string;
+  reversibility: string; alternatives: string; dependsOn: string; supersedes?: string; reason?: string; answer?: string; recordedAnswer?: string;
+}
+
+/** With --recorded-answer the entry states the decision, led by the answered question's ID, so the register line names the answer it rests on (decision 168). */
+function requireStatement(decision: string, reference: string): void {
+  const id = reference.slice(reference.indexOf(":") + 1);
+  if (!decision.startsWith(`${id}: `) || !decision.slice(id.length + 2).trim()) {
+    throw new Error(`With --recorded-answer the decision text states the decision and starts with "${id}: "`);
+  }
 }
 
 export interface DecideDeps { home?: string }
+
+/** Reversibility levels whose decisions must name what they rejected (decision 171, EGM's Alternatives Rule). */
+export const ALTERNATIVES_REQUIRED = ["moderate", "hard", "irreversible"] as const;
+const ALTERNATIVE_FORM = /^.{3,}: rejected because .{10,}$/s;
+export const ALTERNATIVES_ERROR = "a decision of this reversibility needs at least one alternative, each as '<option>: rejected because <reason>'";
+/** A user's answer is its own reason, so `--by user` decisions are exempt. */
+export function requireAlternatives(reversibility: string, by: string, alternatives: readonly string[]): void {
+  if (by === "user" || !(ALTERNATIVES_REQUIRED as readonly string[]).includes(reversibility)) return;
+  if (!alternatives.length || !alternatives.every((item) => ALTERNATIVE_FORM.test(item))) throw new Error(ALTERNATIVES_ERROR);
+}
 
 export function register(program: Command, deps: DecideDeps = {}): void {
   program.command("decide")
@@ -45,18 +63,22 @@ export function register(program: Command, deps: DecideDeps = {}): void {
     .option("--supersedes <id>", "old decision ID (D1 or 1)")
     .option("--reason <reason>", "reason for superseding; required with --supersedes")
     .option("--answer <reference>", "verified explicit intake answer: <answerSeq>:<questionId>; required with --by user")
+    .option("--recorded-answer <text>", "the user's exact recorded answer, verified with --answer; the decision text then states the decision, starting with \"<questionId>: \"")
     .action((decision: string, options: Options, command: Command) => {
       try {
         if (options.supersedes !== undefined && !options.reason?.trim()) throw new Error("--reason is required with --supersedes");
         if (options.reason !== undefined && options.supersedes === undefined) throw new Error("--reason requires --supersedes");
         if (!options.why.trim()) throw new Error("--why must not be blank");
         const oldId = options.supersedes === undefined ? undefined : decisionId(options.supersedes);
-        if (options.by === "user") verifyUserAnswer(options.repo, options.answer, decision, { ...deps, ...(oldId === undefined ? {} : { supersedes: oldId }) });
-        else if (options.answer !== undefined) throw new Error("--answer requires --by user");
+        if (options.by === "user") verifyUserAnswer(options.repo, options.answer, options.recordedAnswer ?? decision, { ...deps, ...(oldId === undefined ? {} : { supersedes: oldId }) });
+        else if (options.answer !== undefined || options.recordedAnswer !== undefined) throw new Error("--answer and --recorded-answer require --by user");
+        if (options.recordedAnswer !== undefined) requireStatement(decision, options.answer!);
+        requireAlternatives(options.reversibility, options.by, list(options.alternatives, "--alternatives"));
+        const exact = options.recordedAnswer === undefined ? "" : `\nExact answer: ${JSON.stringify(options.recordedAnswer)}`;
         const input: DecisionInput = {
           date: new Date().toISOString().slice(0, 10), decision,
           madeBy: mapped(makers, options.by, "--by"), class: mapped(classes, options.class, "--class"),
-          source: options.source, why: options.by === "user" ? `${options.why}\nRecorded user answer: ${options.answer}` : options.why, reversibility: options.reversibility as DecisionInput["reversibility"],
+          source: options.source, why: options.by === "user" ? `${options.why}\nRecorded user answer: ${options.answer}` + exact : options.why, reversibility: options.reversibility as DecisionInput["reversibility"],
           alternatives: list(options.alternatives, "--alternatives"), dependsOn: list(options.dependsOn, "--depends-on"),
         };
         const register = DecisionRegister.open(options.repo);

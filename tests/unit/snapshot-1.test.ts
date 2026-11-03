@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createSnapshot, findCredentials, redactEnvText } from "../../packages/cli/src/eval/snapshot.ts";
 import { git, root, sourceRepo } from "./helpers/snapshot-fixture.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 import { FAKE_NPM_TOKEN } from "./helpers/fake-tokens.ts";
 
 // Removing ~100 repositories and snapshots can take longer than the default 10 s hook limit under a
@@ -117,9 +118,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
   it("fails closed on a credential anywhere in the tree, unless a person allowlisted that file", async () => {
     const repo2 = join(root, "src2");
     mkdirSync(repo2, { recursive: true });
-    git(repo2, "init", "-q", "-b", "main");
-    git(repo2, "config", "user.email", "t@t");
-    git(repo2, "config", "user.name", "t");
+    initRepo(repo2, { identity: true });
     writeFileSync(join(repo2, "deploy.yaml"), `aws_key: AKIA${"ABCDEFGHIJKLMNOP"}\n`);
     git(repo2, "add", "-A");
     git(repo2, "commit", "-qm", "c");
@@ -132,9 +131,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
   it("fails closed on credentials hidden in UTF-16, binary or unterminated env files", async () => {
     const repo4 = join(root, "src4");
     mkdirSync(repo4, { recursive: true });
-    git(repo4, "init", "-q", "-b", "main");
-    git(repo4, "config", "user.email", "t@t");
-    git(repo4, "config", "user.name", "t");
+    initRepo(repo4, { identity: true });
     writeFileSync(join(repo4, "notes.txt"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`key=ghp_${"b".repeat(36)}`, "utf16le")]));
     writeFileSync(join(repo4, "blob.bin"), Buffer.concat([Buffer.from([0, 1, 2, 0]), Buffer.from(`AKIA${"QRSTUVWXYZABCDEF"}`), Buffer.from([0, 0])]));
     writeFileSync(join(repo4, ".env"), 'A="open\nTOKEN=x\n');
@@ -151,9 +148,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     const { generateKeyPairSync } = await import("node:crypto");
     const repo5 = join(root, "src5");
     mkdirSync(repo5, { recursive: true });
-    git(repo5, "init", "-q", "-b", "main");
-    git(repo5, "config", "user.email", "t@t");
-    git(repo5, "config", "user.name", "t");
+    initRepo(repo5, { identity: true });
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     writeFileSync(join(repo5, "signing.bin"), privateKey.export({ format: "der", type: "pkcs8" }));
     writeFileSync(join(repo5, "release.p12"), Buffer.from([0x30, 0x82, 0x01, 0x00, 0x02, 0x01, 0x03]));
@@ -188,9 +183,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
     for (const [name, content] of Object.entries(cases)) {
       const repo = join(root, `srcX-${name}`);
       mkdirSync(repo, { recursive: true });
-      git(repo, "init", "-q", "-b", "main");
-      git(repo, "config", "user.email", "t@t");
-      git(repo, "config", "user.name", "t");
+      initRepo(repo, { identity: true });
       writeFileSync(join(repo, name), content);
       git(repo, "add", "-A");
       git(repo, "commit", "-qm", "c");
@@ -202,9 +195,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
   it("keeps configuration whose credential fields are empty, references or placeholders", async () => {
     const repo = join(root, "srcInert");
     mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    git(repo, "config", "user.email", "t@t");
-    git(repo, "config", "user.name", "t");
+    initRepo(repo, { identity: true });
     writeFileSync(join(repo, "package.json"), '{"name": "app", "author": "Fabricio", "scripts": {"test": "vitest"}, "max_tokens": 400}\n');
     writeFileSync(join(repo, "config.json"), '{"auth": true, "password": "", "token": null, "apiKey": "${API_KEY}", "clientSecret": "${CLIENT_SECRET:-}", "secret": "<secret>", "passwordMinLength": 8, "url": "https:\\/\\/example.com\\/x"}\n');
     writeFileSync(join(repo, ".github", "workflows", "ci.yml"), "jobs:\n  t:\n    env:\n      token: ${{ secrets.GITHUB_TOKEN }}\n      password: changeme\n");
@@ -248,9 +239,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
   it("redacts a password-only Redis URL in a tracked .env file", async () => {
     const repo = join(root, "srcR");
     mkdirSync(repo, { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    git(repo, "config", "user.email", "t@t");
-    git(repo, "config", "user.name", "t");
+    initRepo(repo, { identity: true });
     writeFileSync(join(repo, ".env"), "REDIS_URL=redis://:Synthetic9qvM2@cache.prod.acme.net:6379/0\n");
     git(repo, "add", "-A");
     git(repo, "commit", "-qm", "c");
@@ -261,9 +250,7 @@ describe("sanitized snapshots (golden tasks: how every task runs)", () => {
   it("removes symlinks that point outside the snapshot", async () => {
     const repo3 = join(root, "src3");
     mkdirSync(repo3, { recursive: true });
-    git(repo3, "init", "-q", "-b", "main");
-    git(repo3, "config", "user.email", "t@t");
-    git(repo3, "config", "user.name", "t");
+    initRepo(repo3, { identity: true });
     writeFileSync(join(repo3, "a.txt"), "a");
     symlinkSync("/etc/hosts", join(repo3, "out"));
     symlinkSync("a.txt", join(repo3, "in"));

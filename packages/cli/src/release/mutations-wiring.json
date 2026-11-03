@@ -1,0 +1,230 @@
+[
+  {
+    "name": "release_required_checks_completeness",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "if (!requiredChecks.length || requiredChecks.some(name => !covered.has(name))) ok = false;",
+    "replacement": "if (false) ok = false;"
+  },
+  {
+    "name": "release_runner_required_names",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "const requiredChecks = [...new Set([...scope.checks, ...names(input.requiredChecks)])];",
+    "replacement": "const requiredChecks = [...new Set([...scope.checks])];"
+  },
+  {
+    "name": "release_plan_tasks_done",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "ok = scope.done && scope.lastGreen === manifest.revision;",
+    "replacement": "ok = true;"
+  },
+  {
+    "name": "release_last_green_binding",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "ok = scope.done && scope.lastGreen === manifest.revision;",
+    "replacement": "ok = scope.done;"
+  },
+  {
+    "name": "release_report_rechecks_evidence",
+    "file": "packages/cli/src/release/states.ts",
+    "anchor": "if (manifest && !missing.length) {",
+    "replacement": "if (manifest) {"
+  },
+  {
+    "name": "release_report_needs_accepted_manifest",
+    "file": "packages/cli/src/release/accepted.ts",
+    "anchor": "if (e.kind !== \"decision\" || e.actor !== \"runner\" || d.type !== ACCEPTED_TYPE || d.manifestHash !== hash) continue;",
+    "replacement": "if (e.kind !== \"decision\" || d.type !== ACCEPTED_TYPE || d.manifestHash !== hash) continue;"
+  },
+  {
+    "name": "release_accepted_body_binding",
+    "file": "packages/cli/src/release/accepted.ts",
+    "anchor": "if (manifestHash(manifest) === hash && manifest.project === d.project) return manifest;",
+    "replacement": "return manifest;"
+  },
+  {
+    "name": "release_free_plan_only",
+    "file": "packages/cli/src/release/config.ts",
+    "anchor": "if (c.plan !== FREE_PLANS[c.provider]) ctx.addIssue(",
+    "replacement": "if (false) ctx.addIssue("
+  },
+  {
+    "name": "release_setup_owner_only",
+    "file": "packages/cli/src/release/config.ts",
+    "anchor": "if ((st.mode & 0o077) !== 0 || (uid !== undefined && st.uid !== uid)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "release_setup_output_confined",
+    "file": "packages/cli/src/release/config.ts",
+    "anchor": ".refine((p) => !p.split(\"/\").some((part) => part === \".\" || part === \"..\" || /^\\.git$/i.test(part) || /^\\.jarvis$/i.test(part)), \"no '.', '..', .git or .jarvis parts\");",
+    "replacement": ".refine(() => true, \"no '.', '..', .git or .jarvis parts\");"
+  },
+  {
+    "name": "release_artifact_runner_records",
+    "file": "packages/cli/src/release/config.ts",
+    "anchor": "if (e.kind !== \"decision\" || e.actor !== \"runner\" || d.type !== ARTIFACT_TYPE || d.project !== project) continue;",
+    "replacement": "if (e.kind !== \"decision\" || d.type !== ARTIFACT_TYPE || d.project !== project) continue;"
+  },
+  {
+    "name": "release_cli_pinned_version",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "if (!new RegExp(`(?:^|[^0-9A-Za-z.])v?${escape(pin.version)}(?:$|[^0-9A-Za-z.+-])`, \"m\").test(output))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_cli_trusted_file",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "const problem = trusted(bin, uid) ?? trusted(dirname(bin), uid);",
+    "replacement": "const problem: string | undefined = undefined;"
+  },
+  {
+    "name": "release_cli_outside_session_folders",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "if (within(real, bin, true)) return",
+    "replacement": "if (false) return"
+  },
+  {
+    "name": "release_build_runner_home_denied",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "denyRead: [real(i.jarvisHome), real(homedir()), ...tempRoots()],",
+    "replacement": "denyRead: [...tempRoots()],"
+  },
+  {
+    "name": "release_build_committed_revision",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "safeGit(scratch, [\"-c\", \"protocol.file.allow=always\", \"-c\", \"transfer.fsckObjects=true\", \"clone\", \"--quiet\", \"--no-local\", \"--no-checkout\", i.repoPath, checkout], { home });",
+    "replacement": "(await import(\"node:fs\")).cpSync(i.repoPath, checkout, { recursive: true });"
+  },
+  {
+    "name": "release_build_output_no_links",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "if (!st || st.isSymbolicLink() || !st.isDirectory()) return undefined;",
+    "replacement": "if (!st) return undefined;"
+  },
+  {
+    "name": "release_build_registers_digest",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "const artifactHash = artifactDigest(artifactDir);",
+    "replacement": "const artifactHash = \"0\".repeat(64);"
+  },
+  {
+    "name": "release_build_failure_registers_nothing",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "if (r.code !== 0 || r.timedOut || r.overflowed) return { status: \"fail\"",
+    "replacement": "if (r.timedOut) return { status: \"fail\""
+  },
+  {
+    "name": "release_ship_manifest_unlinked",
+    "file": "packages/cli/src/release/ship.ts",
+    "anchor": "|| st.nlink > 1) throw new Error(`${SHIP_MANIFEST} must be a regular, unlinked file`);",
+    "replacement": ") throw new Error(`${SHIP_MANIFEST} must be a regular, unlinked file`);"
+  },
+  {
+    "name": "release_ship_runner_data_source",
+    "file": "packages/cli/src/release/ship.ts",
+    "anchor": "manifestData = { kind: data.kind, source: createDataSnapshot(r.config).source, commands: data.commands };",
+    "replacement": "manifestData = { kind: data.kind, source: data.source, commands: data.commands };"
+  },
+  {
+    "name": "release_step_plan_done",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "if (!scope.done) return stop(",
+    "replacement": "if (false) return stop("
+  },
+  {
+    "name": "release_step_last_green",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "if (scope.lastGreen !== revision) return stop(",
+    "replacement": "if (false) return stop("
+  },
+  {
+    "name": "release_step_spend_policy",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "if (setup.plan !== FREE_PLANS[setup.provider]) return stop(",
+    "replacement": "if (false) return stop("
+  },
+  {
+    "name": "release_step_cli_recheck",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "if (!cli.ok || cli.bin !== runtime.providerConfig?.bin) return stop(",
+    "replacement": "if (false) return stop("
+  },
+  {
+    "name": "release_step_smoke_stops",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "if (data(smoke).status !== \"pass\") {",
+    "replacement": "if (false) {"
+  },
+  {
+    "name": "release_step_every_approved_check",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "for (const check of i.checks) {",
+    "replacement": "for (const check of i.checks.slice(0, 1)) {"
+  },
+  {
+    "name": "release_broker_deploy_adapters",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": "adapters: [...deploy, ...outbox],",
+    "replacement": "adapters: outboxAdapters(join(o.projectDir, \"outbox\")),"
+  },
+  {
+    "name": "release_broker_account_tokens",
+    "file": "packages/cli/src/broker/host.ts",
+    "anchor": ", join(o.jarvisHome, \"secrets\", ACCOUNTS_SECRETS_FILE)]),",
+    "replacement": "]),"
+  },
+  {
+    "name": "setup_deploy_preview_token_broker_only",
+    "file": "packages/cli/src/setup/accounts.ts",
+    "anchor": "{ key: \"VERCEL_PREVIEW_TOKEN\", label: \"Vercel preview token (jarvis-preview)\", tier: \"preview\", brokerOnly: true },",
+    "replacement": "{ key: \"VERCEL_PREVIEW_TOKEN\", label: \"Vercel preview token (jarvis-preview)\", tier: \"preview\" },"
+  },
+  {
+    "name": "setup_deploy_token_contract",
+    "file": "packages/cli/src/setup/accounts.ts",
+    "anchor": "{ key: \"VERCEL_PREVIEW_TOKEN\", label: \"Vercel preview token (jarvis-preview)\"",
+    "replacement": "{ key: \"VERCEL_TOKEN\", label: \"Vercel preview token (jarvis-preview)\""
+  },
+  {
+    "name": "release_grant_needs_yes",
+    "file": "packages/cli/src/commands/release.ts",
+    "anchor": "if (!/^(y|yes)$/i.test(answer.trim())) { out(\"No grant recorded.\"); return; }",
+    "replacement": "if (false) { return; }"
+  },
+  {
+    "name": "release_grant_non_tty_needs_yes",
+    "file": "packages/cli/src/commands/release.ts",
+    "anchor": "if (!(seams.isTTY ?? (() => stdin.isTTY === true))()) throw new Error(\"Non-interactive grant requires --yes.\");",
+    "replacement": ""
+  },
+  {
+    "name": "release_grant_rollback_scope",
+    "file": "packages/cli/src/commands/release.ts",
+    "anchor": "const allowRollback = o.allowRollback === true;",
+    "replacement": "const allowRollback = true;"
+  },
+  {
+    "name": "release_compose_deploy_adapters",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "ledger, ...(release ? { deploy: release.adapters } : {}) });",
+    "replacement": "ledger });"
+  },
+  {
+    "name": "release_compose_runs_release_step",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "    } : release ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive(",
+    "replacement": "    } : false ? {\n      // The build loop, then the release step on the revision it last promoted (decision 157).\n      drive: releaseDrive("
+  },
+  {
+    "name": "release_cli_check_starts_under_pinned_node",
+    "file": "packages/cli/src/release/provider-cli.ts",
+    "anchor": "providerLaunch({ bin, interpreter: pinnedProviderNode() }, [\"--version\"])",
+    "replacement": "providerLaunch({ bin }, [\"--version\"])"
+  },
+  {
+    "name": "release_adapters_get_pinned_version_and_node",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "{ bin: cli.bin, version: cli.version, ...(cli.interpreter ? { interpreter: cli.interpreter } : {}), ...(cli.ssh ? { ssh: cli.ssh } : {}),",
+    "replacement": "{ bin: cli.bin, version: cli.version, ...(cli.ssh ? { ssh: cli.ssh } : {}),"
+  }
+]

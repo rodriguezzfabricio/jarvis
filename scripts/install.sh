@@ -119,7 +119,7 @@ clean_env() {
 claude_clean() { clean_env "$CLAUDE_BIN" "$@"; }
 
 step "Checking pinned Claude Code $CLAUDE_VERSION and codex-cli $CODEX_VERSION"
-CLAUDE_BIN="$HOME/.local/share/claude/versions/$CLAUDE_VERSION"
+CLAUDE_BIN="$HOME/.local/share/claude/pinned-bundles/$CLAUDE_VERSION/claude.app/Contents/MacOS/claude"
 CLAUDE_OK=0
 if [ -x "$CLAUDE_BIN" ]; then
   CLAUDE_REPORTED=$(claude_clean --version 2>/dev/null || true)
@@ -131,7 +131,7 @@ else
   warn "pinned Claude Code not found at $CLAUDE_BIN"
   warn "install it yourself (the README says how: 'claude install $CLAUDE_VERSION'), then run this installer again"
 fi
-CODEX_BIN="$HOME/.npm-global/bin/codex"
+CODEX_BIN="$HOME/.local/share/codex/versions/$CODEX_VERSION/codex"
 if [ -x "$CODEX_BIN" ]; then
   CODEX_REPORTED=$(clean_env "$CODEX_BIN" --version 2>/dev/null || true)
   case "$CODEX_REPORTED" in

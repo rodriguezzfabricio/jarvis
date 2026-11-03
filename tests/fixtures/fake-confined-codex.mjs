@@ -37,5 +37,5 @@ if (probes.tcpPort) seen.tcp = await tcp(probes.tcpPort);
 for (const host of probes.tunnel ?? []) seen[`tunnel ${host}`] = await tunnel(host);
 record({ argv, env: process.env, seen });
 const output = argv[argv.indexOf('-o') + 1];
-writeFileSync(output, JSON.stringify({ findings: [] }));
+writeFileSync(output, JSON.stringify({ findings: [], checked: ["spec-criteria", "data-flow", "error-paths", "unchanged-callers"] }));
 console.log(JSON.stringify({ type: 'turn.completed' }));

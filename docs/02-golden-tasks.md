@@ -1,5 +1,7 @@
 # Jarvis: Golden Tasks (v2)
 
+This is the formal evaluation specification. The November 2 authored local build/bug/recovery proofs do not replace these golden-task comparisons. [Current evidence](reviews/local-e2e-2026-11-02.md).
+
 Oct 23, 2026 · Fabricio + Claude
 
 Jarvis's test set is mostly the project that inspired it: your job-application automation, a fork of [FreeHire](https://github.com/strelov1/freehire) at `~/Documents/ChatGPT/freehire-impl` (branch `impl/de-0001`). Its research and backlog are in `~/Documents/ChatGPT/OpenSouce Job`. Two brand-new products test the "build anything" promise.

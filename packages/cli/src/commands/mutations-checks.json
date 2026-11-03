@@ -1,0 +1,44 @@
+[
+  {
+    "name": "checks install accepts a fail verdict",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "return JSON.parse(result.rawVerdict) as unknown;",
+    "replacement": "return { ...JSON.parse(result.rawVerdict), status: \"pass\" };"
+  },
+  {
+    "name": "checks install ignores a thrown reviewer error",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "const result = await reviewer(input);",
+    "replacement": "const result = await reviewer(input).catch(() => ({ reviewer: \"claude\" as const, model: input.model, rawOutput: \"\", rawVerdict: '{\"status\":\"pass\"}' }));"
+  },
+  {
+    "name": "checks install ignores reviewer error and fallback metadata",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "if (result.error !== undefined || result.fallbackReason !== undefined || result.failureKind !== undefined)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "checks install exposes the repo to its reviewer",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "const input: ReviewerInput = { workspace, outputDir, prompt:",
+    "replacement": "const input: ReviewerInput = { workspace: context.repoPath, outputDir, prompt:"
+  },
+  {
+    "name": "checks install skips the live reviewer preflight",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "preflight: async () => ({ ok: allowsUnattended(await runDoctor({ home, repoPath: context.repoPath, live: true })) }),",
+    "replacement": "preflight: async () => ({ ok: true }),"
+  },
+  {
+    "name": "checks install ignores the current run branch",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "approvedSpec(git, runBranchOf(git))",
+    "replacement": "approvedSpec(git, \"main\")"
+  },
+  {
+    "name": "checks install reports refusals as success",
+    "file": "packages/cli/src/commands/checks.ts",
+    "anchor": "process.exitCode = 1;",
+    "replacement": "process.exitCode = 0;"
+  }
+]

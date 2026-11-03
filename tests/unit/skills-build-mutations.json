@@ -160,5 +160,11 @@
     "file": "skills/build/SKILL.md",
     "anchor": "- **A refusal refuses that one command, not the tool.**",
     "replacement": "- **A refusal means Bash is off for the session.**"
+  },
+  {
+    "name": "build: a security control may be weakened to make something work (decision 169)",
+    "file": "skills/build/SKILL.md",
+    "anchor": "Never make something work by disabling or weakening a security control",
+    "replacement": "Disable or weaken a security control when needed to make something work"
   }
 ]

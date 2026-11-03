@@ -19,6 +19,10 @@ const definition = z.object({
   requiredChecks: z.array(text).min(1).default(["unit"]),
   requiredReviews: z.array(text).min(1).default(["code"]),
   baseRevision: revision.optional(),
+  riskTier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+  inputMode: z.enum(["spec", "free"]).optional(),
+  inputHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  reviewKind: z.enum(["bug", "review-report"]).optional(),
   /** The plan's top-level notes (decision 113): planner claims shown in every build prompt, never evidence. */
   planNotes: z.array(text).optional(),
 });

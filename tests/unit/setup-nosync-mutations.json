@@ -1,0 +1,86 @@
+[
+  {
+    "name": "nosync: setup file not registered in the workers",
+    "file": "vitest.config.ts",
+    "anchor": "setupFiles: [\"./tests/setup/real-git.ts\", \"./tests/setup/nosync.ts\"],",
+    "replacement": "setupFiles: [\"./tests/setup/real-git.ts\"],"
+  },
+  {
+    "name": "nosync: ES module imports keep native",
+    "file": "tests/setup/nosync.ts",
+    "anchor": "installNoSync(fs, syncBuiltinESMExports);",
+    "replacement": "installNoSync(fs, () => {});"
+  },
+  {
+    "name": "nosync: installing never syncs the ES module exports",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "  syncExports();\n}",
+    "replacement": "}"
+  },
+  {
+    "name": "nosync: fdatasyncSync left native",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "for (const name of [\"fsyncSync\", \"fdatasyncSync\"] as const) {",
+    "replacement": "for (const name of [\"fsyncSync\"] as const) {"
+  },
+  {
+    "name": "nosync: a regular file or folder still pays for the flush",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "if (stat.isFile() || stat.isDirectory()) return;",
+    "replacement": "if (stat.isFile() || stat.isDirectory()) return native(fd);"
+  },
+  {
+    "name": "nosync: a folder still pays for the flush",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "if (stat.isFile() || stat.isDirectory()) return;",
+    "replacement": "if (stat.isFile()) return;"
+  },
+  {
+    "name": "nosync: every open descriptor skips the flush and the check",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "if (stat.isFile() || stat.isDirectory()) return;",
+    "replacement": "return;"
+  },
+  {
+    "name": "nosync: a closed descriptor throws fstat's error",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "      } catch {\n        return native(fd);\n      }",
+    "replacement": "      } catch (error) {\n        throw error;\n      }"
+  },
+  {
+    "name": "nosync: an argument that is no descriptor goes to fstat first",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "if (isDescriptorNumber(fd)) {",
+    "replacement": "if (true) {"
+  },
+  {
+    "name": "nosync: a negative number counts as a descriptor",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "Number.isInteger(fd) && fd >= 0 && fd <= 2 ** 31 - 1",
+    "replacement": "Number.isInteger(fd) && fd <= 2 ** 31 - 1"
+  },
+  {
+    "name": "nosync: a number past int32 counts as a descriptor",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "Number.isInteger(fd) && fd >= 0 && fd <= 2 ** 31 - 1",
+    "replacement": "Number.isInteger(fd) && fd >= 0"
+  },
+  {
+    "name": "nosync: a second install wraps the first replacement",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "withoutDeviceFlush(current[NATIVE] ?? current, fstat)",
+    "replacement": "withoutDeviceFlush(current, fstat)"
+  },
+  {
+    "name": "nosync: the replacement does not keep the native function",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "  Object.defineProperty(replacement, NATIVE, { value: native });\n",
+    "replacement": ""
+  },
+  {
+    "name": "nosync: the replacement loses the native name",
+    "file": "tests/setup/nosync-fsync.ts",
+    "anchor": "  Object.defineProperty(replacement, \"name\", { value: native.name });\n",
+    "replacement": ""
+  }
+]

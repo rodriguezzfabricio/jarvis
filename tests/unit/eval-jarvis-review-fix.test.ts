@@ -54,6 +54,7 @@ function reviewer(write: (ws: string) => void, outcome: TaskOutcome = finished()
   const inputs: (TaskInput & { header: string })[] = [];
   return { inputs, harness: { runTask: async (input) => {
     inputs.push({ ...input, header: readFileSync(input.runHeaderPath, "utf8") });
+    if (outcome.status !== "refused") input.onSpawn?.(2100000000);
     write(input.workspace);
     return outcome;
   } } };

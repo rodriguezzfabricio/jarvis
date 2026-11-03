@@ -2,6 +2,7 @@ import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { verifyEvidence } from "../checks/gate.ts";
 import { atomicWrite, GENESIS, type LedgerEntry } from "../ledger/ledger.ts";
+import { releaseStatus } from "../release/states.ts";
 import { footprintReportLines } from "./footprint.ts";
 import { inboxIssues } from "./inbox.ts";
 import { usageReportLines } from "./usage-log.ts";
@@ -19,12 +20,37 @@ export interface ReportOptions {
 type Data = Record<string, unknown>;
 const dataOf = (entry: LedgerEntry): Data => entry.data && typeof entry.data === "object" ? entry.data as Data : {};
 const line = (value: unknown): string => String(value ?? "").replace(/[\r\n\u0000-\u001f\u007f]/g, " ").replace(/[<>`*_[\]\\]/g, "\\$&");
+const boundedLine = (value: unknown, limit = 500): string => line(value).slice(0, limit);
+const record = (value: unknown): Data | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Data : undefined;
 const runnerAuthored = (entry: LedgerEntry): boolean => entry.actor === "runner";
 const orNone = (lines: string[]) => lines.length ? lines : ["- None."];
 
-function releaseEntry(entries: readonly LedgerEntry[]): LedgerEntry | undefined {
-  return entries.filter(runnerAuthored).filter((e) => e.kind === "state_reached" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(String(dataOf(e).revision))
-    && ["preview-ready", "release-ready", "deployed"].includes(String(dataOf(e).state))).at(-1);
+/**
+ * The release lines (decision 158): only a recorded state whose evidence still holds now, rechecked on every
+ * rendering, with its preview URL and whether production is gated. A state that lapsed is named with what it lacks.
+ */
+function releaseLines(entries: readonly LedgerEntry[]): { lines: string[]; summary: string } {
+  const status = releaseStatus(entries);
+  const current = status.current;
+  const lines = [`State: ${current ? current.state : "not-reached"}`];
+  if (current?.state === "built") {
+    lines[0] = "State: built, not distributed";
+    lines.push(`Revision: ${line(current.revision)} (#${current.entry.seq})`, `Bundle: ${line(current.bundlePath)}`, `SHA-256: ${current.artifactHash}`,
+      `Native smoke: not run (${line(current.nativeSmoke.reason)})`);
+    return { lines, summary: `built, not distributed; ${current.bundlePath}; SHA-256 ${current.artifactHash}; native smoke: not run (${current.nativeSmoke.reason})` };
+  }
+  if (current) {
+    const hash = current.manifestHash;
+    lines.push(`Revision: ${line(current.manifest.revision)} (#${current.entry.seq})`,
+      ...(current.previewUrl ? [`Preview: ${line(current.previewUrl)}`] : []),
+      `Production: ${current.productionGranted ? `a grant is bound to manifest ${hash}; promotion is not automated yet` : `gated; no grant is bound to manifest ${hash}. To allow it: jarvis release grant ${hash}`}`,
+      `Open/run: ${line(current.previewUrl ?? dataOf(current.entry).open ?? "No instructions recorded")}`);
+  }
+  for (const lapsed of status.lapsed) lines.push(`Lapsed: ${line(lapsed.state)} (#${lapsed.seq}) no longer holds; missing ${lapsed.missing.map(line).join(", ")}`);
+  const step = entries.filter(runnerAuthored).filter((e) => e.kind === "decision" && dataOf(e).type === "release.step").at(-1);
+  if (step && (!current || step.seq > current.entry.seq)) lines.push(`Release step: ${boundedLine(dataOf(step).outcome, 300)}`);
+  const summary = !current ? "not-reached" : `${current.state}${current.previewUrl ? ` at ${current.previewUrl}` : ""}; production ${current.productionGranted ? "granted, not promoted" : "gated (no grant)"}`;
+  return { lines, summary };
 }
 
 function shownEvidence(task: TaskState): LedgerEntry[] {
@@ -40,6 +66,32 @@ function evidenceLine(entry: LedgerEntry): string {
   const evidence = data.evidence as { dir: string; files: Record<string, string> };
   const hashes = Object.entries(evidence.files).map(([name, hash]) => `${line(name)} SHA-256 ${line(hash)}`).join("; ");
   return `  - #${entry.seq} Check ${line(data.check)}: ${line(evidence.dir)}; ${hashes}`;
+}
+
+function advisoryFindings(state: RunState, entries: readonly LedgerEntry[]): string[] {
+  const result: string[] = [];
+  for (const task of Object.values(state.tasks)) {
+    const reviews = entries.filter(runnerAuthored).filter((entry) => entry.kind === "review_result" && entry.task_id === task.id
+      && entry.attempt_id === task.attemptId && dataOf(entry).revision === task.candidateRevision);
+    for (const entry of reviews) {
+      const details = dataOf(entry).reviews;
+      if (!Array.isArray(details)) continue;
+      for (const detailValue of details) {
+        const detail = record(detailValue);
+        if (!detail) continue;
+        for (const field of ["findings", "investigate"] as const) {
+          if (!Array.isArray(detail[field])) continue;
+          for (const findingValue of detail[field]) {
+            const finding = record(findingValue);
+            if (!finding || (finding.severity !== "medium" && finding.severity !== "low")
+              || finding.file === undefined || finding.line === undefined || finding.scenario === undefined || finding.fix === undefined) continue;
+            result.push(`- ${boundedLine(task.id)}: ${boundedLine(detail.reviewer)}/${boundedLine(detail.model)} [${boundedLine(finding.severity)}] ${boundedLine(finding.file)}:${boundedLine(finding.line)}: ${boundedLine(finding.scenario)}. Fix: ${boundedLine(finding.fix)}`);
+          }
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function activeDecisions(entries: readonly LedgerEntry[]): LedgerEntry[] {
@@ -112,12 +164,12 @@ function taskLines(state: RunState, entries: readonly LedgerEntry[], verify: Evi
 
 /** RunState owns completion; every rendering re-verifies its required evidence files. */
 export function renderReport(state: RunState, entries: readonly LedgerEntry[], claims: readonly ReportClaim[] = [], options: ReportOptions = {}): string {
-  const release = releaseEntry(entries);
+  const release = releaseLines(entries);
   const tasks = taskLines(state, entries, options.verifyEvidence ?? verifyEvidence);
-  const lines = ["# Jarvis report", "", `State: ${release ? line(dataOf(release).state) : "not-reached"}`];
-  if (release) lines.push(`Revision: ${line(dataOf(release).revision)} (#${release.seq})`, `Open/run: ${line(dataOf(release).open ?? "No instructions recorded")}`);
+  const lines = ["# Jarvis report", "", ...release.lines];
   lines.push(`Ledger head: ${entries.at(-1)?.hash ?? GENESIS}`, "", "## Check first", "", ...orNone(attention(entries)), "", "## Done", "", ...orNone(tasks.done));
   lines.push("", "## Blocked / reconciliation", "", ...orNone([...tasks.blocked, ...outsideUnknowns(entries)]));
+  lines.push("", "## Advisory findings", "", ...orNone(advisoryFindings(state, entries)));
   lines.push("", "## Skipped inbox items", "", ...orNone(inboxIssues(entries).map((issue) => `- ${line(issue.id)}: ${line(issue.reason)}`)));
   lines.push("", "## Usage waits", "", ...orNone(usageWaits(entries, options)), "", "## Left", "", ...orNone(tasks.left));
   if (options.leftAlone?.length) lines.push("", "## Left alone by this run", "", `- ${options.leftAlone.map(line).join(", ")}: other work in this project's ledger; this run may touch only its own tasks.`);
@@ -128,12 +180,12 @@ export function renderReport(state: RunState, entries: readonly LedgerEntry[], c
 }
 
 export function notifierSummary(state: RunState, entries: readonly LedgerEntry[], options: ReportOptions = {}): string {
-  const release = releaseEntry(entries);
+  const release = releaseLines(entries);
   const tasks = Object.values(state.tasks);
   const done = tasks.filter((task) => isDone(task, options.verifyEvidence ?? verifyEvidence)).length;
   const taste = activeDecisions(entries).filter((e) => String(dataOf(e).class).toLowerCase() === "taste").length;
   const blocked = tasks.filter((task) => task.status === "blocked").length;
-  return `${release ? String(dataOf(release).state) : "not-reached"}. ${done}/${tasks.length} done; ${taste} Taste decisions to check; ${blocked} blocked. Reply here to steer.`;
+  return `${release.summary}. ${done}/${tasks.length} done; ${taste} Taste decisions to check; ${blocked} blocked. Reply here to steer.`;
 }
 
 /** viewDir is the repo's .jarvis folder. Unique staging avoids a planted temporary-file symlink. */

@@ -116,8 +116,8 @@
   {
     "name": "skills intake decide call drops why",
     "file": "skills/intake/SKILL.md",
-    "anchor": "jarvis decide --by user --class mechanical --why \"<the question's why>\" ",
-    "replacement": "jarvis decide --by user --class mechanical "
+    "anchor": "jarvis decide --by user --class mechanical|taste --why \"<the question's why>\" ",
+    "replacement": "jarvis decide --by user --class mechanical|taste "
   },
   {
     "name": "skills spec decide call drops why",
@@ -152,7 +152,7 @@
   {
     "name": "skills spec mid run reconfirms",
     "file": "skills/spec/SKILL.md",
-    "anchor": "there's never another confirmation round",
+    "anchor": "a mid-run version never gets its own confirmation round",
     "replacement": "it goes out for confirmation again"
   },
   {
@@ -200,8 +200,8 @@
   {
     "name": "skills researcher model becomes an alias",
     "file": "plugin/agents/researcher.md",
-    "anchor": "model: claude-sonnet-5-5",
-    "replacement": "model: sonnet"
+    "anchor": "model: claude-opus-5-5",
+    "replacement": "model: opus"
   },
   {
     "name": "skills spec reader model becomes an alias",
@@ -240,10 +240,10 @@
     "replacement": "Start with progress; optionally show the headline later"
   },
   {
-    "name": "skills intake handoff invokes runner help",
+    "name": "skills local handoff bypasses failed gate",
     "file": "plugin/commands/jarvis.md",
-    "anchor": "Do not invoke `jarvis run`, even with `--help`, or inspect runner options.",
-    "replacement": "Invoke `jarvis run --help` before handing off."
+    "anchor": "Stop on any refusal; never bypass a failed gate.",
+    "replacement": "Ignore any refusal and start the build anyway."
   },
   {
     "name": "skills spec explicit yes becomes empty defaults",
@@ -380,8 +380,8 @@
   {
     "name": "skills spec stops before clean final reread",
     "file": "skills/spec/SKILL.md",
-    "anchor": "until a pass finds no blocking gaps",
-    "replacement": "then proceed regardless of remaining gaps"
+    "anchor": "any fresh-reader pass counts toward the cap below",
+    "replacement": "fresh-reader passes after edits do not count toward the cap"
   },
   {
     "name": "skills spec ignores active register exclusions",
@@ -422,7 +422,7 @@
   {
     "name": "skills spec splits a confirmation into user decisions",
     "file": "skills/spec/SKILL.md",
-    "anchor": "record the answer once as the user's decision, its text the exact recorded answer, with `--answer <answerSeq>:CONFIRM`",
+    "anchor": "record the answer once with its exact words as evidence, the decision itself as entry text, with `--answer <answerSeq>:CONFIRM`",
     "replacement": "record each change as the user's decision"
   },
   {

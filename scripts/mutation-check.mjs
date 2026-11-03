@@ -221,6 +221,22 @@ const mutations = [
   ["ledger ignores edited entries", L, '    if (entryHash(rest) !== hash) problems.push', '    if (false) problems.push'],
   ["ledger ignores the head", L, '    else problems.push("head.hash does not match', '    else if (false) problems.push("head.hash does not match'],
   ["checks lock not tied to the ledger", K, "    if (!approved || (approved.data", "    if (false && (approved.data"],
+  // Protected installer runtimes: opaque, bounded and hashed in full (backlog 180, decision 162).
+  ["store runtime full byte hash", K, "      hash.update(buffer.subarray(0, n));", "      hash.update(Buffer.alloc(n));"],
+  ["store runtime added files detected", K, "    for (const f of Object.keys(now)) if (!Object.hasOwn(locked, f))", "    for (const f of []) if (!Object.hasOwn(locked, f))"],
+  ["store runtime symlinks refused", K, "      if (st.isSymbolicLink()) throw new Error(`check files may not be symlinks: ${name}`);", "      if (st.isSymbolicLink()) continue;"],
+  ["store runtime file byte limit", K, "st.size > CHECK_RUNTIME_LIMITS.fileBytes", "false"],
+  ["store runtime aggregate byte limit", K, "runtimeBytes > CHECK_RUNTIME_LIMITS.totalBytes", "false"],
+  ["store runtime file count limit", K, "++runtimeFiles > CHECK_RUNTIME_LIMITS.files", "false"],
+  ["store runtime directory limit", K, "++runtimeDirs > CHECK_RUNTIME_LIMITS.directories", "false"],
+  ["store runtime depth limit", K, "depth > CHECK_RUNTIME_LIMITS.depth", "false"],
+  ["store reserved names fold case", K, "inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES])", "inRoots(file, [...RUNTIME_ROOTS, ...PROTECTED_FILES])"],
+  ["store reserves below a protected file", K, "inRoots(file.toLowerCase(), [...RUNTIME_ROOTS, ...PROTECTED_FILES])", "inRoots(file.toLowerCase(), RUNTIME_ROOTS) || PROTECTED_FILES.includes(file.toLowerCase())"],
+  // The QA toolchain's reserved root and the bounded hashing of an installer's source (backlog 201, decision 167).
+  ["store reserves QA runtime roots", K, "\"qa-toolchain\", \"fixtures/qa-toolchain\", ", ""],
+  ["store bounds a standalone QA source", K, "runtimeRoot || inRoots(name.toLowerCase(), RUNTIME_ROOTS)", "false || inRoots(name.toLowerCase(), RUNTIME_ROOTS)"],
+  ["store refuses hard linked runtime files at approval", K, "if (!st.isFile() || st.nlink !== 1) throw", "if (st.nlink !== 1) continue; if (!st.isFile()) throw"],
+  ["store runtime roots predicate", K, "export const checkRuntimePath = (file: string): boolean => inRoots(file.toLowerCase(), RUNTIME_ROOTS);", "export const checkRuntimePath = (file: string): boolean => true;"],
   ["gate skips check verification", GT, "  if (!v.ok) return { status: \"tampered\"", "  if (false) return { status: \"tampered\""],
   ["gate runs checks unsandboxed", SR, "  const wrapped = await wrap(r);", "  const wrapped = r.command;"],
   ["gate lets checks read the runner folder", GT, "          denyRead: [real(g.jarvisHome), real(homedir()), real(verifyDir), ...systemTemp],", "          denyRead: [real(homedir()), real(verifyDir), ...systemTemp],"],
@@ -317,6 +333,7 @@ if (process.env.JARVIS_MUTATION_PLAN === "1") {
   console.log(definedLine(mutations));
   console.log(planLine(plan, mode));
   for (const [name] of selected) console.log(`run ${name}`);
+  await new Promise((resolve) => process.stdout.write("", resolve)); // drain the complete inventory before exiting a piped run
   process.exit(5); // a plan is no evidence: never 0
 }
 const started = Date.now();

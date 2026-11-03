@@ -4,7 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { CODEX_VERSION, pinnedCodexBin } from "../config/pins.ts";
 import { runSession } from "../proc/session.ts";
-import type { CodexReviewerOptions } from "./codex.ts";
+import { codexTurnCompleted, type CodexReviewerOptions } from "./codex.ts";
 import { openCodexJail } from "./confine.ts";
 import { DESIGN_LIMITS, validateDesignImage } from "./design-evidence.ts";
 import { DesignVerdictSchema, evaluateDesignVerdict } from "./design-verdict.ts";
@@ -52,8 +52,7 @@ export function createCodexDesignReviewer(options: CodexReviewerOptions = {}): D
           "--output-schema", schema, "-o", verdict, ...input.images.flatMap(path => ["-i", path]), "--", input.prompt]) });
         captures.push({result, proxyRefused: jail.proxy.refused});
         if (result.code !== 0 || result.timedOut || result.overflowed) throw new Error("design review process failed or exceeded bounds");
-        const events = result.stdout.trim().split("\n").map(line => JSON.parse(line) as {type?: string});
-        if (!events.some(e => e.type === "turn.completed") || events.some(e => e.type === "turn.failed")) throw new Error("design review did not complete");
+        if (!codexTurnCompleted(result.stdout)) throw new Error("design review did not complete without runtime errors");
         if (checkoutHash(input.workspace) !== before) throw new Error("read-only design checkout changed");
         const stat = lstatSync(verdict);
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) throw new Error("invalid design verdict file");

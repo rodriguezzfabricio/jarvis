@@ -1,5 +1,7 @@
 # Jarvis: Project Brief (v1)
 
+This document describes the v1 product target. The current delivered scope is the locally verified CLI harness (decision 183); deployment and formal v1 proof gates remain open. [Current evidence](reviews/local-e2e-2026-11-02.md).
+
 Oct 23, 2026 · Fabricio
 
 ## In one line

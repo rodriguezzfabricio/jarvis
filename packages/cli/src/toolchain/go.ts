@@ -21,10 +21,16 @@ import type { ZipLimits } from "./zip.ts";
  * session, with "refused:" and the reason.
  */
 
-/** What the session gets: folders it reads but never writes, PATH entries inside them, and Go's variables. */
+/** What the session gets: folders it reads but never writes, PATH entries inside them, and the toolchain's variables. */
 export interface SessionToolchain {
   version: string;
   readOnlyDirs: string[];
+  /**
+   * Root-owned system folders the toolchain also uses (decision 164: the Command Line Tools Rust links through).
+   * The settings reopen them read-only like the toolchain's own folders; PATH entries and variables may point
+   * inside them as well.
+   */
+  systemDirs?: string[];
   pathPrefix: string[];
   env: Record<string, string>;
 }

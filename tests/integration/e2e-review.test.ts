@@ -33,7 +33,7 @@ const SCENARIO = {
       { notes: "Added multiply." },
     ] },
     { name: "review-crashes", match: "Independently review", steps: [{ exit: 1 }] },
-    { name: "review-passes", match: "Independently review", steps: [{ result: { subtype: "success", text: "{\"findings\":[]}" } }] },
+    { name: "review-passes", match: "Independently review", steps: [{ result: { subtype: "success", text: "{\"findings\":[],\"checked\":[\"spec-criteria\",\"data-flow\",\"error-paths\",\"unchanged-callers\",\"bug-brief-inputs\"]}" } }] },
   ],
 };
 

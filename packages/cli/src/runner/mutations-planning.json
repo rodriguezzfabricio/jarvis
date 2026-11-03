@@ -128,7 +128,7 @@
   {
     "name": "planning fresh review on change",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "const verdict = Verdict.parse(await options.reviewVerdict(prompt));",
+    "anchor": "const verdict = Verdict.parse(await options.reviewVerdict(prompt, Object.freeze({ ...bundle.files })));",
     "replacement": "const verdict = ledger.entries().some((e) => e.kind === \"checks_approved\") ? { status: \"pass\" } : Verdict.parse(await options.reviewVerdict(prompt));"
   },
   {
@@ -140,14 +140,14 @@
   {
     "name": "planning immutable reviewed files",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "return replaceChecks(store, bundle, ledger, verdict);",
-    "replacement": "return replaceChecks(store, { ...bundle, files: { ...bundle.files, ...authored.files } }, ledger, verdict);"
+    "anchor": "return replaceChecks(store, bundle, ledger, verdict, baseline?.hashes ?? {});",
+    "replacement": "return replaceChecks(store, { ...bundle, files: { ...bundle.files, ...authored.files } }, ledger, verdict, baseline?.hashes ?? {});"
   },
   {
     "name": "planning bundle paths no escape",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "if (!relativePath(path) || typeof content !== \"string\")",
-    "replacement": "if (typeof content !== \"string\")"
+    "anchor": "if (!relativePath(path) || protectedCheckPath(path) || typeof content !== \"string\")",
+    "replacement": "if (protectedCheckPath(path) || typeof content !== \"string\")"
   },
   {
     "name": "planning checks spec coverage",
@@ -194,8 +194,8 @@
   {
     "name": "planning concurrent protected changes",
     "file": "packages/cli/src/runner/checks-author.ts",
-    "anchor": "if (canonical(installedFiles(store)) !== canonical(existing))",
-    "replacement": "if (false)"
+    "anchor": "if (canonical(installedFiles(store)) !== canonical(existing) || canonical(store.hashAll()) !== canonical(baseline?.hashes ?? {})\n    || (baseline && (!verified?.ok || verified.lockHash !== baseline.lockHash))) throw new Error(\"protected checks changed during review; new review required\");\n  return replaceChecks(store, bundle, ledger, verdict, baseline?.hashes ?? {});",
+    "replacement": "if (false) throw new Error(\"protected checks changed during review; new review required\");\n  return replaceChecks(store, bundle, ledger, verdict, store.hashAll());"
   },
   {
     "name": "planning driver stdio isolation",
@@ -502,5 +502,221 @@
     "file": "skills/architect/SKILL.md",
     "anchor": "  \"notes\": [\"Reuse the existing file store; add no dependencies.\"],\n",
     "replacement": ""
+  },
+  {
+    "name": "plan accepts tier 3",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "tier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional()",
+    "replacement": "tier: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional()"
+  },
+  {
+    "name": "build session ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "runHeaderPath: headerPath, role: \"build\", tier,",
+    "replacement": "runHeaderPath: headerPath, role: \"build\", tier: 1,"
+  },
+  {
+    "name": "build usage ignores plan tier",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "attemptId: workspace.attemptId, role: \"build\", tier,",
+    "replacement": "attemptId: workspace.attemptId, role: \"build\", tier: 1,"
+  },
+  {
+    "name": "direct handoff requires bug or refactor triage",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "if (classified.type !== \"bug\" && classified.type !== \"refactor\") throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "planning protects installer namespaces",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "protectedCheckPath(path) || ",
+    "replacement": ""
+  },
+  {
+    "name": "planning refuses unapproved runtime-only baseline",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!approved && Object.keys(store.hashAll()).length === 0) return undefined;",
+    "replacement": "if (!approved && Object.keys(existing).length === 0) return undefined;"
+  },
+  {
+    "name": "planning retains protected installer artifacts",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "Object.entries(hashes).filter(([file]) => protectedCheckPath(file))",
+    "replacement": "Object.entries(hashes).filter(() => false)"
+  },
+  {
+    "name": "planning refuses non-ASCII authored paths",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (!/^[\\x20-\\x7e]+$/.test(path)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "planning refuses reserved check names",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "if (protectedCheckPath(`${check.name}.check.json`)) throw",
+    "replacement": "if (false) throw"
+  },
+  {
+    "name": "planning checkpoint uses the shared index",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "env: { GIT_INDEX_FILE: join(temporary, \"index\") }",
+    "replacement": "env: {}"
+  },
+  {
+    "name": "planning checkpoint accepts draft",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (checked.spec.status === \"draft\")",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning checkpoint overwrites approved spec",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (current !== old && !(oldStatus === \"unconfirmed\" && current === old.replace(/^status: unconfirmed$/m, \"status: confirmed\")))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning run accepts committed draft",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "  if (checked.spec.status === \"draft\") throw new Error(`${path} is draft; finish confirmation before running`);\n",
+    "replacement": ""
+  },
+  {
+    "name": "planning checkpoint executes repository filters",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "[\"hash-object\", \"-w\", \"--stdin\"]",
+    "replacement": "[\"hash-object\", \"-w\", \"--path\", path, \"--stdin\"]"
+  },
+  {
+    "name": "planning check review loses spec definitions",
+    "file": "packages/cli/src/runner/checks-author.ts",
+    "anchor": "assumptions: spec.assumptions ?? []",
+    "replacement": "assumptions: []"
+  },
+  {
+    "name": "planning direct refactor is rejected",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "classified.type !== \"bug\" && classified.type !== \"refactor\"",
+    "replacement": "classified.type !== \"bug\""
+  },
+  {
+    "name": "planning refactor resume matches bug condition",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "canonical(prior) === canonical(expected)",
+    "replacement": "prior.exitCondition === BUG_EXIT_CONDITION"
+  },
+  {
+    "name": "planning checkpoint follows Git symlinks",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "function assertGitMarker(repo: string): void {",
+    "replacement": "function assertGitMarker(repo: string): void { return;"
+  },
+  {
+    "name": "planning checkpoint accepts foreign gitdir files",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (marker && !marker.isDirectory()) {",
+    "replacement": "if (false && marker) {"
+  },
+  {
+    "name": "planning task IDs reuse completion for changed work",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "if (previous && canonical(previous.data) !== canonical(data))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning request drops selected edit pipeline",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "const classified = result.then ?? result;",
+    "replacement": "const classified = { ...result, type: \"question\" as const };"
+  },
+  {
+    "name": "planning checkpoint allows commondir redirection",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "if (marker?.isDirectory() && lstatSync(join(repo, \".git/commondir\"), { throwIfNoEntry: false }))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "planning checkpoint skips Git storage validation",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "function assertGitStorage(root: string): void {",
+    "replacement": "function assertGitStorage(root: string): void { return;"
+  },
+  {
+    "name": "planning checkpoint reads oversized committed specs",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "      if (!Number.isSafeInteger(size) || size < 0 || size > 256 * 1024 || (historicalBytes += size) > 4 * 1024 * 1024) throw new Error(\"committed planning history exceeds byte limit\");\n      const old = safeGit(repo, [\"show\", `${head}:${path}`], { home, maxBuffer: 256 * 1024 }).toString();",
+    "replacement": "      if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || (historicalBytes += size) > 4 * 1024 * 1024) throw new Error(\"committed planning history exceeds byte limit\");\n      const old = safeGit(repo, [\"show\", `${head}:${path}`], { home, maxBuffer: 1024 ** 3 }).toString();"
+  },
+  {
+    "name": "planning mixed handoff ignores no-edit question",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "type: primary.type === \"question\" ? \"question\" : selected.type",
+    "replacement": "type: selected.type"
+  },
+  {
+    "name": "planning direct requests reuse weaker risk evidence",
+    "file": "packages/cli/src/runner/plan.ts",
+    "anchor": "canonical(prior) === canonical(expected)",
+    "replacement": "canonical({ ...prior, riskTier: expected.riskTier }) === canonical(expected)"
+  },
+  {
+    "name": "planning resumed task loses recorded risk floor",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "Math.max(this.opts.tier ?? 1, task.definition.riskTier ?? 0)",
+    "replacement": "(this.opts.tier ?? 1)"
+  },
+  {
+    "name": "planning checkpoint permits hard-linked metadata",
+    "file": "packages/cli/src/runner/plan-checkpoint.ts",
+    "anchor": "entry.isFile() && lstatSync(join(path, entry.name)).nlink !== 1",
+    "replacement": "false"
+  },
+  {
+    "name": "planning task identity forgets approved inputs",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "...(this.opts.inputHash ? { inputHash: this.opts.inputHash } : {})",
+    "replacement": "...({})"
+  },
+  {
+    "name": "planning composition omits spec identity",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: verifiedInputs.lockHash",
+    "replacement": "spec: null, checks: verifiedInputs.lockHash"
+  },
+  {
+    "name": "planning composition omits check identity",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: verifiedInputs.lockHash",
+    "replacement": "spec: mode === \"spec\" ? spec?.text ?? null : null, checks: null"
+  },
+  {
+    "name": "planning resume drops bug classification",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "if (task?.definition.reviewKind) return {",
+    "replacement": "if (false) return {"
+  },
+  {
+    "name": "planning skips stale candidate input validation",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "    this.validateInputs();",
+    "replacement": ""
+  },
+  {
+    "name": "planning resume loses requirement provenance",
+    "file": "packages/cli/src/runner/loop.ts",
+    "anchor": "this.opts.inputHashFor(task.definition.inputMode)",
+    "replacement": "this.opts.inputHash"
+  },
+  {
+    "name": "planning report review inherits fix tier",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "task.definition.reviewKind === \"review-report\" ? task.definition.riskTier ?? 1 : reviewTier",
+    "replacement": "reviewTier"
+  },
+  {
+    "name": "planning plain resume loses workflow phases",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "!plan && context.request === undefined && context.planKind === undefined && existing.some(task => task.inputMode === \"free\")",
+    "replacement": "false"
   }
 ]

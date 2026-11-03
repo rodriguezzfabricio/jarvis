@@ -11,6 +11,7 @@ import type { NtfyOptions } from "../../../packages/cli/src/notify/ntfy.ts";
 import type { SecretsWriter } from "../../../packages/cli/src/broker/secrets.ts";
 import type { SetupDeps } from "../../../packages/cli/src/setup/setup.ts";
 import { InterruptedError, type Tty } from "../../../packages/cli/src/setup/tty.ts";
+import { noAcl } from "./no-acl.ts";
 
 /** The rejection of a promise, or undefined: a mismatch then fails as a plain assertion. */
 export async function failure(promise: Promise<unknown>): Promise<unknown> {
@@ -59,7 +60,7 @@ export function deps(home: string, tty: Tty, extra: Partial<SetupDeps> = {}) {
   const claude = pinnedClaudeBin(home);
   const d: SetupDeps = {
     home, tty, print: (text) => { out.push(text); }, pluginSource: PLUGIN, repoRoot: REPO,
-    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)", ...extra,
+    exists: (p) => p === claude || existsSync(p), exec: () => "2.1.309 (Claude Code)", acl: noAcl, ...extra,
   };
   return { d, out, text: () => out.join("\n") };
 }
@@ -68,7 +69,7 @@ export const TASTE = ["Linear, Things, Stripe", "A generic AI landing page", "se
 export function fullAnswers(token = SENTINEL) {
   return {
     lines: ["y", "vercel", "", "y", "n", "y", "y", ...TASTE],
-    hidden: [token, `${token}-vercel`, `${token}-cf`, `${token}-oauth-id`, `${token}-oauth-secret`],
+    hidden: [token, `${token}-vercel-preview`, `${token}-vercel-production`, `${token}-cf`, `${token}-oauth-id`, `${token}-oauth-secret`],
   };
 }
 export function filesUnder(root: string): string[] {

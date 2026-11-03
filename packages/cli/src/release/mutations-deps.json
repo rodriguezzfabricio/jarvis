@@ -1,0 +1,158 @@
+[
+  {
+    "name": "release_deps_lock_required",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "  const raw = requiredFile(checkout, lockfile);",
+    "replacement": "  if (!lstatSync(join(checkout, lockfile), { throwIfNoEntry: false })) return { manager, version: declaration[2]!, lockfile };\n  const raw = requiredFile(checkout, lockfile);"
+  },
+  {
+    "name": "release_deps_registry_specs",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "function registrySpec(value: unknown): void {",
+    "replacement": "function registrySpec(value: unknown): void { return;"
+  },
+  {
+    "name": "release_deps_registry_resolutions",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "pkg.resolved !== `https://registry.npmjs.org/${name}/-/${base}-${pkg.version}.tgz`",
+    "replacement": "false"
+  },
+  {
+    "name": "release_deps_pnpm_no_tarballs",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "Object.keys(resolution).some(k => k !== \"integrity\")",
+    "replacement": "false"
+  },
+  {
+    "name": "release_deps_integrity",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "function integrity(value: unknown): void {",
+    "replacement": "function integrity(value: unknown): void { return;"
+  },
+  {
+    "name": "release_deps_project_config",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "if (lstatSync(join(checkout, name), { throwIfNoEntry: false })) throw new Error(\"project package-manager configuration refused\");",
+    "replacement": "if (false) throw new Error(\"project package-manager configuration refused\");"
+  },
+  {
+    "name": "release_deps_runtime_config",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "manifest.engines && Object.keys(object(manifest.engines)).some(key => ![\"node\", \"npm\", \"pnpm\"].includes(key))",
+    "replacement": "false"
+  },
+  {
+    "name": "release_deps_ignore_scripts",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "[\"ci\", \"--ignore-scripts\", \"--no-audit\", \"--no-fund\", \"--include=dev\", \"--include=optional\"]",
+    "replacement": "[\"ci\", \"--no-audit\", \"--no-fund\", \"--include=dev\", \"--include=optional\"]"
+  },
+  {
+    "name": "release_deps_ignore_pnpm_hooks",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "\"--ignore-pnpmfile\", \"--config.manage-package-manager-versions=false\"",
+    "replacement": "\"--config.manage-package-manager-versions=false\""
+  },
+  {
+    "name": "release_deps_user_config",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "npm_config_userconfig: \"/dev/null\"",
+    "replacement": "npm_config_userconfig: \"/tmp/ambient-npmrc\""
+  },
+  {
+    "name": "release_deps_global_config",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "npm_config_globalconfig: globalConfig",
+    "replacement": "npm_config_globalconfig: \"/dev/null\""
+  },
+  {
+    "name": "release_deps_registry_allowlist",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "allowedDomains: [\"registry.npmjs.org\"]",
+    "replacement": "allowedDomains: [\"registry.npmjs.org\", \"evil.example\"]"
+  },
+  {
+    "name": "release_deps_no_loopback",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "allowLocalBinding: false",
+    "replacement": "allowLocalBinding: true"
+  },
+  {
+    "name": "release_deps_no_sockets",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "allowUnixSockets: []",
+    "replacement": "allowUnixSockets: [\"/tmp/broker.sock\"]"
+  },
+  {
+    "name": "release_deps_pinned_version",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "if (pin.version !== plan.version)",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_deps_private_tool",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "if ([node, bin, root].some(p => within(realpathSync(scratch), p, true)) || !within(root, bin))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_deps_version_probe",
+    "file": "packages/cli/src/release/dependency-worker.ts",
+    "anchor": "if (version && stdout.trim() !== input.version) return resolve(72);",
+    "replacement": "if (false) return resolve(72);"
+  },
+  {
+    "name": "release_deps_size_bound",
+    "file": "packages/cli/src/release/dependency-worker.ts",
+    "anchor": "if (bytes > input.maxBytes) return 73;",
+    "replacement": "if (false) return 73;"
+  },
+  {
+    "name": "release_deps_count_bound",
+    "file": "packages/cli/src/release/dependency-worker.ts",
+    "anchor": "if (++files > input.maxFiles || depth > 64) return 74;",
+    "replacement": "if (false) return 74;"
+  },
+  {
+    "name": "release_deps_link_bound",
+    "file": "packages/cli/src/release/dependency-worker.ts",
+    "anchor": "return input.roots.some(root => inside(root, realpathSync(path))) ? 0 : 75;",
+    "replacement": "return 0;"
+  },
+  {
+    "name": "release_deps_time_bound",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "timeoutMs: cap.timeoutMs, maxOutputBytes: cap.maxOutputBytes",
+    "replacement": "timeoutMs: cap.timeoutMs + 100, maxOutputBytes: cap.maxOutputBytes"
+  },
+  {
+    "name": "release_deps_output_bound",
+    "file": "packages/cli/src/release/deps.ts",
+    "anchor": "maxOutputBytes: cap.maxOutputBytes, killGraceMs: 1000",
+    "replacement": "maxOutputBytes: 64 * 1024 * 1024, killGraceMs: 1000"
+  },
+  {
+    "name": "release_deps_stop_before_build",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "      return { status: \"fail\", reason };",
+    "replacement": "      // mutation: continue after failed dependencies"
+  },
+  {
+    "name": "release_deps_offline_build",
+    "file": "packages/cli/src/release/build.ts",
+    "anchor": "      policy,\n      command: i.build.command,",
+    "replacement": "      policy: { ...policy, allowedDomains: [\"registry.npmjs.org\"] },\n      command: i.build.command,"
+  },
+  {
+    "name": "release_deps_pnpm_builtin_registry",
+    "file": "packages/cli/src/release/deps-lock.ts",
+    "anchor": "if (name.startsWith(\"@jsr/\"))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_run_dependency_pins",
+    "file": "packages/cli/src/release/run.ts",
+    "anchor": "    ...(i.seams?.dependencyPins ? { dependencyPins: i.seams.dependencyPins } : {}) });",
+    "replacement": "    });"
+  }
+]

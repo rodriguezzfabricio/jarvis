@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync, type Stats } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runGate, type GateInput, type GateResult } from "../checks/gate.ts";
@@ -164,37 +164,51 @@ function validateSymlinks(root: string, files: WorkspaceFileChecks = {}): void {
 
 type TreeContext = Pick<TaskWorkspace, "path" | "baseRevision" | "home">;
 
-function rootIgnoresRunnerFiles(git: RunnerGit, w: TreeContext, tree?: string): boolean {
-  if (tree !== undefined) return committedIgnorePolicy(git, w, tree);
-  const path = join(w.path, ".jarvis");
-  const created = !existsSync(path);
-  if (created) mkdirSync(path);
+interface IgnorePolicy { root: boolean; effective: boolean; negated: boolean }
+
+function ignoreMatch(git: RunnerGit, w: TreeContext, scratch: string): { root: boolean; effective: boolean } {
   try {
-    const fields = command(git, w.path, ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0")).toString().split("\0");
-    return fields[0] === ".gitignore" && !!fields[2] && !fields[2].startsWith("!");
+    const fields = command(git, scratch, ["-c", "core.excludesFile=/dev/null", "-c", "core.ignoreCase=true", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0"), w.path).toString().split("\0");
+    const effective = !!fields[2] && !fields[2].startsWith("!");
+    return { effective, root: effective && (fields[0] === ".gitignore" || fields[0] === join(scratch, ".gitignore")) };
   } catch (e) {
-    if ((e as { status?: number }).status === 1) return false;
+    if ((e as { status?: number }).status === 1) return { root: false, effective: false };
     throw e;
-  } finally {
-    if (created) rmdirSync(path);
   }
 }
 
-
-function committedIgnorePolicy(git: RunnerGit, w: TreeContext, tree: string): boolean {
+/** The same immutable-tree check handles the index, repair seeds, merges and promotion. */
+function committedIgnorePolicy(git: RunnerGit, w: TreeContext, tree: string): IgnorePolicy {
   const scratch = mkdtempSync(join(tmpdir(), "jarvis-ignore-"));
   try {
-    let contents: Buffer;
-    try { contents = command(git, w.path, ["show", `${tree}:.gitignore`], w.home); }
-    catch (e) { if ((e as { status?: number }).status === 128) return false; throw e; }
+    const listing = tree === "" ? ["ls-files", "--stage", "-z"] : ["ls-tree", "-z", tree];
+    const entries = command(git, w.path, listing, w.home).toString().split("\0")
+      .map((entry) => ({ name: entry.slice(entry.indexOf("\t") + 1), regular: /^100(?:644|755) /.test(entry) }))
+      .filter((entry) => entry.name.toLowerCase() === ".gitignore");
+    if (entries.length > 1) throw new Error("ambiguous root .gitignore spelling");
+    const entry = entries[0];
+    const contents = entry?.regular ? command(git, w.path, ["show", `${tree}:${entry.name}`], w.home).toString() : "";
     writeFileSync(join(scratch, ".gitignore"), contents);
     mkdirSync(join(scratch, ".jarvis"));
-    const fields = command(git, scratch, ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", "--verbose", "--non-matching", "-z", "--stdin"], w.home, Buffer.from(".jarvis\0"), w.path).toString().split("\0");
-    return (fields[0] === ".gitignore" || fields[0] === join(scratch, ".gitignore")) && !!fields[2] && !fields[2].startsWith("!");
-  } catch (e) {
-    if ((e as { status?: number }).status === 1) return false;
-    throw e;
+    const policy = ignoreMatch(git, w, scratch);
+    // An ignored directory protects every descendant. Also reject negations aimed at that namespace,
+    // even when Git masks them behind an ignored parent or a later rule. Git matches the globs, including
+    // escapes and character classes; case folding models the default APFS volume on every host.
+    const negations = contents.split(/\r?\n/).filter((line) => line.startsWith("!")).map((line) => {
+      const pattern = line.slice(1).replace(/\\\//g, "/").replace(/^\//, "");
+      return `/${pattern.split("/")[0]}${pattern.includes("/") ? "/" : ""}`;
+    });
+    writeFileSync(join(scratch, ".gitignore"), negations.join("\n"));
+    const negated = negations.length > 0 && ignoreMatch(git, w, scratch).root;
+    return { ...policy, negated };
   } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
+function rootIgnoresRunnerFiles(git: RunnerGit, w: TreeContext, tree?: string): boolean {
+  const candidate = committedIgnorePolicy(git, w, tree ?? "");
+  if (!candidate.effective || candidate.negated) return false;
+  const base = committedIgnorePolicy(git, w, w.baseRevision);
+  return !base.root || candidate.root;
 }
 
 function validateRunnerChanges(git: RunnerGit, w: TreeContext, tree?: string): void {
@@ -331,6 +345,40 @@ export function deleteCandidateBranches(repoPath: string, options: CandidateBran
     deleted.push(ref);
   }
   return deleted;
+}
+
+export type SeedResult = "seeded" | "conflict" | "unavailable";
+
+/**
+ * A repair starts from its failed candidate's files (decision 160). Call only on a fresh workspace, before any
+ * session ran in it. The candidate's tree, reconciled onto the workspace's base when the run branch moved since
+ * (a three-way merge from the candidate's own base), is checked out over the base: HEAD stays on the base, so
+ * the next candidate's parent, and the diff its reviewer sees, is still the run branch. "conflict" and
+ * "unavailable" (no such candidate, or a runner merge) leave the workspace exactly at its base.
+ */
+export function seedWorkspace(w: TaskWorkspace, from: CandidateRevision, seams: GitSeams = {}): SeedResult {
+  requireRevision(from.revision);
+  if (!from.ref.startsWith("refs/heads/jarvis/candidates/")) throw new Error("seed candidate ref is not runner-owned");
+  const git = seams.git ?? safeGit;
+  validateWorkspace(w, git);
+  const run = (args: readonly string[]) => command(git, w.path, args, w.home).toString().trim();
+  // The candidate's objects come from the runner's repository; nothing in the workspace names them.
+  try { command(git, w.path, ["-c", "protocol.file.allow=always", "-c", "fetch.fsckObjects=true", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--", w.repoPath, from.ref], w.home); }
+  catch { return "unavailable"; }
+  try { run(["cat-file", "-e", `${from.revision}^{commit}`]); } catch { return "unavailable"; }
+  const parents = run(["rev-list", "--parents", "-n", "1", from.revision]).split(" ").slice(1);
+  if (parents.length !== 1) return "unavailable"; // a runner merge: decision 100 repairs it from the new head
+  let tree: string;
+  if (parents[0] === w.baseRevision) tree = run(["rev-parse", "--verify", `${from.revision}^{tree}`]);
+  else {
+    try { tree = run(["merge-tree", "--write-tree", "--no-messages", "-z", "--merge-base", parents[0]!, w.baseRevision, from.revision]).split("\0")[0]!.trim(); }
+    catch (e) { if ((e as { status?: number }).status === 1) return "conflict"; throw e; }
+  }
+  requireRevision(tree);
+  validateTree(git, w, tree);
+  run(["read-tree", "--reset", "-u", tree]);
+  validateSymlinks(w.path, seams.files ?? {}); // what the session will see, as commitCandidate checks it again
+  return "seeded";
 }
 
 /** The existing gate owns verified checkout creation and protected evidence capture. */

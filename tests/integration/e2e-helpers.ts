@@ -176,8 +176,8 @@ export function createE2EProject(opts: E2EOptions): E2EProject {
 }
 
 /** Appends a task_created entry per fixture task (data in runner/state.ts's definition shape, plus title, story, criteria, goal). */
-export function seedTasks(p: E2EProject): LedgerEntry[] {
-  return p.tasks.map(({ id, ...data }) => p.ledger.append({ kind: "task_created", actor: "runner", task_id: id, data }));
+export function seedTasks(p: E2EProject, identity: { inputHash?: string | undefined; inputMode?: "spec" | "free" | undefined } = {}): LedgerEntry[] {
+  return p.tasks.map(({ id, ...data }) => p.ledger.append({ kind: "task_created", actor: "runner", task_id: id, data: { ...data, ...identity } }));
 }
 
 /** What createClaudeHarness (harness/claude/task.ts) needs, pointed at this project; the live preflight is stubbed to pass. */

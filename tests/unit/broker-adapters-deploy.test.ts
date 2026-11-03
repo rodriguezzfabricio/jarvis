@@ -27,8 +27,10 @@ function setup(provider: "vercel" | "netlify" = "vercel", behavior?: (s: Session
     artifactRoot, privateRoot, snapshotRoot: ledger.dir, artifacts: { [m.revision]: m.artifactHash } };
   const adapters = deployAdapters({ ledger, project: "p", resolveManifest: hash => hash === manifestHash(m) ? m : undefined,
     projectConfig, readyToPromote: () => true,
-    providers: { [provider]: { bin: `/trusted/bin/${provider}`, home: "/trusted/home", cwd: "/trusted/control" } },
-    run: async spec => { calls.push(spec);
+    providers: { [provider]: { bin: `/trusted/bin/${provider}`, version: "1.2.3", home: privateRoot, cwd: privateRoot } },
+    run: async spec => {
+      if (spec.args.includes("--version")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: provider === "vercel" ? "1.2.3" : "netlify-cli/1.2.3 darwin-arm64 node-v24.0.0", stderr: "" };
+      calls.push(spec);
       if (spec.args.includes("inspect")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: JSON.stringify({ id: "old-deploy", url: "https://old.vercel.app", projectId: m.siteId }), stderr: "" };
       if (spec.args.includes("getSite")) return { code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout: JSON.stringify({ id: m.siteId, published_deploy: { id: "old-deploy", deploy_ssl_url: "https://old.netlify.app" } }), stderr: "" };
       return behavior ? behavior(spec) : { code: 0, timedOut: false, overflowed: false, durationMs: 1,
@@ -46,7 +48,7 @@ describe("provider adapters through the broker", () => {
     expect(calls[0]!.bin).toBe(`/trusted/bin/${provider}`);
     expect(Object.values(calls[0]!.env).filter(v => v === TOKEN)).toHaveLength(1);
     expect(calls[0]!.args.join(" ")).not.toContain(TOKEN);
-    if (provider === "netlify") expect(calls[0]!.args).toContain("--no-build");
+    expect(calls[0]!.args).toContain(provider === "vercel" ? "--prebuilt" : "--no-build");
     expect(calls[0]!.env).not.toHaveProperty("ANTHROPIC_API_KEY");
     expect(reads).toEqual([`${provider.toUpperCase()}_PREVIEW_TOKEN`]);
     expect(readFileSync(join(ledger.dir, "ledger.jsonl"), "utf8")).not.toContain(TOKEN);
@@ -75,7 +77,7 @@ describe("provider adapters through the broker", () => {
     grantRelease(broker, m, "person", true);
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "promote") } })).status).toBe("succeeded");
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "rollback") } })).status).toBe("succeeded");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     expect(calls[2]!.args.join(" ")).toContain(provider === "vercel" ? "rollback" : "restoreSiteDeploy");
     expect(reads).toEqual([`${provider.toUpperCase()}_PRODUCTION_TOKEN`, `${provider.toUpperCase()}_PRODUCTION_TOKEN`]);
   });
@@ -108,7 +110,7 @@ describe("provider adapters through the broker", () => {
   it("refuses relative CLI paths", () => {
     const { ledger, projectConfig } = setup();
     expect(() => deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => undefined,
-      providers: { vercel: { bin: "vercel", home: "/home", cwd: "/control" } } })).toThrow(/absolute/);
+      providers: { vercel: { bin: "vercel", version: "1.2.3", home: "/home", cwd: "/control" } } })).toThrow(/absolute/);
   });
   it("does not use a grant for another manifest", async () => {
     const { broker, m, calls } = setup();
@@ -129,20 +131,27 @@ describe("provider adapters through the broker", () => {
     const { ledger, m, projectConfig } = setup(); const run = async (_spec: SessionSpec) => { throw new Error("must not execute"); };
     writeFileSync(join(m.artifactDir, "index.html"), "changed after approval");
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m, run,
-      providers: { vercel: { bin: "/trusted/bin/vercel", home: "/trusted/home", cwd: "/trusted/control" } } });
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: projectConfig.privateRoot, cwd: projectConfig.privateRoot } } });
     let reads = 0;
     const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => { reads++; return TOKEN; } } });
     expect((await broker.handle({ op: "deploy.preview", payload: { ref: releaseRef(m, "preview") } })).status).toBe("failed");
     expect(reads).toBe(0);
   });
   it("does not promote before release-ready even with a bound grant", async () => {
-    const { ledger, m, projectConfig } = setup(); let calls = 0;
+    // Usable private roots and a provider that would answer everything: readiness is the only thing that can refuse.
+    const { ledger, m, projectConfig } = setup(); let calls = 0; let reads = 0;
+    const ok = (stdout: string) => ({ code: 0, timedOut: false, overflowed: false, durationMs: 1, stdout, stderr: "" });
     const adapters = deployAdapters({ ledger, project: "p", projectConfig, resolveManifest: () => m,
-      providers: { vercel: { bin: "/trusted/bin/vercel", home: "/trusted/home", cwd: "/trusted/control" } },
-      run: async () => { calls++; throw new Error("must not run"); } });
-    const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => TOKEN } });
+      providers: { vercel: { bin: "/trusted/bin/vercel", version: "1.2.3", home: projectConfig.privateRoot, cwd: projectConfig.privateRoot } },
+      run: async (spec) => {
+        calls++;
+        if (spec.args.includes("--version")) return ok("1.2.3");
+        if (spec.args.includes("inspect")) return ok(JSON.stringify({ id: "old-deploy", url: "https://old.vercel.app", projectId: m.siteId }));
+        return ok("https://new.vercel.app\n");
+      } });
+    const broker = new Broker({ ledger, project: "p", adapters, secrets: { get: () => { reads++; return TOKEN; } } });
     grantRelease(broker, m, "person", false);
     expect((await broker.handle({ op: "deploy.promote", payload: { ref: releaseRef(m, "promote") } })).status).toBe("failed");
-    expect(calls).toBe(0);
+    expect(calls).toBe(0); expect(reads).toBe(0);
   });
 });

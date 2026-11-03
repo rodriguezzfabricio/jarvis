@@ -96,16 +96,16 @@ describe("/jarvis command", () => {
   });
 
   it("ends with the hand-off once the spec is confirmed or defaulted", () => {
-    const handoff = body.indexOf("`jarvis run --detach`");
+    const handoff = body.indexOf("`jarvis run --local --detach`");
     expect(handoff).toBeGreaterThan(-1);
     expect(handoff).toBeGreaterThan(Math.max(...skillRefs.map((r) => r.at)));
     const tail = body.slice(body.indexOf("## 3."));
     for (const word of ["after-spec", "now", "none", "confirmed", "unconfirmed"]) expect(tail, word).toContain(word);
   });
 
-  it("calls only the jarvis CLI, and only triage and run itself (the skills own the rest)", () => {
+  it("calls only the jarvis CLI, and triage, repository init and run itself (the skills own the rest)", () => {
     const subs = new Set([...body.matchAll(/`jarvis ([a-z-]+)/g)].map((m) => m[1]));
-    expect(subs).toEqual(new Set(["triage", "run"]));
+    expect(subs).toEqual(new Set(["triage", "plan", "run"]));
     expect(body).not.toMatch(/`(?:claude|codex)\b/);
   });
 });

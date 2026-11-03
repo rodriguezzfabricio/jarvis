@@ -42,6 +42,30 @@
     "replacement": "options.why"
   },
   {
+    "name": "decisions recorded answer is never verified",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "options.recordedAnswer ?? decision, {",
+    "replacement": "decision, {"
+  },
+  {
+    "name": "decisions recorded answer statement unchecked",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "if (options.recordedAnswer !== undefined) requireStatement(decision, options.answer!);",
+    "replacement": "// statement unchecked"
+  },
+  {
+    "name": "decisions exact answer not retained",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "`\\nExact answer: ${JSON.stringify(options.recordedAnswer)}`",
+    "replacement": "\"\""
+  },
+  {
+    "name": "decisions recorded answer allowed without user attribution",
+    "file": "packages/cli/src/decisions/decide.ts",
+    "anchor": "else if (options.answer !== undefined || options.recordedAnswer !== undefined) throw",
+    "replacement": "else if (options.answer !== undefined) throw"
+  },
+  {
     "name": "decisions spec allows superseded citations",
     "file": "packages/cli/src/decisions/spec-check.ts",
     "anchor": "else if (entry.status.kind === \"superseded\")",

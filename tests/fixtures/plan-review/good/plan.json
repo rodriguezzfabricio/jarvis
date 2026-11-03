@@ -1,0 +1,68 @@
+{
+  "tier": 1,
+  "notes": [
+    "The pre-state CLI only prints usage and exits 2; src/store.mjs does not exist. T1 creates saveItem in src/store.mjs and replaces the CLI stub with the add branch, the usage branch, and a main() function containing one try/catch, called once at module scope. The CLI joins the arguments after add with one ASCII space (D4, A5), calls saveItem, then prints exactly saved plus a newline. T1 rejects every invalid name before appending, with the exact error \"item name must not be blank\" (AC2). The list command remains a usage error until T2. Unknown commands keep the existing usage text and exit code 2. No dependency is added.",
+    "Storage is settled by D2 and A1: one JSON object {\"name\":\"<name>\"} per line in data/items.jsonl. The module chooses process.env.ITEMS_FILE when non-empty, otherwise new URL(\"../data/items.jsonl\", import.meta.url). An override is used as given, relative to the working directory. T1 saveItem(input) applies JavaScript String.prototype.trim() to input, throws Error(\"item name must not be blank\") if empty or containing LF/CR, and otherwise synchronously appends JSON.stringify({name}) + \"\\n\" with appendFileSync; it returns only after that write. The data directory already exists through data/.gitkeep. The default data file is gitignored. The small store module owns both the path and the full name rule so add and list cannot choose different files.",
+    "T1 implements the complete CLI error contract. An absent add argument reaches saveItem as the empty string. The main() catch prints error.message followed by a newline to stderr, sets process.exitCode = 1, and returns from main(). No path calls process.exit; usage sets exitCode = 2, successes leave it 0, and Node drains stdout before exit. T1 never persists a name that the later list task would reject.",
+    "T2 adds listItems in src/store.mjs and the list branch in src/cli.mjs. That branch accepts no arguments; extra arguments take the existing usage-error branch (A7). listItems reads the file as UTF-8, returns [] for ENOENT or an empty file, and rethrows all other errors. For nonempty content it splits on \"\\n\", removes only the last empty element if present, parses every remaining line with JSON.parse, validates the exact A6 record shape and stored-name rule (throw Error(\"invalid item record\") on a mismatch), and returns each name in file order. The CLI writes each returned name followed by \"\\n\", or nothing for []. Parsing completes before any list output. T2 follows T1 so its regression checks include the completed name rule.",
+    "No recovery, locking, retry, fsync or journal is added: those address the stated non-goals. A damaged JSON line makes list fail through the CLI catch without partial output. One process uses the file at a time (A3); saved means appendFileSync returned, not durability after power loss. A failed append propagates through the same catch (A8): stderr error, exit 1, no saved output; no directory creation or rollback. A torn write may merge with a later append, explicitly outside the recovery guarantee.",
+    "item-add covers trimming, unquoted words, exact saved output and JSON encoding of a tab, quote, backslash, non-ASCII character and U+2028. It also refuses spaces, missing names, LF and CR before writing, and verifies the existing valid records are unchanged; the exact blank-name diagnostic is separately enforced by item-blank. It checks default selection with ITEMS_FILE unset and empty in a disposable app, a relative override from outside that app, missing/unknown usage and a failed write. item-blank seeds an existing item, rejects spaces, no argument, LF and CR with exact error/exit/no stdout, and verifies that the item survives. item-list separately checks a missing and a zero-byte file, ordered round-trip of the special characters, both default branches, extra arguments, read errors, valid JSON before a malformed line (no partial stdout), and invalid record shapes. Checks use distinct data/check-add.jsonl, data/check-blank.jsonl and data/check-list.jsonl overrides; the relative-path case uses data/check-add-relative.jsonl. Default cases use independent mktemp directories. No check reads or deletes the original data/items.jsonl. Cases within one check execute in their declared order under the protected-check format; there is no cross-check data dependency.",
+    "Task risks and checks: T1 could persist invalid input, truncate existing items on refusal, regress usage, misresolve paths, alter valid special characters or claim a failed write succeeded; item-add and item-blank cover these. T2 could mishandle a missing or zero-byte store, choose a different default, corrupt characters, accept invalid records or print a partial list before an error; item-list covers these while rerunning the saving checks. No external system or permission is involved."
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Save valid items and refuse invalid input safely",
+      "goal": "add persists valid names and prints saved; invalid names return the specified error without changing stored items",
+      "exitCondition": "item-add and item-blank pass, covering valid storage, exact invalid-input errors and preserved existing items",
+      "acceptanceCriteria": [
+        "AC1",
+        "AC2"
+      ],
+      "storyIds": [
+        "S1"
+      ],
+      "dependencies": [],
+      "priority": 9,
+      "requiredChecks": [
+        "item-add",
+        "item-blank"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/store.mjs",
+        "src/cli.mjs"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "List saved items",
+      "goal": "`list` prints every saved item, one per line, in the order saved",
+      "exitCondition": "item-list passes, and item-add and item-blank still pass",
+      "acceptanceCriteria": [
+        "AC3"
+      ],
+      "storyIds": [
+        "S2"
+      ],
+      "dependencies": [
+        "T1"
+      ],
+      "priority": 7,
+      "requiredChecks": [
+        "item-list",
+        "item-add",
+        "item-blank"
+      ],
+      "requiredReviews": [
+        "code"
+      ],
+      "mayTouch": [
+        "src/store.mjs",
+        "src/cli.mjs"
+      ]
+    }
+  ]
+}

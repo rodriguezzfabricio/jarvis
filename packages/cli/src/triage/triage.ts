@@ -66,7 +66,7 @@ export const STEPS = {
   "decision-archaeology": { label: "decision archaeology", skill: "onboard", stage: 6, by: "session", dispatch: true },
   review: { label: "read-only review (findings with file references and fixes)", skill: "review", stage: 4, by: "session", dispatch: true },
   "review-report": { label: "review written to the report (each finding with file:line, severity, evidence and a proposed fix)", skill: "review", stage: 4, by: "session", dispatch: true },
-  architecture: { label: "architecture", skill: "architect", stage: 3, by: "runner", dispatch: false },
+  architecture: { label: "architecture", skill: "architect", stage: 3, by: "session", dispatch: true },
   "build-loop": { label: "build loop", skill: "build", stage: 3, by: "runner", dispatch: false },
   reproduce: { label: "reproduce", skill: "debug", stage: 3, by: "runner", dispatch: false },
   "failing-test": { label: "failing test", skill: "debug", stage: 3, by: "runner", dispatch: false },
@@ -206,6 +206,16 @@ const ERROR_LINES: readonly RegExp[] = [
   /\bexit (?:code|status) [1-9]\d*/i,
   /\bSegmentation fault\b/,
 ];
+
+/**
+ * The report file a request names in words ("put what you find in ONBOARDING.md"), when it is a path a report may
+ * have (decision 126's rules); undefined otherwise. A review reads its report the same way, inside triage; an
+ * onboarding run reads its report with this (decision 148).
+ */
+export function typedReport(text: string): string | undefined {
+  const typed = REPORT_FILE.exec(text)?.[1];
+  return typed !== undefined && reportPathProblem(typed) === undefined ? typed : undefined;
+}
 
 /**
  * `/jarvis fix: the login` → fix (decision 89). Only the first word followed by a colon, with more
@@ -391,8 +401,8 @@ function stepsFor(type: TaskType, o: { design: boolean; onboarding: boolean; rep
       return { steps: steps("research", "intake", "spec", "design", "architecture", "build-loop", "lanes", "preview-deploy", "report"), never: [], handoff: "after-spec" };
     case "feature":
       return o.design
-        ? { steps: steps("register-check", "spike", "intake", "spec", "design", "build-loop", "lanes", "report"), never: [], handoff: "after-spec" }
-        : { steps: steps("register-check", "spike", "intake", "spec", "build-loop", "lanes", "report"), never: ["mockups", "design direction"], handoff: "after-spec" };
+        ? { steps: steps("register-check", "spike", "intake", "spec", "design", "architecture", "build-loop", "lanes", "report"), never: [], handoff: "after-spec" }
+        : { steps: steps("register-check", "spike", "intake", "spec", "architecture", "build-loop", "lanes", "report"), never: ["mockups", "design direction"], handoff: "after-spec" };
     case "bug":
       return { steps: steps("reproduce", "failing-test", "fix", "checks", "lanes", "report"), never: ["intake", "mockups", "design", "architecture"], handoff: "now" };
     case "refactor":

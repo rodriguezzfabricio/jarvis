@@ -14,7 +14,7 @@ function agent(name: keyof typeof agentFiles): { fields: Map<string, string>; bo
 }
 
 it.each([
-  ["researcher", "claude-sonnet-5-5", ["WebSearch", "WebFetch"]],
+  ["researcher", "claude-opus-5-5", ["WebSearch", "WebFetch"]],
   ["spec-reader", "claude-opus-5-5", ["Read", "Glob", "Grep"]],
 ] as const)("ships the %s plugin role with an explicit read-only tool allowlist and full model ID", (name, model, tools) => {
   const a = agent(name); expect(a.fields.get("name")).toBe(name); expect(a.fields.get("description")!.length).toBeGreaterThan(40);
@@ -42,13 +42,16 @@ it("requires the triage headline before any progress narration or pipeline dispa
   expect(section(text, "2. Start the pipeline")).toContain("Only after displaying the triage headline");
 });
 
-it("stage 2 hands off ready artifacts and a start instruction without invoking the runner or promising detachment", () => {
+it("hands a reviewed local plan to the runner and reports launch separately from completion", () => {
   const body = section(read("plugin/commands/jarvis.md"), "3. Hand off");
-  expect(body).toContain("Say what's ready and stop");
-  expect(body).toContain("Do not invoke `jarvis run`, even with `--help`");
-  expect(body).toContain("When the build runner is available, start it from the project folder with `jarvis run --detach`");
-  expect(body).toContain("Do not claim a run has started or that it is safe to close Claude Code");
-  expect(body).not.toMatch(/Then run `jarvis run/);
+  expect(body).toContain("counted plan review");
+  expect(body).toContain("`jarvis run --local --detach`");
+  expect(body).toContain("--request");
+  expect(body).toContain("pid and log path");
+  expect(body).toContain("Launch is not completion");
+  expect(body).toContain("Stop on any refusal; never bypass a failed gate.");
+  expect(body).toContain('handoff: "none"');
+  expect(body).not.toContain("When the build runner is available");
 });
 
 it("records an explicit yes with CONFIRM and the user's words instead of an empty map", () => {

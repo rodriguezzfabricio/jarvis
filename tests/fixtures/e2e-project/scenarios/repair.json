@@ -1,5 +1,5 @@
 {
-  "description": "(b) T1's first attempt fails its protected checks (its own test passes, AC1 doesn't); the repair passes. T2 passes first time.",
+  "description": "(b) T1's first attempt fails its protected checks (its own test passes, AC1 doesn't); the repair edits that attempt's files, which its workspace starts from (decision 160: an edit of a file the workspace lacks fails), and passes. T2 passes first time.",
   "sessions": [
     {
       "name": "T1-wrong-sum",
@@ -17,8 +17,8 @@
       "task": "T1",
       "steps": [
         { "text": "The recorded failure shows multiply(2,3)=5; it adds instead of multiplying." },
-        { "write": "src/multiply.mjs", "lines": ["/** Returns the product of two numbers. */", "export function multiply(a, b) {", "  return a * b;", "}"] },
-        { "write": "test/multiply.test.mjs", "lines": ["import assert from \"node:assert/strict\";", "import { test } from \"node:test\";", "import { multiply } from \"../src/multiply.mjs\";", "", "test(\"multiply returns the product\", () => {", "  assert.equal(multiply(2, 3), 6);", "  assert.equal(multiply(-2, 4), -8);", "});"] },
+        { "edit": "src/multiply.mjs", "old": "  return a + b;", "new": "  return a * b;" },
+        { "edit": "test/multiply.test.mjs", "old": "  assert.equal(multiply(2, 2), 4);", "new": "  assert.equal(multiply(2, 3), 6);\n  assert.equal(multiply(-2, 4), -8);" },
         { "notes": "Fixed multiply to return a * b." },
         { "result": { "subtype": "success", "text": "Fixed multiply." } }
       ]

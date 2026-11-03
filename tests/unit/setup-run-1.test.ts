@@ -31,14 +31,17 @@ it("runs every step once: accounts through the secrets backend, ntfy topics, tas
   expect(st.steps["accounts.deploy"]?.provider).toBe("vercel");
   // Production tokens are broker-only; the development OAuth app is preview-tier.
   expect(s.stored.get("GITHUB_TOKEN")).toEqual({ value: SENTINEL, brokerOnly: true });
-  expect(s.stored.get("VERCEL_TOKEN")).toEqual({ value: `${SENTINEL}-vercel`, brokerOnly: true });
+  // Two deploy tokens, both broker-only: neither provider limits a token to previews (decision 159).
+  expect(s.stored.get("VERCEL_PREVIEW_TOKEN")).toEqual({ value: `${SENTINEL}-vercel-preview`, brokerOnly: true });
+  expect(s.stored.get("VERCEL_PRODUCTION_TOKEN")).toEqual({ value: `${SENTINEL}-vercel-production`, brokerOnly: true });
+  expect(st.steps["accounts.deploy"]?.secrets).toEqual([{ key: "VERCEL_PREVIEW_TOKEN", tier: "preview", brokerOnly: true }, { key: "VERCEL_PRODUCTION_TOKEN", tier: "production", brokerOnly: true }]);
   expect(s.stored.get("CLOUDFLARE_API_TOKEN")).toEqual({ value: `${SENTINEL}-cf`, brokerOnly: true });
   expect(s.stored.get("OAUTH_DEV_CLIENT_SECRET")).toEqual({ value: `${SENTINEL}-oauth-secret`, brokerOnly: false });
-  expect([...s.stored.keys()].sort()).toEqual(["CLOUDFLARE_API_TOKEN", "GITHUB_TOKEN", "OAUTH_DEV_CLIENT_ID", "OAUTH_DEV_CLIENT_SECRET", "VERCEL_TOKEN"]);
+  expect([...s.stored.keys()].sort()).toEqual(["CLOUDFLARE_API_TOKEN", "GITHUB_TOKEN", "OAUTH_DEV_CLIENT_ID", "OAUTH_DEV_CLIENT_SECRET", "VERCEL_PREVIEW_TOKEN", "VERCEL_PRODUCTION_TOKEN"]);
   expect(st.steps["accounts.github"]?.secrets).toEqual([{ key: "GITHUB_TOKEN", tier: "production", brokerOnly: true }]);
   expect(st.steps["accounts.oauth"]?.secrets).toEqual([{ key: "OAUTH_DEV_CLIENT_ID", tier: "preview", brokerOnly: false }, { key: "OAUTH_DEV_CLIENT_SECRET", tier: "preview", brokerOnly: false }]);
   // Every token prompt is hidden, and nothing else is.
-  expect(t.calls.filter((c) => c.kind === "hidden")).toHaveLength(5);
+  expect(t.calls.filter((c) => c.kind === "hidden")).toHaveLength(6);
   for (const c of t.calls.filter((x) => x.kind === "ask")) expect(c.prompt).not.toMatch(/token:|secret:|client id:/i);
   // The minimal scope is printed for each account.
   expect(r.text()).toMatch(/Contents: read and write/); expect(r.text()).toMatch(/Workers Scripts: Edit/);
@@ -164,6 +167,21 @@ it("--redo runs a finished step again; 'accounts' means every account; unknown s
   expect(all.calls).toHaveLength(6);
   for (const step of ["accounts.github", "accounts.deploy", "accounts.neon", "accounts.cloudflare", "accounts.expo", "accounts.oauth"]) expect(state(home).steps[step]?.status).toBe("skipped");
   expect(String(await failure(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, { redo: ["acounts"] })))).toMatch(/unknown setup step/i);
+});
+
+it("--redo on a half-finished setup runs only the named steps; the never-finished ones wait for a plain jarvis setup (decision 175)", async () => {
+  const home = makeHome(); const s = fakeSecrets();
+  // Interrupted at the first account question: claude and secrets are recorded, nothing after them.
+  expect(await failure(runSetup(deps(home, fakeTty(["y"], []).tty, { secrets: s.backend }).d, {}))).toBeInstanceOf(InterruptedError);
+  expect(Object.keys(state(home).steps).sort()).toEqual(["claude", "secrets"]);
+  const only = fakeTty([], []);
+  const result = await runSetup(deps(home, only.tty, { secrets: s.backend }).d, { redo: ["claude"] });
+  expect(only.calls).toEqual([]);
+  expect(result.ok).toBe(true);
+  expect(result.pending).toEqual(STEPS.filter((step) => step !== "claude" && step !== "secrets"));
+  expect(Object.keys(state(home).steps).sort()).toEqual(["claude", "secrets"]);
+  // Without --redo the same home resumes at the first unfinished step and the result stays not ok until it is answered.
+  expect(await failure(runSetup(deps(home, fakeTty([], []).tty, { secrets: s.backend }).d, {}))).toBeInstanceOf(InterruptedError);
 });
 
 it("records a skipped account as skipped, stores nothing, and says Jarvis develops locally (decision 43)", async () => {

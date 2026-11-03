@@ -10,11 +10,14 @@ import { designBrowserDefinition } from "../review/design-check.ts";
 import type { ImpeccableDriverConfig } from "./impeccable-driver.ts";
 import { impeccableArguments, impeccableDefinitions } from "./impeccable.ts";
 
-export interface DesignChecksPlan { nodeBin:string; scanner:ImpeccableDriverConfig; plan:DesignBrowserPlan; axeVersion:string }
+import { ServedAppSchema, type ServedAppPlan } from "./served-app.ts";
+
+export interface DesignChecksPlan { app?:ServedAppPlan; nodeBin:string; scanner:ImpeccableDriverConfig; plan:DesignBrowserPlan; axeVersion:string }
 const MODULES = [
+  "lanes/served-app.ts", "lanes/served-design.ts", "lanes/design-gate.ts",
   "lanes/impeccable.ts", "lanes/impeccable-browser.ts", "lanes/impeccable-driver.ts", "lanes/impeccable-verify.ts",
   "lanes/browser.ts", "lanes/browser-frames.ts", "lanes/toolchain.ts", "lanes/chromium-install.ts", "lanes/materialize.ts", "lanes/verify.ts",
-  "proc/session.ts", "review/design-browser.ts", "review/design-evidence.ts", "review/design-verdict.ts", "review/design-check.ts", "review/evidence.ts",
+  "proc/session.ts", "review/design-browser.ts", "review/design-evidence.ts", "review/design-verdict.ts", "review/verdict.ts", "review/design-check.ts", "review/evidence.ts",
 ];
 
 const sha256=(data:Buffer)=>createHash("sha256").update(data).digest("hex");
@@ -31,6 +34,7 @@ function copyZodRuntime(source: string, target: string): void {
 /** Materialize the already-installed runtime dependencies, then let the integrator review and approve the store. */
 export function installDesignChecks(store:ChecksStore,input:DesignChecksPlan):Record<"impeccable-source"|"impeccable-url"|"design-browser",GateCheck> {
   const plan=DesignBrowserPlanSchema.parse(input.plan);
+  const app=input.app?ServedAppSchema.parse(input.app):undefined;
   if (!input.scanner.browser) throw new Error("design checks require the approved browser toolchain");
   // Decision 124: a gate case can't read the home folder, so the engine runs from a copy in the protected
   // fixtures, checked against the pin before anything is written.
@@ -41,8 +45,16 @@ export function installDesignChecks(store:ChecksStore,input:DesignChecksPlan):Re
   impeccableArguments("/checkout",{kind:"source",files:input.scanner.files});
   const browser=designBrowserDefinition({nodeBin:input.nodeBin,...input.scanner.browser,axeVersion:input.axeVersion});
   const definitions={...impeccableDefinitions({nodeBin:input.nodeBin,driver:"design-runtime/lanes/impeccable-driver.ts",verifier:"design-runtime/lanes/impeccable-verify.ts",config:"impeccable.json"}),"design-browser":browser};
+  if (app) {
+    const quote=(value:string)=>`'${value.replaceAll("'", "'\\''")}'`;
+    for(const [name,mode] of [["impeccable-url","url"],["design-browser","capture"]] as const) {
+      definitions[name].cases=[{id:mode==="url"?"scan":"capture",command:`${quote(input.nodeBin)} "$JARVIS_FIXTURES/design-runtime/lanes/served-design.ts" ${mode} "$JARVIS_FIXTURES/design-runtime/served.json"`}];
+      definitions[name].timeoutMs=app.timeoutMs+600_000;
+    }
+    browser.verify=`${quote(input.nodeBin)} "$JARVIS_CHECKS/design-runtime/lanes/design-gate.ts" "$JARVIS_CHECKS/design-plan.json" ${quote(input.axeVersion)}`;
+  }
   const locations=[join(store.checksDir,"fixtures","design-runtime"),join(store.checksDir,"design-runtime")];
-  if(locations.some(existsSync)||existsSync(join(store.checksDir,"design-plan.json"))) throw new Error("design checks already installed; changes require review");
+  if(locations.some(existsSync)||["design-plan.json", "design-checks.json", ...Object.keys(definitions).map(name => `${name}.check.json`)].some(file => existsSync(join(store.checksDir,file)))) throw new Error("design checks already installed; changes require review");
   const source=fileURLToPath(new URL("../",import.meta.url));
   const zod=dirname(realpathSync(createRequire(import.meta.url).resolve("zod/package.json")));
   for(const root of locations) {
@@ -57,7 +69,9 @@ export function installDesignChecks(store:ChecksStore,input:DesignChecksPlan):Re
   mkdirSync(dirname(copy),{recursive:true,mode:0o700}); writeFileSync(copy,engine,{flag:"wx",mode:0o700});
   if (sha256(readFileSync(copy))!==pin.sha256) throw new Error("Impeccable engine copy differs from its pin");
   writeFileSync(join(fixtures,"impeccable.json"),JSON.stringify({...input.scanner,pin:{bin:copy,version:pin.version,sha256:pin.sha256}}),{flag:"wx",mode:0o600});
+  if(app) writeFileSync(join(fixtures,"design-runtime/served.json"),JSON.stringify({app,plan,scanner:{...input.scanner,pin:{...pin,bin:copy}}}),{flag:"wx",mode:0o600});
   for(const root of [store.checksDir,join(store.checksDir,"fixtures")]) writeFileSync(join(root,"design-plan.json"),JSON.stringify(plan),{flag:"wx",mode:0o600});
   writeFileSync(join(store.checksDir,"design-checks.json"),JSON.stringify(definitions),{flag:"wx",mode:0o600});
+  for (const [name, definition] of Object.entries(definitions)) writeFileSync(join(store.checksDir, `${name}.check.json`), JSON.stringify(definition), {flag:"wx",mode:0o600});
   return definitions;
 }

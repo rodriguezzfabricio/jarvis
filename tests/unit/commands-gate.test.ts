@@ -10,6 +10,7 @@ import { ChecksStore } from "../../packages/cli/src/checks/store.ts";
 import { readInstalledChecks } from "../../packages/cli/src/runner/checks-author.ts";
 import { Ledger, LedgerTamperError } from "../../packages/cli/src/ledger/ledger.ts";
 import { shortTmp } from "../helpers.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 const commanderPath = createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("commander");
 const { Command } = await import(pathToFileURL(commanderPath).href) as typeof import("../../packages/cli/node_modules/commander/typings/index.js");
@@ -37,8 +38,8 @@ function project() {
   const ledger = Ledger.open(projectDir);
   // A runner gate_result already on record, so "nothing appended" is checked against a real ledger.
   ledger.append({ kind: "task_created", actor: "runner", task_id: "T1", data: { title: "Value" } });
-  const repo = join(root, `repo${i}`); mkdirSync(repo);
-  git(repo, "init", "-q", "-b", "main"); git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t");
+  const repo = join(root, `repo${i}`);
+  initRepo(repo, { identity: true }); // git init -q -b main, user.email t@t, user.name t: by copy (helpers/git-repo.ts)
   writeFileSync(join(repo, "value.txt"), "41\n"); writeFileSync(join(repo, ".gitignore"), "ignored.txt\n");
   git(repo, "add", "-A"); git(repo, "commit", "-qm", "c1");
   return { jarvisHome, projectDir, ledger, store: new ChecksStore(projectDir), repo, workRoot: join(root, `work${i}`) };
@@ -82,6 +83,22 @@ describe("jarvis gate <name>: feedback only (decision 49)", { timeout: 120_000 }
     expect(snapshot(p.projectDir)).toEqual(before);
     expect(existsSync(join(p.projectDir, "evidence"))).toBe(false);
     expect(readdirSync(join(p.workRoot, "feedback"))).toEqual([]); expect(readdirSync(join(p.workRoot, "checks"))).toEqual([]);
+  });
+
+  it("copies a working tree with ignored runner notes without staging those notes", async () => {
+    const p = project();
+    writeFileSync(join(p.repo, ".gitignore"), "ignored.txt\n.jarvis/\n");
+    mkdirSync(join(p.repo, ".jarvis/notes"), { recursive: true });
+    writeFileSync(join(p.repo, ".jarvis/notes/T1.md"), "runner-private claim");
+    writeFileSync(join(p.repo, "new.txt"), "new working file");
+    install(p, "unit", 'cat value.txt new.txt\nif [ -e .jarvis/notes/T1.md ]; then exit 9; fi\n');
+    p.store.approve(p.ledger, "v1");
+    const index = readFileSync(join(p.repo, ".git/index")), before = snapshot(p.projectDir);
+    const r = await gate(p, ["done", "--json"]);
+    expect(r.codes).toEqual([0]);
+    expect(JSON.parse(r.output).results[0]).toMatchObject({ status: "pass", cases: [{ stdoutTail: "41\nnew working file" }] });
+    expect(readFileSync(join(p.repo, ".git/index"))).toEqual(index);
+    expect(snapshot(p.projectDir)).toEqual(before);
   });
 
   it("fails with the case output when the working tree fails, and prints JSON on request", async () => {

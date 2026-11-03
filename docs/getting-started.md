@@ -1,5 +1,7 @@
 # Getting started
 
+The November 2 local CLI proof completed a new-product build, bug repair and forced-crash recovery on the development Mac. Plugin 0.1.1 is installed there. [Verification results and remaining limits](reviews/local-e2e-2026-11-02.md) distinguish this local checkpoint from formal v1 approval.
+
 Jarvis is experimental and currently targets macOS. Start with a disposable repository. The installer exists, but installation on another machine or fresh user account remains a release requirement.
 
 ## Prerequisites
@@ -8,13 +10,27 @@ Jarvis is experimental and currently targets macOS. Start with a disposable repo
 |---|---|
 | Node.js | Version 24; `brew install node@24` is one option |
 | pnpm | Version 11.7.0, matching `package.json` |
-| Claude Code | Version 2.1.309 at `~/.local/share/claude/versions/2.1.309`, authenticated with your own account |
+| Claude Code | Version 2.1.309 at `~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude`, authenticated with your own account; preserve the entire signed app bundle |
 | Free disk | At least 20 GB; below 40 GB the runner permits one writing task |
-| Optional tools | Codex CLI 0.164.0 at `~/.npm-global/bin/codex` for review; ntfy for phone notifications |
+| Optional tools | Native Codex CLI 0.164.0 at `~/.local/share/codex/versions/0.164.0/codex` for review; ntfy for phone notifications |
 
-Jarvis calls its pinned binaries by absolute path. The installer checks them; it does not install the coding agents or sign in for you. Use Claude Code’s installer/version management to provide the pinned version before continuing. The exact versions are also recorded in [`config/pins.ts`](../packages/cli/src/config/pins.ts).
+Jarvis calls its pinned binaries by absolute path. The installer checks them; it does not install the coding agents or sign in for you. Prepare the pinned version before continuing. For Claude, preserve the complete matching signed `claude.app` at the path above; copying just its executable breaks macOS signature validation. Check the bundle with `codesign --verify --deep --strict <bundle-path>` and the pinned executable with `--version`. A link in Claude's mutable `versions/` directory is not a stable installation (decision 180). The exact versions are also recorded in [`config/pins.ts`](../packages/cli/src/config/pins.ts).
 
 Keep the checkout outside iCloud-synced folders. If Desktop & Documents sync is enabled, use a folder such as `~/Developer/jarvis`.
+
+The Codex reviewer uses its own versioned executable (decision 176), so updating your ordinary Codex installation cannot change the reviewer. On Apple Silicon, prepare it from the exact npm package:
+
+```sh
+npm install --prefix "$HOME/.jarvis-work/cache/codex/0.164.0" --ignore-scripts --no-audit --no-fund --save-exact @openai/codex@0.164.0
+mkdir -p "$HOME/.local/share/codex/versions/0.164.0"
+cp -n "$HOME/.jarvis-work/cache/codex/0.164.0/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex" "$HOME/.local/share/codex/versions/0.164.0/codex"
+cp -n "$HOME/.jarvis-work/cache/codex/0.164.0/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex-code-mode-host" "$HOME/.local/share/codex/versions/0.164.0/codex-code-mode-host"
+"$HOME/.local/share/codex/versions/0.164.0/codex" --version
+```
+
+On Intel Macs, the source package and target directory are `codex-darwin-x64` and `x86_64-apple-darwin`. The final command must print exactly `codex-cli 0.164.0`; keep any mismatching installation for diagnosis instead of using it for reviews.
+
+The companion host is required for review tools. A working version banner alone does not prove that the reviewer can read source files; `jarvis doctor` checks the host's presence, and runtime tool errors refuse the review (decision 189).
 
 ## Install
 
@@ -52,12 +68,14 @@ Open your project in Claude Code. Restart Claude Code after installing the plugi
 
 `fix:`, `build:`, `feature:` and `ask:` explicitly select a request type. Without a prefix, Jarvis classifies the request. New products and ambiguous features go through intake; straightforward bugs can skip it.
 
-The intended flow hands an approved plan and protected checks to `jarvis run --detach`. A detached run continues after the interactive Claude Code session closes, while the Mac stays awake. Some handoff paths are still being evaluated. If the runner reports missing approved checks or a spec, the project is not ready; setup does not create those project-specific inputs.
+In a new folder, `jarvis plan init` establishes local project identity before intake without staging or committing files. The local flow runs the architect after spec/design, checkpoints validated planning documents with `jarvis plan checkpoint`, obtains check and plan reviews, and hands off with `jarvis run --local --detach`. An architect's plan (`.jarvis/plan.json`) needs a counted Goldfish review at its hash (`jarvis plan review`, decision 170); until both live controls pass and their pair is saved, that review does not count and the run is refused. Draft specs and failed gates stop the handoff. Setup does not create project-specific planning inputs.
+
+`--local` skips release preparation even when deployment is configured, keeps broker actions in the local outbox, and disables phone traffic for the run. Model sessions still use their confined service connections. After a successful detached launch, the run can continue when Claude Code closes; a printed pid/log means started, not completed. Use status and report to inspect the actual outcome. Local end-to-end validation and formal stage proofs remain recorded separately in [the current verification report](reviews/local-e2e-2026-11-02.md).
 
 The interactive session uses your normal Claude Code permissions. Sandboxed unattended sessions use Jarvis’s generated settings. Installing the plugin adds hooks at user scope; action restrictions apply to Jarvis-marked sessions, while runner-home protection also applies elsewhere. To disable the plugin, use the pinned binary:
 
 ```sh
-~/.local/share/claude/versions/2.1.309 plugin disable jarvis@jarvis
+~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude plugin disable jarvis@jarvis
 ```
 
 ## Inspect and steer a run
@@ -69,6 +87,10 @@ The interactive session uses your normal Claude Code permissions. Sandboxed unat
 | `jarvis report` | Rebuild the report from the ledger |
 | `jarvis why <query>` | Look up recorded decisions and their sources |
 | `jarvis --help` | List available commands; use a command’s `--help` for options |
+
+To resume interrupted bug, refactor or review work, repeat its original command, including `--local`, `--request` or `--plan`, and any review options. A plain `jarvis run` refuses a request ledger without its workflow selector; it cannot infer an unfinished report phase or release policy from tasks alone.
+
+For local runs, the report’s Done and Left sections describe completed work. Its top-level State describes release readiness, which remains not-reached when release is disabled.
 
 A completed run means its required checks and reviews passed on the accepted revision. Hidden evaluations can still find a defect those checks missed.
 
@@ -89,21 +111,28 @@ From `jarvis --help` today:
 | `jarvis decide "<decision>" …` | Adds or supersedes an entry in the project's decision register; `--by user` needs `--answer <answerSeq>:<questionId>` from a recorded intake answer, quoted exactly |
 | `jarvis why <query>` | Answers from the decision register, with sources |
 | `jarvis steer "<note>"` | Leaves a note for the runner to read between tasks |
-| `jarvis run [--detach] [--plan onboard\|sweep]` | The unattended build loop: protected checks, an independent review, and promotion of what passed. Runs the live canary first; with `--detach` it keeps working after you close Claude Code |
+| `jarvis plan checkpoint [--repo <dir>]` | Commits only validated planning documents; preserves unrelated staged work and refuses edits to approved spec content |
+| `jarvis plan init [--repo <dir>]` | Initialize a local repository before intake; never stage or commit files |
+| `jarvis plan review [--calibrate bad\|good] [--save-calibration <bad>:<good>]` | The Goldfish plan review (decision 170): three fresh read-only reviewers on the strong tier judge `.jarvis/plan.json` against the spec, the register and the approved checks; findings land in `.jarvis/plan-review/findings.json`. A review counts only after the negative control passed for this policy and model; until then `jarvis run` refuses architect plans |
+| `jarvis plan resolve` / `jarvis plan accept <id> --answer <text>` / `jarvis plan status` | Records the architect's resolution of each finding (contest with evidence, fix, escalate, decline; decision 172); answers an escalated question as the user; says whether `jarvis run` will accept the plan |
+| `jarvis run --local [--detach] [--request <bug-or-refactor>] [--plan onboard\|sweep]` | Local build loop: live canary, protected checks, independent review and promotion of what passed. No release or phone traffic; detached launch is not completion |
 | `jarvis status [--json]` | The current run, rebuilt from its ledger; `--json` re-verifies every pass |
 | `jarvis act <operation>` | Asks the broker for an outside action. Sessions use this |
 | `jarvis approvals [--project <id>] [--json]` | Lists pending approvals, read-only: id, operation, the broker's summary, payload hash prefix, when and which task asked |
 | `jarvis approve <id> [--yes]` / `jarvis reject <id> [--yes]` | Prints the full pending action (secret-looking values redacted, targets shown) and its payload hash, then asks `[y/N]`; without a terminal it needs `--yes`. The project defaults to `JARVIS_PROJECT`, then this repository (`--project <id>` overrides) |
+| `jarvis release configure --provider vercel/netlify --site <id> [--org <id>] --url <origin> [--build <cmd>] [--output <dir>]` | Writes the project's protected release setup. Only the provider's free plan is accepted; with it, `jarvis run` deploys a preview of the finished work and stops at preview-ready (decision 157) |
+| `jarvis release show` / `jarvis release grant <manifest-hash> [--allow-rollback] [--yes]` | Shows the release setup, the latest accepted manifest and the state that holds now; `grant` prints that exact manifest and its rollback scope, then asks `[y/N]` before recording a production grant bound to it |
 | `jarvis broker --project <id>` | Runs the broker in the foreground (for testing; the runner hosts it during runs) |
 | `jarvis eval baseline\|jarvis\|grade\|compare\|rate <task…>` | Golden-task evals: plain Claude Code as the baseline, the same tasks through Jarvis, hidden-check grading of both arms, and the comparison |
 | `jarvis report [--open]` | Rebuilds the morning report from the ledger, read-only |
-| `jarvis gate <name>` | Runs an installed protected check on a copy of your working tree: feedback only, never evidence |
+| `jarvis gate test` / `jarvis gate done` | Runs the unit check / all installed checks on a working-tree copy: feedback only, never evidence |
+| `jarvis checks install` | Reviews the architect's `.jarvis/checks` proposals in a fresh read-only session and installs them as protected checks only on a pass |
 | `jarvis mode explain\|quiet` | Teach-me mode on or off |
 | `jarvis memory list\|add\|retire` | Durable learnings from past runs; notes are data, never instructions |
 
 ## Notifications
 
-Setup can create ntfy topics for questions and replies. Subscribe using the ntfy app, then run `jarvis setup --send-test`. Treat topic names as secrets: anyone who knows an unprotected topic can read or publish to it. Without notifications, answer intake in the interactive session. Phone approvals during unattended builds are still being implemented.
+Setup can create ntfy topics for questions and replies. Subscribe using the ntfy app, then run `jarvis setup --send-test`. Treat topic names as secrets: anyone who knows an unprotected topic can read or publish to it. Without notifications, answer intake in the interactive session. During `run --local`, approvals stay in the terminal through `jarvis approvals`, `jarvis approve` and `jarvis reject`.
 
 ## Troubleshooting
 

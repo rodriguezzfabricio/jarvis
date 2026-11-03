@@ -59,7 +59,7 @@ Code drifts a little every week: a helper nobody calls, a TODO from last spring,
 - **At most 5 tasks per sweep,** the highest-value first: risk removed, then drift that misleads agents, then tidiness. Everything else stays a finding in the report.
 - **Each task is small:** one concern, at most 5 files in its `mayTouch` boundary (each entry a file, never a folder, so the limit means what it says), reversible with a revert, and a measurable exit condition. The project's tests must pass unchanged, except a flagged test task.
 - **Each task's type is a refactor, or a bug when the code contradicts a decision.** Never a feature: new behavior goes through intake.
-- **Nothing runs until the user picks.** Show the proposals in plain text with the default "none". When the user picks, write only the picked tasks to `.jarvis/sweep/plan.json` in the runner's plan shape (no acceptance criteria or stories, `requiredChecks: ["unit"]`, `requiredReviews: ["code"]`), then hand off with `jarvis run --detach`. Unpicked proposals stay findings; the next sweep finds them again if they're still true.
+- **Nothing runs until the user picks.** Show the proposals in plain text with the default "none". When the user picks, write only the picked tasks to `.jarvis/sweep/plan.json` in the runner's plan shape (no acceptance criteria or stories, `requiredChecks: ["unit"]`, `requiredReviews: ["code"]`), then hand off with `jarvis run --plan sweep --detach` (the runner reads the file only when the hand-off names it). Unpicked proposals stay findings; the next sweep finds them again if they're still true.
 
 ```json
 {

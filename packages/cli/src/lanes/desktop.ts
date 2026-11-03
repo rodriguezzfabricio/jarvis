@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runGate, type GateCheck, type GateInput, type GateResult } from "../checks/gate.ts";
+import { removeRunDir, runGate, type GateCheck, type GateInput, type GateResult } from "../checks/gate.ts";
 import type { ChecksStore } from "../checks/store.ts";
 import type { LedgerEntry } from "../ledger/ledger.ts";
 import { captureDesktopBundle, type DesktopArtifact } from "./desktop-artifact.ts";
@@ -18,6 +18,8 @@ export interface DesktopRunDeps {
   launch?: NativeProbeDeps["launch"];
   /** Probe override for runner tests. Without a probe or launcher, native coverage is "not run". */
   probe?: (bundle: string, policy: NativeProbePolicy) => Promise<DesktopNativeObservation>;
+  /** Called only after build verification, before private capture cleanup. Never launches the app. */
+  exportBundle?: (artifact: DesktopArtifact, result: GateResult) => void;
   exists?: (path: string) => boolean;
   platform?: NodeJS.Platform;
 }
@@ -52,6 +54,16 @@ function recordNative(input: DesktopInput, result: GateResult, artifact: Desktop
   return input.ledger.append({ kind: "gate_result", actor: "runner", task_id: input.taskId, attempt_id: input.attemptId, data: { check: "native-smoke", revision: input.revision, status, buildGateSeq: result.entry?.seq, evidence: { dir: result.evidenceDir, files: { "native-observation.json": fileHash(observationPath), "native-bundle.json": fileHash(bundlePath) } } } });
 }
 
+/** Retain the gate scratch until verification returns, using its existing runner-only cleanup seam. */
+async function desktopGate(input: DesktopGateInput): Promise<GateResult> {
+  let scratch: string | undefined;
+  try {
+    const result = await runGate({ ...input, cleanup: dir => { scratch = dir; } });
+    if (result.status === "pass" && scratch) await input.afterCases(join(scratch, "run", "checkout"));
+    return result;
+  } finally { if (scratch) removeRunDir(scratch); }
+}
+
 /** Build inside runGate; copy stopped build output; probe on the runner only after build verification passes. */
 export async function runDesktop(input: DesktopInput, deps: DesktopRunDeps = {}): Promise<DesktopResult> {
   if (!input.store.verify(input.ledger).ok) return { status: "tampered" };
@@ -61,7 +73,7 @@ export async function runDesktop(input: DesktopInput, deps: DesktopRunDeps = {})
   if ((deps.platform ?? process.platform) !== "darwin" || !(deps.exists ?? existsSync)(plan.tauriBin)) return { status: "not run", reason: "not run: desktop (Tauri or macOS unavailable)" };
   const outputRoot = mkdtempSync(join(input.workRoot, "native-smoke-")); let artifact: DesktopArtifact | undefined;
   try {
-    const result = await (deps.gate ?? runGate)({ ...input, extraEnv: {}, check: desktopCheck(plan), afterCases: async checkout => {
+    const result = await (deps.gate ?? desktopGate)({ ...input, extraEnv: {}, check: desktopCheck(plan), afterCases: async checkout => {
       if (existsSync(join(checkout, plan.bundle))) artifact = captureDesktopBundle(checkout, plan.bundle, outputRoot);
     } });
     if (result.status !== "pass") {
@@ -69,6 +81,7 @@ export async function runDesktop(input: DesktopInput, deps: DesktopRunDeps = {})
       return reason ? { status: "not run", reason, result } : { status: result.status, result };
     }
     if (!artifact) return { status: "not run", reason: "not run: desktop (protected build artifact handoff unavailable)", result };
+    deps.exportBundle?.(artifact, result);
     // The built app is candidate code: it runs only through an injected sandboxed launcher (decision 102).
     if (!deps.probe && !deps.launch) return { status: "not run", reason: "not run: desktop (no sandboxed native launcher)", result };
     let native: DesktopNativeObservation;

@@ -22,6 +22,14 @@ function workspace() {
 }
 function project() { const p = root(); return { p, store: new ChecksStore(p), ledger: Ledger.open(p) }; }
 afterEach(() => { vi.restoreAllMocks(); for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }); });
+it("gives check reviewers the approved definitions and constraints that qualify the criteria", () => {
+  const w = workspace();
+  const full = { ...spec, goals: ["Save named items"], nonGoals: ["No network"], assumptions: [{ id: "A1", kind: "delegated" as const, text: "A name containing LF is invalid.", details: "", line: 22 }] };
+  const prompt = buildChecksReviewPrompt(full, readAuthoredChecks(w.p));
+  const data = JSON.parse(prompt.split("\n").at(-1)!);
+  expect(data.specContext).toMatchObject({ goals: full.goals, nonGoals: full.nonGoals, assumptions: full.assumptions });
+  expect(prompt).toContain("Interpret criteria together with the approved spec context");
+});
 describe("authored protected checks", () => {
   it("captures check definitions, black-box drivers, expectations and separate verify files", () => {
     const w = workspace(); const files = readAuthoredChecks(w.p);
@@ -162,7 +170,8 @@ console.log(execFileSync(process.execPath, ["--input-type=module", "-e", childCo
   });
   it("revalidates caller bundles and destination symlinks before reviewing or writing", async () => {
     const w = workspace(); const p = project(); const files = readAuthoredChecks(w.p); const reviewVerdict = vi.fn(async () => ({ status: "pass" }));
-    await expect(installChecks(p.store, { ...files, files: { ...files.files, "fixtures/../escape": "bad" } }, p.ledger, { spec, reviewVerdict })).rejects.toThrow();
+    // A driver script any other rule accepts: only the path rule can refuse it (the extensionless one was refused as a fixture type).
+    await expect(installChecks(p.store, { ...files, files: { ...files.files, "fixtures/../escape.mjs": "console.log('escaped')" } }, p.ledger, { spec, reviewVerdict })).rejects.toThrow("invalid authored check file");
     symlinkSync(w.dir, p.store.checksDir);
     await expect(installChecks(p.store, files, p.ledger, { spec, reviewVerdict })).rejects.toThrow(); expect(reviewVerdict).not.toHaveBeenCalled();
   });

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { globSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -17,6 +17,8 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/harness/claude/mutations-probe.json")).toBe("0-1");
     for (const lane of ["decisions", "notify", "spec", "triage", "intake"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("2");
     expect(stageOf("tests/unit/skills-mutations.json")).toBe("2");
+    expect(stageOf("tests/unit/stage2-r4-mutations.json")).toBe("2"); // round 4's intake, spec and design rules (decision 155)
+    expect(stageOf("tests/unit/stage2-r5-mutations.json")).toBe("2"); // round 5's intake, spec, design and command rules (decision 168)
     // The stage2-fixes lane's follow-up definitions (decisions 119, 120).
     expect(stageOf("packages/cli/src/intake/mutations-followup.json")).toBe("2");
     expect(stageOf("packages/cli/src/decisions/mutations-followup.json")).toBe("2");
@@ -28,6 +30,7 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/runner/mutations-review-fix.json")).toBe("4"); // a review that asks for fixes (decision 126), task 3's stage
     expect(stageOf("packages/cli/src/review/mutations-design.json")).toBe("4"); // the design reviewer (decision 124)
     expect(stageOf("packages/cli/src/lanes/mutations-impeccable.json")).toBe("4"); // the Impeccable checks (decision 124)
+    expect(stageOf("packages/cli/src/lanes/mutations-eval-design.json")).toBe("4"); // the eval arm's per-run design gate (decision 167)
     expect(stageOf("packages/cli/src/doctor/mutations-doctor.json")).toBe("0-1"); // jarvis doctor is stage 0-1 (backlog 91, 95)
   });
 
@@ -37,13 +40,19 @@ describe("mutation stage map", () => {
     expect(stageOf("packages/cli/src/harness/claude/mutations-settings.json")).toBe("0-1");
     expect(stageOf("packages/cli/src/commands/mutations-commands.json")).toBe("3");
     expect(stageOf("packages/cli/src/commands/mutations-run.json")).toBe("3");
+    expect(stageOf("packages/cli/src/commands/mutations-run-design.json")).toBe("4"); // jarvis run's design reviewer (decision 156)
     expect(stageOf("packages/cli/src/runner/mutations-loop.json")).toBe("3");
     expect(stageOf("packages/cli/src/toolchain/mutations.json")).toBe("3"); // the sessions' pinned Go (decision 123)
     for (const lane of ["review", "security", "lanes"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("4");
     for (const lane of ["release", "setup"]) expect(stageOf(`packages/cli/src/${lane}/mutations.json`)).toBe("5");
+    expect(stageOf("packages/cli/src/release/mutations-deps.json")).toBe("5"); // the release build's dependency step (decision 173)
     expect(stageOf("packages/cli/src/broker/adapters/mutations.json")).toBe("5");
     expect(stageOf("packages/cli/src/broker/adapters/email/mutations-smtp.json")).toBe("5");
     expect(stageOf("tests/unit/skills-stage6-mutations.json")).toBe("6");
+    expect(stageOf("packages/cli/src/runner/mutations-onboard.json")).toBe("6"); // onboarding that asks for edits (decision 148), task 7's stage
+    expect(stageOf("packages/cli/src/review/mutations-plan.json")).toBe("3"); // the Goldfish plan review (decision 170): the stage 3 hand-off, not the stage 4 review folder
+    expect(stageOf("packages/cli/src/decisions/mutations-plan.json")).toBe("3"); // required alternatives (decision 171), checked by the plan review
+    expect(stageOf("tests/unit/setup-nosync-mutations.json")).toBe("0-1"); // the test workers' fsync replacement (decision 154)
   });
 
   it("lets an exact path beat a folder rule", () => {
@@ -309,6 +318,20 @@ describe("mutation check plan (decision 129)", () => {
     expect(confirm.runs.length).toBeGreaterThan(fileNames().length); // plus the inline list
     for (const n of fileNames()) expect(confirm.runs, n).toContain(n);
     expect(confirm.stdout).not.toContain("other stages' mutations not run");
+  });
+
+  it("flushes the complete inventory when the pipe reader is delayed", async () => {
+    const child = spawn(process.execPath, ["scripts/mutation-check.mjs", "--confirm"], { cwd: repo, env: { PATH: process.env.PATH, JARVIS_MUTATION_PLAN: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.resume(); child.stdout.pause();
+    const resume = setTimeout(() => child.stdout.resume(), 250);
+    try {
+      const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
+      expect(code).toBe(5);
+      const runs = stdout.split("\n").filter((line) => line.startsWith("run ")).map((line) => line.slice(4));
+      for (const name of fileNames()) expect(runs).toContain(name);
+    } finally { clearTimeout(resume); }
   });
 
   it("keeps a JARVIS_MUTATIONS subset inside the stage", () => {

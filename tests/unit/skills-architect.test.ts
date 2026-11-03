@@ -12,16 +12,18 @@ describe("architect skill", () => {
     expect(text.split("\n").length).toBeLessThan(500); expect(Buffer.byteLength(text)).toBeLessThan(20480);
   });
   it.each([
-    ["Read the contract", ["PRODUCT.md", "DESIGN.md", "docs/spec/vN.md", "jarvis decide", "--why"]],
-    ["Write the plan", [".jarvis/plan.json", "exitCondition", "acceptanceCriteria", "dependencies", "requiredChecks", "requiredReviews", "mayTouch", "every AC", "small tasks", "any other key", "notes", "planner notes", "claims"]],
+    ["Read the contract", ["PRODUCT.md", "DESIGN.md", "docs/spec/vN.md", "jarvis decide", "--why", "rejected because", "moderate|hard|irreversible", "decision 171"]],
+    ["Write the plan", [".jarvis/plan.json", "\"tier\"", "triage","exitCondition", "acceptanceCriteria", "dependencies", "requiredChecks", "requiredReviews", "mayTouch", "every AC", "small tasks", "any other key", "notes", "planner notes", "claims", '"tier"', "triage’s tier", "Zero-Decision Rule", "zero design or architectural choices", "search the checkout"]],
     ["Author protected checks", [".jarvis/checks/", "black box", "fixtures/", "expected/", "verify", "JARVIS-CHECK-COMPLETE", "JARVIS_COMPLETION_FILE", "no candidate imports", "never runnable unit tests", "no expectations in fixtures"]],
-    ["Hand off", ["never writes product code", "review", "notes", "claims", "runner", "hashes", "new review"]],
+    ["Goldfish review", ["jarvis plan review", "jarvis plan resolve", "jarvis plan accept", ".jarvis/plan-review/findings.json", "resolution.json", "contest", "escalate", "decline", "fix", "not evidence", "decision id", "At most 2 review rounds", "never your notes", "Skeptical Architect", "Design Critic", "Implementation Readiness", "refuses a plan without a counted review", "Never add context only to satisfy a reviewer"]],
+    ["Hand off", ["never writes product code", "review", "notes", "claims", "runner", "hashes", "new review", "jarvis checks install", "jarvis plan checkpoint", "stop if it refuses", "Goldfish review", "jarvis plan status"]],
   ])("keeps decision requirements in %s", (heading, phrases) => { for (const phrase of phrases) expect(section(heading), phrase).toContain(phrase); });
   it("shows a plan example the runner's strict schema accepts, with top-level notes (decision 113)", () => {
     const plan = read().split("## Write the plan\n")[1]!.split(/^## /m)[0]!;
     const fences = [...plan.matchAll(/^```json\n([\s\S]*?)^```/gm)];
     expect(fences).toHaveLength(1);
-    const parsed = PlanSchema.parse(JSON.parse(fences[0]![1]!));
+    const parsed = PlanSchema.parse(JSON.parse(fences[0]![1]!.replace("<triage’s tier>", "2")));
+    expect(parsed.tier).toBe(2);
     expect(parsed.notes?.length).toBeGreaterThan(0);
   });
   it("has at least three gotchas and shows no compound session shell commands", () => {

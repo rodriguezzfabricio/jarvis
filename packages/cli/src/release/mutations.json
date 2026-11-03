@@ -74,7 +74,7 @@
   {
     "name": "release_artifact_binding",
     "file": "packages/cli/src/release/artifacts.ts",
-    "anchor": "if (artifactDigest(dir) !== manifest.artifactHash) throw new Error(\"artifact copy hash differs from approved revision\");",
+    "anchor": "if (artifactDigest(webRoot) !== manifest.artifactHash) throw new Error(\"artifact copy hash differs from approved revision\");",
     "replacement": "if (false) throw new Error(\"artifact copy hash differs from approved revision\");"
   },
   {
@@ -122,7 +122,7 @@
   {
     "name": "release_smoke_manifest_paths",
     "file": "packages/cli/src/release/smoke.ts",
-    "anchor": "new Set([\"/\", ...manifest.smokePaths, \"/.well-known/jarvis-release\"])",
+    "anchor": "new Set([\"/\", ...manifest.smokePaths, markerPath])",
     "replacement": "new Set([\"/\", \"/.well-known/jarvis-release\"])"
   },
   {
@@ -290,7 +290,7 @@
   {
     "name": "release_rollback_capture_before_promote",
     "file": "packages/cli/src/broker/adapters/index.ts",
-    "anchor": "recordCurrentProduction(options.ledger, prepared.manifest, setup, current);",
+    "anchor": "recordCurrentProduction(options.ledger, prepared.manifest, options.projectConfig, current);",
     "replacement": "void current;"
   },
   {
@@ -334,5 +334,107 @@
     "file": "packages/cli/src/release/artifacts.ts",
     "anchor": "const privateRoot = realChild(runner, config.privateRoot);",
     "replacement": "const privateRoot = realpathSync(config.privateRoot);"
+  },
+  {
+    "name": "release_vercel_prebuilt",
+    "file": "packages/cli/src/broker/adapters/vercel.ts",
+    "anchor": "\"deploy\", \"--prebuilt\", \"--yes\"",
+    "replacement": "\"deploy\", \"--yes\""
+  },
+  {
+    "name": "release_candidate_config_refused",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "      assertStaticName(path, false);",
+    "replacement": "      if (path !== \"vercel.ts\") assertStaticName(path, false);"
+  },
+  {
+    "name": "release_candidate_config_folder_refused",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "if (path) assertStaticName(path, true);",
+    "replacement": "if (false) assertStaticName(path, true);"
+  },
+  {
+    "name": "release_netlify_publish_config_refused",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "[\"netlify\", \"node_modules\", \"package.json\", \"_redirects\", \"_headers\"]",
+    "replacement": "[\"netlify\", \"node_modules\", \"package.json\"]"
+  },
+  {
+    "name": "release_absolute_provider_interpreter",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (config.interpreter !== undefined && !isAbsolute(config.interpreter))",
+    "replacement": "if (false)"
+  },
+  {
+    "name": "release_refused_path_printable",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "const text = path.replace(/[^\\x20-\\x7e]/gu, ch => `\\\\u{${ch.codePointAt(0)!.toString(16)}}`);",
+    "replacement": "const text = path;"
+  },
+  {
+    "name": "release_static_extension_allowlist",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "!STATIC_EXTENSIONS.has(extname(lower))",
+    "replacement": "false"
+  },
+  {
+    "name": "release_child_environment_allowlist",
+    "file": "packages/cli/src/broker/adapters/execution.ts",
+    "anchor": "env: { PATH: \"/usr/bin:/bin\", HOME: home, CI: \"1\", ...command.env }",
+    "replacement": "env: { ...process.env, PATH: \"/usr/bin:/bin\", HOME: home, CI: \"1\", ...command.env }"
+  },
+  {
+    "name": "release_exact_provider_version",
+    "file": "packages/cli/src/broker/adapters/execution.ts",
+    "anchor": "version !== config.version",
+    "replacement": "false"
+  },
+  {
+    "name": "release_provider_probe_required",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "await verifyProvider(options, config, manifest.provider);",
+    "replacement": "void config;"
+  },
+  {
+    "name": "release_provider_home_private",
+    "file": "packages/cli/src/broker/adapters/execution.ts",
+    "anchor": "const homeRoot = realChild(options.ledger.dir, config.home, true);",
+    "replacement": "const homeRoot = config.home;"
+  },
+  {
+    "name": "release_provider_cwd_private",
+    "file": "packages/cli/src/broker/adapters/execution.ts",
+    "anchor": "const cwdRoot = realChild(options.ledger.dir, config.cwd, true);",
+    "replacement": "const cwdRoot = config.cwd;"
+  },
+  {
+    "name": "release_rollback_verified_target",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (current.id !== target!.id || current.url !== target!.url) return unknown();",
+    "replacement": "if (false) return unknown();"
+  },
+  {
+    "name": "release_rollback_readback_required",
+    "file": "packages/cli/src/broker/adapters/index.ts",
+    "anchor": "if (action === \"rollback\") {\n        const current = await readProduction(options, config, token);",
+    "replacement": "if (action === \"rollback\") {\n        const current = target!;"
+  },
+  {
+    "name": "release_static_file_permissions",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "writeFileSync(target, readFileSync(fd), { flag: \"wx\", mode: 0o600 });",
+    "replacement": "writeFileSync(target, readFileSync(fd), { flag: \"wx\", mode: st.mode & 0o777 });"
+  },
+  {
+    "name": "release_vercel_static_config",
+    "file": "packages/cli/src/release/artifacts.ts",
+    "anchor": "JSON.stringify({ version: 3 })",
+    "replacement": "JSON.stringify({ version: 3, routes: [{ src: \"/(.*)\", dest: \"/wrong\" }] })"
+  },
+  {
+    "name": "release_netlify_explicit_config",
+    "file": "packages/cli/src/broker/adapters/netlify.ts",
+    "anchor": "\"--config\", join(manifest.artifactDir, \"netlify.toml\"),",
+    "replacement": ""
   }
 ]

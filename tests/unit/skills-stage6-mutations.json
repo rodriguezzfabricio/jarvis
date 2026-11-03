@@ -246,6 +246,18 @@
     "replacement": "work around it. The rest of the sweep goes on"
   },
   {
+    "name": "skills stage6 onboard hands off without naming its plan",
+    "file": "skills/onboard/SKILL.md",
+    "anchor": "hand off with `jarvis run --plan onboard --detach`.",
+    "replacement": "hand off with `jarvis run --detach`."
+  },
+  {
+    "name": "skills stage6 sweep hands off without naming its plan",
+    "file": "skills/sweep/SKILL.md",
+    "anchor": "then hand off with `jarvis run --plan sweep --detach`",
+    "replacement": "then hand off with `jarvis run --detach`"
+  },
+  {
     "name": "skills stage6 dispatcher still marks onboard as unbuilt",
     "file": "plugin/commands/jarvis.md",
     "anchor": "the `onboard` skill. When triage's",

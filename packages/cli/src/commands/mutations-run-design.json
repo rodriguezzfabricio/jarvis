@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Run composes design dispatch",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "return reviewDispatch(service, design);",
+    "replacement": "return reviewDispatch(service);"
+  },
+  {
+    "name": "Run keeps code reviews on code service",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "if (input.reviewer === \"code\") return { status: (await code.reviewDetailed(request)).verdict, recorded: true };",
+    "replacement": "if (input.reviewer === \"code\") return { status: \"error\", recorded: true };"
+  },
+  {
+    "name": "Run composes design whenever DESIGN.md is committed",
+    "file": "packages/cli/src/commands/run-compose.ts",
+    "anchor": "const design = designOnBranch(deps.git, designOptions.runBranch)",
+    "replacement": "const design = approvedDesign(deps.git, designOptions.runBranch)"
+  }
+]

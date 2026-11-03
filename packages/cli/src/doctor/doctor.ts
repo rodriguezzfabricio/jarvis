@@ -9,6 +9,7 @@ import {
   DISK_SINGLE_WRITER_BYTES,
   pinnedClaudeBin,
   pinnedCodexBin,
+  pinnedCodexToolHost,
 } from "../config/pins.ts";
 import { buildChildEnv, findForbiddenEnv, runCanaryProbe, type ProbeOptions } from "../harness/claude/index.ts";
 import { toolDoctorChecks, type ToolDoctorDeps } from "./tools.ts";
@@ -56,7 +57,7 @@ const GB = 1024 ** 3;
 /** Pinned Claude Code, by absolute path (decision 57). Shared with jarvis setup. */
 export function checkClaudePinned(home: string, exec: (bin: string, args: string[]) => string = execWithEnv(buildChildEnv({ ...process.env, HOME: process.env.HOME ?? home })), exists: (p: string) => boolean = existsSync): DoctorCheck {
   const claude = pinnedClaudeBin(home);
-  if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude} (install with: claude install ${CLAUDE_CODE_VERSION})` };
+  if (!exists(claude)) return { name: "claude_pinned", level: "fail", detail: `missing ${claude}; prepare the complete signed Claude Code ${CLAUDE_CODE_VERSION} app bundle as described in docs/getting-started.md` };
   try {
     const v = exec(claude, ["--version"]).trim();
     return { name: "claude_pinned", level: v.startsWith(`${CLAUDE_CODE_VERSION} `) ? "pass" : "fail", detail: `${claude} reports "${v}"` };
@@ -79,6 +80,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorCheck[]> {
 
   // Pinned Codex for cross-model review; the Claude reviewer is the fallback (decision 66).
   const codex = pinnedCodexBin(home);
+  const codexHost = pinnedCodexToolHost(home);
+  add("codex_tool_host", exists(codexHost) ? "pass" : "warn", exists(codexHost) ? `present ${codexHost}` : `missing ${codexHost}; install the matching ${CODEX_VERSION} companion host before cross-model review`);
   if (!exists(codex)) add("codex_pinned", "warn", `missing ${codex}; reviews fall back to the strong Claude reviewer`);
   else {
     try {

@@ -21,6 +21,20 @@ describe("design verdict", () => {
   it.each(["oops", "{}", JSON.stringify({...good, scores: {...good.scores, craft: 6}}), JSON.stringify({...good, findings: [{...issue, screen: ""}]}), JSON.stringify({...good, findings: Array(101).fill(issue)}), " ".repeat(65536) + JSON.stringify(good)])("returns infrastructure error for malformed or unbounded verdict %#", raw => {
     expect(evaluateDesignVerdict(raw).verdict).toBe("error");
   });
+  // A live reviewer's habit, as for the code reviewer (review/verdict.ts unfencedJson): exactly one fenced JSON block reads as its JSON.
+  it.each(["```json\n", "```\n"])("reads a verdict that is exactly one fenced JSON block opened by %j", open => {
+    expect(evaluateDesignVerdict(`${open}${JSON.stringify(good)}\n\`\`\``)).toMatchObject({ verdict: "pass", weightedScore: 4 });
+    expect(evaluateDesignVerdict(`\n${open}${JSON.stringify({...good, findings: [issue]})}\n\`\`\`\n`).verdict).toBe("fail");
+  });
+  it.each([
+    ["prose before", `Here is my verdict:\n\`\`\`json\n${JSON.stringify(good)}\n\`\`\``],
+    ["prose after", `\`\`\`json\n${JSON.stringify(good)}\n\`\`\`\nLooks great.`],
+    ["two blocks", `\`\`\`json\n${JSON.stringify(good)}\n\`\`\`\n\`\`\`json\n${JSON.stringify(good)}\n\`\`\``],
+    ["another language", `\`\`\`js\n${JSON.stringify(good)}\n\`\`\``],
+    ["unclosed", `\`\`\`json\n${JSON.stringify(good)}`],
+  ])("a fenced verdict with %s stays an error", (_name, raw) => {
+    expect(evaluateDesignVerdict(raw).verdict).toBe("error");
+  });
 });
 
 describe("bounded one-design evidence", () => {

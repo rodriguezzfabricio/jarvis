@@ -28,6 +28,7 @@ import { PreflightError, type PreflightResult } from "./schedule.ts";
 import { createSnapshot, type SnapshotManifest } from "./snapshot.ts";
 import { evalToolchainDir, evalWritableRoots, recordToolchainRefusal } from "./toolchain.ts";
 import { prepareGoToolchain, removeGoToolchain, type PreparedToolchain, type ToolchainReport } from "../toolchain/go.ts";
+import { mergeSessionToolchains, prepareRustToolchain, type RustToolchainReport } from "../toolchain/rust.ts";
 
 /**
  * Plain-Claude-Code baselines (decision 47): the golden task's prompt, typed as Fabricio would,
@@ -98,6 +99,8 @@ export interface BaselineRunResult {
   snapshot: SnapshotManifest;
   /** The session's Go (decision 123): the gate's pinned toolchain, or why it had the host's. */
   toolchain: ToolchainReport;
+  /** The session's Rust (decision 164): the gate's pinned fixture, or not needed. */
+  rustToolchain: RustToolchainReport;
 }
 
 export interface BaselineOptions {
@@ -113,11 +116,13 @@ export interface BaselineOptions {
   hiddenDirs?: readonly string[];
   /** The gate's Go module cache (eval/toolchain.ts evalGoFixture): the Jarvis arm's sessions get the same (decision 123). */
   goFixture?: string;
+  /** The gate's Rust fixture (eval/toolchain.ts evalRustFixture): the Jarvis arm's sessions get the same (decision 164). */
+  rustFixture?: string;
   log?: (m: string) => void;
 }
 
 /** Build output and tool folders kept out of candidate commits (both arms). */
-export const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "*.log", ".DS_Store"];
+export const EXCLUDE = ["node_modules/", ".next/", "dist/", "build/", ".svelte-kit/", "coverage/", ".turbo/", "target/", "*.log", ".DS_Store"];
 
 export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Promise<BaselineRunResult> {
   checkEvalDomains(task.id, task.allowedDomains);
@@ -146,12 +151,14 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   if (opts.hiddenDirs?.length) {
     try { assertHiddenAbsent(workspace, opts.hiddenDirs); } catch (e) { rmSync(cacheDir, { recursive: true, force: true }); throw e; }
   }
-  // Decision 123: the gate's pinned Go, offline and read-only, exactly as the Jarvis arm's sessions get it.
-  const { go, tc } = ((): { go: PreparedToolchain; tc: ReturnType<typeof checkSessionToolchain> } => {
+  // Decisions 123 and 164: the gate's pinned Go and Rust, offline and read-only, exactly as the Jarvis arm's sessions get them.
+  const { go, rust, tc } = ((): { go: PreparedToolchain; rust: RustToolchainReport; tc: ReturnType<typeof checkSessionToolchain> } => {
     let prepared: PreparedToolchain | undefined;
     try {
       prepared = prepareGoToolchain({ workspace, fixture: opts.goFixture, dest: evalToolchainDir(workRoot, task.id, runId) });
-      return { go: prepared, tc: checkSessionToolchain(prepared.toolchain, [...evalWritableRoots(workRoot), cacheDir, jarvisHome]) };
+      const rust = prepareRustToolchain({ fixture: opts.rustFixture });
+      const both = mergeSessionToolchains(prepared.toolchain, rust.toolchain);
+      return { go: prepared, rust: rust.report, tc: checkSessionToolchain(both, [...evalWritableRoots(workRoot), cacheDir, jarvisHome]) };
     } catch (e) {
       rmSync(cacheDir, { recursive: true, force: true });
       if (prepared?.dir) removeGoToolchain(prepared.dir);
@@ -170,7 +177,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
   const bin = opts.claudeBin ?? pinnedClaudeBin();
   writeFileSync(
     join(resultsDir, "manifest.json"),
-    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, cacheDir, snapshot, toolchain: go.report, startedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify({ task: task.id, title: task.title, variant: "baseline-plain-claude-code", claudeCodeVersion: CLAUDE_CODE_VERSION, bin, args, cacheDir, snapshot, toolchain: go.report, rustToolchain: rust, startedAt: new Date().toISOString() }, null, 2)}\n`,
   );
 
   const streamPath = join(resultsDir, "stream.jsonl");
@@ -220,6 +227,7 @@ export async function runBaseline(task: GoldenTask, opts: BaselineOptions): Prom
     diffStat,
     snapshot,
     toolchain: go.report,
+    rustToolchain: rust,
   };
   writeFileSync(join(resultsDir, "summary.json"), `${JSON.stringify(out, null, 2)}\n`);
   return out;

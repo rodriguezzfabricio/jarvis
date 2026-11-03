@@ -32,6 +32,15 @@ function readVerdict(path: string): string {
   return readFileSync(path, "utf8");
 }
 
+/** A completion event cannot conceal unavailable tools or another runtime failure. */
+export function codexTurnCompleted(stdout: string): boolean {
+  try {
+    const events = stdout.trim().split("\n").map((line) => JSON.parse(line) as { type?: string; item?: { type?: string } });
+    return events.some((e) => e.type === "turn.completed")
+      && !events.some((e) => e.type === "turn.failed" || e.type === "error" || e.item?.type === "error");
+  } catch { return false; }
+}
+
 export function createCodexReviewer(options: CodexReviewerOptions = {}): Reviewer {
   const home = options.home ?? homedir();
   const bin = options.binary ?? pinnedCodexBin(home);
@@ -61,8 +70,7 @@ export function createCodexReviewer(options: CodexReviewerOptions = {}): Reviewe
         ]) }); captures.push({ result, proxyRefused: jail.proxy.refused });
         if (usageLimit(result)) return output({ error: "Codex usage limit", fallbackReason: "usage_limit" });
         if (result.timedOut || result.overflowed || result.code !== 0) return output({ error: "Codex review failed or timed out" });
-        const events = result.stdout.trim().split("\n").map((l) => JSON.parse(l) as { type?: string });
-        if (events.some((e) => e.type === "turn.failed") || !events.some((e) => e.type === "turn.completed")) return output({ error: "Codex review did not complete" });
+        if (!codexTurnCompleted(result.stdout)) return output({ error: "Codex review did not complete without runtime errors" });
         const rawVerdict = readVerdict(verdict); captures.push({ rawVerdict });
         return output({ rawVerdict });
       } finally { await jail.close(); }

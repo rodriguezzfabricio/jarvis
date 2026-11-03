@@ -2,11 +2,15 @@ import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as brokerHost from "../../packages/cli/src/broker/host.ts";
 import { requestBroker } from "../../packages/cli/src/broker/client.ts";
 import type { SignalHost } from "../../packages/cli/src/broker/host.ts";
-import { prepareProductionRun, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
+import { prepareProductionRun, reviewDispatch, reviewMaterialFor, type ReviewDeps, type ComposeOptions } from "../../packages/cli/src/commands/run-compose.ts";
 import type { PreparedRun } from "../../packages/cli/src/commands/run.ts";
+import { approvedDesign } from "../../packages/cli/src/review/design-material.ts";
+import { planFileHash } from "../../packages/cli/src/review/plan-resolve.ts";
+import { PLAN_POLICY_HASH } from "../../packages/cli/src/review/plan-service.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import type { SessionOutcome, SessionSpec } from "../../packages/cli/src/proc/session.ts";
 import type { Message, Notifier } from "../../packages/cli/src/notify/notifier.ts";
@@ -32,14 +36,22 @@ const seams = (extra: Partial<ComposeOptions> = {}): ComposeOptions => ({
   preflight: async () => true, reprobe: async () => true, createReview: () => async () => "pass" as const, signals: new FakeHost(), warn: () => {}, ...extra,
 });
 async function prepare(p: E2EProject, ctx: object = {}, extra: Partial<ComposeOptions> = {}): Promise<PreparedRun> {
-  const run = await prepareProductionRun(context(p, ctx), { home: p.home, ...seams(extra) });
+  const options = { home: p.home, ...seams(extra) };
+  if (Object.hasOwn(extra, "createDesignReview")) delete options.createReview;
+  const run = await prepareProductionRun(context(p, ctx), options);
   prepared.push(run);
   return run;
 }
-function writePlan(p: E2EProject, criteria = true, notes?: string[]) {
+function writePlan(p: E2EProject, criteria = true, notes?: string[], tier?: 0 | 1 | 2, reviewed = true) {
   mkdirSync(join(p.repoPath, ".jarvis"), { recursive: true });
   const tasks = p.tasks.map((t) => ({ id: t.id, title: t.title, goal: t.goal, exitCondition: t.exitCondition, acceptanceCriteria: criteria ? t.criteria : [], storyIds: [t.story], dependencies: t.dependencies, priority: t.priority, requiredChecks: t.requiredChecks, requiredReviews: t.requiredReviews }));
-  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), tasks }));
+  writeFileSync(join(p.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...(notes ? { notes } : {}), ...(tier !== undefined ? { tier } : {}), tasks }));
+  if (reviewed) recordPlanReview(p);
+}
+/** The runner's overall record of a Goldfish review at the current plan's hash (decision 170), as plan-service.ts writes it. */
+function recordPlanReview(p: E2EProject, verdict: "pass" | "resolve" | "fail" = "pass", findings: { id: string; lens: string; severity: "blocker" | "major" | "nit"; scope: string }[] = [], counts = true) {
+  const planHash = planFileHash(p.repoPath);
+  return p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { lens: "overall", revision: p.baseRevision, planHash, policyHash: PLAN_POLICY_HASH, model: "claude-opus-5-5", verdict, counts, planted: [], findings, purpose: "review" } });
 }
 const runDir = (p: E2EProject) => join(p.jarvisHome, "run");
 const socketsIn = (p: E2EProject) => existsSync(runDir(p)) ? readdirSync(runDir(p)).filter((n) => n.endsWith(".sock")) : [];
@@ -50,7 +62,9 @@ describe("jarvis run production composition", () => {
     const { loop: opts } = await prepare(p);
     expect(Object.keys(opts.checks).sort()).toEqual(["ac1", "ac2", "ac3", "unit"]);
     expect(opts.runBranch).toBe(p.runBranch);
+    expect(opts.tier).toBe(1);
     expect(opts.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
+    expect(opts.only).toEqual(["T1", "T2"]);
     expect(opts.worktreeRoot).toBe(join(p.home, ".jarvis-work", "worktrees"));
     expect(typeof opts.createHarness).toBe("function"); expect(typeof opts.recoverIntake).toBe("function");
     expect(opts.plan?.tasks.some((t) => "planNotes" in t)).toBe(false);
@@ -66,6 +80,71 @@ describe("jarvis run production composition", () => {
     await expect(prepare(q)).rejects.toThrow(/Unrecognized key/);
   });
 
+  it.each([0, 2] as const)("carries plan tier %s into the loop and review material", async (tier) => {
+    const p = project(); writePlan(p, true, undefined, tier);
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    let deps: ReviewDeps | undefined;
+    let loop: PreparedRun["loop"];
+    try { ({ loop } = await prepare(p, {}, { createReview: (input) => { deps = input; return async () => "pass"; } })); }
+    finally { hosted.mockRestore(); }
+    expect(loop.tier).toBe(tier);
+    safeGit(p.repoPath, ["commit", "--allow-empty", "-qm", "candidate"], { home: p.home });
+    expect(reviewMaterialFor(deps!, "T1", safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim())).toMatchObject({ tier });
+  });
+  it("reviews review-fix bug tasks at tier 2 and leaves the report update at the plan's tier", () => {
+    const p = project();
+    const deps: ReviewDeps = {
+      context: context(p), ledger: p.ledger, workRoot: p.home, cacheRoot: p.home, spec: undefined, tier: 1,
+      git: () => "base", preflight: async () => true,
+      reviewFix: { request: "Fix confirmed findings", tasks: new Map(), bugTasks: new Set(["T1"]) },
+    };
+    expect(reviewMaterialFor(deps, "T1", "candidate")).toMatchObject({ tier: 2, kind: "bug" });
+    expect(reviewMaterialFor(deps, "T2", "candidate")).toMatchObject({ tier: 1 });
+    expect(reviewMaterialFor(deps, "T2", "candidate").kind).toBeUndefined();
+    expect(reviewMaterialFor({ ...deps, tier: 2 }, "T2", "candidate").tier).toBe(2);
+  });
+  it("reviews direct refactors against preserved behavior instead of bug-reproduction requirements", async () => {
+    const p = project();
+    const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+    const request = "Refactor src/store.mjs into smaller functions without changing behavior.";
+    const plan = bugRequestPlan(request, [{ name: "unit" }]);
+    let deps: ReviewDeps | undefined;
+    await prepare(p, { request }, { createReview: (input) => { deps = input; return async () => "pass"; } });
+    const material = reviewMaterialFor({ ...deps!, git: () => "base" }, plan.tasks[0]!.id, "candidate");
+    expect(material.kind).toBeUndefined();
+    expect(material.acceptanceCriteria).toEqual([plan.tasks[0]!.exitCondition]);
+  });
+
+  it.each(["The citizenship filter is missing some jobs that require US citizenship.", "Chromium won't start in the container. Fix it."])("plans a bug request without a spec: %s", async (request) => {
+    const p = project();
+    safeGit(p.repoPath, ["rm", "-r", "docs/spec"], { home: p.home });
+    safeGit(p.repoPath, ["commit", "-qm", "no spec"], { home: p.home });
+    let deps: ReviewDeps | undefined;
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    let loop: PreparedRun["loop"];
+    try { ({ loop } = await prepare(p, { request }, { createReview: input => { deps = input; return async () => "pass"; } })); }
+    finally { hosted.mockRestore(); }
+    expect(loop.plan?.tasks).toHaveLength(1);
+    const task = loop.plan!.tasks[0]!;
+    expect(task.goal).toBe(request);
+    expect(task.exitCondition).toContain("every path");
+    expect(task.requiredChecks).toContain("unit");
+    expect(task.requiredReviews).toContain("code");
+    expect(reviewMaterialFor(deps!, task.id, safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim())).toMatchObject({
+      kind: "bug", tier: loop.tier, spec: expect.stringContaining(request), acceptanceCriteria: [task.exitCondition],
+    });
+  });
+  it("refuses a feature request through the spec-free bug handoff", async () => {
+    const p = project();
+    await expect(prepare(p, { request: "Build a new habit tracker app" })).rejects.toThrow(/bug.*spec|spec.*bug/);
+    expect(socketsIn(p)).toEqual([]);
+  });
+  it("keeps the approved spec requirement for an ordinary architect plan", async () => {
+    const p = project(); writePlan(p);
+    safeGit(p.repoPath, ["rm", "-r", "docs/spec"], { home: p.home });
+    safeGit(p.repoPath, ["commit", "-qm", "no spec"], { home: p.home });
+    await expect(prepare(p)).rejects.toThrow(/approved spec/);
+  });
   it("refuses to start without approved protected checks", async () => {
     const p = project(false);
     await expect(prepare(p)).rejects.toThrow(/approved/);
@@ -208,3 +287,163 @@ async function runTask(p: E2EProject, run: PreparedRun) {
     logPath: join(p.projectDir, "logs", "T1-a1.jsonl"), onSpawn: () => true, onGroupExit: () => {},
   });
 }
+
+
+describe("production design composition", () => {
+  beforeEach(() => { vi.spyOn(brokerHost,"hostBroker").mockResolvedValue({socketPath:"/fake/broker.sock",alias:"/fake/alias.sock",reconciled:0,close:async()=>{}}); });
+  afterEach(() => vi.restoreAllMocks());
+  it("composes the design service from committed design and dispatches its recorded verdict", async () => {
+    const p=project();
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"## Overview\n- Principles: List first.\n");
+    writeFileSync(join(p.repoPath,"PRODUCT.md"),"Habits");
+    safeGit(p.repoPath,["add","DESIGN.md","PRODUCT.md"],{home:p.gitHome});
+    safeGit(p.repoPath,["commit","-qm","approved design"],{home:p.gitHome});
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"candidate instructions");
+    const reviewDetailed=vi.fn(async()=>({verdict:"pass",counts:true} as never));
+    const createDesignReview=vi.fn(()=>({reviewDetailed}));
+    const run=await prepare(p,{}, {createDesignReview});
+    expect(createDesignReview).toHaveBeenCalledOnce();
+    expect(createDesignReview.mock.calls[0]).toMatchObject([{projectDir:p.projectDir,jarvisHome:p.jarvisHome}]);
+    const request={taskId:"T1",attemptId:"a1",revision:"a".repeat(40)};
+    expect(await run.loop.review!({...request,reviewer:"design"} as never)).toEqual({status:"pass",recorded:true});
+    expect(reviewDetailed).toHaveBeenCalledWith(request);
+    // The real git seam reads the run branch's committed objects, never the edited working tree.
+    const git=(args: readonly string[])=>safeGit(p.repoPath,args,{home:p.gitHome}).toString().trim();
+    expect(approvedDesign(git,run.loop.runBranch)).toMatchObject({design:"## Overview\n- Principles: List first.",product:"Habits"});
+  });
+  it("a committed DESIGN.md without PRODUCT.md still starts the run; each design review's material is refused", async () => {
+    const p=project();
+    writeFileSync(join(p.repoPath,"DESIGN.md"),"## Overview\n- Principles: List first.\n");
+    safeGit(p.repoPath,["add","DESIGN.md"],{home:p.gitHome});
+    safeGit(p.repoPath,["commit","-qm","design without product"],{home:p.gitHome});
+    const createDesignReview=vi.fn((_options: { resolveMaterial(request: { taskId: string; attemptId: string; revision: string }): Promise<unknown> }) => ({reviewDetailed:vi.fn()}));
+    // The run starts: a refusal here is an assertion failure, not an error (decision 146).
+    await expect(prepare(p,{}, {createDesignReview: createDesignReview as never})).resolves.toBeDefined();
+    expect(createDesignReview).toHaveBeenCalledOnce();
+    await expect(createDesignReview.mock.calls[0]![0].resolveMaterial({taskId:"T1",attemptId:"a1",revision:"a".repeat(40)})).rejects.toThrow(/PRODUCT\.md/);
+  });
+  it("does not compose design from a working-tree-only DESIGN.md", async () => {
+    const p=project(); writeFileSync(join(p.repoPath,"DESIGN.md"),"unapproved");
+    const createDesignReview=vi.fn();
+    const run=await prepare(p,{}, {createDesignReview});
+    expect(createDesignReview).not.toHaveBeenCalled();
+    expect(await run.loop.review!({taskId:"T1",attemptId:"a1",revision:"a".repeat(40),reviewer:"design"} as never)).toEqual({status:"error",recorded:true});
+  });
+  it("dispatches code and design to separate services, preserving errors", async () => {
+    const code={reviewDetailed:vi.fn(async()=>({verdict:"fail"} as never))};
+    const design={reviewDetailed:vi.fn(async()=>({verdict:"error"} as never))};
+    const dispatch=reviewDispatch(code,design)!;
+    const request={taskId:"T1",attemptId:"a1",revision:"a".repeat(40)};
+    expect(await dispatch({...request,reviewer:"design"} as never)).toEqual({status:"error",recorded:true});
+    expect(code.reviewDetailed).not.toHaveBeenCalled();
+    expect(await dispatch({...request,reviewer:"code"} as never)).toEqual({status:"fail",recorded:true});
+    expect(code.reviewDetailed).toHaveBeenCalledOnce(); expect(design.reviewDetailed).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the Goldfish gate on jarvis run (decision 170)", () => {
+  it("refuses an architect plan with no plan review at its hash, and hosts nothing", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false);
+    await expect(prepare(p)).rejects.toThrow(/no Goldfish review at hash [a-f0-9]{64}: run jarvis plan review/);
+    expect(socketsIn(p)).toEqual([]);
+  });
+  it("refuses a review that does not count, a failed review, and a review of another plan", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false); recordPlanReview(p, "pass", [], false);
+    await expect(prepare(p)).rejects.toThrow(/does not count/);
+    const q = project(); writePlan(q, true, undefined, undefined, false); recordPlanReview(q, "fail", [{ id: "critic-1", lens: "critic", severity: "blocker", scope: "T1" }]);
+    await expect(prepare(q)).rejects.toThrow(/critic-1/);
+    const r = project(); writePlan(r); writeFileSync(join(r.repoPath, ".jarvis", "plan.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(r.repoPath, ".jarvis", "plan.json"), "utf8")), notes: ["changed after the review"] }));
+    await expect(prepare(r)).rejects.toThrow(/no Goldfish review/);
+  });
+  it("runs a plan whose counted review passed", async () => {
+    const p = project(); writePlan(p);
+    const { loop } = await prepare(p);
+    expect(loop.plan?.tasks.map((t) => t.id)).toEqual(["T1", "T2"]);
+  });
+  it("a review that needs resolution runs only once every major is resolved and no escalation is open", async () => {
+    const p = project(); writePlan(p, true, undefined, undefined, false);
+    const planHash = planFileHash(p.repoPath);
+    recordPlanReview(p, "resolve", [{ id: "critic-1", lens: "critic", severity: "major", scope: "T1" }, { id: "readiness-1", lens: "readiness", severity: "major", scope: "T2" }, { id: "zoom-out-1", lens: "zoom-out", severity: "nit", scope: "T1" }]);
+    await expect(prepare(p)).rejects.toThrow(/without a resolution: critic-1, readiness-1/);
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "resolution", planHash, resolutions: [{ id: "critic-1", action: "contest", evidence: "src/index.mjs" }, { id: "readiness-1", action: "escalate", question: "Which store?" }] } });
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "escalation", planHash, id: "readiness-1", question: "Which store?" } });
+    await expect(prepare(p)).rejects.toThrow(/escalations wait for the user: readiness-1/);
+    p.ledger.append({ kind: "plan_review", actor: "runner", task_id: null, data: { purpose: "escalation_answer", planHash, id: "readiness-1", answer: "SQLite", by: "user", source: "terminal" } });
+    const { loop } = await prepare(p);
+    expect(loop.plan?.tasks).toHaveLength(2);
+  });
+  it("session plans, bug requests and ledger-only runs are not gated", async () => {
+    const p = project();
+    const hosted = vi.spyOn(brokerHost, "hostBroker").mockResolvedValue({ socketPath: join(p.home, "fake.sock"), alias: join(p.home, "fake-alias.sock"), reconciled: 0, close: async () => {} });
+    try {
+      const { loop } = await prepare(p, { request: "The citizenship filter is missing some jobs that require US citizenship." });
+      expect(loop.plan?.tasks).toHaveLength(1);
+      const q = project();
+      expect((await prepare(q)).loop.plan).toBeUndefined();
+    } finally { hosted.mockRestore(); }
+  });
+});
+
+it("spec-free bug and refactor runs ignore an unrelated committed draft", async () => {
+  const p = project(); const path = join(p.repoPath, "docs/spec/v1.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("status: confirmed", "status: draft"));
+  safeGit(p.repoPath, ["add", "docs/spec/v1.md"], { home: p.home });
+  safeGit(p.repoPath, ["commit", "-qm", "unrelated draft"], { home: p.home });
+  for (const request of ["Fix the item name bug", "Refactor the store without changing behavior"]) {
+    const run = await prepare(p, { request, local: true, requestHandoff: { type: request.startsWith("Fix") ? "bug" : "refactor", tier: 2, touches: ["src/store.mjs"] } });
+    expect(run.loop.plan?.tasks[0]?.goal).toBe(request);
+    expect(run.loop.plan?.tasks[0]?.mayTouch).toEqual(["src/store.mjs"]);
+    expect(run.loop.tier).toBe(2);
+    await run.close();
+  }
+  await expect(prepare(p)).rejects.toThrow(/draft/);
+});
+
+it("reviews spec-free session work against its runner-owned goal and exit condition", async () => {
+  const p = project();
+  p.ledger.append({ kind: "task_created", actor: "runner", task_id: "T99", data: { goal: "Split the store without changing its public API", exitCondition: "Existing behavior and unit checks remain unchanged", riskTier: 2, requiredChecks: ["unit"], requiredReviews: ["code"] } });
+  const deps: ReviewDeps = { context: context(p), ledger: p.ledger, workRoot: p.home, cacheRoot: p.home, spec: undefined, tier: 1, git: (args) => safeGit(p.repoPath, args, { home: p.home }).toString().trim(), preflight: async () => true };
+  const revision = safeGit(p.repoPath, ["rev-parse", "HEAD"], { home: p.home }).toString().trim();
+  const material = reviewMaterialFor({ ...deps, git: () => revision }, "T99", revision);
+  expect(material.spec).toContain("Split the store without changing its public API");
+  expect(material.tier).toBe(2);
+  expect(material.acceptanceCriteria).toEqual(["Existing behavior and unit checks remain unchanged"]);
+});
+
+it("binds the loop to approved spec content and protected check hashes, not their names", async () => {
+  const p = project(); writePlan(p);
+  const first = await prepare(p), original = first.loop.inputHash;
+  expect(original).toMatch(/^[a-f0-9]{64}$/);
+  await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
+  const specPath = join(p.repoPath, "docs/spec/v1.md");
+  const text = readFileSync(specPath, "utf8");
+  writeFileSync(specPath, text.replace("## Goals", "## Goals\n- Changed requirement under the same AC identifiers."));
+  safeGit(p.repoPath, ["add", "docs/spec/v1.md"], { home: p.home });
+  safeGit(p.repoPath, ["commit", "-qm", "changed requirement"], { home: p.home });
+  const second = await prepare(p);
+  expect(second.loop.inputHash).not.toBe(original);
+  const changedSpec = second.loop.inputHash;
+  await prepared.splice(prepared.indexOf(second), 1)[0]!.close();
+  const { ChecksStore } = await import("../../packages/cli/src/checks/store.ts");
+  const store = new ChecksStore(p.projectDir);
+  writeFileSync(join(store.checksDir, "new-check-input.txt"), "new approved bytes");
+  store.approve(p.ledger, "test changed approved checks with identical names");
+  const third = await prepare(p);
+  expect(third.loop.inputHash).not.toBe(changedSpec);
+});
+
+it.each(["Fix the broken item output", "Refactor src/store.mjs without changing behavior"])("requires the original command to resume a spec-free request beside a confirmed spec: %s", async request => {
+  const { runLoop } = await import("../../packages/cli/src/runner/loop.ts");
+  const p = project(), first = await prepare(p, { request });
+  p.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 1 } });
+  const stop = (loop: PreparedRun["loop"], label: string) => runLoop({ ...loop, pidAlive: () => false, footprint: false,
+    createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }), reprobe: async () => { throw new Error(label); } });
+  await expect(stop(first.loop, "first checkpoint")).rejects.toThrow("first checkpoint");
+  await prepared.splice(prepared.indexOf(first), 1)[0]!.close();
+  let deps: ReviewDeps | undefined;
+  await expect(prepare(p)).rejects.toThrow(/original.*--request.*--plan/);
+  expect(socketsIn(p)).toEqual([]);
+  const next = await prepare(p, { request }, { createReview: d => { deps = d; return async () => "pass"; } });
+  await expect(stop(next.loop, "resumed checkpoint")).rejects.toThrow("resumed checkpoint");
+  expect(reviewMaterialFor({ ...deps!, git: () => "base" }, first.loop.plan!.tasks[0]!.id, "candidate").spec).toContain(request);
+});

@@ -10,7 +10,7 @@ import type { ReviewerInput } from "../../packages/cli/src/review/types.ts";
 const roots: string[] = [];
 afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); });
 const flag = (s: SessionSpec, k: string) => s.args[s.args.indexOf(k) + 1]!;
-function setup(steps: unknown[] = [{ result: { text: '{"findings":[]}' } }], fixtureEnv: Record<string, string> = {}, exitOnTerm = false) {
+function setup(steps: unknown[] = [{ result: { text: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' } }], fixtureEnv: Record<string, string> = {}, exitOnTerm = false) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "review-claude-"))); roots.push(root);
   const jarvisHome = join(root, "runner"), workRoot = join(root, "work"), cacheRoot = join(root, "cache"), home = join(root, "home");
   for (const d of [jarvisHome, workRoot, cacheRoot, home]) mkdirSync(d);
@@ -32,7 +32,7 @@ function setup(steps: unknown[] = [{ result: { text: '{"findings":[]}' } }], fix
 describe("fresh Claude review sessions", () => {
   it("uses only read tools and reuses the exact permanent settings policy", async () => {
     const s = setup(); const r = await createClaudeReviewer(s.options)(s.input);
-    expect(r.error).toBeUndefined(); expect(r.rawVerdict).toBe('{"findings":[]}');
+    expect(r.error).toBeUndefined(); expect(r.rawVerdict).toBe('{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}');
     const spec = s.specs[0]!; const settings = s.settings[0]!;
     expect(spec.bin).toBe(pinnedClaudeBin());
     expect(flag(spec, "--tools")).toBe("Read,Glob,Grep");
@@ -62,14 +62,37 @@ describe("fresh Claude review sessions", () => {
     expect(s.specs).toHaveLength(0);
   });
   it("cannot turn a write tool attempt into a passing verdict", async () => {
-    const s = setup([{ event: { type: "assistant", message: { content: [{ type: "tool_use", id: "evil", name: "Write", input: { file_path: "owned" } }] } } }, { result: { text: '{"findings":[]}' } }]);
+    const s = setup([{ event: { type: "assistant", message: { content: [{ type: "tool_use", id: "evil", name: "Write", input: { file_path: "owned" } }] } } }, { result: { text: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' } }]);
     expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/read-only/);
     expect(existsSync(join(s.input.workspace, "owned"))).toBe(false);
   });
-  it.each([{ steps: [{ hang: true }] }, { steps: [{ result: { text: "garbage" } }] }, { steps: [{ rateLimit: { status: "rejected" } }, { result: { text: '{"findings":[]}' } }] }])("fails or returns invalid text for fault %j", async ({ steps }) => {
+  it.each([{ steps: [{ hang: true }] }, { steps: [{ result: { text: "garbage" } }] }])("fails or returns invalid text for fault %j", async ({ steps }) => {
     const s = setup(steps); s.input.timeoutMs = 200;
     const r = await createClaudeReviewer(s.options)(s.input);
     expect(r.error || r.rawVerdict === "garbage").toBeTruthy();
+  });
+  it.each([
+    { steps: [{ rateLimit: { status: "rejected", resetsAt: 2000 } }] },
+    { steps: [{ rateLimit: { status: "allowed", resetsAt: 2000 } }, { event: { type: "assistant", error: "rate_limit" } }] },
+  ])("returns a typed usage limit even when shutdown times out: %j", async ({ steps }) => {
+    const s = setup([...steps, { hang: true }]); s.input.timeoutMs = 500;
+    const result = await createClaudeReviewer(s.options)(s.input);
+    expect(result.usageLimit).toEqual({ resetAt: 2000 });
+    expect(result.error).toBeUndefined();
+    expect(result.rawVerdict).toBe("");
+  });
+  it("preserves the preflight reset without starting a reviewer", async () => {
+    const s = setup();
+    const result = await createClaudeReviewer({ ...s.options, preflight: async () => ({ ok: false, usageWaitUntil: 2000 }) })(s.input);
+    expect(result.usageLimit).toEqual({ resetAt: 2000 });
+    expect(s.specs).toHaveLength(0);
+  });
+  it("reports the actual process start and parsed reviewer tokens", async () => {
+    const s = setup([{ event: { type: "result", subtype: "success", result: "{}", usage: { input_tokens: 23, output_tokens: 7 } } }]);
+    const onSpawn = vi.fn(() => {});
+    const result = await createClaudeReviewer(s.options)({ ...s.input, onSpawn });
+    expect(onSpawn).toHaveBeenCalledOnce();
+    expect(result.sessionOutcome?.sessionUsage).toMatchObject({ inputTokens: 23, outputTokens: 7 });
   });
   it("validates the final args after appending effort, before spawning", async () => {
     const s = setup(); s.input.effort = "--resume" as ReviewerInput["effort"];
@@ -92,7 +115,7 @@ describe("fresh Claude review sessions", () => {
     expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/initialization mismatch/);
   });
   it("rejects a success result followed by a hang even when shutdown exits zero", async () => {
-    const s = setup([{ result: { text: '{"findings":[]}' } }, { hang: true }], {}, true);
+    const s = setup([{ result: { text: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' } }, { hang: true }], {}, true);
     s.input.timeoutMs = 500;
     expect((await createClaudeReviewer(s.options)(s.input)).error ?? "<missing>").toMatch(/timed out/);
   });

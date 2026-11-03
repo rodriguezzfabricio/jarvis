@@ -41,9 +41,7 @@ const SCENARIO = {
 describe("e2e: jarvis run on the production composition", { timeout: 600_000 }, () => {
   it("hosts the broker for a session's jarvis act, notifies a blocked task and the finish, and tears the broker down", async () => {
     const p = createE2EProject({ scenario: SCENARIO }); projects.push(p);
-    seedTasks(p);
     // A task whose required check isn't installed is blocked before any session (runner/loop.ts).
-    p.ledger.append({ kind: "task_created", actor: "runner", task_id: "T3", data: { title: "lint", story: "S1", criteria: [], goal: "Lint the code.", exitCondition: "lint passes", dependencies: [], priority: 0, requiredChecks: ["lint"], requiredReviews: ["code"] } });
     writeFileSync(join(p.jarvisHome, "notify.json"), JSON.stringify({ baseUrl: "https://example.invalid", topic: "fake-out", replyTopic: "fake-in" }), { mode: 0o600 });
     const sent: Message[] = [];
     const notifier: Notifier = { send: async (m) => { sent.push(m); }, poll: async () => [] };
@@ -56,6 +54,10 @@ describe("e2e: jarvis run on the production composition", { timeout: 600_000 }, 
         home: p.home, preflight: async () => true, reprobe: async () => true, createReview: () => async () => "pass",
         createNotifier: () => notifier, warn: (w) => warnings.push(w),
         harness: { binaryRealpath: () => p.claudeBin, session: (spec) => runSession({ ...spec, bin: p.claudeBin }), parentEnv: { HOME: p.home, USER: "e2e", LANG: "en_US.UTF-8" } },
+      }).then(prepared => {
+        seedTasks(p, { inputHash: prepared.loop.inputHash, inputMode: prepared.loop.inputMode });
+        p.ledger.append({ kind: "task_created", actor: "runner", task_id: "T3", data: { inputHash: prepared.loop.inputHash, inputMode: prepared.loop.inputMode, title: "lint", story: "S1", criteria: [], goal: "Lint the code.", exitCondition: "lint passes", dependencies: [], priority: 0, requiredChecks: ["lint"], requiredReviews: ["code"] } });
+        return prepared;
       }),
     });
     await program.parseAsync(["run"], { from: "user" });

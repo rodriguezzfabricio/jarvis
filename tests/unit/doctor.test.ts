@@ -1,4 +1,4 @@
-import { pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
+import { pinnedClaudeBin, pinnedCodexBin, pinnedSecurityScanners } from "../../packages/cli/src/config/pins.ts";
 import { describe, expect, it } from "vitest";
 import { allowsUnattended, doctorExitCode, runDoctor, type DoctorDeps } from "../../packages/cli/src/doctor/doctor.ts";
 
@@ -14,7 +14,7 @@ function deps(over: Partial<DoctorDeps> = {}): DoctorDeps {
     platform: "darwin",
     repoPath: process.cwd(),
     exists: () => true,
-    exec: (bin) => Object.values(pinnedSecurityScanners()).find(pin => pin?.bin === bin)?.version ?? (bin.endsWith("2.1.309") ? "2.1.309 (Claude Code)\n" : bin.endsWith("codex") ? "codex-cli 0.164.0\n" : "0\n"),
+    exec: (bin) => Object.values(pinnedSecurityScanners()).find(pin => pin?.bin === bin)?.version ?? (bin === pinnedClaudeBin("/Users/f") ? "2.1.309 (Claude Code)\n" : bin === pinnedCodexBin("/Users/f") ? "codex-cli 0.164.0\n" : "0\n"),
     freeBytes: () => 100 * GB,
     live: true,
     probe: okProbe,
@@ -22,6 +22,11 @@ function deps(over: Partial<DoctorDeps> = {}): DoctorDeps {
   };
 }
 const level = (cs: Awaited<ReturnType<typeof runDoctor>>, n: string) => cs.find((c) => c.name === n)?.level;
+
+it("warns when the pinned Codex tool host is absent even if --version works", async () => {
+  const checks = await runDoctor(deps({ exists: (path) => !path.endsWith("codex-code-mode-host") }));
+  expect(level(checks, "codex_tool_host")).toBe("warn");
+});
 
 describe("jarvis doctor", () => {
   it("passes on a healthy machine and allows unattended runs", async () => {
@@ -39,8 +44,9 @@ describe("jarvis doctor", () => {
   });
 
   it("fails on a Claude Code version other than the pin (decision 57)", async () => {
-    const cs = await runDoctor(deps({ exec: (b) => (b.endsWith("2.1.309") ? "2.1.270 (Claude Code)" : "0") }));
+    const cs = await runDoctor(deps({ exec: (b) => (b === pinnedClaudeBin("/Users/f") ? "2.1.270 (Claude Code)" : "0") }));
     expect(level(cs, "claude_pinned")).toBe("fail");
+    expect(cs.find(c => c.name === "claude_pinned")?.detail).toContain("2.1.270 (Claude Code)");
   });
 
   it("applies the disk floor and the single-writer threshold (decision 63)", async () => {

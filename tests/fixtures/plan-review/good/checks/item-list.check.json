@@ -1,0 +1,90 @@
+{
+  "name": "item-list",
+  "criteria": [
+    "AC3"
+  ],
+  "cases": [
+    {
+      "id": "reset",
+      "command": "rm -f data/check-list.jsonl"
+    },
+    {
+      "id": "missing-store",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "empty-store",
+      "command": ": > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "first",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs add exercise"
+    },
+    {
+      "id": "second",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs add \"buy milk\""
+    },
+    {
+      "id": "special",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs add 'tea\t\"milk\"\\café later'"
+    },
+    {
+      "id": "list",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "extra",
+      "command": "ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list unexpected"
+    },
+    {
+      "id": "default",
+      "command": "isolated=$(mktemp -d) && cp -R src \"$isolated/src\" && mkdir \"$isolated/data\" && printf '{\"name\":\"exercise\"}\\n' > \"$isolated/data/items.jsonl\" && env -u ITEMS_FILE node \"$isolated/src/cli.mjs\" list && ITEMS_FILE= node \"$isolated/src/cli.mjs\" list"
+    },
+    {
+      "id": "read-error",
+      "command": "ITEMS_FILE=data node src/cli.mjs list"
+    },
+    {
+      "id": "malformed",
+      "command": "printf '%s' '{\"name\":\"exercise\"}\nnot json\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-0",
+      "command": "printf '%s' '{}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-1",
+      "command": "printf '%s' 'null\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-2",
+      "command": "printf '%s' '[]\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-3",
+      "command": "printf '%s' '{\"name\":5}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-4",
+      "command": "printf '%s' '{\"name\":\"\"}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-5",
+      "command": "printf '%s' '{\"name\":\" x\"}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-6",
+      "command": "printf '%s' '{\"name\":\"x\\ny\"}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-7",
+      "command": "printf '%s' '{\"name\":\"x\\ry\"}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    },
+    {
+      "id": "shape-8",
+      "command": "printf '%s' '{\"name\":\"x\",\"extra\":1}\n' > data/check-list.jsonl && ITEMS_FILE=data/check-list.jsonl node src/cli.mjs list"
+    }
+  ],
+  "verify": "sh \"$JARVIS_CHECKS/verify-list.sh\"",
+  "timeoutMs": 60000
+}

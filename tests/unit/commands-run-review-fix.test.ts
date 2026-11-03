@@ -12,7 +12,7 @@ import { prepareProductionRun, reviewMaterialFor, type ComposeOptions, type Revi
 import { register, type PreparedRun, type RunContext } from "../../packages/cli/src/commands/run.ts";
 import { safeGit } from "../../packages/cli/src/eval/git.ts";
 import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
-import type { RunLoopOptions, RunLoopResult } from "../../packages/cli/src/runner/loop.ts";
+import { runLoop, type RunLoopOptions, type RunLoopResult } from "../../packages/cli/src/runner/loop.ts";
 import { BUG_EXIT_CONDITION, readSessionPlan, SESSION_PLAN_KINDS } from "../../packages/cli/src/runner/plan.ts";
 import { REVIEW_FINDINGS_FILE } from "../../packages/cli/src/runner/review-fix.ts";
 import { createE2EProject, type E2EProject } from "../integration/e2e-helpers.ts";
@@ -111,10 +111,40 @@ describe("jarvis run --plan review", () => {
     expect(run.loop.plan?.tasks.map((t) => t.id)).toEqual(["T2"]);
     // As the loop seeds it; then planning the same findings again keeps that task instead of adding T3.
     const { id, ...data } = run.loop.plan!.tasks[0]!;
-    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: id, data });
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: id, data: { ...data, riskTier: run.loop.tier, inputHash: run.loop.inputHash, inputMode: run.loop.inputMode } });
     await prepared.splice(prepared.indexOf(run), 1)[0]!.close();
     const again = await prepare(p);
     expect(again.loop.plan?.tasks.map((t) => t.id)).toEqual(["T2"]);
+  });
+
+  it("allocates fresh IDs for a legacy interrupted review fix", async () => {
+    const p = project(), run = await prepare(p);
+    const { id, ...data } = run.loop.plan!.tasks[0]!;
+    const { riskTier: _tier, reviewKind: _kind, inputHash: _hash, ...legacy } = data;
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: id, data: legacy });
+    await prepared.splice(prepared.indexOf(run), 1)[0]!.close();
+    const resumed = await prepare(p);
+    expect(resumed.loop.plan!.tasks[0]!.id).toBe("T2");
+  });
+
+  it("preserves the complete review workflow when resumed with its original selector", async () => {
+    const p = project(), run = await prepare(p);
+    p.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 1 } });
+    // Stop after seedPlan, before any builder or reviewer: retain actual production loop options.
+    await expect(runLoop({ ...run.loop, footprint: false, createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }),
+      reprobe: async () => { throw new Error("interrupt after seeding"); } })).rejects.toThrow(/interrupt after seeding/);
+    await prepared.splice(prepared.indexOf(run), 1)[0]!.close();
+    await expect(prepareProductionRun({ projectId: p.projectId, projectDir: p.projectDir, jarvisHome: p.jarvisHome, repoPath: p.repoPath, local: true }, {
+      home: p.home, preflight: async () => true, reprobe: async () => true, signals: new FakeHost(), createReview: () => async () => "pass",
+    })).rejects.toThrow(/original.*--request.*--plan/);
+    const resumed = await prepare(p);
+    expect(resumed.drive).toBeTypeOf("function");
+
+    await expect(runLoop({ ...resumed.loop, pidAlive: () => false, footprint: false, createHarness: () => ({ runTask: async () => { throw new Error("unused"); } }),
+      reprobe: async () => { throw new Error("resumed after seed"); } })).rejects.toThrow(/resumed after seed/);
+    const material = reviewMaterialFor(captured!, "T1", git(p, ["rev-parse", "HEAD"]));
+    expect(material).toMatchObject({ tier: 2, kind: "bug" });
+    expect(material.spec).toContain("src/add.mjs:1");
   });
 
   it("leaves a report the branch already has as it stands, when the session left it unchanged (a rerun)", async () => {
@@ -208,9 +238,10 @@ describe("jarvis run --plan review", () => {
     expect(fix.spec).toContain(REQUEST);
     expect(fix.spec).toContain("src/add.mjs:1");
     expect(fix.acceptanceCriteria).toEqual([run.loop.plan!.tasks[0]!.exitCondition]);
-    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "update", goal: "update the report", exitCondition: "the report says it", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["REVIEW.md"] } });
+    Ledger.open(p.projectDir).append({ kind: "task_created", actor: "runner", task_id: "T2", data: { title: "update", goal: "update the report", exitCondition: "the report says it", acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"], mayTouch: ["REVIEW.md"], reviewKind: "review-report", riskTier: 1 } });
     const update = reviewMaterialFor(captured!, "T2", git(p, ["rev-parse", "HEAD"]));
     expect(update.kind).toBeUndefined();
+    expect(update.tier).toBe(1);
     expect(update.spec).toContain("update the report");
   });
 

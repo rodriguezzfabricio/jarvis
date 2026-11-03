@@ -1,3 +1,4 @@
+import { sessionUsage } from "./usage.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -7,14 +8,14 @@ import { assertSafeTaskArgs, buildTaskArgs } from "./args.ts";
 import { buildChildEnv } from "./env.ts";
 import { runSession, type SessionOutcome, type SessionSpec } from "./session.ts";
 import { cacheEnv, makeSessionTmpDir, sessionTmpEnv, writeTaskSettings } from "./settings.ts";
-import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls } from "./streamjson.ts";
+import { hitRateLimitError, initInfo, parseStreamJson, rateLimits, toolCalls, usageWaitUntil } from "./streamjson.ts";
 
 export interface ClaudeReviewerOptions {
   jarvisHome: string;
   workRoot: string;
   cacheRoot: string;
   home?: string;
-  preflight: (input: ReviewerInput) => Promise<{ ok: boolean }>;
+  preflight: (input: ReviewerInput) => Promise<{ ok: boolean; usageWaitUntil?: number }>;
   binaryRealpath?: (path: string) => string;
   session?: (spec: SessionSpec) => Promise<SessionOutcome>;
   /** The session's short private temp folder (decision 95); tests inject one. */
@@ -38,12 +39,19 @@ function locations(input: ReviewerInput, opts: ClaudeReviewerOptions) {
   if (!isAbsolute(target) || [workRoot, cacheRoot, jarvisHome].some((r) => under(target, r))) throw new Error("unsafe pinned reviewer binary");
   return { workspace, outputDir, jarvisHome, cacheRoot, binary, home };
 }
-function verdictFromSession(result: SessionOutcome, raw: string, model: string): { rawVerdict: string; error?: string } {
+function verdictFromSession(result: SessionOutcome, raw: string, model: string): Pick<ReviewerOutput, "rawVerdict" | "error" | "usageLimit"> {
   const events = parseStreamJson(raw), init = initInfo(events);
   const final = events.filter((e) => e.type === "result").at(-1);
   if (toolCalls(events).some((c) => !(READ_TOOLS as readonly string[]).includes(c.name))) return { rawVerdict: "", error: "reviewer attempted a tool outside the read-only list" };
   if (init?.claudeCodeVersion !== CLAUDE_CODE_VERSION || init.model !== model || init.permissionMode !== "dontAsk" || init.memoryPaths !== undefined) return { rawVerdict: "", error: "review session initialization mismatch" };
-  if (result.code !== 0 || result.timedOut || result.overflowed || final?.subtype !== "success" || final.is_error === true || hitRateLimitError(events) || rateLimits(events).some((r) => r.status === "rejected")) return { rawVerdict: "", error: "Claude review failed or timed out" };
+  const infos = rateLimits(events), limitedByError = hitRateLimitError(events);
+  if (!result.overflowed && (limitedByError || infos.some((r) => r.status === "rejected"))) {
+    const rejected = infos.filter((r) => r.status === "rejected");
+    const resets = [usageWaitUntil(infos, { limitedByError }), ...rejected.map((r) => usageWaitUntil([r]))].filter((at): at is number => at !== undefined);
+    const hasReset = (rejected.length ? rejected : infos.slice(-1)).some((r) => r.resetsAt !== undefined || Object.values(r.windows).some((w) => w.resetsAt !== undefined));
+    return { rawVerdict: "", usageLimit: { resetAt: hasReset && resets.length ? Math.max(...resets) : undefined } };
+  }
+  if (result.code !== 0 || result.timedOut || result.overflowed || final?.subtype !== "success" || final.is_error === true) return { rawVerdict: "", error: "Claude review failed or timed out" };
   return typeof final.result === "string" ? { rawVerdict: final.result } : { rawVerdict: "", error: "Claude review returned no verdict" };
 }
 
@@ -55,7 +63,11 @@ export function createClaudeReviewer(opts: ClaudeReviewerOptions): Reviewer {
     let sessionTmp: string | undefined;
     try {
       const loc = locations(input, opts);
-      if (!(await opts.preflight(input)).ok) throw new Error("live preflight failed");
+      const preflight = await opts.preflight(input);
+      if (!preflight.ok) {
+        if (preflight.usageWaitUntil !== undefined) return { ...base, rawOutput: JSON.stringify(preflight), rawVerdict: "", usageLimit: { resetAt: preflight.usageWaitUntil } };
+        throw new Error("live preflight failed");
+      }
       cache = mkdtempSync(join(loc.cacheRoot, "review-"));
       sessionTmp = (opts.sessionTmpDir ?? makeSessionTmpDir)();
       const settings = join(loc.outputDir, "settings.json"), mcp = join(loc.outputDir, "mcp.json");
@@ -69,10 +81,16 @@ export function createClaudeReviewer(opts: ClaudeReviewerOptions): Reviewer {
       const result = await (opts.session ?? runSession)({
         bin: loc.binary, args, cwd: loc.workspace,
         env: buildChildEnv({ HOME: loc.home, USER: process.env.USER }, { ...cacheEnv(cache), ...sessionTmpEnv(sessionTmp), TMPDIR: tmp }),
+        onSpawn: () => { input.onSpawn?.(); return true; },
         timeoutMs: input.timeoutMs, stdoutPath: log, stderrPath: stderr, maxOutputBytes: 16 * 1024 * 1024,
       });
       const raw = readFileSync(log, "utf8");
-      return { ...base, rawOutput: JSON.stringify({ stdout: raw, stderr: readFileSync(stderr, "utf8") }), ...verdictFromSession(result, raw, input.model) };
+      const verdict = verdictFromSession(result, raw, input.model), events = parseStreamJson(raw);
+      const measurement = { exitCode: result.code, durationMs: result.durationMs, usage: rateLimits(events).map((r) => ({ windows: r.windows })), usageWaitUntil: verdict.usageLimit?.resetAt, sessionUsage: sessionUsage(events) };
+      return { ...base, rawOutput: JSON.stringify({ stdout: raw, stderr: readFileSync(stderr, "utf8") }), ...verdict,
+        sessionOutcome: verdict.usageLimit ? { ...measurement, status: "usage-limited", resetAt: verdict.usageLimit.resetAt }
+          : verdict.error ? { ...measurement, status: "error", message: verdict.error } : { ...measurement, status: "finished" } };
+
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { ...base, rawOutput: JSON.stringify({ error: message }), rawVerdict: "", error: message };

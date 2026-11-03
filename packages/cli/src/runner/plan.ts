@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { AppendInput } from "../ledger/ledger.ts";
+import { canonical, type AppendInput } from "../ledger/ledger.ts";
 import type { Spec } from "../spec/index.ts";
-import type { Triage } from "../triage/triage.ts";
+import { leadingOverride, triage, type Triage } from "../triage/triage.ts";
 import { readPlanningFile } from "./checks-author.ts";
 
 const text = z.string().trim().min(1).max(16_000);
@@ -24,8 +24,8 @@ export const PLAN_NOTES = { count: 32, chars: 2000, total: 16_000 } as const;
 const notes = z.array(z.string().trim().min(1).max(PLAN_NOTES.chars)).max(PLAN_NOTES.count)
   .refine((items) => items.reduce((n, s) => n + s.length, 0) <= PLAN_NOTES.total, `planner notes may hold at most ${PLAN_NOTES.total} characters in all`);
 
-/** Only `tasks` and the optional `notes`: any other top-level key refuses the plan. */
-export const PlanSchema = z.object({ notes: notes.optional(), tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
+/** Only `tasks`, optional `notes` and `tier`: any other top-level key refuses the plan. */
+export const PlanSchema = z.object({ tier: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), notes: notes.optional(), tasks: z.array(Task).min(1).max(1000) }).strict().superRefine((plan, ctx) => {
   const tasks = new Map(plan.tasks.map((task) => [task.id, task]));
   if (tasks.size !== plan.tasks.length) ctx.addIssue({ code: "custom", message: "duplicate task ids" });
   const visiting = new Set<string>();
@@ -140,4 +140,30 @@ export function singleTaskPlan(triage: SingleTaskTriage, request: string, checks
     acceptanceCriteria: [], storyIds: [], dependencies: [], priority: 0, requiredChecks: ["unit"], requiredReviews: ["code"],
     ...(triage.touches !== undefined ? { mayTouch: [...triage.touches] } : {}),
   }] });
+}
+
+export const RequestHandoffSchema = z.object({
+  type: z.enum(["bug", "refactor"]), tier: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  touches: z.array(boundary).max(1000).optional(),
+}).strict();
+export type RequestHandoff = z.infer<typeof RequestHandoffSchema>;
+
+/** Runner-owned bug/refactor handoff; session-written architect plans still require an approved spec. */
+export function bugRequestPlan(request: string, checks: readonly { name: string }[], existing: readonly (Partial<PlanTask> & { id: string; goal: string; exitCondition: string; riskTier?: 0 | 1 | 2 | undefined; reviewKind?: "bug" | "review-report" | undefined; inputHash?: string | undefined; inputMode?: "spec" | "free" | undefined })[] = [], handoff?: RequestHandoff, inputHash?: string): Plan {
+  const report = text.parse(request);
+  const selected = handoff === undefined ? undefined : RequestHandoffSchema.parse(handoff);
+  const override = leadingOverride(report);
+  const primary = triage({ request: report, folder: { empty: false, designMd: false }, ...(override ? { override } : {}) });
+  const result = triage({ request: report, folder: { empty: false, designMd: false },
+    ...(override ? { override } : {}),
+    ...(selected ? { judgment: { type: primary.type === "question" ? "question" : selected.type, then: selected.type, tier: selected.tier }, ...(selected.touches ? { touches: selected.touches } : {}) } : {}),
+  });
+  const classified = result.then ?? result;
+  if (classified.type !== "bug" && classified.type !== "refactor") throw new Error("--request accepts only bug or refactor work; other pipelines keep their spec or explicit session-plan handoff");
+  const plan = singleTaskPlan({ ...classified, ...(selected?.touches ? { touches: selected.touches } : {}) }, report, checks);
+  const { id: _generatedId, ...definition } = plan.tasks[0]!;
+  const expected = { ...definition, riskTier: classified.tier, ...(classified.type === "bug" ? { reviewKind: "bug" } : {}), ...(inputHash ? { inputHash, inputMode: "free" } : {}) };
+  const same = existing.find(({ id: _id, ...prior }) => canonical(prior) === canonical(expected));
+  const highest = existing.reduce((n, t) => /^T[1-9]\d*$/.test(t.id) && BigInt(t.id.slice(1)) > n ? BigInt(t.id.slice(1)) : n, 0n);
+  return PlanSchema.parse({ ...plan, tier: classified.tier ?? 1, tasks: [{ ...plan.tasks[0]!, id: same?.id ?? `T${highest + 1n}` }] });
 }

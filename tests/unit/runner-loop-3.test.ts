@@ -1,4 +1,4 @@
-// Runner loop tests, part 3 of 6 (recovery points, missing checks, routing snapshot, spawn identity, gate errors). The loop tests are spread over six files so they run in parallel;
+// Runner loop tests, part 3 of 9 (recovery points, missing checks, routing snapshot, spawn identity, gate errors). The loop tests are spread over nine files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -46,4 +46,13 @@ it("gives each build session its task's planner notes, as claims, and none to a 
   expect(t2.prompt).toMatch(/^Planner notes \(claims/m); for (const note of notes) expect(t2.prompt).toContain(`\n- ${note}`);
   expect(readFileSync(t2.runHeaderPath!, "utf8")).toContain("- No new dependencies.");
   expect(f.calls.find((c) => c.prompt.includes("Task: T1"))!.prompt).not.toContain("Planner notes");
+});
+
+it.each([undefined, 0, 2] as const)("passes tier %s to build sessions and usage records (default 1)", async (tier) => {
+  const f = fixture();
+  expect((await runLoop({ ...f.options, ...(tier !== undefined ? { tier } : {}) })).status).toBe("complete");
+  expect(f.calls.map((input) => input.tier)).toEqual([tier ?? 1]);
+  const usage = f.ledger.entries().filter((entry) => entry.kind === "session_usage");
+  expect(usage).toHaveLength(1);
+  expect(usage[0]!.data).toMatchObject({ tier: tier ?? 1 });
 });

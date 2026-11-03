@@ -21,18 +21,29 @@ const MAP = [
   [/^packages\/cli\/src\/harness\/claude\/mutations-settings\.json$/, "0-1"],
   [/^tests\/unit\/skills-mutations\.json$/, "2"],
   [/^tests\/unit\/stage2-r3-mutations\.json$/, "2"], // recorded research, plugin contamination, general intake rules (decision 132)
+  [/^tests\/unit\/stage2-r4-mutations\.json$/, "2"], // the stage 2 round 3 defects as intake, spec and design rules (decision 155)
+  [/^tests\/unit\/stage2-r5-mutations\.json$/, "2"], // the stage 2 round 4 defects as intake, spec, design and command rules (decision 168)
   [/^packages\/cli\/src\/eval\/mutations-jarvis\.json$/, "3"],
   [/^packages\/cli\/src\/eval\/mutations-network\.json$/, "0-1"],
   [/^packages\/cli\/src\/eval\/mutations-hidden\.json$/, "4"], // how hidden checks are installed; found building task 06, the stage 4 proof
+  [/^packages\/cli\/src\/eval\/mutations-design\.json$/, "4"], // the eval arm's design review (decision 162): golden task 06, the stage 4 proof
   [/^packages\/cli\/src\/checks\/mutations-gate-cleanup\.json$/, "0-1"],
   [/^tests\/unit\/skills-build-mutations\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-commands\.json$/, "3"],
   [/^packages\/cli\/src\/commands\/mutations-run\.json$/, "3"],
+  [/^packages\/cli\/src\/commands\/mutations-run-design\.json$/, "4"], // jarvis run composes the design reviewer (decision 156): golden task 06, the stage 4 proof
+  [/^packages\/cli\/src\/commands\/mutations-checks\.json$/, "3"], // jarvis checks install: the architect's proposals reviewed and installed (decision 147, handoff A3)
+  [/^packages\/cli\/src\/review\/mutations-plan\.json$/, "3"], // the Goldfish plan review before the build loop (decisions 170, 172): the stage 3 hand-off
+  [/^packages\/cli\/src\/decisions\/mutations-plan\.json$/, "3"], // required alternatives on hard-to-undo decisions (decision 171), checked by the plan review
   [/^packages\/cli\/src\/runner\/mutations-usage\.json$/, "6"],
   [/^packages\/cli\/src\/runner\/mutations-review-fix\.json$/, "4"], // a review that asks for fixes (decision 126): golden task 3, the stage 4 proof
   [/^tests\/unit\/skills-stage6-mutations\.json$/, "6"],
+  [/^packages\/cli\/src\/runner\/mutations-onboard\.json$/, "6"], // onboarding that asks for edits (decision 148): golden task 7, the stage 6 proof
   [/^tests\/unit\/snapshot-scanner-backlog-mutations\.json$/, "0-1"],
+  [/^tests\/unit\/setup-nosync-mutations\.json$/, "0-1"], // the test workers' fsync replacement, tests/setup (decision 154): the gate's own test infrastructure, a stage 0 piece
   [/^packages\/cli\/src\/broker\/mutations-secrets\.json$/, "0-1"], // the secrets reader, with the inline broker mutations (backlog 103)
+  [/^packages\/cli\/src\/release\/mutations-deps\.json$/, "5"], // the release build's sandboxed dependency step (decision 173): golden task 11, the stage 5 proof
+  [/^packages\/cli\/src\/release\/mutations-desktop\.json$/, "5"], // a desktop project reaches built, not distributed (decision 174): golden task 12, the stage 5 proof
   // jarvis approvals/approve/reject and the broker's pending list: the stage 1 terminal approval surface (backlog 115).
   [/^packages\/cli\/src\/commands\/mutations-approvals-ui\.json$/, "0-1"],
   [/^packages\/cli\/src\/broker\/mutations-approvals-ui\.json$/, "0-1"],

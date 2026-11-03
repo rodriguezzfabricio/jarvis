@@ -8,6 +8,7 @@ import { Ledger } from "../../packages/cli/src/ledger/ledger.ts";
 import { DEFAULT_REVIEW_ROUTING } from "../../packages/cli/src/review/routing.ts";
 import { createReviewService } from "../../packages/cli/src/review/service.ts";
 import type { ReviewerInput, ReviewerOutput } from "../../packages/cli/src/review/types.ts";
+import { initRepo } from "./helpers/git-repo.ts";
 
 /**
  * The reviewer's material from gate evidence is bounded, never an error for size: the live run of Oct 25
@@ -49,7 +50,8 @@ function setup(make: (dir: string) => void, candidate: Record<string, string> = 
   const repoPath = join(root, "repo"), workRoot = join(root, "work"), projectDir = join(root, "runner");
   for (const d of [repoPath, workRoot, projectDir]) mkdirSync(d);
   const git = (args: string[]) => safeGit(repoPath, args, { home: root }).toString().trim();
-  git(["init", "--quiet"]); writeFileSync(join(repoPath, "app.txt"), "before\n"); git(["add", "."]); git(["commit", "--quiet", "-m", "base"]);
+  initRepo(repoPath, { branch: "master" }); // what `git init --quiet` leaves, by copy (helpers/git-repo.ts)
+  writeFileSync(join(repoPath, "app.txt"), "before\n"); git(["add", "."]); git(["commit", "--quiet", "-m", "base"]);
   const baseRevision = git(["rev-parse", "HEAD"]);
   for (const [path, text] of Object.entries(candidate)) { mkdirSync(dirname(join(repoPath, path)), { recursive: true }); writeFileSync(join(repoPath, path), text); }
   git(["add", "."]); git(["commit", "--quiet", "-m", "candidate"]);
@@ -72,7 +74,7 @@ function setup(make: (dir: string) => void, candidate: Record<string, string> = 
     evidence: { dir: evidenceDir, files },
   } });
   const prompts: string[] = [];
-  let reply = (input: ReviewerInput): ReviewerOutput => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: '{"findings":[]}' });
+  let reply = (input: ReviewerInput): ReviewerOutput => ({ reviewer: "claude", model: input.model, rawOutput: "raw", rawVerdict: '{"findings":[],"checked":["spec-criteria","data-flow","error-paths","unchanged-callers"]}' });
   const claude = async (input: ReviewerInput): Promise<ReviewerOutput> => { prompts.push(input.prompt); return reply(input); };
   const service = createReviewService({ ledger, projectDir, workRoot, home: root, routing: DEFAULT_REVIEW_ROUTING, codex: null, claude,
     resolveMaterial: async () => ({ repoPath, baseRevision, tier: 1, spec: "Approved spec", acceptanceCriteria: ["AC1: filters by visible text"] }) });

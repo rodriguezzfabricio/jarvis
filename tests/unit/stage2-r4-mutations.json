@@ -1,0 +1,38 @@
+[
+  {
+    "name": "stage2 r4 default narrows the outcome",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "A recommended default never narrows the requested outcome.",
+    "replacement": "A recommended default may narrow the requested outcome."
+  },
+  {
+    "name": "stage2 r4 third-party safeguards left open",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "is decided by the session and recorded, never left open or asked.",
+    "replacement": "is left open for the user to decide."
+  },
+  {
+    "name": "stage2 r4 story map absorbs later stages",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "Name an existing later stage of the project as a boundary, never pull it into the new job.",
+    "replacement": "Pull an existing later stage of the project into the new job."
+  },
+  {
+    "name": "stage2 r4 oversized spec stays in P1",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "cut it to the walking skeleton as P1 and the rest as P2/P3 stories, each with its own criteria and assumptions",
+    "replacement": "keep every story and assumption in P1"
+  },
+  {
+    "name": "stage2 r4 confirmed artifacts may drift",
+    "file": "skills/spec/SKILL.md",
+    "anchor": "Nothing in the spec, `DESIGN.md`, `PRODUCT.md`, the decision register or the picked mockup changes after confirmation without a new confirmation round",
+    "replacement": "The spec, design, product, register and picked mockup may change after confirmation without another round"
+  },
+  {
+    "name": "stage2 r4 contradicted default kept silently",
+    "file": "skills/intake/SKILL.md",
+    "anchor": "re-ask that default once, in a short second round that holds only the contradicted defaults, before the spec starts",
+    "replacement": "keep that default and start the spec without asking again"
+  }
+]

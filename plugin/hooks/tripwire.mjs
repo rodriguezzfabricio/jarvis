@@ -84,7 +84,7 @@ const WRAPPERS = new Set(["sudo", "doas", "env", "command", "builtin", "exec", "
 const CREATORS = new Set(["mkdir", "touch", "cp", "install"]);
 const OPERATOR = /^[;&|()<>\n]+$/;
 // The areas the session's own files live in (SESSION_FILES below); shared with the search rule.
-const AREAS = "notes|scratch|intake|mockups|checks|onboard|sweep|release";
+const AREAS = "notes|scratch|intake|mockups|checks|onboard|sweep|release|plan-review";
 const IN_AREA = new RegExp(`(^|\\/)\\.jarvis\\/(${AREAS})(\\/|$)`, "i"); // an area folder, or anything in one
 const BELOW_AREA = new RegExp(`(^|\\/)\\.jarvis\\/(${AREAS})\\/[^/]`, "i"); // strictly inside one
 
@@ -222,6 +222,8 @@ const SESSION_FILES = [
   "(onboard|sweep)\\/([0-9]{4}-[0-9]{2}-[0-9]{2}\\.md|plan\\.json)",
   "release\\/manifest\\.json",
   "review\\/findings\\.json",
+  // The Goldfish plan review (decisions 170, 172): the runner's copy of the findings, and the architect's resolution of them.
+  "plan-review\\/(findings|resolution)\\.json",
 ];
 const SESSION_OWNED = new RegExp(`(^|\\/)\\.jarvis\\/(${SESSION_FILES.join("|")})$`);
 

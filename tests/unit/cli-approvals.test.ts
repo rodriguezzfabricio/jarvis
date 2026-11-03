@@ -10,6 +10,8 @@ import { shortTmp } from "../helpers.ts";
 // The real entry point: `jarvis approvals`, `approve` and `reject` are registered in cli.ts (backlog 115).
 const cli = fileURLToPath(new URL("../../packages/cli/src/cli.ts", import.meta.url));
 const root = shortTmp("j-cli-approvals-");
+// Each start of cli.ts compiles the whole CLI (about 0.7 s of CPU); with Node's compile cache, in this file's own folder, the later starts reuse the first's.
+const compileCache = join(root, "node-compile-cache");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
 
@@ -19,13 +21,13 @@ async function setup() {
   const broker = new Broker({ ledger, project: "p", adapters: [], secrets: { get: () => undefined } });
   const pending = await broker.handle({ op: "email.send", payload: { to: "test@example.com", subject: "Report", body: "Please review the report." } });
   // A pipe on stdin, never a TTY: the non-interactive path.
-  const jarvis = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", input: "y\n", env: { ...process.env, HOME: home, JARVIS_PROJECT: "p" } });
+  const jarvis = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", input: "y\n", env: { ...process.env, HOME: home, JARVIS_PROJECT: "p", NODE_COMPILE_CACHE: compileCache } });
   const approvals = () => ledger.entries().filter((e) => e.kind === "approval");
   return { id: pending.approvalId!, hash: pending.payloadHash, jarvis, approvals };
 }
 
 it("lists approvals and approve/reject in jarvis --help", () => {
-  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", env: { ...process.env, NODE_COMPILE_CACHE: compileCache } });
   expect(help.status, help.stderr).toBe(0);
   for (const command of ["approvals", "approve", "reject"]) expect(help.stdout).toMatch(new RegExp(`^ {2}${command}\\b`, "m"));
 });

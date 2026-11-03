@@ -1,10 +1,10 @@
-// Runner loop tests, part 4 of 6 (review repairs, paused resets, reports, intake recovery, steer, runner metadata, evidence). The loop tests are spread over six files so they run in parallel;
+// Runner loop tests, part 4 of 9 (review repairs, paused resets, reports, intake recovery, steer, notes). The loop tests are spread over nine files so they run in parallel;
 // the shared fixture is tests/unit/helpers/runner-loop-fixture.ts.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { runLoop, type LoopTaskInput } from "../../packages/cli/src/runner/loop.ts";
+import { runLoop } from "../../packages/cli/src/runner/loop.ts";
 import { submitSteer } from "../../packages/cli/src/runner/inbox.ts";
 import { data, finished, fixture, removeFixtureRoots } from "./helpers/runner-loop-fixture.ts";
 
@@ -39,40 +39,49 @@ it("excludes notes even when the base checkout has no .jarvis ignore rule", asyn
   f.setBody(async (input) => { const path = join(input.workspace, ".jarvis/notes/T1.md"); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, "claim"); return finished(); });
   expect((await runLoop(f.options)).done).toEqual(["T1"]); expect(f.git(["ls-tree", "-r", "--name-only", "last-green"])).not.toContain(".jarvis/");
 });
-it("refuses an inherited tracked .jarvis tree as well as additions", async () => {
-  const f = fixture(); mkdirSync(join(f.repoPath, ".jarvis")); writeFileSync(join(f.repoPath, ".jarvis/forged.txt"), "old claim"); f.git(["add", "-f", ".jarvis/forged.txt"]); f.git(["commit", "-qm", "tracked runner metadata"]);
-  expect((await runLoop(f.options)).blocked).toEqual(["T1"]); expect(f.gate).not.toHaveBeenCalled();
+
+it("refuses changed task IDs on a second run instead of reusing old completion evidence", async () => {
+  const f = fixture();
+  expect((await runLoop(f.options)).done).toEqual(["T1"]);
+  const calls = f.calls.length, head = f.git(["rev-parse", "HEAD"]);
+  const plan = { tasks: [{ id: "T1", goal: "a different feature", exitCondition: "new feature proven", dependencies: [] }] };
+  await expect(runLoop({ ...f.options, plan })).rejects.toThrow(/T1.*changed.*fresh task ID/);
+  expect(f.calls).toHaveLength(calls);
+  expect(f.git(["rev-parse", "HEAD"])).toBe(head);
+  expect(f.ledger.entries().filter((e) => e.kind === "task_created" && e.task_id === "T1")).toHaveLength(1);
 });
-it("does not lose an uncharged usage checkpoint when the process restarts", async () => {
-  const f = fixture(); let n = 0;
-  f.setBody(async (input) => { if (++n === 1) { writeFileSync(join(input.workspace, "checkpoint"), "resume me"); return finished("usage-limited"); } expect(readFileSync(join(input.workspace, "checkpoint"), "utf8")).toBe("resume me"); return finished(); });
-  await expect(runLoop({ ...f.options, reprobe: async () => false })).rejects.toThrow(/probe/);
-  expect((await runLoop({ ...f.options, pidAlive: () => false })).done).toEqual(["T1"]); expect(f.calls[1]!.workspace).toBe(f.calls[0]!.workspace);
+
+it("refuses old completed evidence when the same plan is rerun at a higher risk tier", async () => {
+  const f = fixture();
+  const plan = { tasks: [{ id: "T2", goal: "risk-sensitive work", exitCondition: "verified", dependencies: ["T1"] }] };
+  expect((await runLoop({ ...f.options, plan, tier: 0 })).done).toEqual(["T1", "T2"]);
+  const count = f.calls.length;
+  await expect(runLoop({ ...f.options, plan, tier: 2 })).rejects.toThrow(/T2.*fresh task ID/);
+  expect(f.calls).toHaveLength(count);
 });
-it("does not trust new evidence after it passed earlier checks but changed during review", async () => {
-  const f = fixture(); let valid = true;
-  const review = async () => { valid = false; return "pass" as const; };
-  expect((await runLoop({ ...f.options, review, verifyEvidence: () => ({ ok: valid, problems: valid ? [] : ["changed"] }) })).blocked).toEqual(["T1"]);
-  expect(f.git(["for-each-ref", "refs/tags/last-green"])).toBe("");
+
+it("retains a recorded task's risk floor when resuming from the ledger without a plan", async () => {
+  const f = fixture();
+  f.ledger.append({ kind: "task_created", actor: "runner", task_id: "T2", data: { goal: "high risk task", exitCondition: "verified", riskTier: 2, dependencies: ["T1"] } });
+  await runLoop({ ...f.options, tier: 0 });
+  expect(f.calls.find((c) => c.prompt.includes("Task: T2"))?.tier).toBe(2);
 });
-it("does not release the run lease while other attempts are still shutting down", async () => {
-  const f = fixture(2); let release!: () => void; let inInbox!: () => void;
-  const entered = new Promise<void>((r) => { inInbox = r; });
-  f.setBody(async (input) => { if (input.prompt.includes("Task: T1")) await new Promise<void>((r) => { release = r; }); else submitSteer(f.projectDir, "T1 update"); return finished(); });
-  let settled = false;
-  const pending = runLoop({ ...f.options, applyInbox: async () => { inInbox(); throw new Error("stop inbox"); } }).catch((e: unknown) => { settled = true; return e; });
-  await entered; await new Promise((r) => setTimeout(r, 10)); const settledBeforeExit = settled; release();
-  const error = await pending; expect(settledBeforeExit).toBe(false); expect(String(error)).toContain("stop inbox");
+
+it("binds completed evidence to approved requirements and check bytes", async () => {
+  const f = fixture(0);
+  const plan = { tasks: [{ id: "T2", goal: "same goal", exitCondition: "same condition", dependencies: [] }] };
+  expect((await runLoop({ ...f.options, plan, inputHash: "a".repeat(64) })).status).toBe("complete");
+  const count = f.calls.length;
+  await expect(runLoop({ ...f.options, plan, inputHash: "b".repeat(64) })).rejects.toThrow(/T2.*fresh task ID/);
+  expect(f.calls).toHaveLength(count);
 });
-it("a recovery pass cannot review a candidate while usage dispatch is paused", async () => {
-  const f = fixture(); await expect(runLoop({ ...f.options, onCheckpoint: (name) => { if (name === "candidate-committed") throw new Error("stop"); } })).rejects.toThrow("stop");
-  f.ledger.append({ kind: "usage_wait", actor: "runner", data: { until: 4000 } });
-  await expect(runLoop({ ...f.options, pidAlive: () => false, reprobe: async () => false })).rejects.toThrow(/probe/); expect(f.gate).not.toHaveBeenCalled();
-});
-it("enforces the task timeout on the captured process group even if a harness reports success", async () => {
-  const f = fixture(); let n = 0; let release!: () => void;
-  const kill = vi.fn((_pid: number, _signal: NodeJS.Signals) => { release?.(); });
-  const harness = { runTask: vi.fn(async (input: LoopTaskInput) => { const id = 70000 + n++; input.onSpawn(id); if (n === 1) await new Promise<void>((r) => { release = r; }); input.onGroupExit(id); return finished(); }) };
-  expect((await runLoop({ ...f.options, harness, kill, taskTimeoutMs: 20 })).done).toEqual(["T1"]);
-  expect(kill).toHaveBeenCalledWith(-70000, "SIGTERM"); expect(harness.runTask).toHaveBeenCalledTimes(2);
+
+it("refuses stale recovery candidates even when a new plan supplies fresh task IDs", async () => {
+  const f = fixture(0), head = f.git(["rev-parse", "HEAD"]);
+  const plan = { tasks: [{ id: "T1", goal: "first", exitCondition: "verified", requiredChecks: ["unit"], requiredReviews: ["code"] }] };
+  await expect(runLoop({ ...f.options, plan, inputHash: "a".repeat(64), onCheckpoint: name => { if (name === "passed") throw new Error("power loss"); } })).rejects.toThrow("power loss");
+  const next = { tasks: [{ ...plan.tasks[0]!, id: "T2" }] };
+  await expect(runLoop({ ...f.options, plan: next, inputHash: "b".repeat(64), pidAlive: () => false })).rejects.toThrow(/T1.*inputs/);
+  expect(f.git(["rev-parse", "HEAD"])).toBe(head);
+  expect(f.ledger.entries().some(e => e.kind === "state_reached")).toBe(false);
 });

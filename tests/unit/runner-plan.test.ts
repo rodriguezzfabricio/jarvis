@@ -25,6 +25,17 @@ describe("planner plans", () => {
     const { id, ...definition } = task();
     expect(planEntries(plan)).toEqual([{ kind: "task_created", actor: "runner", task_id: id, data: definition }]);
   });
+  it.each([0, 1, 2] as const)("accepts the optional plan tier %s", (tier) => {
+    const root = workspace(); writeFileSync(join(root, ".jarvis/plan.json"), JSON.stringify({ tier, tasks: [task()] }));
+    expect(readPlan(root, context).tier).toBe(tier);
+    expect(PlanSchema.parse({ tasks: [task()] }).tier).toBeUndefined();
+  });
+  it.each([3, -1, 1.5, "2", null])("refuses an invalid tier %j", (tier) => {
+    expect(PlanSchema.safeParse({ tier, tasks: [task()] }).success).toBe(false);
+  });
+  it("still refuses unknown top-level keys alongside a valid tier", () => {
+    expect(PlanSchema.safeParse({ tier: 2, tasks: [task()], model: "chosen-by-planner" }).success).toBe(false);
+  });
   it("never judges coverage against the workspace's own spec or checks", () => {
     const root = workspace(); mkdirSync(join(root, "docs/spec"), { recursive: true });
     writeFileSync(join(root, "docs/spec/v1.md"), specText);
@@ -183,4 +194,56 @@ describe("session-owned plans (onboarding and sweeps)", () => {
   it("refuses an invalid plan file", () => {
     expect(() => readSessionPlan(sessionPlan("sweep", [{ ...unitTask(), id: "X" }]), "sweep", [{ name: "unit" }])).toThrow();
   });
+});
+
+it("allocates a bug handoff after existing tasks and resumes only the matching bug", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const checks = [{ name: "unit" }];
+  const request = "The citizenship filter is missing jobs.";
+  const existing = [{ id: "T1", goal: "unrelated", exitCondition: "done" }];
+  const plan = bugRequestPlan(request, checks, existing);
+  expect(plan.tasks[0]!.id).toBe("T2");
+  expect(bugRequestPlan(request, checks, [...existing, { ...plan.tasks[0]!, riskTier: plan.tier!, reviewKind: "bug" }]).tasks[0]!.id).toBe("T2");
+  expect(() => bugRequestPlan("Build a new dashboard", checks, existing)).toThrow(/bug.*spec/);
+});
+it("hands a refactor to the existing behavior-preservation task without inventing a spec", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Refactor src/store.mjs into smaller functions without changing behavior.";
+  const plan = bugRequestPlan(request, [{ name: "unit" }]);
+  expect(plan.tasks[0]).toMatchObject({ id: "T1", acceptanceCriteria: [], requiredChecks: ["unit"], exitCondition: "Pinned behavior remains unchanged and the unit check and code review pass." });
+  expect(bugRequestPlan(request, [{ name: "unit" }], plan.tasks.map((t) => ({ ...t, riskTier: plan.tier! }))).tasks[0]!.id).toBe("T1");
+});
+
+it("preserves final mixed-request triage, risk floor and exact file boundaries", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Explain this repo and refactor src/store.mjs into smaller functions";
+  const plan = bugRequestPlan(request, [{ name: "unit" }], [], { type: "refactor", tier: 2, touches: ["src/store.mjs"] });
+  expect(plan.tier).toBe(2); expect(plan.tasks[0]!.mayTouch).toEqual(["src/store.mjs"]);
+  expect(plan.tasks[0]!.exitCondition).toContain("Pinned behavior");
+  expect(bugRequestPlan("Fix authentication", [{ name: "unit" }], [], { type: "bug", tier: 0, touches: ["src/auth.ts"] }).tier).toBe(2);
+  expect(() => bugRequestPlan("feature: add a page", [{ name: "unit" }], [], { type: "bug", tier: 0 })).toThrow(/spec/);
+  expect(() => bugRequestPlan("ask: explain it, do not edit", [{ name: "unit" }], [], { type: "refactor", tier: 1 })).toThrow(/spec/);
+  expect(() => bugRequestPlan(request, [{ name: "unit" }], [], { type: "refactor", tier: 1, touches: ["../outside"] })).toThrow();
+});
+
+it("retains the no-edit veto on an unprefixed mixed request with supplied triage", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  expect(() => bugRequestPlan("Explain the store and refactor it; do not edit any files", [{ name: "unit" }], [], { type: "refactor", tier: 1 })).toThrow(/spec/);
+});
+it("allocates a fresh task for a raised risk tier instead of reusing weaker evidence", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Fix the typo in the item output";
+  const low = bugRequestPlan(request, [{ name: "unit" }], [], { type: "bug", tier: 0 });
+  const existing = [{ ...low.tasks[0]!, riskTier: low.tier!, reviewKind: "bug" as const }];
+  const high = bugRequestPlan(request, [{ name: "unit" }], existing, { type: "bug", tier: 2 });
+  expect(high.tasks[0]!.id).toBe("T2"); expect(high.tier).toBe(2);
+  expect(bugRequestPlan(request, [{ name: "unit" }], existing, { type: "bug", tier: 0 }).tasks[0]!.id).toBe("T1");
+});
+
+it("allocates a new direct task when its exact file boundary changes", async () => {
+  const { bugRequestPlan } = await import("../../packages/cli/src/runner/plan.ts");
+  const request = "Fix the item typo", checks = [{ name: "unit" }];
+  const old = bugRequestPlan(request, checks, [], { type: "bug", tier: 1, touches: ["src/store.mjs"] });
+  const next = bugRequestPlan(request, checks, [{ ...old.tasks[0]!, riskTier: old.tier!, reviewKind: "bug" }], { type: "bug", tier: 1, touches: ["src/store.mjs", "src/cli.mjs"] });
+  expect(next.tasks[0]!.id).toBe("T2");
 });

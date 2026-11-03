@@ -54,7 +54,11 @@ describe("shared-state morning report", () => {
     const ledger = run(); const state = stateOf(ledger);
     expect(isDone(state.tasks.T1!)).toBe(true);
     const report = renderReport(state, ledger.entries(), [], options);
-    for (const text of ["preview-ready", revision, "unit", "code", "security", "Blue buttons", "Needs approved provider", "http://localhost:3000", ledger.entries().at(-1)!.hash]) expect(report).toContain(text);
+    for (const text of [revision, "unit", "code", "security", "Blue buttons", "Needs approved provider", ledger.entries().at(-1)!.hash]) expect(report).toContain(text);
+    // A release state with no accepted manifest or evidence behind it holds nothing (decision 158): it is named, never claimed.
+    expect(report).toContain("State: not-reached");
+    expect(report).toMatch(/Lapsed: preview-ready \(#\d+\) no longer holds; missing manifest/);
+    expect(report).not.toContain("http://localhost:3000");
     expect(report.indexOf("Blue buttons")).toBeLessThan(report.indexOf("## Done"));
     expect(notifierSummary(state, ledger.entries())).toContain("1/2 done");
   });
@@ -74,6 +78,22 @@ describe("shared-state morning report", () => {
     const state = rebuildState(entries, { now });
     expect(notifierSummary(state, entries)).toContain("0/2 done");
     expect(renderReport(state, entries)).not.toContain("- T1: Login at");
+  });
+
+  it("lists medium and low findings from final candidate review results as advisory", () => {
+    const ledger = run();
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "code", model: "claude-sonnet-5-5", revision, status: "fail", reviews: [{ reviewer: "claude", model: "claude-sonnet-5-5", findings: [
+      { severity: "medium", file: "src/form.ts", line: 12, scenario: "Invalid input is confusing", fix: "Show a useful error" },
+      { severity: "high", file: "src/auth.ts", line: 4, scenario: "Authentication bypass", fix: "Require a valid session" },
+    ], investigate: [] }] } });
+    ledger.append({ kind: "review_result", actor: "runner", task_id: "T1", attempt_id: "a1", data: { reviewer: "security", revision: "b".repeat(40), status: "pass", reviews: [{ reviewer: "codex", model: "gpt-6.1-sol", findings: [
+      { severity: "low", file: "src/old.ts", line: 8, scenario: "Old revision issue", fix: "Update the old code" },
+    ], investigate: [] }] } });
+    const report = renderReport(stateOf(ledger), ledger.entries());
+    const section = report.split("## Advisory findings\n")[1]?.split("\n## ")[0] ?? "";
+    expect(section).toContain("T1: claude/claude-sonnet-5-5 [medium] src/form.ts:12: Invalid input is confusing. Fix: Show a useful error");
+    expect(section).not.toContain("src/auth.ts");
+    expect(section).not.toContain("src/old.ts");
   });
 
   it("never displays broker-authored evidence or release states as runner proof", () => {

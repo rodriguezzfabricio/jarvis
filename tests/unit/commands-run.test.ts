@@ -81,3 +81,50 @@ it("caffeinate runs the absolute pin with -i -w <pid> on macOS only", () => {
   expect(spawn).toHaveBeenCalledWith("/usr/bin/caffeinate", ["-i", "-w", "4242"], expect.objectContaining({ detached: true, stdio: "ignore" }));
   spawn.mockClear(); caffeinate(4242, "linux", spawn); expect(spawn).not.toHaveBeenCalled();
 });
+
+it("hands a bug request to both foreground and detached production runs", async () => {
+  const request = "The citizenship filter is missing jobs. Fix it.";
+  const f = setup(); await f.program.parseAsync(["run", "--request", request], { from: "user" });
+  expect(f.run).toHaveBeenCalledWith(expect.objectContaining({ request }));
+  const spawn = fakeSpawn(); const g = setup({ spawn, entrypoint: "/runner/cli.ts" });
+  await g.program.parseAsync(["run", "--request", request, "--detach"], { from: "user" });
+  expect((spawn.mock.calls[0]! as unknown as [string, string[]])[1]).toContain(request);
+});
+it("keeps --local in foreground and detached runs, with the live canary still required", async () => {
+  const f = setup(); await f.program.parseAsync(["run", "--local"], { from: "user" });
+  expect(f.run).toHaveBeenCalledWith(expect.objectContaining({ local: true }));
+  expect(f.probe).toHaveBeenCalledOnce();
+  const spawn = fakeSpawn(); const g = setup({ spawn, entrypoint: "/runner/cli.ts" });
+  await g.program.parseAsync(["run", "--local", "--detach"], { from: "user" });
+  expect((spawn.mock.calls[0]! as unknown as [string, string[]])[1]).toContain("--local");
+  const h = setup({ probe: async () => ({ ok: false }) });
+  await expect(h.program.parseAsync(["run", "--local"], { from: "user" })).rejects.toThrow(/canary/);
+  expect(h.run).not.toHaveBeenCalled();
+});
+it("rejects combining a request with a session plan before probing", async () => {
+  const f = setup();
+  await expect(f.program.parseAsync(["run", "--request", "Fix a bug", "--plan", "onboard"], { from: "user" })).rejects.toThrow(/request.*plan/);
+  expect(f.probe).not.toHaveBeenCalled();
+});
+
+it("preserves validated final triage across foreground and detached handoffs", async () => {
+  const args = ["run", "--request", "Explain and refactor the store", "--request-type", "refactor", "--request-tier", "2", "--touches", "src/store.mjs"];
+  const f = setup(); await f.program.parseAsync(args, { from: "user" });
+  expect(f.run).toHaveBeenCalledWith(expect.objectContaining({ requestHandoff: { type: "refactor", tier: 2, touches: ["src/store.mjs"] } }));
+  const spawn = fakeSpawn(); const g = setup({ spawn, entrypoint: "/runner/cli.ts" });
+  await g.program.parseAsync([...args, "--detach"], { from: "user" });
+  const childArgs = (spawn.mock.calls[0]! as unknown as [string, string[]])[1];
+  for (const flag of ["--request-type", "--request-tier", "--touches"]) expect(childArgs[childArgs.indexOf(flag) + 1]).toBe(args[args.indexOf(flag) + 1]);
+  const h = setup(); await expect(h.program.parseAsync(["run", "--request", "Fix it", "--request-type", "feature"], { from: "user" })).rejects.toThrow();
+  expect(h.probe).not.toHaveBeenCalled();
+});
+it("returns a nonzero exit status when the foreground run is blocked", async () => {
+  const previous = process.exitCode;
+  try {
+    process.exitCode = 0;
+    const f = setup({ run: async () => ({ status: "blocked", done: [], blocked: ["T1"] }) });
+    await f.program.parseAsync(["run", "--local"], { from: "user" });
+    expect(process.exitCode).toBe(1);
+    expect(f.output).toHaveBeenCalledWith(expect.stringContaining("blocked"));
+  } finally { process.exitCode = previous; }
+});

@@ -3,17 +3,18 @@
 Source handoff: Fable 5.1's November 1 session, committed through `c14075d`.
 Continuation branch: `codex/finish-jarvis`. Main was clean at takeover.
 
-## Current work
+## Current local checkpoint
 
-The earlier planning-only checkpoint below is superseded by Fabricio's explicit request to finish the **local end-to-end harness**, without deployment (decision 183). Work is active on `codex/finish-jarvis`; no stage or v1 completion is claimed.
+**Local CLI harness proof complete on this machine.** Tested source: `a677b6b`, branch `codex/finish-jarvis`. Fabricio's end-to-end request superseded the planning-only stop (decision 183). The installed plugin 0.1.1 now hands off to reviewed local builds. No deployment occurred; no formal stage or v1 completion is claimed.
 
-1. [x] Restore stable exact-version pins and establish the baseline: 4,657 tests passed, 18 skipped; typecheck and live doctor passed at the earlier checkpoint.
-2. [x] Fix the plan review contract and simplify the good control. All three good lenses passed; the bad control found T2, T3 and D3. The production CLI verified and saved the shared calibration for the current policy.
-3. [ ] Prove the real local workflow. `--local`, planning checkpoint, architect dispatch, draft refusal and direct refactor handoff are implemented. The first disposable items application proved crash recovery but uncovered an invalid temporary-directory fixture. Its evidence is preserved. A fresh `~/.jarvis-work/local-e2e-20261102/items-local-final` is undergoing protected-check approval, counted plan review and real builds. Interactive plugin 0.1.1 is installed and byte-verified.
-4. [ ] Exercise interruption/recovery and negative outcomes; review the implementation independently; run final regression evidence.
-5. [ ] Close the formal stage gates. The current exhaustive mutation estimate is about 309 hours (13 days), not 71 hours. No exception has been requested or granted.
+1. [x] Restore exact-version pins and repair the local environment; doctor has no failures.
+2. [x] Pass both plan calibration controls and save their verified pair through the production CLI.
+3. [x] Complete real new-product and bug workflows with protected checks, independent Claude/Codex review, promotion, and reverified status/report. Recover from killing the new-product runner while a builder is alive; never credit the interrupted attempt.
+4. [x] Finish regression and focused independent review: **4,707 passed, 18 skipped**, strict typecheck, live safety controls and separate Codex confinement proof. Preserve evidence and install/verify plugin 0.1.1.
 
-Current evidence: [local end-to-end work](reviews/local-e2e-2026-11-02.md). The quiet slot is owned by this continuation. Task 10's branch remains unmerged.
+Current evidence and exact limits: [local end-to-end verification](reviews/local-e2e-2026-11-02.md). Private receipts: `~/.jarvis/local-readiness/2026-11-02-codex/local-e2e/`. Sample accepted revision: `63af8bb55c70f4bf37113440f224cbb83d130e0e`; direct bug repair: `45e7b1eca5f09eec0261203d0e3a7353b68924e3`. The full interactive `/jarvis` conversation was not exercised live; dispatcher integration has composition coverage. The quiet slot is released at this checkpoint with its ownership marker preserved. Task 10's branch remains unmerged.
+
+**Next use:** restart Claude Code to load plugin 0.1.1, open the intended project, and enter `/jarvis` with the request. Completion is shown by `jarvis status` and `jarvis report`, not the detached-launch PID. To resume direct request work, repeat its original command with `--local` and all workflow selectors.
 
 ## Facts recovered
 

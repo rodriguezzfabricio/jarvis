@@ -1,5 +1,7 @@
 # Local readiness checkpoint — November 2, 2026
 
+Superseded checkpoint: Fabricio subsequently authorized the local end-to-end build (decision 183). Calibration and the local CLI build/bug/recovery proofs are now complete. The planning-only scope below is preserved as history. [Current evidence](local-e2e-2026-11-02.md).
+
 Scope: Fabricio requested usable local Jarvis first, then explicitly chose to retain the planning-only `/jarvis` stop. This is a repair and verification record, not an independent stage approval or a v1 completion claim.
 
 ## Repairs

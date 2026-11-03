@@ -1,5 +1,7 @@
 # Parallel work handoff — October 24, 2026 (decision 84)
 
+Historical October 24 handoff. For current branch, completed local verification and remaining work, use the current continuation record. [Current evidence](reviews/local-e2e-2026-11-02.md).
+
 One integrator session owns main and every shared file (decision 81, rule 2). The earlier integrator, the second Claude worker, the Codex app chat and the lane workers were stopped. Their unfinished work stays on disk and is integrated from there.
 
 ## Where the work is

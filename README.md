@@ -6,7 +6,7 @@ Describe a feature or bug in Claude Code. Jarvis turns the request into a workfl
 
 I’m building Jarvis for my own projects. The starting problem was a recruiter-finder feature: the coding agent began implementing before researching existing tools or understanding the workflow. I wanted a way to make those steps repeatable, and to check the resulting software instead of trusting a completion message.
 
-**Status: experimental, under active development.** The build loop has completed a live bug fix that passed hidden tests. A later run reported completion but failed a hidden check. Reliability, broader task coverage, and installation on another machine are still being evaluated. This is a public development repository, not a finished v1 release.
+**Status: locally verified, experimental.** On November 2, 2026, the CLI completed a two-task application and a planted bug repair with protected checks, independent Claude/Codex reviews, promotion, and reverified completion. A forced runner crash recovered without crediting unfinished work. The final regression suite passed 4,707 tests with 18 skipped. Formal v1 proofs, broader product evaluations, fresh-machine installation, and a live full interactive `/jarvis` conversation remain open. [Evidence and limits](docs/reviews/local-e2e-2026-11-02.md).
 
 [Getting started](docs/getting-started.md) · [Architecture](docs/03-architecture.md) · [Evaluation](docs/evaluation.md) · [Decisions](docs/01-decisions.md)
 
@@ -54,7 +54,7 @@ A few engineering choices shape the implementation:
 - **Completion tied to a revision.** Checks and reviews must pass on the exact revision being accepted. Concurrent changes are checked again after integration.
 - **State that survives interruption.** An append-only, hash-chained ledger records task transitions, approvals and evidence references. The runner uses it to rebuild state.
 - **An approval broker for outside actions.** Task sessions cannot read stored credentials. Requests for supported actions go through a broker with approval records. Adapter coverage is still in development.
-- **Model routing with escalation.** Builders start on Sonnet 5.5 and can escalate to Opus 5.5 after a failed check or review. Exploration uses Haiku 5.5. Codex is available for cross-model review; current benchmark runs use a Claude reviewer.
+- **Model routing with escalation.** Builders start on Sonnet 5.5 and can escalate to Opus 5.5 after a failed check or review. Exploration uses Haiku 5.5. Codex supplies cross-model review in the verified local runs; the older benchmark runs used a Claude reviewer.
 
 The sandbox must be available before unattended work starts. A live canary checks the pinned Claude Code installation and its safety settings. These boundaries have tests and mutation checks, but the project’s remaining validation work is tracked openly.
 
@@ -63,16 +63,16 @@ The sandbox must be available before unattended work starts. A live canary check
 | Area | Implemented | Still being validated or completed |
 |---|---|---|
 | Intake | Request triage, research/design skills, questions, versioned specs and a decision register | Consistent research before questions, reliable defaults and repeated intake evaluations |
-| Build loop | Task scheduling, isolated worktrees, repair attempts, model escalation, usage-limit waits and detached runs | Repeated success on real tasks and final stage evidence |
+| Build loop | Task scheduling, isolated worktrees, repair attempts, model escalation, usage-limit waits, detached local runs and forced-crash recovery | Repeated success on real tasks and final stage evidence |
 | Verification | Protected checks, separate review, evidence recording, security scanners and browser QA components | Full security/design/browser evaluations and sandboxed native app testing |
-| Shipping and recovery | Release-state, smoke-test, rollback, memory and reporting components | Live shipping proofs and overnight tests with forced crashes and usage pauses |
+| Shipping and recovery | Release-state, smoke-test, rollback, memory and reporting components | Live shipping proofs and extended overnight/usage-pause tests; one forced-crash local recovery is verified |
 | Distribution | CLI, Claude Code plugin, installer and MIT license | A clean installation on a second machine or fresh user account |
 
 The current runtime targets macOS and Claude Code. Broader Codex and DeepSeek execution adapters are planned. Codex’s existing review integration does not make it a general task-execution backend.
 
 ## Try it locally
 
-You need macOS, Node.js 24, pnpm 11.7.0, and an authenticated Claude Code 2.1.309 installation at `~/.local/share/claude/versions/2.1.309`. Jarvis checks exact binary versions. It requires at least 20 GB free disk; below 40 GB it limits writing tasks to one at a time.
+You need macOS, Node.js 24, pnpm 11.7.0, and an authenticated Claude Code 2.1.309 installation at `~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude`. Cross-model review uses codex-cli 0.164.0 at `~/.local/share/codex/versions/0.164.0/codex`, with its matching `codex-code-mode-host` beside it. Jarvis checks exact binary versions. It requires at least 20 GB free disk; below 40 GB it limits writing tasks to one at a time.
 
 ```sh
 git clone https://github.com/rodriguezzfabricio/jarvis.git ~/Developer/jarvis
@@ -88,9 +88,9 @@ jarvis setup
 jarvis doctor --live
 ```
 
-The live check uses your Claude account’s usage allowance. Open a disposable project in Claude Code, restart Claude Code if the plugin was just installed, and try `/jarvis fix: <your bug>`. Unattended builds require an approved plan and protected checks; setup alone does not prepare every project for a build.
+The live check uses your Claude account’s usage allowance. Open a disposable project in Claude Code, restart Claude Code if the plugin was just installed, and try `/jarvis fix: <your bug>`. The plugin prepares planning inputs and reviewed protected checks, then hands off with `jarvis run --local --detach`. Architect plans require a counted plan review; direct bug requests use their own task plan. Setup alone does not prepare project inputs. A launch PID means started; use `jarvis status` and `jarvis report` to verify completion.
 
-See [getting started](docs/getting-started.md) for prerequisites, notifications, commands and troubleshooting. Use a disposable project while the remaining safety and recovery proofs are unfinished.
+See [getting started](docs/getting-started.md) for prerequisites, notifications, commands and troubleshooting. Start with a disposable project to learn the workflow. `--local` skips release preparation and phone traffic. To resume direct request work, repeat the original command with `--local` and its request/review options.
 
 ## How I’m evaluating it
 

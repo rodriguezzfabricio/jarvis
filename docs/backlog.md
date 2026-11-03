@@ -1,5 +1,7 @@
 # Jarvis: Backlog
 
+November 2 local checkpoint: the CLI build/bug/recovery proof is complete, including the planning handoff and saved calibration. Formal stage/evaluation work below remains governed by its original gates; no open row is closed merely by local readiness. [Current evidence](reviews/local-e2e-2026-11-02.md).
+
 Medium and low findings from the Codex reviews (decision 74), and other deferred work. Each row says where it came from.
 
 | # | From | Severity | Item | Status |

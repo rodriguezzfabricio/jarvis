@@ -1,5 +1,7 @@
 # Jarvis: Architecture (v1)
 
+Current local implementation (November 2, 2026; decisions 183–202): the installed plugin connects planning to `run --local --detach`. New projects initialize before intake, checkpoint validated planning inputs, install independently reviewed protected checks, and obtain a counted plan review. Local CLI build, bug repair and forced-crash recovery proofs are complete on the development machine; formal stage gates remain open. See [current evidence](reviews/local-e2e-2026-11-02.md) and [operating commands](getting-started.md).
+
 Oct 23, 2026 · Fabricio + Claude
 
 How Jarvis itself is built. It turns `docs/01-decisions.md` (the what and why) into components, files, formats and a build order. v1 runs on Claude Code (CLI and desktop app) on macOS. The design keeps the Codex and DSH phases cheap: every component that touches the harness sits behind one adapter.
@@ -15,7 +17,7 @@ Wherever a piece depends on a Claude Code feature, this doc names the feature, a
                           │  Jarvis plugin: /jarvis command · skills · subagent roles · hooks                        │
                           │  1. triage  2. research  3. intake (questions + mockups)  4. spec  5. hand off            │
                           └───────────────┬──────────────────────────────────────────────────────────────────────────┘
-                                          │ jarvis run --detach
+                                          │ jarvis run --local --detach
                                           ▼
  ┌─────────────────────────────── jarvis runner (plain Node process, outside any sandbox) ───────────────────────────┐
  │  task loop ─► fresh `claude -p` per task (in a worktree, inside Claude Code's sandbox, explicit config)            │
@@ -84,7 +86,7 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 |---|---|
 | `jarvis setup` | One-time: accounts (decision 43), secrets backend, ntfy topics, taste profile, Claude Code version check, installs the plugin |
 | `jarvis doctor` | Preflight (decision 46): versions, sandbox, network allowlist, protected paths, broker reachable, iCloud check, memory-based concurrency, plugin loaded in CLI and desktop |
-| `jarvis run [--detach]` | The runner: works through the plan, hosts the broker and notifier, writes the report. `--request "<bug report>"` hands it one bug without an approved spec: triage must read it as a bug, and the run touches only that task (decision 160) |
+| `jarvis run [--local] [--detach]` | `--local` skips release preparation and phone traffic and keeps broker actions local. The runner: works through the plan, hosts the broker and notifier, writes the report. `--request "<bug report>"` hands it one bug without an approved spec: triage must read it as a bug, and the run touches only that task (decision 160) |
 | `jarvis steer "…"` | Adds a note to the runner-owned inbox; the runner reads it between tasks (decisions 40, 87) |
 | `jarvis status [--json]` | Current run state from the ledger, read-only. `--json` prints the verified `steer`, `review_result`, `gate_result`, `blocked` and `reconciled` entries, the rebuilt state and each task's re-verified repair failure output, for compound |
 | `jarvis memory add\|retire\|list` | Global memory (decisions 27, 28): `add --type feedback\|project\|reference --source ledger:<seq>\|<repo path> --why "…" [--same-as <id>] "<learning>"`, `retire <id> --reason "…"`, `list [--json]`. The CLI owns the writes under `~/.jarvis/memory/` and keeps `MEMORY.md` within 200 lines; it refuses learnings that read like instructions or permission changes. `user` notes stay with intake |
@@ -106,7 +108,8 @@ TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. De
 ### 3.3 Triage and intake (interactive, inside Claude Code)
 Triage, research, the questions, the mockups and the spec happen in your interactive session:
 - **Asking questions:** the round is shown as plain text in the session and sent through the ntfy notifier at the same time (decision 86). You answer in the session or on the phone. The session waits with a bounded `jarvis intake answers <n> --wait`, which also reads the phone's replies while it waits (decision 90), and defaults become "unconfirmed" after 15 minutes.
-- **Handoff:** once the spec is confirmed (or defaulted), the session runs `jarvis run --detach` and tells you it's safe to close Claude Code.
+- **Handoff:** initialize a new repository before intake (`jarvis plan init`); after spec/design and architecture, checkpoint validated documents (`jarvis plan checkpoint`), approve protected checks (`jarvis checks install`), and obtain a counted plan review (`jarvis plan review` / `resolve` / `status`). Drafts and failed gates stop the handoff. The session launches `jarvis run --local --detach`; closing Claude Code is safe after launch, while completion still requires status/report evidence.
+- **Resume:** repeat the original direct bug/refactor/review command with `--local` and all workflow selectors. Plain ledger-only request resume is refused before release or hosting preparation (201). Task definitions, risk/review policy, input provenance and approved spec/check identity persist across restart (193, 199–201).
 
 ### 3.4 The runner
 A detached Node process. It survives closing Claude Code, and its PID lives in `~/.jarvis/projects/<id>/runner.pid`. It starts `caffeinate -i -w <pid>`, so the Mac stays awake exactly as long as the runner lives.
@@ -228,18 +231,18 @@ Full model IDs, never aliases (decision 61). Codex review runs `codex exec` read
 1. You type `/jarvis build me a habit tracker` in Claude Code.
 2. Triage reports: new product, tier 2. The research skill starts; the explorer and researcher subagents run in parallel, read-only.
 3. Intake gives you a 5-line summary, any decision conflicts, up to 7 questions with defaults, and 3 mockups. It appears as plain text in the session and is also sent via ntfy (decision 86). Defaults are accepted as unconfirmed after 15 minutes.
-4. The spec is written as `docs/spec/v1.md`, along with `PRODUCT.md` and `DESIGN.md`. The spec-reader checks it. The acceptance tests are generated into `~/.jarvis/projects/<id>/checks/` and their hashes locked.
-5. Handoff: `jarvis run --detach`. You can close Claude Code.
+4. The spec is written as `docs/spec/v1.md`, along with `PRODUCT.md` and `DESIGN.md`. The spec-reader checks it. The architect produces `.jarvis/plan.json` and proposed `.jarvis/checks`; the checkpoint commits validated planning inputs, and fresh reviews approve checks into the protected store and count the plan review against saved live calibration.
+5. Local handoff: `jarvis run --local --detach`. You can close Claude Code after launch; status/report determine completion.
 6. The runner works through the tasks, with sessions, checks, reviews and last-green tags. Overnight it may wait out a usage window.
-7. On a production grant, which ship asks for against the concrete release (decision 132; intake no longer asks), the broker promotes the release once it's release-ready and the live smoke test runs; without one, it stops at preview-ready.
-8. Morning: an ntfy notification says "Preview-ready. 2 Taste decisions to check." `REPORT.md` has the evidence, decisions and what's left. You reply or `jarvis steer` to change anything.
+7. Local runs end after verified tasks without release preparation or phone traffic. In a separately configured release run, on a production grant, which ship asks for against the concrete release (decision 132; intake no longer asks), the broker promotes the release once it's release-ready and the live smoke test runs; without one, it stops at preview-ready.
+8. Inspect `jarvis status` and `jarvis report` locally. The report’s Done/Left sections describe task completion; top-level State describes release readiness and can remain not-reached locally. In a release run, an ntfy notification says "Preview-ready. 2 Taste decisions to check." `REPORT.md` has the evidence, decisions and what's left. You reply or `jarvis steer` to change anything.
 
 ## 5. How `claude -p` is called
 
 Every flag is explicit, so neither your global config nor a friend's changes behavior (decisions 3, 58, 60). The binary is the pinned one, called by absolute path (decision 57), with a clean environment (decision 58).
 
 ```
-~/.local/share/claude/versions/2.1.309 -p "<task prompt from the runner>" \
+~/.local/share/claude/pinned-bundles/2.1.309/claude.app/Contents/MacOS/claude -p "<task prompt from the runner>" \
   --output-format stream-json \
   --settings ~/.jarvis/projects/<id>/claude-settings.json \   # sandbox, network allowlist, permission deny rules, hooks
   --plugin-dir ~/.jarvis/plugin \                             # the Jarvis plugin (hooks; its skills can't load without a Skill tool, decision 114)

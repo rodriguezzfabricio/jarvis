@@ -30,6 +30,12 @@ On October 25, 2026, a citizenship-filter smoke run completed in about 32 minute
 
 This is evidence that Jarvis can complete a real task and that its current completion checks can miss defects. It is insufficient to establish a repeatable advantage. Formal comparisons and quality ratings remain in progress.
 
+## Local harness verification — November 2, 2026
+
+Separate from the hidden golden-task comparison, the real CLI completed two authored local fixtures: a two-task items application and a planted normalization regression. Both passed protected checks and fresh Claude/Codex reviews before promotion. Killing the app runner while its builder was alive produced a crashed-run record and a fresh attempt, without crediting the interrupted attempt. Final status reverified completion and the accepted checkout matched last-green. Repeating the bug command reused the verified result without another build.
+
+The final suite passed 4,707 tests with 18 skipped; live safety controls and a separately enabled Codex confinement test passed. The app's 57 acceptance cases plus unit check passed again through the feedback gate. These authored checks are visible to the workflow and are not hidden benchmark grades. They establish local execution and recovery behavior, not a general quality advantage, full interactive intake success, fresh-machine portability or formal stage approval. [Exact revisions, receipts and limitations](reviews/local-e2e-2026-11-02.md).
+
 ## Why a completion message is insufficient
 
 Approved checks are stored outside the task workspace. The runner captures process output, exit codes and revision identities, and binds results to a hash-chained ledger. Hidden grading checks are not readable by the coding agent. The comparison refuses grades from different suite fingerprints.

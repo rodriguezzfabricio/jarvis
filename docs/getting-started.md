@@ -1,5 +1,7 @@
 # Getting started
 
+The November 2 local CLI proof completed a new-product build, bug repair and forced-crash recovery on the development Mac. Plugin 0.1.1 is installed there. [Verification results and remaining limits](reviews/local-e2e-2026-11-02.md) distinguish this local checkpoint from formal v1 approval.
+
 Jarvis is experimental and currently targets macOS. Start with a disposable repository. The installer exists, but installation on another machine or fresh user account remains a release requirement.
 
 ## Prerequisites

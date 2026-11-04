@@ -29,6 +29,15 @@ interface SkillRules {
 }
 
 const skills: Record<string, SkillRules> = {
+  "egm-review": {
+    headings: ["When to use", "Capture the review inputs", "Run one review pass", "Return the evidence", "No build authority", "Gotchas"],
+    phrases: [
+      { section: "Capture the review inputs", phrase: "Never simulate a Goldfish review" },
+      { section: "Run one review pass", phrase: "Missing reviews never count as clean" },
+      { section: "Return the evidence", phrase: "What this proposes" },
+      { section: "No build authority", phrase: "counted `jarvis plan review`" },
+    ],
+  },
   research: {
     headings: [
       "When to use",

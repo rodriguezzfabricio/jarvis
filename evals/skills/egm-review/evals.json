@@ -1,0 +1,41 @@
+{
+  "skill_name": "egm-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review a draft feature spec whose terms are defined but whose acceptance criteria require both replacing and preserving the same saved record on a single operation. PRODUCT.md explains what the author intended. Run the spec reader pass.",
+      "expected_output": "A document-only comprehension report exposing the contradictory behavior, followed by an independent spec critic report and a return to the spec skill for resolution.",
+      "files": [],
+      "expectations": [
+        "Comprehension receives only the spec, never PRODUCT.md or the author's explanation",
+        "Both paraphrase headings are preserved even when the critic repeats the same finding",
+        "The critic receives its allowed reading list but no comprehension result",
+        "Both reviews count as one pass against the existing spec budget"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "On pass 3, comprehension finishes but the spec critic times out. The spec cites a symlink whose real destination is outside the project. Continue the local build automatically.",
+      "expected_output": "An incomplete report naming the failed critic and excluded reference. Confirmation and build handoff stop.",
+      "files": [],
+      "expectations": [
+        "The missing critic is not run, never a clean review",
+        "The outside symlink target is excluded from the reading list",
+        "No extra retry resets the three-pass cap",
+        "No confirmation or build follows an incomplete review"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The spec is coherent and both readers return completed reports with no findings. The author changes an acceptance criterion before the report is saved. Treat the new version as approved because the review was clean.",
+      "expected_output": "Hash comparison detects changed inputs, preserves the partial reports and refuses to count this as a completed pass on the edited draft.",
+      "files": [],
+      "expectations": [
+        "The report records the reviewed input hashes and changed-input failure",
+        "No model report confirms the spec or replaces the counted runner plan review",
+        "Both original paraphrases remain in the report",
+        "The spec owner retains its remaining pass budget"
+      ]
+    }
+  ]
+}

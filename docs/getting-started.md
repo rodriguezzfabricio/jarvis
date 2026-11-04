@@ -1,8 +1,12 @@
 # Getting started
 
-The November 2 local CLI proof completed a new-product build, bug repair and forced-crash recovery on the development Mac. Plugin 0.1.1 is installed there. [Verification results and remaining limits](reviews/local-e2e-2026-11-02.md) distinguish this local checkpoint from formal v1 approval.
+The November 2 local CLI proof completed a new-product build, bug repair and forced-crash recovery on the development Mac. That proof used plugin 0.1.1. Plugin 0.1.2 adds the bundled EGM spec review (decision 203). [Verification results and remaining limits](reviews/local-e2e-2026-11-02.md) distinguish this local checkpoint from formal v1 approval.
 
 Jarvis is experimental and currently targets macOS. Start with a disposable repository. The installer exists, but installation on another machine or fresh user account remains a release requirement.
+
+## Elephant–Goldfish review
+
+Plugin 0.1.2 runs the bundled `egm-review` skill automatically during spec review for features and new products. Restart Claude Code after updating the plugin, then use `/jarvis feature: <request>`. The comprehension reader sees only the spec; the existing spec critic sees its allowed project references. Reports are saved as `docs/intake/egm-vN-pass-P.md` before the normal spec confirmation. [Workflow, provenance and verification](egm-integration.md).
 
 ## Prerequisites
 

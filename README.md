@@ -29,6 +29,8 @@ jarvis steer "Keep the existing API response format"
 jarvis report
 ```
 
+Before a feature spec is confirmed, the bundled Elephant–Goldfish review asks a fresh reader to paraphrase the spec alone, then a separate critic checks its requirements. The existing three architecture reviewers check the resulting build plan. This runs automatically through `/jarvis` for spec-based work. [Integration and boundaries](docs/egm-integration.md).
+
 ## How it works
 
 ```mermaid

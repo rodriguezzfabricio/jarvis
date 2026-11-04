@@ -2,6 +2,12 @@
 
 Jarvis's skills borrow from other open-source work (decision 31). Each borrowed piece is listed here with its source and license, and each skill that adapts one says so in its opening lines.
 
+## Google Elephant–Goldfish Model
+
+The `egm-review` skill and `egm-comprehension` role adapt the fresh-context, document-only comprehension workflow at upstream commit `113a3afc44e8f4f54722d7150d5701f65cc8ef7f`. They use Jarvis's spec grammar, model routing, one confirmation and bounded review budget. The existing architecture lenses in `packages/cli/src/review/plan-lenses.ts` adapt EGM's Skeptical Architect, Design Critic and Implementation Readiness standards (decisions 170–172). [Source and modifications](egm-review/references/upstream.md).
+
+License is Apache-2.0. The full license ships with the installed skill. The upstream tree at that revision contains no NOTICE file. [License](egm-review/LICENSE).
+
 ## superpowers
 
 - **Source:** https://github.com/obra/superpowers, by Jesse Vincent.

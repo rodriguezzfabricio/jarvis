@@ -74,9 +74,9 @@ Any decision you make while writing (a delegated choice the intake didn't cover)
 
 ## Check with a fresh reader
 
-When the work has a design direction, or `DESIGN.md` is written from an existing design system, run that design skill step first (After the pick, or An existing design system), so the reader and the confirmation see the final `DESIGN.md`. Before anyone confirms it, have the spec read by a reader with a fresh context (decision 9): the plugin's `spec-reader` role (`jarvis:spec-reader`), which gets only the spec file, `PRODUCT.md`, `DESIGN.md` if it exists, and the files the spec cites, never the intake conversation or your notes. It reads like the builder will, so it finds what only you know.
+When design applies, finish its After the pick or An existing design system step first so readers see final DESIGN.md. Run the `egm-review` skill with the spec path and pass number (decision 203). It uses a fresh context for document-only comprehension, then the plugin's `spec-reader` role (`jarvis:spec-reader`) with the spec, PRODUCT.md, DESIGN.md if present and safely resolved cited files, never the intake conversation or your notes. Together these count as one pass. Preserve the paraphrases and findings. An incomplete review stops confirmation and handoff, even at the cap.
 
-Ask it to report, each with the line it refers to:
+Ask the spec-reader to report, each with the line it refers to:
 - stories with no criterion that would fail if the story were broken,
 - criteria a test can't check, or that need someone to judge them,
 - contradictions between goals, non-goals, stories and assumptions,

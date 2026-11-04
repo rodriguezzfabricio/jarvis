@@ -70,14 +70,16 @@ It installs once, globally, and every project gets it. It contains:
 | Part | Contents |
 |---|---|
 | Command | `/jarvis` (dispatches to triage) |
-| Skills | `research`, `intake`, `spec`, `design`, `architect`, `build`, `debug`, `review`, `security`, `qa`, `ship`, `onboard`, `compound`, `sweep` (decision 30) |
-| Subagent roles | `explorer` (fast model, read-only), `researcher` (read-only, web, no write tools), `reviewer` (strong model, read-only repo), `security-reviewer`, `design-reviewer`, `spec-reader` (fresh-context spec check) |
+| Skills | `research`, `intake`, `spec`, `egm-review`, `design`, `architect`, `build`, `debug`, `review`, `security`, `qa`, `ship`, `onboard`, `compound`, `sweep` (decision 30) |
+| Subagent roles | `explorer` (fast model, read-only), `researcher` (read-only, web, no write tools), `reviewer` (strong model, read-only repo), `security-reviewer`, `design-reviewer`, `spec-reader` (fresh-context spec check), `egm-comprehension` (fast model, document-only paraphrase) |
 | Hooks | `SessionStart` (inject the run header and memory index), `PreToolUse` (denylist tripwires, protected-path guard), `Stop` (run `jarvis gate quick` and block on failure, with its own retry counter; this is fast feedback for the agent and never counts as evidence) |
 | Output style | `jarvis-explain` (teach-me mode, decision 32) |
 
 Skills follow the portable Agent Skills format: name and description frontmatter only, under 500 lines and 20 KB. They're written once in `skills/` in the Jarvis repo and linked into the plugin, which is what makes the later Codex and DSH adapters cheap.
 
 The desktop app reads the same plugin, settings and hooks as the CLI; this is checked in stage 0.
+
+Decision 203 adds the bundled EGM comprehension pass inside the spec reader step, before confirmation. Its fresh document-only reader and the existing spec critic share one pass of the existing three-pass budget. Reports live under `docs/intake/` and are removed from the runner's architecture-review checkout. The interactive dispatch contract controls inputs and tools; counted plan reviews remain runner-owned. [Integration details](egm-integration.md).
 
 ### 3.2 The `jarvis` CLI
 TypeScript in strict mode on Node 24, built with pnpm and tested with Vitest. Dependencies are few: commander, zod and yaml. Hashing, child processes and file locks use Node's built-ins. There's no database: state lives in JSONL files with fsync after each write.

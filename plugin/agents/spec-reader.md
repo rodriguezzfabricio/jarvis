@@ -18,4 +18,4 @@ Report each gap with its file, line, concrete failure and suggested clarificatio
 - Missing empty, loading, error or offline states, and a missing first-value budget for UI work.
 - Anything a builder would need to ask before starting.
 
-Return findings to the spec skill; do not ask the user questions, confirm the spec, choose new requirements or rewrite it. A format-check pass does not prove the content is complete.
+Start a complete report with `Status: completed`. If an allowed required input cannot be read completely, or the context is contaminated, return `Status: not run` with the reason. Return findings to the spec skill through egm-review; do not ask the user questions, confirm the spec, choose new requirements or rewrite it. A format-check pass does not prove the content is complete.
